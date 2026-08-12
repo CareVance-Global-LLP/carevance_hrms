@@ -60,16 +60,61 @@ const MIN_PHONE_DIGITS = 10;
  *
  * That rule is environment-dependent: `Password::min(8)` outside production,
  * and in production `min(12)->letters()->mixedCase()->numbers()->symbols()
- * ->uncompromised()`. The browser cannot know which environment it is talking
- * to, so it holds to the stricter one — being stricter than the server is safe,
- * while being looser means an admin sets a password that works in staging and
- * is rejected in production.
+ * ->uncompromised()`. The browser cannot know which environment it is talking to.
+ *
+ * This file used to resolve that by holding everyone to 12. Safe, but wrong for
+ * the local and staging workflows the form is used in daily — an admin could not
+ * set a password their own API would have accepted. The form now blocks at the
+ * universal floor (MIN_PASSWORD_LENGTH_ACCEPTED) and shows the production rules
+ * as a live checklist, so the stricter requirement is visible without being
+ * enforced against an environment that does not have it.
  *
  * `uncompromised()` checks the password against a breach corpus and can only be
  * done server-side, so a 422 on that is still possible and is handled by the
  * field-error routing rather than pre-empted here.
  */
 export const MIN_PASSWORD_LENGTH = 12;
+
+/**
+ * The shortest password the API will accept anywhere — `Password::min(8)`
+ * outside production.
+ *
+ * Below this the form blocks, because no environment would take it. Between
+ * this and MIN_PASSWORD_LENGTH the form allows it and warns, because whether it
+ * is accepted depends on which environment this build is talking to, and the
+ * browser cannot know. Blocking at 12 everywhere was safe but wrong for the
+ * staging and local workflows this form is used in daily.
+ */
+export const MIN_PASSWORD_LENGTH_ACCEPTED = 8;
+
+/**
+ * Everything production additionally requires, as a checklist rather than a
+ * single pass/fail. Returned for display; `validateUserStep1` only blocks on
+ * the length floor.
+ */
+export interface PasswordRequirement {
+  label: string;
+  met: boolean;
+  /** false = advisory, production-only. true = blocks submission. */
+  blocking: boolean;
+}
+
+export function passwordRequirements(password: string): PasswordRequirement[] {
+  const value = password ?? '';
+  return [
+    { label: `${MIN_PASSWORD_LENGTH_ACCEPTED}+ characters`, met: value.length >= MIN_PASSWORD_LENGTH_ACCEPTED, blocking: true },
+    { label: `${MIN_PASSWORD_LENGTH}+ for production`, met: value.length >= MIN_PASSWORD_LENGTH, blocking: false },
+    ...PASSWORD_COMPOSITION.map((rule) => ({
+      label: rule.missing.replace(/^an? /, ''),
+      met: rule.test.test(value),
+      blocking: false,
+    })),
+  ];
+}
+
+/** True when the password clears every production rule, not just the floor. */
+export const meetsProductionPasswordPolicy = (password: string): boolean =>
+  (password ?? '').length >= MIN_PASSWORD_LENGTH && passwordShortfall(password ?? '') === null;
 
 const PASSWORD_COMPOSITION: Array<{ test: RegExp; missing: string }> = [
   { test: /\p{L}/u, missing: 'a letter' },
@@ -194,15 +239,18 @@ export function validateUserStep1(form: AddUserWizardForm): UserFieldErrors {
     errors.phone = `Enter a valid phone number — at least ${MIN_PHONE_DIGITS} digits`;
   }
 
+  /*
+   * Blocks only below the universal floor. The production extras — length 12,
+   * mixed case, a number, a symbol — are surfaced as a live checklist beside
+   * the field instead, because this same build talks to environments that
+   * accept 8. Blocking at 12 meant a local admin could not set a password the
+   * local API would have taken; not showing the 12 at all would mean a
+   * production admin passes here and gets a 422 from the server.
+   */
   if (!form.password) {
     errors.password = 'Password is required';
-  } else if (form.password.length < MIN_PASSWORD_LENGTH) {
-    errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters — this is the password the joiner signs in with`;
-  } else {
-    const shortfall = passwordShortfall(form.password);
-    if (shortfall) {
-      errors.password = `Add ${shortfall}`;
-    }
+  } else if (form.password.length < MIN_PASSWORD_LENGTH_ACCEPTED) {
+    errors.password = `Use at least ${MIN_PASSWORD_LENGTH_ACCEPTED} characters — this is the password the joiner signs in with`;
   }
 
   // Marked required in the UI, so it is checked here too — it used to be

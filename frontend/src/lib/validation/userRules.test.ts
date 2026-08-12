@@ -3,9 +3,13 @@ import { defaultForm, type AddUserWizardForm } from '@/components/add-user/steps
 import {
   USER_FIELD_LIMITS,
   isValidPhone,
+  meetsProductionPasswordPolicy,
+  passwordRequirements,
+  passwordShortfall,
   splitDisplayName,
   maxDepartmentsFor,
   MIN_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH_ACCEPTED,
   maxJoiningDate,
   validateUserStep1,
 } from './userRules';
@@ -150,19 +154,40 @@ describe('required fields', () => {
 
 describe('password policy mirrors Password::defaults()', () => {
   /*
-   * Production requires min(12) with letters, mixed case, numbers and symbols.
-   * The browser holds to that even though dev only requires min(8): stricter
-   * than the server is safe, looser means a password that works in staging is
-   * refused in production.
+   * Two floors, both real. Production requires min(12) with letters, mixed case,
+   * numbers and symbols; everywhere else requires min(8).
+   *
+   * The form blocks at 8 — the value no environment would accept — and surfaces
+   * the production rules as a checklist instead of enforcing them. Blocking at
+   * 12 everywhere was safe against production but refused passwords a local or
+   * staging API would have taken.
    */
-  it('requires the production minimum, not the dev one', () => {
+  it('keeps both floors, and blocks only on the universal one', () => {
     expect(MIN_PASSWORD_LENGTH).toBe(12);
-    expect(validateUserStep1(form({ password: 'Short-1!' })).password).toContain('at least 12');
+    expect(MIN_PASSWORD_LENGTH_ACCEPTED).toBe(8);
+
+    expect(validateUserStep1(form({ password: 'Shor-1!' })).password).toContain('at least 8');
+    // 8-11 characters: accepted by the form, flagged by the checklist.
+    expect(validateUserStep1(form({ password: 'Short-1!' })).password).toBeUndefined();
   });
 
-  it('names what a long but weak password is missing', () => {
-    expect(validateUserStep1(form({ password: 'aaaaaaaaaaaaaa' })).password)
-      .toBe('Add an upper-case letter, a number, a symbol');
+  it('does not block a long but weak password, and does not call it production-ready', () => {
+    expect(validateUserStep1(form({ password: 'aaaaaaaaaaaaaa' })).password).toBeUndefined();
+    expect(meetsProductionPasswordPolicy('aaaaaaaaaaaaaa')).toBe(false);
+    expect(passwordShortfall('aaaaaaaaaaaaaa')).toBe('an upper-case letter, a number, a symbol');
+  });
+
+  it('reports each production requirement separately for display', () => {
+    const reqs = passwordRequirements('Short-1!');
+    const byLabel = Object.fromEntries(reqs.map((r) => [r.label, r]));
+
+    expect(byLabel['8+ characters'].met).toBe(true);
+    expect(byLabel['8+ characters'].blocking).toBe(true);
+    expect(byLabel['12+ for production'].met).toBe(false);
+    expect(byLabel['12+ for production'].blocking).toBe(false);
+
+    expect(passwordRequirements('Temp-Pass-1234!').every((r) => r.met)).toBe(true);
+    expect(meetsProductionPasswordPolicy('Temp-Pass-1234!')).toBe(true);
   });
 
   it('accepts a password meeting every requirement', () => {

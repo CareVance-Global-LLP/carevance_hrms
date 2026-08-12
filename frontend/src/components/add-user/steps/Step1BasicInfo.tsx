@@ -7,8 +7,10 @@ import CustomSelect from '../../../components/ui/CustomSelect';
 import { TextInput } from '@/components/ui/FormField';
 import type { AddUserWizardForm, IncompleteUserCheck } from './types';
 import {
+  MIN_PASSWORD_LENGTH_ACCEPTED,
   USER_FIELD_LIMITS,
   maxDepartmentsFor,
+  passwordRequirements,
   maxJoiningDate as computeMaxJoiningDate,
   validateUserStep1,
 } from '@/lib/validation/userRules';
@@ -340,7 +342,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             }}
             onBlur={() => handleBlur('password')}
             className={errorClass('password')}
-            placeholder="At least 12 characters"
+            placeholder={`At least ${MIN_PASSWORD_LENGTH_ACCEPTED} characters`}
             autoComplete="new-password"
           />
           {errors.password ? (
@@ -353,6 +355,33 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               Share this with the employee — they can change it from Settings after signing in.
             </p>
           )}
+          {/*
+            Live requirement list rather than one pass/fail message.
+
+            The API's floor is environment-dependent — min(8) outside production,
+            min(12) plus composition in it — and this build cannot tell which one
+            it is talking to. Blocking at 12 refused passwords a local API would
+            take; blocking at 8 with nothing shown would let a production admin
+            pass here and collect a 422. So the 8 blocks and the rest advise.
+          */}
+          {form.password ? (
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1" aria-label="Password requirements">
+              {passwordRequirements(form.password).map((requirement) => (
+                <li
+                  key={requirement.label}
+                  className={`text-[11px] ${
+                    requirement.met
+                      ? 'text-emerald-600'
+                      : requirement.blocking
+                        ? 'text-red-500'
+                        : 'text-amber-600'
+                  }`}
+                >
+                  {requirement.met ? '✓' : '○'} {requirement.label}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
         <div>
           <label htmlFor={fieldId('f5')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
