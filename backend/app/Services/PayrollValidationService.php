@@ -101,7 +101,7 @@ class PayrollValidationService
             ? PayrollMonthlyRun::with('items')->find($previousRunId)
             : PayrollMonthlyRun::where('organization_id', $current->organization_id)
                 ->where('id', '<', $currentRunId)
-                ->whereIn('status', ['locked', 'approved', 'released', 'paid'])
+                ->whereIn('status', PayrollMonthlyRun::CLOSED_STATUSES)
                 ->orderBy('id', 'desc')
                 ->first();
 
@@ -162,7 +162,7 @@ class PayrollValidationService
 
         $existingRun = PayrollMonthlyRun::where('organization_id', $orgId)
             ->where('month_year', $monthYear)
-            ->whereIn('status', ['locked', 'approved', 'released', 'paid'])
+            ->whereIn('status', PayrollMonthlyRun::CLOSED_STATUSES)
             ->exists();
         $checks['existing_run'] = ['name' => 'No existing locked run', 'passed' => !$existingRun, 'value' => $existingRun ? 'Exists' : 'Clear'];
         !$existingRun ? $passed++ : $failed++;

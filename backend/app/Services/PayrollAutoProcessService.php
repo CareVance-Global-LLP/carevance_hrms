@@ -783,7 +783,7 @@ class PayrollAutoProcessService
 
         $prevRun = PayrollMonthlyRun::where('organization_id', $currentRun->organization_id)
             ->where('month_year', $prevMonth)
-            ->whereIn('status', ['locked', 'approved', 'released', 'paid'])
+            ->whereIn('status', PayrollMonthlyRun::CLOSED_STATUSES)
             ->first();
 
         if (!$prevRun) {
@@ -826,7 +826,7 @@ class PayrollAutoProcessService
 
         $prevRun = PayrollMonthlyRun::where('organization_id', $orgId)
             ->where('month_year', $previousMonth)
-            ->whereIn('status', ['locked', 'approved', 'released', 'paid'])
+            ->whereIn('status', PayrollMonthlyRun::CLOSED_STATUSES)
             ->first();
 
         $prevEmployeeIds = $prevRun
