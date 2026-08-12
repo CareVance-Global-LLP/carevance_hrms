@@ -221,6 +221,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
   return (
     <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Identity</p>
       {/*
         Name row. Three columns rather than two: the middle name is kept as its
         own field because statutory filings match on the name as printed on the
@@ -415,6 +416,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
       </div>
 
+      <p className="border-t border-slate-100 pt-5 mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Access</p>
       {/* Role & Designation */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
@@ -518,6 +520,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         {errors.departmentIds && <p className="mt-1 text-xs text-red-500">{errors.departmentIds}</p>}
       </div>
 
+      <p className="border-t border-slate-100 pt-5 mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Work</p>
       {/* Date of Joining & Work Location */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>

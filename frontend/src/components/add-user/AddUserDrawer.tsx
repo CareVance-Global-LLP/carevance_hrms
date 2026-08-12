@@ -443,8 +443,15 @@ export default function AddUserDrawer({
         <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" onClick={onClose} />
       ) : null}
       <aside className={presentation === 'modal' ? 'absolute inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-6 lg:p-8' : 'relative'}>
+        {/*
+          Inline mode had no width cap, so on a wide monitor every input
+          stretched the full page — Employee Code rendered about 700px wide.
+          Capped at the same 72rem the modal already used.
+        */}
         <div className={`flex w-full flex-col gap-6 ${
-          presentation === 'modal' ? 'rounded-lg border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-sm sm:p-6 mt-16 max-w-[72rem] sm:mt-20' : ''
+          presentation === 'modal'
+            ? 'rounded-lg border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.97),rgba(255,255,255,0.99))] p-4 shadow-sm sm:p-6 mt-16 max-w-[72rem] sm:mt-20'
+            : 'max-w-[72rem]'
         }`}>
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -475,22 +482,50 @@ export default function AddUserDrawer({
             />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
-            {tabOptions.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-lg px-4 py-3 text-left transition ${
-                  activeTab === tab.id
-                    ? 'bg-white text-slate-950 shadow-sm'
-                    : 'text-slate-500 hover:bg-white hover:text-slate-900'
-                }`}
-              >
-                <p className="text-sm font-semibold">{tab.label}</p>
-                <p className="mt-1 text-xs leading-5 text-inherit/80">{tab.description}</p>
-              </button>
-            ))}
+          {/*
+            Route picker.
+
+            The selected card used to be `bg-white` and nothing else — no brand
+            colour anywhere, so the most important control on the page had the
+            weakest selected state and read as "slightly lighter" rather than
+            "chosen". It now carries the brand accent as a left bar, a tint and
+            the label colour. Unselected cards were `text-slate-500`, which
+            reads as disabled; they are brighter and take a brand border on
+            hover so they look like the buttons they are.
+          */}
+          <div
+            role="group"
+            aria-label="How to add a user"
+            className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            {tabOptions.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-lg border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
+                    isActive
+                      ? 'border-blue-500 bg-blue-50 shadow-sm ring-1 ring-blue-500/20 [box-shadow:inset_3px_0_0_theme(colors.blue.600)]'
+                      : 'border-transparent bg-surface-card text-slate-600 hover:border-blue-300 hover:bg-blue-50/40 hover:text-slate-900'
+                  }`}
+                >
+                  <p className={`text-sm font-semibold ${isActive ? 'text-blue-800' : 'text-slate-800'}`}>
+                    {tab.label}
+                  </p>
+                  {/*
+                    Was `text-inherit/80` — an opacity modifier on text-inherit,
+                    which Tailwind does not generate, so the intended dimming
+                    never applied and the description sat at full weight.
+                  */}
+                  <p className={`mt-1 text-xs leading-5 ${isActive ? 'text-slate-600' : 'text-slate-500'}`}>
+                    {tab.description}
+                  </p>
+                </button>
+              );
+            })}
           </div>
 
           <section className={`space-y-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm ${
