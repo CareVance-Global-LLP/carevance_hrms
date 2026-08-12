@@ -61,6 +61,31 @@ function formatMonthLabel(monthYear: string): string {
 type FilterStatus = 'all' | 'pending' | 'paid';
 type SortBy = 'name' | 'ctc' | 'status';
 
+type PayrollRowStatus = 'paid' | 'processed' | 'pending';
+
+/**
+ * The single definition of a member's payroll state for this month.
+ *
+ * This derivation was written out three times — once in the card, once in the
+ * table row, and not at all in the summary counts, which bucketed on
+ * payment_status alone. So a member showing a "Processed" badge was counted as
+ * pending, and the header read "15 employees · 15 pending" directly above a
+ * row labelled Processed.
+ *
+ * A count must be computed from the same thing the rows it sits above are
+ * computed from.
+ */
+function rowStatusOf(employee: any): PayrollRowStatus {
+  const paymentStatus = employee?.payroll_status?.payment_status ?? 'pending';
+  if (paymentStatus === 'paid') return 'paid';
+
+  // "Processed" = a payroll item exists for this month (calculated, even if
+  // not yet disbursed). This drives the payslip actions and stops prompting
+  // the user to process the employee again.
+  const isProcessed = employee?.payroll_status?.is_processed ?? paymentStatus !== 'pending';
+  return isProcessed ? 'processed' : 'pending';
+}
+
 // Employee Card Component (same shape as DepartmentEmployees so the
 // two views stay consistent).
 function EmployeeCard({
@@ -80,13 +105,9 @@ function EmployeeCard({
   onViewPayslip: (e: React.MouseEvent) => void;
   onDownloadPayslip: (e: React.MouseEvent) => void;
 }) {
-  const paymentStatus = employee.payroll_status?.payment_status ?? 'pending';
-  const isPaid = paymentStatus === 'paid';
-  // "Processed" = a payroll item exists for this month (calculated, even
-  // if not yet disbursed). This drives the payslip actions and stops
-  // prompting the user to process the employee again.
-  const isProcessed = employee.payroll_status?.is_processed ?? paymentStatus !== 'pending';
-  const status: 'paid' | 'processed' | 'pending' = isPaid ? 'paid' : isProcessed ? 'processed' : 'pending';
+  const status = rowStatusOf(employee);
+  const isPaid = status === 'paid';
+  const isProcessed = status !== 'pending';
 
   const statusConfig = {
     paid: {
@@ -420,14 +441,17 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
   }, [searchFilteredEmployees, filterStatus, sortBy]);
 
   // Count by status (over the full employee set, not the filtered one)
+  // Bucketed with rowStatusOf so these totals always agree with the badges on
+  // the rows below them. Bucketing on payment_status alone folded "Processed"
+  // into "pending", so a group with one processed member still read "15
+  // pending" above a row labelled Processed.
   const counts = useMemo(() => {
     return employees.reduce(
       (acc, emp) => {
-        if (emp.payroll_status.payment_status === 'paid') acc.paid++;
-        else acc.pending++;
+        acc[rowStatusOf(emp)]++;
         return acc;
       },
-      { pending: 0, paid: 0 },
+      { pending: 0, processed: 0, paid: 0 },
     );
   }, [employees]);
 
@@ -583,10 +607,9 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredEmployees.map((employee) => {
-                const paymentStatus = employee.payroll_status?.payment_status ?? 'pending';
-                const isPaid = paymentStatus === 'paid';
-                const isProcessed = employee.payroll_status?.is_processed ?? paymentStatus !== 'pending';
-                const status: 'paid' | 'processed' | 'pending' = isPaid ? 'paid' : isProcessed ? 'processed' : 'pending';
+                const status = rowStatusOf(employee);
+                const isPaid = status === 'paid';
+                const isProcessed = status !== 'pending';
                 const statusTone = {
                   paid: 'bg-emerald-100 text-emerald-700',
                   processed: 'bg-sky-100 text-sky-700',
@@ -881,7 +904,25 @@ function ReviewStep({
   const queryClient = useQueryClient();
   const { show } = useToast();
 
-  const { data: reviewData, isLoading } = useQuery({
+  /*
+   * isError is load-bearing here, not defensive polish.
+   *
+   * This endpoint returned 500 for months — three of its queries named tables
+   * that do not exist. Reading only `data` and `isLoading` meant the failure
+   * fell through to the `?? []` defaults below, and the panel rendered "No new
+   * joiners or exits this period" with a button to acknowledge and move on.
+   * The one screen whose job is to catch joiners, leavers and unsettled F&F
+   * before money moves reported all clear, every run.
+   *
+   * A check that could not run must never render as a check that passed.
+   */
+  const {
+    data: reviewData,
+    isLoading,
+    isError,
+    error: reviewError,
+    refetch: refetchReview,
+  } = useQuery({
     queryKey: ['payroll', 'run-review', payGroupId, monthYear],
     queryFn: () =>
       payrollApi
@@ -942,6 +983,39 @@ function ReviewStep({
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading review data…
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * Failure is reported as failure, and does not offer the skip button.
+   * "We could not check" and "there is nothing to check" are opposite facts,
+   * and only one of them is safe to acknowledge and move past.
+   */
+  if (isError) {
+    return (
+      <div
+        role="alert"
+        className="rounded-xl border border-rose-300 bg-rose-50 p-4"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-2 text-sm text-rose-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-medium">
+                Could not check for new joiners, exits or pending settlements.
+              </p>
+              <p className="mt-0.5 text-rose-700">
+                This month has not been reviewed. Retry before approving the run — do not
+                treat this as “nothing to review”.
+                {reviewError instanceof Error ? ` (${reviewError.message})` : ''}
+              </p>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => void refetchReview()}>
+            Retry
+          </Button>
         </div>
       </div>
     );
