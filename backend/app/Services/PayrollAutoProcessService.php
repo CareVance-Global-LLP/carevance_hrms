@@ -423,11 +423,43 @@ class PayrollAutoProcessService
             'total_esi_employee' => 0, 'total_esi_employer' => 0, 'total_pt' => 0, 'total_tds' => 0,
         ];
 
+        /** @var list<string> $excluded Names of people this run could not compute. */
+        $excluded = [];
+        $calculated = 0;
+
         foreach ($items as $item) {
             $template = $item->user->employeePayrollTemplate;
-            if (!$template) continue;
+            if (!$template) {
+                $excluded[] = ($item->user->name ?? "User #{$item->user_id}").' (no payroll template)';
+                $item->delete();
+                continue;
+            }
 
             $annualCtc = (float) ($template->annual_ctc ?? 0);
+
+            /*
+             * An employee with no annual CTC is not configured, and there is
+             * no defensible figure to pay them.
+             *
+             * This used to fall straight through to $annualCtc / 12 == 0, so
+             * every component computed to zero and the run recorded a ₹0
+             * gross, ₹0 net and a ₹0 payslip as a successful result — while
+             * SalaryCalculationService, computing the same person's payslip,
+             * threw outright. On a live pay group 11 of 15 members were in
+             * this state, which is where every ₹0 on the payroll dashboard
+             * came from.
+             *
+             * They are excluded rather than paid zero, and named on the run
+             * rather than dropped quietly. The item is removed so a ₹0 line
+             * cannot reach a payslip or a bank file; the checklist's
+             * missing_ctc check is what tells HR who to fix.
+             */
+            if ($annualCtc <= 0) {
+                $excluded[] = ($item->user->name ?? "User #{$item->user_id}").' (no annual CTC)';
+                $item->delete();
+                continue;
+            }
+
             $monthlyCtc = $annualCtc / 12;
             $lopDays = (float) ($item->lOP_days ?? 0);
 
@@ -667,12 +699,27 @@ class PayrollAutoProcessService
             $totals['total_esi_employer'] += $esiEmployer;
             $totals['total_pt'] += $pt;
             $totals['total_tds'] += $tds;
+            $calculated++;
         }
 
-        $run->update(array_merge($totals, [
-            'total_employees' => $items->count(),
+        // total_employees counts people this run actually paid, not people it
+        // was asked about. Counting $items included the excluded rows and made
+        // a run of 15 with 11 unconfigured look like a run of 15.
+        $update = array_merge($totals, [
+            'total_employees' => $calculated,
             'status' => 'locked',
-        ]));
+        ]);
+
+        if ($excluded !== []) {
+            $update['processing_message'] = sprintf(
+                '%d of %d employee(s) were excluded because they are not configured for payroll: %s',
+                count($excluded),
+                $items->count(),
+                implode('; ', $excluded)
+            );
+        }
+
+        $run->update($update);
     }
 
     private function validateRun(PayrollMonthlyRun $run, int $orgId, int $userId): void
