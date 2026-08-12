@@ -13,6 +13,7 @@ import {
 } from '@tanstack/react-query';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
+import Modal from '@/components/ui/dialog/Modal';
 import type { AllEmployee } from '@/types';
 import EmployeePickerList from './EmployeePickerList';
 
@@ -89,10 +90,9 @@ export default function AddEmployeeToPayGroupModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+    <Modal open onClose={onClose} titleId="add-employee-to-paygroup-title" size="3xl">
         <header className="flex items-center justify-between p-4 border-b border-slate-200">
-          <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+          <h2 id="add-employee-to-paygroup-title" className="text-lg font-semibold text-slate-900 flex items-center gap-2">
             <Users className="h-5 w-5 text-blue-600" />
             Add Employee to {payGroupName}
           </h2>
@@ -144,7 +144,6 @@ export default function AddEmployeeToPayGroupModal({
             {apiErrorMessage}
           </div>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

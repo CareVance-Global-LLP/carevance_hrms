@@ -5,13 +5,23 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import { cn } from '@/utils/cn';
 import { DialogDepthProvider, useDialogBehavior } from './useDialogBehavior';
 
-type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
+/**
+ * Sizes map 1:1 onto Tailwind's own max-w scale — `size="3xl"` is
+ * `max-w-3xl`, nothing to translate. An earlier draft used a semantic scale
+ * (lg -> max-w-2xl, xl -> max-w-4xl) and the first four migrations all had to
+ * look up what their width had become.
+ */
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '6xl';
 
 const sizeClasses: Record<ModalSize, string> = {
   sm: 'max-w-sm',
   md: 'max-w-md',
-  lg: 'max-w-2xl',
-  xl: 'max-w-4xl',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+  '6xl': 'max-w-6xl',
 };
 
 export interface ModalProps {
@@ -23,6 +33,10 @@ export interface ModalProps {
   titleId?: string;
   subtitle?: string;
   size?: ModalSize;
+  /** Overrides `size` for a panel with a bespoke width, e.g. `max-w-[560px]`. */
+  widthClassName?: string;
+  /** Merged onto the panel. Migrations use it to keep a non-default max height. */
+  panelClassName?: string;
   role?: 'dialog' | 'alertdialog';
   busy?: boolean;
   dismissOnBackdrop?: boolean;
@@ -52,6 +66,8 @@ export default function Modal({
   titleId,
   subtitle,
   size = 'md',
+  widthClassName,
+  panelClassName,
   role = 'dialog',
   busy = false,
   dismissOnBackdrop = true,
@@ -80,13 +96,16 @@ export default function Modal({
       style={{ zIndex }}
       {...backdropProps}
     >
-      <SurfaceCard className={cn('w-full', sizeClasses[size])}>
+      <SurfaceCard className={cn('w-full', widthClassName ?? sizeClasses[size])}>
         <div
           ref={panelRef}
           role={role}
           aria-labelledby={headingId}
           aria-describedby={ariaDescribedBy}
-          className="flex max-h-[85vh] flex-col outline-none motion-safe:animate-dialog-in"
+          className={cn(
+            'flex max-h-[85vh] flex-col outline-none motion-safe:animate-dialog-in',
+            panelClassName,
+          )}
           {...panelProps}
         >
           {title ? (
