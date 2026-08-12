@@ -17,6 +17,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { hasStrictAdminAccess } from '@/lib/permissions';
 import { payrollApi } from '@/services/api';
+import { currentFinancialYear, formatFinancialYear } from '@/lib/payroll/financialYear';
 import { cn } from '@/utils/cn';
 import { titleCase } from '@/utils/payrollStatus';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -98,8 +99,30 @@ function TaxDeclarationsInline({ onOpenFull }: { onOpenFull: () => void }) {
     );
   }
 
-  const totalSubmitted = declarations.length;
-  const notYetDeclared = declarations.filter((d: any) => (d.status ?? '').toLowerCase() === 'pending' || (d.status ?? '').toLowerCase() === 'draft').length;
+  /*
+   * These two used to overlap. `totalSubmitted` was declarations.length — the
+   * number of rows, so a draft counted as submitted — and `notYetDeclared`
+   * was the drafts *within that same array*. One employee sitting on a draft
+   * therefore appeared in both tiles at once, reading "1 Declarations
+   * Submitted" and "1 Not Yet Declared" simultaneously.
+   *
+   * They are now disjoint, and named for what they actually measure.
+   *
+   * Still missing, deliberately: employees who have never opened the form have
+   * no row here at all, so they appear in neither tile. Counting them needs
+   * the payroll population — employees with an active payroll template — which
+   * this endpoint does not return. /payroll/all-employees is not it: that
+   * filters by role, not by whether someone is on payroll, and using it would
+   * put a fourth wrong headcount on screen. The caption below says so rather
+   * than implying full coverage.
+   */
+  const isDraft = (d: any) => {
+    const status = (d.status ?? '').toLowerCase();
+    return status === 'pending' || status === 'draft';
+  };
+
+  const stillInDraft = declarations.filter(isDraft).length;
+  const totalSubmitted = declarations.length - stillInDraft;
 
   function getItemsBySection(row: any, section: string): number {
     return (row.items ?? []).filter((i: any) => i.section === section).reduce((sum: number, i: any) => sum + Number(i.declared_amount || 0), 0);
@@ -113,7 +136,8 @@ function TaxDeclarationsInline({ onOpenFull }: { onOpenFull: () => void }) {
             Tax Declarations
           </h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            FY 2025–26 · Submission window: Apr–Jan
+            {formatFinancialYear(currentFinancialYear())} · {declarations.length} employee
+            {declarations.length === 1 ? '' : 's'} have started a declaration
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -166,8 +190,8 @@ function TaxDeclarationsInline({ onOpenFull }: { onOpenFull: () => void }) {
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-          <div className="text-lg font-semibold text-rose-500">{notYetDeclared}</div>
-          <div className="mt-0.5 text-[11px] text-slate-500">Not Yet Declared</div>
+          <div className="text-lg font-semibold text-rose-500">{stillInDraft}</div>
+          <div className="mt-0.5 text-[11px] text-slate-500">Still in draft</div>
         </div>
       </div>
 

@@ -24,6 +24,7 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useToast } from '@/components/ui/Toast';
+import { currentFinancialYear } from '@/lib/payroll/financialYear';
 
 interface MyPayslip {
   id?: number;
@@ -107,7 +108,10 @@ export default function MyPayrollPage() {
     queryFn: async () => {
       const [payslipsRes, taxDeclRes, reimbRes] = await Promise.all([
         payrollApi.getMyPayslips(),
-        payrollApi.getMyTaxDeclaration({ financial_year: new Date().getFullYear().toString() }).catch(() => null),
+        // The financial year, not the calendar year. This sent "2026", which
+        // the server matches exactly against 'YYYY-YY' — so an employee's own
+        // declaration never loaded on their own page.
+        payrollApi.getMyTaxDeclaration({ financial_year: currentFinancialYear() }).catch(() => null),
         payrollApi.myReimbursements({ month_year: new Date().toISOString().slice(0, 7).replace('-', '') }).catch(() => ({ data: { reimbursements: [] } })),
       ]);
       return {

@@ -503,6 +503,8 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
               {formatMonthLabel(monthYear)}
             </span>
             {employees.length} employee{employees.length === 1 ? '' : 's'} · {counts.pending} pending
+            {counts.processed > 0 ? ` · ${counts.processed} processed` : ''}
+            {counts.paid > 0 ? ` · ${counts.paid} paid` : ''}
           </p>
         </div>
 
@@ -700,6 +702,13 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
              <div className="flex items-center gap-2">
                <div className="h-3 w-3 rounded-full bg-amber-500" />
                <span className="text-sm text-slate-600">{counts.pending} Pending</span>
+             </div>
+             {/* Processed is its own state — calculated but not yet disbursed.
+                 Folding it into Pending made the footer disagree with the
+                 Processed badges on the rows above it. */}
+             <div className="flex items-center gap-2">
+               <div className="h-3 w-3 rounded-full bg-sky-500" />
+               <span className="text-sm text-slate-600">{counts.processed} Processed</span>
              </div>
              <div className="flex items-center gap-2">
                <div className="h-3 w-3 rounded-full bg-emerald-500" />
