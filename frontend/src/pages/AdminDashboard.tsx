@@ -44,6 +44,8 @@ import {
 } from '@/services/api';
 import { SelectInput } from '@/components/ui/FormField';
 import PendingApprovalsCard from '@/components/dashboard/PendingApprovalsCard';
+import WorkspaceSetupCard from '@/components/onboarding/WorkspaceSetupCard';
+import { TOUR_ANCHORS } from '@/features/tour/tourSteps';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { greetUser } from '@/lib/greeting';
@@ -1829,11 +1831,20 @@ export default function AdminDashboard() {
             {dateLabel}
           </div>
 
-          <Link aria-label="Settings" to="/settings" className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">
+          <Link
+            aria-label="Settings"
+            to="/settings"
+            data-tour={TOUR_ANCHORS.settings}
+            className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600"
+          >
             <Settings className="h-4 w-4" />
           </Link>
         </div>
       </header>
+
+      {/* Before every analytics card, because on a new workspace all of those
+          are empty and this is the only thing on the page with anything to say. */}
+      <WorkspaceSetupCard />
 
       <Card id="date-filter" className="scroll-mt-24 p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">

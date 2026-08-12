@@ -9,6 +9,7 @@ class WorkspaceBillingService
     public function __construct(
         private readonly SubscriptionCycleService $cycles,
         private readonly SeatGuard $seats,
+        private readonly CompanyProfileService $companyProfile,
     ) {
     }
 
@@ -72,6 +73,16 @@ class WorkspaceBillingService
             ],
             'seats' => $seats,
             'cycle' => $cycle,
+            // What conversion needs from the company profile: the seat count to
+            // put in the box, and whether we can raise an invoice at all. The
+            // payment screen reads `billing_ready` to decide whether to ask for
+            // an address before showing the pay button, rather than letting the
+            // order call 422 after the customer has committed.
+            'company_profile' => $this->companyProfile->summary(
+                $organization,
+                $isTrial ? 5 : 10,
+                $seats['used'],
+            ),
             'workspace' => [
                 'id' => $organization->id,
                 'name' => $organization->name,

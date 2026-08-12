@@ -4,9 +4,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Layout from '@/components/Layout';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+/*
+ * Nav visibility is plan-gated as well as role-gated: usePlan reads
+ * organization.plan_code off useAuth, and with no organization it falls back to
+ * basic_tracking — which hides Payroll however much of an admin you are. The
+ * mock supplied no organization at all, so tests named after admin nav were
+ * really asserting the tracking plan's nav.
+ */
 const authState = vi.hoisted(() => ({
   value: {
     user: null,
+    organization: {
+      id: 1,
+      name: 'Test Org',
+      plan_code: 'basic_payroll',
+      max_seats: 50,
+      subscription_status: 'active',
+    },
     logout: vi.fn(),
     token: 'test-token',
   },
@@ -62,6 +76,7 @@ describe('Layout navigation', () => {
     apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.markRead.mockResolvedValue({});
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 1,
         name: 'Admin',
@@ -248,6 +263,7 @@ describe('Layout navigation', () => {
 
   it('hides admin-only navigation items for employees', async () => {
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -267,8 +283,13 @@ describe('Layout navigation', () => {
     expect((await screen.findAllByText('Attendance')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Attendance').length).toBeGreaterThan(0);
     expect(screen.queryByText('Reports')).not.toBeInTheDocument();
-    expect(screen.queryByText('Payroll')).not.toBeInTheDocument();
     expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+
+    // The Payroll *group* is not admin-only — it also holds "My Payroll", which
+    // an employee is meant to reach. What must stay hidden is the admin payroll
+    // page itself, so assert on the destination rather than on the word.
+    expect(document.querySelector('a[href="/payroll"]')).toBeNull();
+    expect(document.querySelector('a[href="/my-payroll"]')).not.toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /employee/i }));
 
@@ -280,6 +301,7 @@ describe('Layout navigation', () => {
 
   it('hides edit time navigation when employee time edits are disabled', async () => {
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -318,6 +340,7 @@ describe('Layout navigation', () => {
       clearUpdateStateListeners: vi.fn(),
     };
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -344,6 +367,7 @@ describe('Layout navigation', () => {
 
   it('hides attendance overview but keeps edit time when only attendance monitoring is disabled', async () => {
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -383,6 +407,7 @@ describe('Layout navigation', () => {
       clearUpdateStateListeners: vi.fn(),
     };
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -410,6 +435,7 @@ describe('Layout navigation', () => {
 
   it('keeps attendance dropdown when employee can access attendance and edit time', async () => {
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -437,6 +463,7 @@ describe('Layout navigation', () => {
 
   it('hides the add user button for managers', async () => {
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 3,
         name: 'Manager',
@@ -665,6 +692,7 @@ describe('Layout navigation', () => {
     };
 
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -713,6 +741,7 @@ describe('Layout navigation', () => {
     };
 
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',
@@ -769,6 +798,7 @@ describe('Layout navigation', () => {
     });
 
     authState.value = {
+      organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
         id: 2,
         name: 'Employee',

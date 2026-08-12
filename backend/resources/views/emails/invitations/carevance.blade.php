@@ -1,67 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CareVance Invitation</title>
-</head>
-<body style="margin:0;padding:0;background:#f2f8ff;font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:32px 16px;background:#f2f8ff;">
+{{--
+    The invitation a new joiner receives.
+
+    Employer-first on purpose: the recipient has an employment relationship with
+    the organisation and usually none at all with CareVance, so the org name
+    leads the eyebrow, the headline and the subject. CareVance appears once, as
+    the platform their employer runs on, in the footer.
+--}}
+<x-mail.layout
+    :preheader="'Set your password and your '.$organizationName.' account is ready — this invite expires in '.$expiresInHours.' hours.'"
+    :eyebrow="$organizationName"
+    :heading="'You\'re joining '.e($organizationName)"
+    :subheading="$inviterName
+        ? $inviterName.($inviterRoleLabel ? ' ('.$inviterRoleLabel.')' : '').' has invited you to set up your account.'
+        : 'You have been invited to set up your account.'"
+    :footerLead="'<strong style=\'color:#16191C;\'>CareVance</strong> — the HR &amp; payroll platform '.e($organizationName).' runs on.'"
+    :footerNote="'You\'re receiving this because someone at '.$organizationName.' added '.$email.'. Not expecting it? Ignore this email, or write to '.$supportEmail.'.'"
+>
+
+    <p style="margin:0 0 20px;font-size:15px;line-height:1.7;color:#4E565D;">
+        {{ $organizationName }} runs its HR and payroll on CareVance. Set a password and your account is ready to use.
+    </p>
+
+    <x-mail.button :url="$acceptUrl">Accept invitation &amp; set password</x-mail.button>
+
+    <x-mail.panel
+        label="Your invitation"
+        :rows="[
+            'Organisation' => $organizationName,
+            'Job title' => $jobTitle,
+            'Access role' => $roleLabel,
+            'Start date' => $joiningDate,
+            'Invited by' => $inviterName,
+            'Expires' => $expiresAtLabel,
+        ]"
+    />
+
+    <p style="margin:26px 0 10px;font-size:11px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#3D656B;">
+        What happens next
+    </p>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.7;color:#4E565D;">
         <tr>
-            <td align="center">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid rgba(148,163,184,0.2);box-shadow:0 24px 60px rgba(15,23,42,0.12);">
-                    <tr>
-                        <td style="padding:36px 36px 24px;background:linear-gradient(135deg,#020617 0%,#0f172a 32%,#0284c7 100%);color:#ffffff;">
-                            <p style="margin:0 0 12px;font-size:12px;letter-spacing:0.28em;text-transform:uppercase;font-weight:700;color:#bae6fd;">CareVance</p>
-                            <h1 style="margin:0;font-size:30px;line-height:1.15;font-weight:700;">You're invited to join CareVance</h1>
-                            <p style="margin:16px 0 0;font-size:15px;line-height:1.8;color:#e2e8f0;">
-                                {{ $organizationName }} has invited <strong>{{ $email }}</strong> to join as a {{ strtolower($role) }}.
-                            </p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:32px 36px 12px;">
-                            <p style="margin:0 0 16px;font-size:15px;line-height:1.8;color:#475569;">
-                                Use the secure invitation below to create your account. Your workspace and role are already assigned for you.
-                            </p>
-                            <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;">
-                                <tr>
-                                    <td>
-                                        <a
-                                            href="{{ $acceptUrl }}"
-                                            style="display:inline-block;padding:14px 24px;border-radius:999px;background:linear-gradient(135deg,#020617 0%,#0f172a 34%,#0284c7 100%);color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;"
-                                        >
-                                            Accept Invitation
-                                        </a>
-                                    </td>
-                                </tr>
-                            </table>
-                            <div style="padding:18px 20px;border-radius:18px;background:#f8fafc;border:1px solid #e2e8f0;">
-                                <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#0369a1;">Invitation details</p>
-                                <p style="margin:0;font-size:14px;line-height:1.8;color:#475569;">
-                                    Workspace: <strong style="color:#0f172a;">{{ $organizationName }}</strong><br>
-                                    Role: <strong style="color:#0f172a;">{{ $role }}</strong><br>
-                                    Expires: <strong style="color:#0f172a;">{{ optional($expiresAt)->timezone(config('app.timezone'))->format('M j, Y g:i A') }}</strong>
-                                </p>
-                            </div>
-                            <p style="margin:24px 0 0;font-size:13px;line-height:1.8;color:#64748b;">
-                                If the button does not work, paste this link into your browser:
-                            </p>
-                            <p style="margin:8px 0 0;word-break:break-all;font-size:13px;line-height:1.8;color:#0f172a;">
-                                <a href="{{ $acceptUrl }}" style="color:#0284c7;text-decoration:none;">{{ $acceptUrl }}</a>
-                            </p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:16px 36px 32px;">
-                            <p style="margin:0;font-size:12px;line-height:1.8;color:#94a3b8;">
-                                If you were not expecting this invitation, you can ignore this email or contact {{ $salesEmail }}.
-                            </p>
-                        </td>
-                    </tr>
-                </table>
+            <td width="24" valign="top" style="padding:3px 0;color:#3D656B;font-weight:700;">1</td>
+            <td style="padding:3px 0;">Set your password on the CareVance sign-in page.</td>
+        </tr>
+        <tr>
+            <td width="24" valign="top" style="padding:3px 0;color:#3D656B;font-weight:700;">2</td>
+            <td style="padding:3px 0;">Add your profile, bank and PAN details so payroll can run.</td>
+        </tr>
+        <tr>
+            <td width="24" valign="top" style="padding:3px 0;color:#3D656B;font-weight:700;">3</td>
+            <td style="padding:3px 0;">
+                @if ($inviterName)
+                    {{ $inviterName }} and the {{ $organizationName }} HR team take it from there.
+                @else
+                    The {{ $organizationName }} HR team takes it from there.
+                @endif
             </td>
         </tr>
     </table>
-</body>
-</html>
+
+    <p style="margin:24px 0 0;font-size:13px;line-height:1.7;color:#6B757D;">
+        This link is personal and single-use — please don't forward it. If the button doesn't work, paste this into your browser:
+    </p>
+    <p style="margin:8px 0 0;word-break:break-all;font-size:13px;line-height:1.7;">
+        <a href="{{ $acceptUrl }}" style="color:#3D656B;text-decoration:underline;">{{ $acceptUrl }}</a>
+    </p>
+
+</x-mail.layout>

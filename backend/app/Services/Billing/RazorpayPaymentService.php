@@ -45,6 +45,14 @@ class RazorpayPaymentService
                     'billing_cycle' => $paymentData['billing_cycle'] ?? $organization->billing_cycle,
                     'seats' => $paymentData['seats'] ?? $organization->max_seats,
                     'payment_type' => $paymentData['payment_type'] ?? 'subscription', // subscription, upgrade, add_seats
+                    // The billing address travels with the order so the invoice
+                    // can be raised against it. BillingController refuses to get
+                    // this far without one, so these are never blank in practice.
+                    'billing_address' => $organization->address_line,
+                    'billing_city' => $organization->city,
+                    'billing_state' => $organization->state,
+                    'billing_postal_code' => $organization->postal_code,
+                    'billing_country' => $organization->country,
                 ],
             ];
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\Auth;
 
 use App\Http\Requests\Api\ApiFormRequest;
+use App\Services\Billing\PlanService;
 use Illuminate\Validation\Rules\Password;
 use App\Rules\ValidTimezone;
 use Illuminate\Validation\Rule;
@@ -20,12 +21,16 @@ class SignupOwnerRequest extends ApiFormRequest
             'plan_code' => ['nullable', 'string', Rule::in(array_keys(config('carevance.plans', [])))],
             'billing_cycle' => ['nullable', 'string', Rule::in(['monthly', 'yearly'])],
             'signup_mode' => ['nullable', 'string', Rule::in(['trial', 'paid'])],
-            'trial_plan' => ['nullable', 'string', Rule::in(['basic_tracking', 'basic_payroll'])],
+            'trial_plan' => ['nullable', 'string', Rule::in(PlanService::TRIAL_PLANS)],
             'trial_type' => ['nullable', 'string', Rule::in(['tracking', 'payroll'])], // Alternative parameter
             'seats' => ['nullable', 'integer', 'min:5', 'max:1000'],
             'terms_accepted' => 'required|accepted',
             'role' => ['nullable', 'string', Rule::in(['admin'])],
-            // Organization profile fields
+            // The company profile is no longer collected on the signup form —
+            // it is gathered in-product through the setup checklist, where it
+            // also has a screen to be read back from. These rules stay for the
+            // super-admin path and older clients; every one is nullable, so a
+            // payload without them is valid.
             'description' => 'nullable|string|max:1000',
             'website' => 'nullable|url|max:255',
             'industry' => 'nullable|string|max:100',

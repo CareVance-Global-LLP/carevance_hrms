@@ -47,13 +47,13 @@ graph TD
 
 ```bash
 # backend  (cwd: backend/)
-php artisan test                      # 505 tests, ~52 known failures
+php artisan test                      # 762 tests, 36 known failures
 php artisan test --filter=SomeTest
 php artisan migrate
 
 # frontend (cwd: frontend/)
 npm run dev                           # :5173
-npx vitest run                        # 499 tests, ~51 known failures
+npx vitest run                        # 610 tests, 49 known failures
 npx tsc --noEmit                      # must stay at 0 errors
 ```
 
@@ -101,7 +101,7 @@ Excluded on purpose: `User` (the scope resolves the acting user through Auth), `
 
 ### The test suites have known failures — gate on new ones
 
-Both suites carry a tail of pre-existing failures (~52 backend, ~51 frontend). **Never judge a change by the failure count** — compare failing test *names* against the committed baseline:
+Both suites carry a tail of pre-existing failures (36 backend, 49 frontend). **Never judge a change by the failure count** — compare failing test *names* against the committed baseline:
 
 ```bash
 node scripts/ci/test-baseline.mjs --junit <report.xml> \

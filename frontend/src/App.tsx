@@ -262,10 +262,26 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return requiredFields.every((field) => String(candidate[field] || '').trim() !== '');
   };
 
+  /*
+   * Who is made to fill in the personal profile before reaching the product.
+   *
+   * This is an employee HR record — date of birth, gender, emergency contacts.
+   * It used to catch everyone below the top hierarchy level, and an admin sits
+   * at 10, so the person who had just created the workspace was asked for their
+   * emergency contact's relationship before they could see anything they had
+   * signed up for. Managers and employees still get it, because for them the
+   * record is the point. The owner gets a checklist item instead.
+   */
+  const hierarchyLevel = user
+    ? (user.hierarchy_level ?? (user.role === 'admin' ? 10 : user.role === 'manager' ? 50 : user.role === 'employee' ? 100 : 999))
+    : 999;
+  const isWorkspaceOwner = Boolean(user && organization?.owner_user_id && user.id === organization.owner_user_id);
   const requiresOnboarding = Boolean(
     user
-    && (user.hierarchy_level ?? (user.role === 'admin' ? 10 : user.role === 'manager' ? 50 : user.role === 'employee' ? 100 : 999)) < 999
     && user.organization_id
+    && !isWorkspaceOwner
+    && hierarchyLevel > 10
+    && hierarchyLevel < 999
   );
   const onboardingCompleted = Boolean(
     user?.settings?.profile_onboarding_completed

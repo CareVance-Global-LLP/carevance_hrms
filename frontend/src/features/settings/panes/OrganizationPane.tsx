@@ -7,18 +7,38 @@ import SettingsCard from '../components/SettingsCard';
 import SegmentedControl from '../components/SegmentedControl';
 import ImageDropzone from '../components/ImageDropzone';
 import BreakTypesSection from './BreakTypesSection';
+import { COMPANY_BILLING_FIELDS, COMPANY_INDUSTRY_OPTIONS, COMPANY_SIZE_OPTIONS } from '../types';
 import type { SettingsController } from '../useSettingsController';
 
-type OrgSection = 'identity' | 'workday' | 'leave' | 'breaks' | 'monitoring' | 'danger';
+type OrgSection = 'identity' | 'company' | 'workday' | 'leave' | 'breaks' | 'monitoring' | 'danger';
 
 const SECTIONS: Array<{ id: OrgSection; label: string }> = [
   { id: 'identity', label: 'Identity' },
+  { id: 'company', label: 'Company profile' },
   { id: 'workday', label: 'Workday' },
   { id: 'leave', label: 'Leave policy' },
   { id: 'breaks', label: 'Breaks' },
   { id: 'monitoring', label: 'Monitoring' },
   { id: 'danger', label: 'Danger zone' },
 ];
+
+const COMPANY_BILLING_LABELS: Record<string, string> = {
+  address_line: 'Address',
+  city: 'City',
+  state: 'State',
+  postal_code: 'PIN code',
+  country: 'Country',
+};
+
+const INDUSTRY_LABELS: Record<string, string> = {
+  technology: 'Technology',
+  healthcare: 'Healthcare',
+  finance: 'Finance',
+  education: 'Education',
+  manufacturing: 'Manufacturing',
+  retail: 'Retail',
+  other: 'Other',
+};
 
 const SWATCHES = ['bg-blue-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-sky-500'];
 
@@ -142,6 +162,8 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     updateLeaveCategory,
     addLeaveCategory,
     removeLeaveCategory,
+    companyProfile,
+    updateCompanyProfileField,
     deleteConfirmText,
     setDeleteConfirmText,
     deleteOrganization,
@@ -159,6 +181,20 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
   const capturesPerDay = orgMonitoringInterval
     ? Math.round(480 / Number(orgMonitoringInterval))
     : Math.round(480 / 10);
+
+  /**
+   * Which billing fields are still blank. Mirrors CompanyProfileService's
+   * BILLING_FIELDS server-side — that is the list the payment call enforces,
+   * and saying so here means the shortfall is visible long before someone hits
+   * a 422 with their card out.
+   */
+  const missingBillingLabels = useMemo(
+    () =>
+      COMPANY_BILLING_FIELDS.filter((field) => String(companyProfile[field] ?? '').trim() === '').map(
+        (field) => COMPANY_BILLING_LABELS[field]
+      ),
+    [companyProfile]
+  );
 
   if (!organization?.id) {
     return (
@@ -219,7 +255,9 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
                   <TextInput value={orgName} onChange={(event) => setOrgName(event.target.value)} disabled={!isOrgEditable} />
                 </div>
                 <div>
-                  <FieldLabel>Workspace address</FieldLabel>
+                  {/* Called "Workspace address" until the company profile below
+                      introduced a real postal address to confuse it with. */}
+                  <FieldLabel>Workspace URL</FieldLabel>
                   <TextInput value={orgSlug} onChange={(event) => setOrgSlug(event.target.value)} disabled={!isOrgEditable} />
                   <p className="mt-1.5 truncate text-xs text-slate-600">
                     app.carevance.com/<span className="font-semibold text-slate-900">{orgSlug || 'your-workspace'}</span>
@@ -239,6 +277,141 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
                   <option key={zone} value={zone}>{zone}</option>
                 ))}
               </SelectInput>
+            </div>
+          </SettingsCard>
+        </div>
+      ) : null}
+
+      {section === 'company' ? (
+        <div className="space-y-4">
+          <SettingsCard
+            title="Billing address"
+            description="Where your invoice is raised. Required before a paid plan can be started, so it is worth filling in before your trial ends."
+          >
+            {missingBillingLabels.length > 0 ? (
+              <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <p className="text-xs text-amber-800">
+                  Still needed for an invoice: <span className="font-semibold">{missingBillingLabels.join(', ')}</span>.
+                </p>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 gap-4">
+              <div>
+                <FieldLabel>Address</FieldLabel>
+                <TextInput
+                  value={companyProfile.address_line}
+                  onChange={(event) => updateCompanyProfileField('address_line', event.target.value)}
+                  disabled={!isOrgEditable}
+                  placeholder="Flat, street, area"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>City</FieldLabel>
+                  <TextInput
+                    value={companyProfile.city}
+                    onChange={(event) => updateCompanyProfileField('city', event.target.value)}
+                    disabled={!isOrgEditable}
+                    placeholder="Bengaluru"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>State</FieldLabel>
+                  <TextInput
+                    value={companyProfile.state}
+                    onChange={(event) => updateCompanyProfileField('state', event.target.value)}
+                    disabled={!isOrgEditable}
+                    placeholder="Karnataka"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>PIN code</FieldLabel>
+                  <TextInput
+                    value={companyProfile.postal_code}
+                    onChange={(event) => updateCompanyProfileField('postal_code', event.target.value)}
+                    disabled={!isOrgEditable}
+                    placeholder="560038"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Country</FieldLabel>
+                  <TextInput
+                    value={companyProfile.country}
+                    onChange={(event) => updateCompanyProfileField('country', event.target.value)}
+                    disabled={!isOrgEditable}
+                    placeholder="India"
+                  />
+                </div>
+              </div>
+            </div>
+          </SettingsCard>
+
+          <SettingsCard
+            title="Company details"
+            description="Headcount seeds the seat count we suggest when your trial converts, so a plan is never sold smaller than the team it is for."
+          >
+            <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>Company size</FieldLabel>
+                  <SelectInput
+                    value={companyProfile.size}
+                    onChange={(event) => updateCompanyProfileField('size', event.target.value)}
+                    disabled={!isOrgEditable}
+                  >
+                    <option value="">Select size</option>
+                    {COMPANY_SIZE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{option} employees</option>
+                    ))}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Industry</FieldLabel>
+                  <SelectInput
+                    value={companyProfile.industry}
+                    onChange={(event) => updateCompanyProfileField('industry', event.target.value)}
+                    disabled={!isOrgEditable}
+                  >
+                    <option value="">Select industry</option>
+                    {COMPANY_INDUSTRY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>{INDUSTRY_LABELS[option] ?? option}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>Website</FieldLabel>
+                  <TextInput
+                    value={companyProfile.website}
+                    onChange={(event) => updateCompanyProfileField('website', event.target.value)}
+                    disabled={!isOrgEditable}
+                    placeholder="https://example.com"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Phone number</FieldLabel>
+                  <TextInput
+                    value={companyProfile.phone}
+                    onChange={(event) => updateCompanyProfileField('phone', event.target.value)}
+                    disabled={!isOrgEditable}
+                    placeholder="+91 98765 43210"
+                  />
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Organization email</FieldLabel>
+                <TextInput
+                  value={companyProfile.org_email}
+                  onChange={(event) => updateCompanyProfileField('org_email', event.target.value)}
+                  disabled={!isOrgEditable}
+                  placeholder="accounts@company.com"
+                />
+              </div>
             </div>
           </SettingsCard>
         </div>

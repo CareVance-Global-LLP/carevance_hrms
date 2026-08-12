@@ -36,6 +36,7 @@ class SubscriptionRenewalReminderMail extends Mailable implements ShouldQueue
     {
         return new Content(
             view: 'emails.billing.renewal-reminder',
+            text: 'emails.billing.renewal-reminder_text',
             with: [
                 'organization' => $this->organization,
                 'daysRemaining' => $this->daysRemaining,

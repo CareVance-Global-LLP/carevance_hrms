@@ -18,6 +18,10 @@ return [
 
     'sales_email' => (string) env('SALES_CONTACT_EMAIL', 'aayushborwal.carevanceglobal@gmail.com'),
 
+    // NOTE: .env.example line 129 spells this "mavliribaz" while this default
+    // and the working local .env both spell it "mavliirbaz". One of the two is
+    // a transposition and nobody can tell which from the repo alone — left
+    // matching the value that is actually in use until someone confirms.
     'support_email' => (string) env('SUPPORT_CONTACT_EMAIL', 'mavliirbaz.carevanceglobal@gmail.com'),
 
     'auth' => [

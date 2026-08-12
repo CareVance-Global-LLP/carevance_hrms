@@ -29,6 +29,25 @@ interface GoogleAuthResponse {
   google_data?: { name: string; email: string };
 }
 
+/**
+ * What the Google signup completion step sends.
+ *
+ * The company profile fields (description, website, industry, size, phone,
+ * address) are deliberately absent: they are collected inside the workspace
+ * now, not at signup. `trial_plan` is what stops the Google path from silently
+ * downgrading a "Tracker + Payroll" choice to tracking-only.
+ */
+export interface GoogleRegistrationPayload {
+  name: string;
+  company_name: string;
+  plan_code?: string;
+  billing_cycle?: string;
+  seats?: number;
+  signup_mode?: string;
+  trial_plan?: 'basic_tracking' | 'basic_payroll';
+  timezone?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   organization: Organization | null;
@@ -43,27 +62,7 @@ interface AuthContextType {
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
   logout: () => Promise<void>;
   googleLogin: (credential: string) => Promise<GoogleAuthResponse>;
-  completeGoogleRegistration: (data: {
-    name: string;
-    company_name: string;
-    company_description?: string;
-    plan_code?: string;
-    billing_cycle?: string;
-    seats?: number;
-    signup_mode?: string;
-    timezone?: string;
-    description?: string;
-    website?: string;
-    industry?: string;
-    size?: string;
-    phone?: string;
-    org_email?: string;
-    address_line?: string;
-    city?: string;
-    state?: string;
-    postal_code?: string;
-    country?: string;
-  }) => Promise<GoogleAuthResponse>;
+  completeGoogleRegistration: (data: GoogleRegistrationPayload) => Promise<GoogleAuthResponse>;
   updateUser: (user: User) => void;
   updateOrganization: (organization: Organization | null) => void;
 }
@@ -672,27 +671,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return responseData;
   };
 
-  const completeGoogleRegistration = async (data: {
-    name: string;
-    company_name: string;
-    company_description?: string;
-    plan_code?: string;
-    billing_cycle?: string;
-    seats?: number;
-    signup_mode?: string;
-    timezone?: string;
-    description?: string;
-    website?: string;
-    industry?: string;
-    size?: string;
-    phone?: string;
-    org_email?: string;
-    address_line?: string;
-    city?: string;
-    state?: string;
-    postal_code?: string;
-    country?: string;
-  }): Promise<GoogleAuthResponse> => {
+  const completeGoogleRegistration = async (data: GoogleRegistrationPayload): Promise<GoogleAuthResponse> => {
     const response = await authApi.completeGoogleRegistration(data);
     const responseData = response.data;
 

@@ -113,6 +113,34 @@ class PlanService
         ],
     ];
 
+    /**
+     * The two plans a free trial may start on.
+     *
+     * `basic_payroll` is a strict superset of `basic_tracking` above, which is
+     * what lets the signup form offer them as "Tracker" and "Tracker + Payroll"
+     * — additive rather than exclusive. PlanServiceTest pins that relationship
+     * so the labels cannot quietly stop being true.
+     */
+    public const TRIAL_PLANS = ['basic_tracking', 'basic_payroll'];
+
+    public const DEFAULT_TRIAL_PLAN = 'basic_payroll';
+
+    /**
+     * Resolve the plan a trial should start on.
+     *
+     * Both signup paths call this. The Google path used to hardcode
+     * `basic_tracking`, so choosing "Tracker + Payroll" and then signing up with
+     * Google silently created a tracking-only workspace.
+     */
+    public static function resolveTrialPlan(?string $requested): string
+    {
+        $requested = (string) $requested;
+
+        return in_array($requested, self::TRIAL_PLANS, true)
+            ? $requested
+            : self::DEFAULT_TRIAL_PLAN;
+    }
+
     public static function hasFeature(Organization $organization, string $feature): bool
     {
         $planCode = $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');

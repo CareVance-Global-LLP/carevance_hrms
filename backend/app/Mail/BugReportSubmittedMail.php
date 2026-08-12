@@ -30,6 +30,7 @@ class BugReportSubmittedMail extends Mailable implements ShouldQueue
     {
         return new Content(
             view: 'emails.support.bug-report-submitted',
+            text: 'emails.support.bug-report-submitted_text',
             with: [
                 'bugReport' => $this->bugReport,
             ],

@@ -29,6 +29,7 @@ class ManualOrganizationWelcome extends Mailable
     {
         return new Content(
             view: 'emails.manual-organization-welcome',
+            text: 'emails.manual-organization-welcome_text',
             with: [
                 'userName' => $this->user->name,
                 'organizationName' => $this->organization->name,
@@ -37,6 +38,9 @@ class ManualOrganizationWelcome extends Mailable
                 'loginUrl' => $this->loginUrl,
                 'planName' => $this->organization->plan_code,
                 'seats' => $this->organization->max_seats,
+                // The footer used to hardcode support@carevance.io, which is
+                // not the address the rest of the product publishes.
+                'supportEmail' => config('carevance.support_email'),
             ],
         );
     }

@@ -270,10 +270,23 @@ class EmployeeWorkspaceService
 
     public function upsertGovernmentId(User $employee, array $data): EmployeeGovernmentId
     {
+        // Narrowed to the record being replaced. Without the type clause this
+        // matched *any* government ID the employee already had, so saving a PAN
+        // silently overwrote their Aadhaar — the second proof never landed and
+        // the first one was lost. One row per type, keyed by id when the caller
+        // names one.
+        $idType = isset($data['id_type']) ? strtoupper(trim((string) $data['id_type'])) : null;
+
         $record = EmployeeGovernmentId::query()
-            ->when(!empty($data['id']), fn ($query) => $query->where('id', (int) $data['id']))
             ->where('organization_id', $employee->organization_id)
             ->where('user_id', $employee->id)
+            ->when(
+                !empty($data['id']),
+                fn ($query) => $query->where('id', (int) $data['id']),
+                fn ($query) => $idType === null
+                    ? $query->whereRaw('1 = 0')
+                    : $query->whereRaw('UPPER(id_type) = ?', [$idType]),
+            )
             ->first() ?: new EmployeeGovernmentId([
                 'organization_id' => $employee->organization_id,
                 'user_id' => $employee->id,
@@ -293,10 +306,24 @@ class EmployeeWorkspaceService
 
     public function upsertBankAccount(User $employee, array $data): EmployeeBankAccount
     {
+        // Same defect as the government IDs above: with no account clause this
+        // matched the employee's first account and overwrote it, so a second
+        // payout account could never be added. Match on the account number when
+        // the caller does not name a row by id.
+        $accountNumber = isset($data['account_number'])
+            ? trim((string) $data['account_number'])
+            : null;
+
         $record = EmployeeBankAccount::query()
-            ->when(!empty($data['id']), fn ($query) => $query->where('id', (int) $data['id']))
             ->where('organization_id', $employee->organization_id)
             ->where('user_id', $employee->id)
+            ->when(
+                !empty($data['id']),
+                fn ($query) => $query->where('id', (int) $data['id']),
+                fn ($query) => $accountNumber === null || $accountNumber === ''
+                    ? $query->whereRaw('1 = 0')
+                    : $query->where('account_number', $accountNumber),
+            )
             ->first() ?: new EmployeeBankAccount([
                 'organization_id' => $employee->organization_id,
                 'user_id' => $employee->id,

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ClipboardCheck, Mail, ExternalLink, Copy, Check, ShieldCheck } from 'lucide-react';
 import { groupApi } from '../../../services/api';
+import { roleLabel } from '@/utils/roleLabel';
 import type { AddUserWizardForm } from './types';
 
 interface Step2Props {
@@ -14,11 +15,6 @@ const WORK_LOCATION_LABELS: Record<string, string> = {
   hybrid: 'Hybrid',
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  employee: 'Employee',
-  manager: 'Manager',
-  admin: 'Admin',
-};
 
 /**
  * Format `YYYY-MM-DD` for display without going through `Date`.
@@ -107,7 +103,7 @@ export function Step2AccountCreated({ form }: Step2Props) {
         <SummaryRow label="Name" value={`${form.firstName} ${form.lastName}`.trim()} />
         <SummaryRow label="Email" value={form.email} />
         <SummaryRow label="Phone" value={form.phone} />
-        <SummaryRow label="Role" value={ROLE_LABELS[form.role] ?? form.role} />
+        <SummaryRow label="Role" value={roleLabel(form.role, form.role)} />
         <SummaryRow label="Designation" value={form.designation} />
         <SummaryRow label="Employee code" value={form.employeeCode} />
         <SummaryRow label="Department" value={departmentNames} />

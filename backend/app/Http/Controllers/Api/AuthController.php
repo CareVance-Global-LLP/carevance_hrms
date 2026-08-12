@@ -11,6 +11,7 @@ use App\Models\Organization;
 use App\Models\User;
 use App\Services\Auth\ApiTokenService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Billing\PlanService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -23,6 +24,12 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     use InteractsWithApiResponses;
+
+    /**
+     * Seats a free trial gets. Deliberately not configurable per request — the
+     * client may ask for any number and a trial still lands on this one.
+     */
+    public const TRIAL_SEATS = 5;
 
     public function __construct(
         private readonly AuditLogService $auditLogService,
@@ -41,11 +48,18 @@ class AuthController extends Controller
         $validated = $request->validated();
         $organizationName = trim((string) ($validated['company_name'] ?? $validated['organization_name'] ?? ''));
         $signupMode = (string) ($validated['signup_mode'] ?? 'trial');
-        $trialPlan = (string) ($validated['trial_plan'] ?? 'basic_tracking');
-        $planCode = $signupMode === 'trial' ? $trialPlan : (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'basic_tracking'));
+        $planCode = $signupMode === 'trial'
+            ? PlanService::resolveTrialPlan($validated['trial_plan'] ?? null)
+            : (string) ($validated['plan_code'] ?? config('carevance.default_plan', 'basic_tracking'));
         $billingCycle = $validated['billing_cycle'] ?? config('carevance.default_billing_cycle', 'monthly');
         $trialDays = max(1, (int) config('carevance.trial_days', 14));
-        $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($validated['seats'] ?? 10));
+        // A trial is always capped at the trial seat count regardless of what was
+        // asked for; a paid signup keeps the seats it chose, floored at the plan
+        // minimum. The submitted value used to be discarded in both cases, so a
+        // checkout for 40 seats created a workspace with 10.
+        $seats = $signupMode === 'trial'
+            ? self::TRIAL_SEATS
+            : max(10, (int) ($validated['seats'] ?? 10));
 
         $result = DB::transaction(function () use ($validated, $organizationName, $planCode, $signupMode, $billingCycle, $trialDays, $seats, $request) {
             $existingUser = User::whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->first();

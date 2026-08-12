@@ -23,6 +23,28 @@ class UpdateOrganizationRequest extends ApiFormRequest
             'leave_categories.*.annual_quota' => 'required_with:leave_categories|numeric|min:0|max:366',
             'leave_categories_json' => 'nullable|string',
             'timezone' => ['nullable', 'string', 'max:255', new ValidTimezone],
+
+            /*
+             * The company profile.
+             *
+             * These columns existed from the start but had no write path outside
+             * signup and no read path at all, so nobody could ever correct what
+             * they typed. They matter at conversion: the address is what the
+             * invoice is raised against, and `size` seeds the seat count we
+             * suggest when a trial converts. All optional — the payment flow is
+             * what insists on the address, and only when money is about to move.
+             */
+            'description' => 'nullable|string|max:1000',
+            'website' => 'nullable|url|max:255',
+            'industry' => 'nullable|string|max:100',
+            'size' => ['nullable', 'string', Rule::in(['1-10', '11-50', '51-200', '201-500', '500+'])],
+            'phone' => 'nullable|string|max:20',
+            'org_email' => 'nullable|email|max:255',
+            'address_line' => 'nullable|string|max:255',
+            'city' => 'nullable|string|max:100',
+            'state' => 'nullable|string|max:100',
+            'postal_code' => 'nullable|string|max:20',
+            'country' => 'nullable|string|max:100',
             // Organization-wide screenshot capture default. null clears it, so
             // users fall through to the system default.
             'monitoring_interval_minutes' => [

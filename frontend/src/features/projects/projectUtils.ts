@@ -1,3 +1,4 @@
+import { formatCurrency, formatNumber } from '@/lib/formatters';
 import type { Project } from '@/types';
 
 export const PROJECT_COLORS = [
@@ -39,12 +40,47 @@ export const daysUntil = (value?: string | null): number | null => {
 
 export type BurnTone = 'good' | 'warn' | 'over' | 'none';
 
+export type BudgetType = 'hours' | 'amount';
+
+/** Why a burn has no percentage. */
+export type BurnUnavailable = 'no-budget' | 'no-rate';
+
+/** The share of budget at which the bar turns amber. The seam a configurable
+ *  "notify at %" would hang off — every comparable product has one. */
+export const BUDGET_WARN_PERCENT = 80;
+
+/** decimal:2 values arrive as strings; '' / null / NaN all mean "unset". */
+const toNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+/** Only a positive number is a usable budget or rate. Guards divide-by-zero. */
+const toPositive = (value: unknown): number | null => {
+  const parsed = toNumber(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+};
+
+/** `"150000.00"` -> `"150000"`, so the edit form does not show trailing zeroes. */
+export const decimalToInputValue = (value: unknown): string => {
+  const parsed = toNumber(value);
+  return parsed === null ? '' : String(parsed);
+};
+
 export interface ProjectBurn {
-  /** Tracked hours as a share of the budget, uncapped. Null when no budget. */
+  /** Share of the budget consumed, uncapped. Null when `unavailable` is set. */
   percent: number | null;
   tone: BurnTone;
   trackedSeconds: number;
-  budgetHours: number | null;
+  budgetType: BudgetType;
+  /** Hours when `budgetType` is 'hours', currency when 'amount'. */
+  budgetValue: number | null;
+  hourlyRate: number | null;
+  /** Money spent so far. Only ever set for an amount budget with a rate. */
+  spentAmount: number | null;
+  /** Why there is no percentage. Null when `percent` is a number. */
+  unavailable: BurnUnavailable | null;
   /**
    * Where "now" sits between the project's creation and its deadline, 0–100.
    * Null when there is no deadline. Drawn as a tick on the same bar so a fill
@@ -58,17 +94,39 @@ export interface ProjectBurn {
  * A project is a budget, a deadline and hours running against both. The card
  * grid showed a colour block and a status word and hid all three; this is the
  * one computation the ledger row is built on.
+ *
+ * The budget carries a unit. An hours budget is compared against tracked time
+ * directly; a money budget has to price that time first, which needs a rate.
+ * Without one there is no percentage to show — the budget is still real and
+ * still displayed, there is simply nothing to divide it into.
  */
 export const getProjectBurn = (project: Project): ProjectBurn => {
   const trackedSeconds = Number(project.tracked_seconds || 0);
-  const budgetHours = project.budget != null && Number(project.budget) > 0 ? Number(project.budget) : null;
+  // An older cached response has no budget_type; the column defaults to hours,
+  // so anything that is not explicitly 'amount' is read as hours.
+  const budgetType: BudgetType = project.budget_type === 'amount' ? 'amount' : 'hours';
+  const budgetValue = toPositive(project.budget);
+  const hourlyRate = toPositive(project.hourly_rate);
 
-  const percent = budgetHours ? Math.round((trackedSeconds / (budgetHours * 3600)) * 100) : null;
+  let percent: number | null = null;
+  let spentAmount: number | null = null;
+  let unavailable: BurnUnavailable | null = null;
+
+  if (budgetValue === null) {
+    unavailable = 'no-budget';
+  } else if (budgetType === 'hours') {
+    percent = Math.round((trackedSeconds / (budgetValue * 3600)) * 100);
+  } else if (hourlyRate === null) {
+    unavailable = 'no-rate';
+  } else {
+    spentAmount = (trackedSeconds / 3600) * hourlyRate;
+    percent = Math.round((spentAmount / budgetValue) * 100);
+  }
 
   let tone: BurnTone = 'none';
   if (percent !== null) {
     if (percent > 100) tone = 'over';
-    else if (percent >= 80) tone = 'warn';
+    else if (percent >= BUDGET_WARN_PERCENT) tone = 'warn';
     else tone = 'good';
   }
 
@@ -88,10 +146,31 @@ export const getProjectBurn = (project: Project): ProjectBurn => {
     percent,
     tone,
     trackedSeconds,
-    budgetHours,
+    budgetType,
+    budgetValue,
+    hourlyRate,
+    spentAmount,
+    unavailable,
     elapsedPercent,
     overdue: remainingDays !== null && remainingDays < 0 && project.status === 'active',
   };
+};
+
+/** `"1,50,000h"` · `"₹1,50,000"` · `"—"`. The one place the unit is rendered. */
+export const formatBudget = (burn: ProjectBurn): string => {
+  if (burn.budgetValue === null) return '—';
+  return burn.budgetType === 'amount'
+    ? formatCurrency(burn.budgetValue)
+    : `${formatNumber(burn.budgetValue)}h`;
+};
+
+/** The burn bar's accessible label, shared by the ledger row and the card. */
+export const describeBurn = (name: string, burn: ProjectBurn): string => {
+  if (burn.unavailable === 'no-budget') return `${name}: no budget set`;
+  if (burn.unavailable === 'no-rate') {
+    return `${name}: budget ${formatBudget(burn)}, no hourly rate set`;
+  }
+  return `${name}: ${burn.percent}% of budget used`;
 };
 
 export type ProjectSort = 'burn' | 'name' | 'tracked' | 'deadline';
@@ -108,5 +187,7 @@ export const sortProjects = (projects: Project[], sort: ProjectSort) => {
     });
   }
   // Default: the projects in trouble first — that is what this page is for.
+  // `percent` is unit-normalised, so an hours budget and a money budget rank
+  // against each other correctly; anything with no percentage sorts last.
   return copy.sort((a, b) => (getProjectBurn(b).percent ?? -1) - (getProjectBurn(a).percent ?? -1));
 };

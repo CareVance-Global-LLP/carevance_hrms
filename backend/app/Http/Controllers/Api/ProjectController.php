@@ -93,17 +93,56 @@ class ProjectController extends Controller
         return $totals;
     }
 
-    public function store(Request $request)
+    /**
+     * Shared by store() and update() so the two cannot drift.
+     *
+     * The bound on `budget` is not cosmetic: the column is decimal(10,2), and
+     * without a max Postgres answered SQLSTATE 22003 — a 500 for what is just
+     * somebody typing too many zeroes, which is a 422.
+     *
+     * @return array<string, string>
+     */
+    private function projectRules(bool $creating): array
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'group_id' => 'required|integer|exists:groups,id',
+        return [
+            'name' => $creating ? 'required|string|max:255' : 'sometimes|string|max:255',
+            'group_id' => $creating ? 'required|integer|exists:groups,id' : 'sometimes|integer|exists:groups,id',
             'description' => 'nullable|string',
             'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
-            'budget' => 'nullable|numeric',
+            'budget' => 'nullable|numeric|min:0|max:99999999.99',
+            'budget_type' => 'nullable|in:hours,amount',
+            'hourly_rate' => 'nullable|numeric|min:0|max:99999999.99',
             'deadline' => 'nullable|date',
             'status' => 'nullable|in:active,completed,archived',
-        ]);
+        ];
+    }
+
+    /**
+     * An hours budget has no rate, so leaving one behind stores a value nothing
+     * reads — and which reappears, wrongly, the moment somebody switches the
+     * project to a money budget.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function normalizeBudgetFields(array $payload): array
+    {
+        if (array_key_exists('budget_type', $payload)) {
+            // `?:` rather than `??` so an explicit null from the client also
+            // falls back — the column is NOT NULL.
+            $payload['budget_type'] = $payload['budget_type'] ?: 'hours';
+        }
+
+        if (($payload['budget_type'] ?? null) === 'hours') {
+            $payload['hourly_rate'] = null;
+        }
+
+        return $payload;
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate($this->projectRules(true));
 
         $user = $request->user();
         if (!$user || !$user->organization_id) {
@@ -119,16 +158,18 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Invalid group for your role.'], 422);
         }
 
-        $project = Project::create([
+        $project = Project::create($this->normalizeBudgetFields([
             'name' => $request->name,
             'group_id' => $group->id,
             'description' => $request->description,
             'color' => $request->color,
             'budget' => $request->budget,
+            'budget_type' => $request->budget_type,
+            'hourly_rate' => $request->hourly_rate,
             'deadline' => $request->deadline,
             'status' => $request->status ?? 'active',
             'organization_id' => $user->organization_id,
-        ]);
+        ]));
 
         return response()->json($project->load('group'), 201);
     }
@@ -157,22 +198,16 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'group_id' => 'sometimes|integer|exists:groups,id',
-            'description' => 'nullable|string',
-            'color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
-            'budget' => 'nullable|numeric',
-            'deadline' => 'nullable|date',
-            'status' => 'nullable|in:active,completed,archived',
-        ]);
+        $request->validate($this->projectRules(false));
 
         $user = $request->user();
         if (!$user || !$this->groupAccessService->canManageTasks($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $payload = $request->only(['name', 'description', 'color', 'budget', 'deadline', 'status']);
+        $payload = $this->normalizeBudgetFields($request->only([
+            'name', 'description', 'color', 'budget', 'budget_type', 'hourly_rate', 'deadline', 'status',
+        ]));
         if ($request->exists('group_id')) {
             $group = $this->resolveManageableGroup($user, (int) $request->group_id);
             if (!$group) {

@@ -10,7 +10,9 @@ import type { BillingSnapshot } from '@/types';
 import {
   DEFAULT_LEAVE_CATEGORIES,
   DEFAULT_NOTIFICATIONS,
+  createEmptyCompanyProfileForm,
   createEmptyPersonalDetailsForm,
+  type CompanyProfileForm,
   type LeaveCategorySetting,
   type NotificationKey,
   type NotificationState,
@@ -103,6 +105,7 @@ type OrganizationSnapshot = {
   monitoringInterval: string;
   timezone: string;
   leaveCategories: LeaveCategorySetting[];
+  companyProfile: CompanyProfileForm;
 };
 
 /**
@@ -136,9 +139,32 @@ const countOrganizationChanges = (
   if (base.monitoringInterval !== current.monitoringInterval) count += 1;
   if (base.timezone !== current.timezone) count += 1;
   if (JSON.stringify(base.leaveCategories) !== JSON.stringify(current.leaveCategories)) count += 1;
+  // Each company-profile input counts on its own, the same as the personal
+  // details above — the dock number should match what a person sees themselves
+  // having typed.
+  (Object.keys(current.companyProfile) as Array<keyof CompanyProfileForm>).forEach((key) => {
+    if (base.companyProfile[key] !== current.companyProfile[key]) count += 1;
+  });
   if (hasLogoFile) count += 1;
   return count;
 };
+
+/** Read the company profile off an organization payload, coercing nulls to ''. */
+const readCompanyProfile = (organization: any): CompanyProfileForm => ({
+  description: organization?.description ?? '',
+  website: organization?.website ?? '',
+  industry: organization?.industry ?? '',
+  size: organization?.size ?? '',
+  phone: organization?.phone ?? '',
+  // The column is `email`; the API field is `org_email`, to keep it distinct
+  // from a user's address.
+  org_email: organization?.email ?? '',
+  address_line: organization?.address_line ?? '',
+  city: organization?.city ?? '',
+  state: organization?.state ?? '',
+  postal_code: organization?.postal_code ?? '',
+  country: organization?.country ?? '',
+});
 
 export function useSettingsController() {
   const { user, organization, updateUser, updateOrganization } = useAuth();
@@ -185,6 +211,7 @@ export function useSettingsController() {
   const [orgMonitoringInterval, setOrgMonitoringInterval] = useState('');
   const [orgTimezone, setOrgTimezone] = useState(DEFAULT_APP_TIMEZONE);
   const [leaveCategories, setLeaveCategories] = useState<LeaveCategorySetting[]>(() => readLeaveCategories(organization));
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfileForm>(() => readCompanyProfile(organization));
   const [isSavingOrganization, setIsSavingOrganization] = useState(false);
   const [orgBaseline, setOrgBaseline] = useState<OrganizationSnapshot>({
     name: organization?.name || '',
@@ -194,7 +221,12 @@ export function useSettingsController() {
     monitoringInterval: '',
     timezone: DEFAULT_APP_TIMEZONE,
     leaveCategories: readLeaveCategories(organization),
+    companyProfile: readCompanyProfile(organization),
   });
+
+  const updateCompanyProfileField = useCallback((field: keyof CompanyProfileForm, value: string) => {
+    setCompanyProfile((current) => ({ ...current, [field]: value }));
+  }, []);
 
   // ---- notifications (instant save) ---------------------------------------
   const [notifications, setNotifications] = useState<NotificationState>(DEFAULT_NOTIFICATIONS);
@@ -278,10 +310,11 @@ export function useSettingsController() {
           monitoringInterval: orgMonitoringInterval,
           timezone: orgTimezone,
           leaveCategories,
+          companyProfile,
         },
         Boolean(orgLogoFile)
       ),
-    [orgBaseline, orgName, orgSlug, officeStartTime, lateAfterTime, orgMonitoringInterval, orgTimezone, leaveCategories, orgLogoFile]
+    [orgBaseline, orgName, orgSlug, officeStartTime, lateAfterTime, orgMonitoringInterval, orgTimezone, leaveCategories, companyProfile, orgLogoFile]
   );
 
   const dirtyCount = activeTab === 'profile'
@@ -336,11 +369,13 @@ export function useSettingsController() {
     const nextInterval = String((organization?.settings as any)?.monitoring?.interval_minutes ?? '');
     const nextTimezone = resolveTimeZone((organization?.settings as any)?.timezone);
     const nextLeave = readLeaveCategories(organization);
+    const nextCompanyProfile = readCompanyProfile(organization);
     setOfficeStartTime(nextOfficeStart);
     setLateAfterTime(nextLateAfter);
     setOrgMonitoringInterval(nextInterval);
     setOrgTimezone(nextTimezone);
     setLeaveCategories(nextLeave);
+    setCompanyProfile(nextCompanyProfile);
     setOrgBaseline({
       name: organization?.name || '',
       slug: organization?.slug || '',
@@ -349,6 +384,7 @@ export function useSettingsController() {
       monitoringInterval: nextInterval,
       timezone: nextTimezone,
       leaveCategories: nextLeave,
+      companyProfile: nextCompanyProfile,
     });
   }, [organization]);
 
@@ -391,6 +427,7 @@ export function useSettingsController() {
           const nextInterval = String((fetchedOrg?.settings as any)?.monitoring?.interval_minutes ?? '');
           const nextOrgTimezone = resolveTimeZone((fetchedOrg?.settings as any)?.timezone);
           const nextLeave = readLeaveCategories(fetchedOrg);
+          const nextCompanyProfile = readCompanyProfile(fetchedOrg);
           const nextUserTimezone = resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE);
 
           setOfficeStartTime(nextOfficeStart);
@@ -398,6 +435,7 @@ export function useSettingsController() {
           setOrgMonitoringInterval(nextInterval);
           setOrgTimezone(nextOrgTimezone);
           setLeaveCategories(nextLeave);
+          setCompanyProfile(nextCompanyProfile);
           setTimezone(nextUserTimezone);
           setNotifications(readNotifications(settings.notifications));
           setOrgBaseline({
@@ -408,6 +446,7 @@ export function useSettingsController() {
             monitoringInterval: nextInterval,
             timezone: nextOrgTimezone,
             leaveCategories: nextLeave,
+            companyProfile: nextCompanyProfile,
           });
 
           // Populate personal details from employee_profile if available
@@ -730,11 +769,23 @@ export function useSettingsController() {
         return;
       }
 
+      // Trimmed, with blanks dropped rather than sent as ''. The backend applies
+      // only the keys it receives, so omitting an untouched field leaves the
+      // stored value alone instead of clearing it.
+      const companyProfilePayload = Object.fromEntries(
+        Object.entries(companyProfile)
+          .map(([key, value]) => [key, String(value ?? '').trim()])
+          .filter(([, value]) => value !== '')
+      ) as Partial<CompanyProfileForm>;
+
       const payload = orgLogoFile
         ? (() => {
             const formData = new FormData();
             formData.append('name', name);
             formData.append('slug', slug);
+            Object.entries(companyProfilePayload).forEach(([key, value]) => {
+              formData.append(key, String(value));
+            });
             if (officeStartTime) {
               formData.append('office_start_time', officeStartTime);
             }
@@ -756,6 +807,7 @@ export function useSettingsController() {
             office_start_time: officeStartTime || null,
             late_after_time: lateAfterTime || null,
             timezone: orgTimezone,
+            ...companyProfilePayload,
             ...(isStrictAdminUser
               ? {
                   leave_categories: normalizedLeaveCategories,
@@ -772,6 +824,10 @@ export function useSettingsController() {
       setOrgLogo(nextLogo);
       setOrgLogoPreview(nextLogo);
       setOrgLogoFile(null);
+      // Re-read the profile off the saved organization rather than echoing what
+      // was typed, so the baseline matches what the server actually stored.
+      const savedCompanyProfile = readCompanyProfile(updatedOrg);
+      setCompanyProfile(savedCompanyProfile);
       setOrgBaseline({
         name,
         slug,
@@ -780,6 +836,7 @@ export function useSettingsController() {
         monitoringInterval: orgMonitoringInterval,
         timezone: orgTimezone,
         leaveCategories,
+        companyProfile: savedCompanyProfile,
       });
       toast.show({ kind: 'success', message: (res.data as any)?.message || 'Organization updated' });
     } catch (e: any) {
@@ -801,6 +858,7 @@ export function useSettingsController() {
     setOrgMonitoringInterval(orgBaseline.monitoringInterval);
     setOrgTimezone(orgBaseline.timezone);
     setLeaveCategories(orgBaseline.leaveCategories);
+    setCompanyProfile(orgBaseline.companyProfile);
     setOrgLogoFile(null);
     setOrgLogoPreview(orgLogo);
     setFieldErrors({});
@@ -1115,6 +1173,8 @@ export function useSettingsController() {
     updateLeaveCategory,
     addLeaveCategory,
     removeLeaveCategory,
+    companyProfile,
+    updateCompanyProfileField,
     saveOrganization,
     isSavingOrganization,
     deleteConfirmText,

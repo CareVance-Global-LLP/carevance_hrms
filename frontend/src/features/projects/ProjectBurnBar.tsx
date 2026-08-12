@@ -26,8 +26,20 @@ export default function ProjectBurnBar({ burn, label }: { burn: ProjectBurn; lab
         role="img"
         aria-label={label}
       >
-        {burn.percent === null ? (
-          <div className="flex h-full items-center pl-2 text-[10px] text-slate-600">No budget set</div>
+        {burn.unavailable !== null ? (
+          // The track is only 10rem wide, so both states get two words. A money
+          // budget with no rate is a different problem from no budget at all —
+          // the figure is there, nothing can price hours against it yet.
+          <div
+            className="flex h-full items-center pl-2 text-[10px] text-slate-600"
+            title={
+              burn.unavailable === 'no-rate'
+                ? 'Set an hourly rate to measure spend against this budget.'
+                : undefined
+            }
+          >
+            {burn.unavailable === 'no-rate' ? 'Rate needed' : 'No budget set'}
+          </div>
         ) : (
           <div className={cn('h-full rounded-l transition-all', TONE_FILL[burn.tone])} style={{ width: `${fillWidth}%` }} />
         )}

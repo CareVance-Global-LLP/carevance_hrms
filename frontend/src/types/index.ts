@@ -78,9 +78,16 @@ export interface Project {
   name: string;
   description?: string;
   color: string;
-  budget?: number;
+  /**
+   * Hours when `budget_type` is 'hours', currency when it is 'amount'.
+   *
+   * Typed as `number | string` because the server casts it `decimal:2`, which
+   * serialises to `"150000.00"` — every reader has to coerce.
+   */
+  budget?: number | string | null;
   budget_type?: 'hours' | 'amount';
-  hourly_rate?: number;
+  /** Only meaningful for an amount budget. Also a `decimal:2` string. */
+  hourly_rate?: number | string | null;
   status: 'active' | 'on_hold' | 'completed' | 'archived';
   deadline?: string;
   client_name?: string;

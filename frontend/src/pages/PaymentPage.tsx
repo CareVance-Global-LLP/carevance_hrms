@@ -70,6 +70,12 @@ export default function PaymentPage() {
   const billingCycle = (organization.pending_billing_cycle || organization.billing_cycle || 'monthly') as PricingBillingCycle;
   const seats = organization.pending_seats || organization.max_seats || 10;
 
+  // The billing snapshot carries what the server thinks is still missing, so
+  // the page and the order endpoint cannot disagree about it.
+  const companyProfileSnapshot = snapshotData?.company_profile;
+  const missingBillingLabels: string[] = companyProfileSnapshot?.missing_billing_labels ?? [];
+  const seatsFromSize: number | null = companyProfileSnapshot?.seats_from_size ?? null;
+
   const pendingAmount = organization.pending_upgrade_amount;
   const total = (isPendingUpgrade || isPendingAddSeats) && pendingAmount
     ? Number(pendingAmount)
@@ -252,7 +258,12 @@ export default function PaymentPage() {
           </div>
           <div className="flex items-center justify-between rounded-xl bg-slate-50 px-5 py-4">
             <span className="text-sm text-slate-600">Seats</span>
-            <span className="text-sm font-semibold">{seats}</span>
+            <div className="text-right">
+              <span className="text-sm font-semibold">{seats}</span>
+              {seatsFromSize && seatsFromSize === seats ? (
+                <span className="mt-0.5 block text-[11px] text-slate-500">Suggested from your company size</span>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -260,6 +271,26 @@ export default function PaymentPage() {
           <span className="text-sm font-semibold">Total amount due</span>
           <span className="text-xl font-bold">{PRICE_CURRENCY}{total.toLocaleString('en-IN')}</span>
         </div>
+
+        {/*
+          The invoice needs somewhere to go. The order endpoint refuses without
+          an address, so saying it here — before the pay button — is the
+          difference between a prompt and a dead end mid-payment.
+        */}
+        {missingBillingLabels.length > 0 ? (
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-semibold text-amber-900">Add your billing address first</p>
+            <p className="mt-1 text-xs leading-5 text-amber-800">
+              We need <span className="font-semibold">{missingBillingLabels.join(', ')}</span> to raise your invoice.
+            </p>
+            <button
+              onClick={() => navigate('/settings?pane=organization')}
+              className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-amber-700"
+            >
+              Add billing address <ArrowUpRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
 
         {paymentStatus === 'error' ? (
           <div className="mt-6 space-y-3">
@@ -379,7 +410,9 @@ export default function PaymentPage() {
                 setPaymentError(error);
                 setPaymentStatus('error');
               }}
-              disabled={isProcessing}
+              // No billing address means the order call would 422 anyway; better
+              // to hold the button and point at the form above.
+              disabled={isProcessing || missingBillingLabels.length > 0}
             />
             <button
               onClick={handleCancel}

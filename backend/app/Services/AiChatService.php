@@ -9,6 +9,7 @@ use App\Models\LeaveRequest;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
+use App\Support\RoleLabel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -470,13 +471,7 @@ class AiChatService
     {
         $roleContext = '';
         if ($user) {
-            $roleLabel = match ($user->role) {
-                'super_admin' => 'Super Admin',
-                'admin' => 'Admin',
-                'manager' => 'Manager',
-                'employee' => 'Employee',
-                default => 'User',
-            };
+            $roleLabel = RoleLabel::for($user->role, 'User');
             $roleContext = "\n\nThe user is logged in as: {$roleLabel}.";
         }
 

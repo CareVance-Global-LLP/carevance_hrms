@@ -215,7 +215,13 @@ class ComprehensiveDemoSeeder extends Seeder
                 ['organization_id' => $this->org->id, 'name' => $p['name']],
                 [
                     'description' => $p['description'],
+                    // These figures are rupees, not hours, and used to land in
+                    // an untyped column the ledger rendered as "150000h".
                     'budget' => $p['budget'],
+                    'budget_type' => 'amount',
+                    // A money budget needs a rate before any spend can be
+                    // priced against it, so demo data carries one.
+                    'hourly_rate' => 1200,
                     'status' => $p['status'],
                     'deadline' => $this->faker->dateTimeBetween('+1 month', '+6 months')->format('Y-m-d'),
                 ]

@@ -11,6 +11,7 @@ use App\Http\Requests\Api\Settings\UpdateProfileRequest;
 use App\Models\EmployeeProfile;
 use App\Models\User;
 use App\Services\Audit\AuditLogService;
+use App\Services\Billing\CompanyProfileService;
 use App\Services\Billing\WorkspaceBillingService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -419,11 +420,25 @@ class SettingsController extends Controller
             'leave_policy' => $leavePolicySettings,
         ]);
 
-        $organization->update([
+        // Company profile columns, applied only when the key was actually sent.
+        // Partial updates matter here: the organization pane saves one card at a
+        // time, and a missing key must leave the stored value alone rather than
+        // blanking an address somebody entered on a different card.
+        $companyProfile = [];
+        foreach (CompanyProfileService::PROFILE_FIELDS as $column) {
+            // The API calls the organization's own address `org_email` to keep it
+            // distinct from a user's email; the column is plain `email`.
+            $inputKey = $column === 'email' ? 'org_email' : $column;
+            if (array_key_exists($inputKey, $validated)) {
+                $companyProfile[$column] = $validated[$inputKey];
+            }
+        }
+
+        $organization->update(array_merge($companyProfile, [
             'name' => $validated['name'],
             'slug' => $slug,
             'settings' => $updatedSettings,
-        ]);
+        ]));
 
         $this->auditLogService->log(
             action: 'settings.organization_updated',

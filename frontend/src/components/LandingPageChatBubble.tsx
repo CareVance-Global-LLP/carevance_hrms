@@ -15,7 +15,9 @@ const QUICK_ACTIONS = [
 const SUPPORT = { email: 'support@carevance.com', phone: '+91 800-123-4567' };
 
 const CTA_KEYWORDS = ['pricing', 'cost', 'price', 'plan', 'trial', '$', 'per employee'];
-const CTA_BUTTON = { label: 'Start free trial', href: '/checkout' };
+// /checkout is the paid path. A button labelled "Start free trial" belongs on
+// the trial signup, which is what every other trial CTA on the landing page uses.
+const CTA_BUTTON = { label: 'Start free trial', href: '/start-trial' };
 
 function shouldShowCTA(reply: string): boolean {
   const lower = reply.toLowerCase();

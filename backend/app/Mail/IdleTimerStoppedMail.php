@@ -35,6 +35,7 @@ class IdleTimerStoppedMail extends Mailable implements ShouldQueue
     {
         return new Content(
             view: 'emails.timers.idle-auto-stop',
+            text: 'emails.timers.idle-auto-stop_text',
             with: [
                 'userName' => $this->user->name,
                 'organizationName' => $this->user->organization?->name ?? 'CareVance',

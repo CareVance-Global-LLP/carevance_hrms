@@ -22,11 +22,6 @@ class VerifyEmailMail extends Mailable
 
     public function envelope(): Envelope
     {
-        \Illuminate\Support\Facades\Log::info('DEBUG: VerifyEmailMail envelope() called', [
-            'to' => $this->user->email,
-            'subject' => 'Verify your CareVance email',
-        ]);
-        
         return new Envelope(
             subject: 'Verify your CareVance email',
         );
@@ -36,6 +31,7 @@ class VerifyEmailMail extends Mailable
     {
         return new Content(
             view: 'emails.auth.verify-email',
+            text: 'emails.auth.verify-email_text',
             with: [
                 'name' => $this->user->name,
                 'email' => $this->user->email,

@@ -1,13 +1,32 @@
 ﻿import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import { Routes, Route, MemoryRouter, Outlet } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import App from '@/App';
+import { ConsentProvider } from '@/contexts/ConsentContext';
 import { render } from '@testing-library/react';
 
 const routerFuture = {
   v7_startTransition: true,
   v7_relativeSplatPath: true,
 } as const;
+
+/**
+ * Render inside the providers the real app mounts.
+ *
+ * main.tsx wraps the whole tree in ConsentProvider, and anything reaching
+ * AuthPageFooter calls useConsent — which throws without it. Rendering <App />
+ * bare made those routes fail on a missing provider rather than on anything the
+ * test was actually asserting.
+ */
+const renderApp = (initialEntry: string, ui: ReactNode = <App />) =>
+  render(
+    <ConsentProvider>
+      <MemoryRouter future={routerFuture} initialEntries={[initialEntry]}>
+        {ui}
+      </MemoryRouter>
+    </ConsentProvider>
+  );
 
 const authState = vi.hoisted(() => ({
   value: {
@@ -17,8 +36,30 @@ const authState = vi.hoisted(() => ({
   },
 }));
 
+/*
+ * ProtectedRoute reads more than isAuthenticated: without an `organization` it
+ * sends everyone to /signup-owner, and without a completed profile it sends
+ * them to /onboarding/profile. The mock returned neither, so these tests were
+ * asserting against a redirect chain rather than the routes they name. Defaults
+ * go underneath the spread so an individual test can still override them.
+ */
 vi.mock('@/contexts/AuthContext', () => ({
-  useAuth: () => authState.value,
+  useAuth: () => {
+    const state = authState.value;
+
+    if (!state.isAuthenticated) {
+      return { ...state, organization: null, wasOfflineRestored: false };
+    }
+
+    return {
+      wasOfflineRestored: false,
+      organization: { id: 1, name: 'Test Org', owner_user_id: state.user?.id },
+      ...state,
+      user: state.user
+        ? { settings: { profile_onboarding_completed: true }, ...state.user }
+        : state.user,
+    };
+  },
 }));
 
 vi.mock('@/components/Layout', () => ({
@@ -54,11 +95,7 @@ describe('App routes', () => {
   });
 
   it('redirects unauthenticated users away from protected routes', async () => {
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/dashboard']}>
-        <App />
-      </MemoryRouter>
-    );
+    renderApp('/dashboard');
 
     expect(await screen.findByText('Login Page')).toBeInTheDocument();
   });
@@ -79,13 +116,9 @@ describe('App routes', () => {
       },
     };
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/monitoring']}>
-        <Routes>
+    renderApp('/monitoring', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('App Layout')).toBeInTheDocument();
     expect(screen.queryByText('Monitoring Page')).not.toBeInTheDocument();
@@ -107,13 +140,9 @@ describe('App routes', () => {
       },
     };
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/dashboard']}>
-        <Routes>
+    renderApp('/dashboard', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Dashboard Page')).toBeInTheDocument();
     expect(screen.queryByText('Reports Page')).not.toBeInTheDocument();
@@ -136,13 +165,9 @@ describe('App routes', () => {
       },
     };
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/time-tracker']}>
-        <Routes>
+    renderApp('/time-tracker', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Desktop Timer Page')).toBeInTheDocument();
     expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
@@ -164,25 +189,17 @@ describe('App routes', () => {
       },
     };
 
-    const { unmount } = render(
-      <MemoryRouter future={routerFuture} initialEntries={['/projects']}>
-        <Routes>
+    const { unmount } = renderApp('/projects', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Projects Page')).toBeInTheDocument();
     expect(screen.queryByText('Tasks Page')).not.toBeInTheDocument();
     unmount();
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/tasks']}>
-        <Routes>
+    renderApp('/tasks', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Tasks Page')).toBeInTheDocument();
     expect(screen.queryByText('Projects Page')).not.toBeInTheDocument();
@@ -204,25 +221,17 @@ describe('App routes', () => {
       },
     };
 
-    const { unmount } = render(
-      <MemoryRouter future={routerFuture} initialEntries={['/reports']}>
-        <Routes>
+    const { unmount } = renderApp('/reports', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Reports Workspace reports-hub')).toBeInTheDocument();
     expect(screen.queryByText('Reports Workspace analytics-hub')).not.toBeInTheDocument();
     unmount();
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/analytics']}>
-        <Routes>
+    renderApp('/analytics', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Reports Workspace analytics-hub')).toBeInTheDocument();
     expect(screen.queryByText('Reports Workspace reports-hub')).not.toBeInTheDocument();
@@ -244,13 +253,9 @@ describe('App routes', () => {
       },
     };
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/dashboard']}>
-        <Routes>
+    renderApp('/dashboard', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Admin Dashboard Page')).toBeInTheDocument();
     expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
@@ -264,13 +269,9 @@ describe('App routes', () => {
       revealWindow: vi.fn(),
     };
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/']}>
-        <Routes>
+    renderApp('/', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Login Page')).toBeInTheDocument();
     expect(screen.queryByText('Landing Page')).not.toBeInTheDocument();
@@ -298,13 +299,9 @@ describe('App routes', () => {
       },
     };
 
-    render(
-      <MemoryRouter future={routerFuture} initialEntries={['/']}>
-        <Routes>
+    renderApp('/', <><Routes>
           <Route path="*" element={<App />} />
-        </Routes>
-      </MemoryRouter>
-    );
+        </Routes></>);
 
     expect(await screen.findByText('Desktop Timer Page')).toBeInTheDocument();
     expect(screen.queryByText('Landing Page')).not.toBeInTheDocument();

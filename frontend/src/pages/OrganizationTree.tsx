@@ -1323,15 +1323,12 @@ export default function OrganizationTree() {
 
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center rounded-md border border-slate-200 bg-white p-0.5">
-              {(['simple', 'detailed', 'departments'] as const).map((mode) => (
+              {(['simple', 'detailed'] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
                   onClick={() => {
                     setView(mode);
-                    // Apply this view's default collapse in the same render so a
-                    // large By Dept tree never renders fully expanded, even for
-                    // one frame (which is what froze the tab).
                     setCollapsed(computeDefaultCollapsed(mode));
                   }}
                   className={`rounded px-3 py-1.5 text-xs font-semibold capitalize transition ${
@@ -1340,12 +1337,10 @@ export default function OrganizationTree() {
                   title={
                     mode === 'simple'
                       ? 'Flat reporting tree (no team boxes)'
-                      : mode === 'detailed'
-                        ? 'Team boxes + dashed team connectors'
-                        : 'Group by department, then team-wise sections'
+                      : 'Team boxes + dashed team connectors'
                   }
                 >
-                  {mode === 'departments' ? 'By Dept' : mode}
+                  {mode}
                 </button>
               ))}
             </div>

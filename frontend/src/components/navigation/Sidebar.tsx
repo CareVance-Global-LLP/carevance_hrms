@@ -20,6 +20,7 @@ import SidebarFlyout, { ROW_STAGGER_MS } from '@/components/navigation/SidebarFl
 import SidebarTimer from '@/components/navigation/SidebarTimer';
 import { buildPageCommands } from '@/lib/commandRegistry';
 import { blurbFor } from '@/lib/navigationBlurbs';
+import { TOUR_ANCHOR_BY_ROUTE } from '@/features/tour/tourSteps';
 import type { NavGroup, NavLinkItem } from '@/navigation/dashboardNavigation';
 import { cn } from '@/utils/cn';
 
@@ -149,6 +150,10 @@ export default function Sidebar({
             ref={tooltipProps.ref as (node: HTMLAnchorElement | null) => void}
             to={resolved.to}
             onClick={onNavigate}
+            // Anchor for the first-login product tour. Derived from the route so
+            // it survives relabelling, and absent for routes the tour ignores —
+            // a step with no anchor is dropped rather than pointing at nothing.
+            data-tour={TOUR_ANCHOR_BY_ROUTE[String(resolved.to).split('?')[0]]}
             aria-current={active ? 'page' : undefined}
             aria-describedby={tooltipProps['aria-describedby']}
             onMouseEnter={tooltipProps.onMouseEnter}

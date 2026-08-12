@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\User;
 use App\Services\Auth\ApiTokenService;
+use App\Services\Billing\PlanService;
 use Firebase\JWT\JWT;
 use Firebase\JWT\JWK;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class OAuthController extends Controller
@@ -242,11 +244,16 @@ class OAuthController extends Controller
             'billing_cycle' => 'nullable|string|in:monthly,yearly',
             'seats' => 'nullable|integer|min:1',
             'signup_mode' => 'nullable|string|in:trial,paid',
+            'trial_plan' => ['nullable', 'string', Rule::in(PlanService::TRIAL_PLANS)],
+            // The company profile is no longer collected at signup — it is
+            // gathered in-product through the setup checklist. These rules stay
+            // so the super-admin and any older client keep working; they are all
+            // nullable, so a payload without them is valid.
             'description' => 'nullable|string|max:1000',
-            'website' => 'nullable|string|max:255',
+            'website' => 'nullable|url|max:255',
             'industry' => 'nullable|string|max:100',
             'size' => 'nullable|string|max:50',
-            'phone' => 'nullable|string|max:50',
+            'phone' => 'nullable|string|max:20',
             'org_email' => 'nullable|email|max:255',
             'address_line' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
@@ -279,7 +286,13 @@ class OAuthController extends Controller
                     ]);
                 }
 
-                $planCode = $signupMode === 'trial' ? 'basic_tracking' : ((string) ($request->input('plan_code') ?? config('carevance.default_plan', 'basic_tracking')));
+                // Honour the plan the visitor picked on the form. This used to be
+                // hardcoded to basic_tracking, so choosing "Tracker + Payroll" and
+                // then signing up with Google silently created a tracking-only
+                // workspace — the email path has always respected trial_plan.
+                $planCode = $signupMode === 'trial'
+                    ? PlanService::resolveTrialPlan($request->input('trial_plan'))
+                    : ((string) ($request->input('plan_code') ?? config('carevance.default_plan', 'basic_tracking')));
                 $billingCycle = (string) ($request->input('billing_cycle') ?? config('carevance.default_billing_cycle', 'monthly'));
                 $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($request->input('seats') ?? 10));
                 $trialDays = max(1, (int) config('carevance.trial_days', 14));

@@ -1845,6 +1845,35 @@ export const reportGroupApi = {
     api.delete(`/report-groups/${id}`),
 };
 
+/** What the workspace setup checklist reports. */
+export interface WorkspaceOnboardingStatus {
+  onboarded: boolean;
+  dismissed_at: string | null;
+  tour_seen_at: string | null;
+  steps: Record<string, boolean>;
+  completed_steps: string[];
+  step_labels: Record<string, string>;
+  step_routes: Record<string, string>;
+  includes_payroll: boolean;
+  next_action: string | null;
+  completed_count: number;
+  total_count: number;
+  completion_percentage: number;
+}
+
+export const workspaceOnboardingApi = {
+  getStatus: () =>
+    api.get<WorkspaceOnboardingStatus>('/workspace/onboarding-status'),
+  markStep: (step: string) =>
+    api.post<{ completed_steps: string[] }>('/workspace/onboarding/mark-step', { step }),
+  dismiss: () =>
+    api.post<{ dismissed_at: string }>('/workspace/onboarding/dismiss'),
+  reopen: () =>
+    api.post<{ dismissed_at: null }>('/workspace/onboarding/reopen'),
+  markTourSeen: () =>
+    api.post<{ tour_seen_at: string }>('/workspace/onboarding/tour-seen'),
+};
+
 export const settingsApi = {
   me: () =>
     api.get<{

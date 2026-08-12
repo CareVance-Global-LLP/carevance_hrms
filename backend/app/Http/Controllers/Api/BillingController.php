@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Api\Concerns\InteractsWithApiResponses;
 use App\Http\Controllers\Controller;
+use App\Services\Billing\CompanyProfileService;
 use App\Services\Billing\PlanService;
 use App\Services\Billing\SeatGuard;
 use App\Services\Billing\SubscriptionCycleService;
@@ -18,6 +19,7 @@ class BillingController extends Controller
         private readonly WorkspaceBillingService $workspaceBillingService,
         private readonly SubscriptionCycleService $cycles,
         private readonly SeatGuard $seatGuard,
+        private readonly CompanyProfileService $companyProfile,
     ) {
     }
 
@@ -88,7 +90,14 @@ class BillingController extends Controller
         $minSeats = $isTrial ? 5 : 10;
 
         if ($isFreeChange) {
-            $seats = max($requestedSeats > 0 ? $requestedSeats : $minSeats, $minSeats);
+            // A converting trial has a 5-seat cap, so falling back to max_seats
+            // here would sell a company of forty a five-seat plan. When the
+            // client sends no explicit number, fall back to what the recorded
+            // headcount implies — floored at the plan minimum and at the people
+            // already in the workspace.
+            $seats = $requestedSeats > 0
+                ? max($requestedSeats, $minSeats, $usedSeats)
+                : $this->companyProfile->suggestedSeats($organization, $minSeats, $usedSeats);
         } else {
             $seats = max($requestedSeats > 0 ? $requestedSeats : $organization->max_seats, $minSeats, $usedSeats);
         }
@@ -531,6 +540,21 @@ class BillingController extends Controller
 
         if (!$amount || $amount <= 0) {
             return $this->errorResponse('Invalid amount.', 400);
+        }
+
+        // The invoice needs somewhere to send it. Refusing here — before any
+        // money moves — is the only point where this can be caught without
+        // having already charged the customer. The response names the blank
+        // fields so the client can open the company profile form on them.
+        $missingBillingFields = $this->companyProfile->missingBillingFields($organization);
+        if ($missingBillingFields !== []) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Add your company billing address before paying: '
+                    . implode(', ', $this->companyProfile->missingBillingLabels($organization)) . '.',
+                'error_code' => 'BILLING_PROFILE_INCOMPLETE',
+                'missing_fields' => $missingBillingFields,
+            ], 422);
         }
 
         try {

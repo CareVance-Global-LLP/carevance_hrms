@@ -5,7 +5,6 @@ import { isLikelyMobile } from '@/lib/mobile';
 import { authApi } from '@/services/api';
 import {
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
   CheckCircle2,
@@ -18,13 +17,45 @@ import {
   Monitor,
   ShieldCheck,
 } from 'lucide-react';
-import BrandLogo from '@/components/branding/BrandLogo';
-import AuthPageFooter from '@/components/auth/AuthPageFooter';
+import AuthPageShell, {
+  authIconClass,
+  authLabelClass,
+  authPrimaryButtonClass,
+  type AuthShowcaseFeature,
+} from '@/components/auth/AuthPageShell';
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
 import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
 
 const REMEMBERED_EMAIL_KEY = 'carevance.rememberedEmail';
+
+/**
+ * This page is the reference the other signed-out pages match, so its chrome
+ * lives in AuthPageShell rather than here — restyling one page now restyles
+ * the set.
+ */
+const FEATURES: AuthShowcaseFeature[] = [
+  {
+    icon: Clock,
+    title: 'Dashboard + Attendance',
+    description: "Primary timer, today's entries, punch in or out, and shift tracking.",
+  },
+  {
+    icon: BarChart3,
+    title: 'Monitoring + Reports',
+    description: 'Review productive vs unproductive activity, screenshots, rankings, and exports.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Payroll + Invoices',
+    description: 'Generate payroll records, track payouts, issue payslips, and manage invoices.',
+  },
+  {
+    icon: CheckCircle2,
+    title: 'Admin Workflows',
+    description: 'Manage users, report groups, leave approvals, time edits, notifications, and chat.',
+  },
+];
 
 export default function Login() {
   const getRememberedEmail = () => {
@@ -144,41 +175,86 @@ export default function Login() {
   const isDesktopShell = typeof window !== 'undefined' && Boolean((window as any).desktopTracker);
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-white text-slate-900">
-      <div className="pointer-events-none absolute inset-0 opacity-40" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(148,163,184,0.15) 1px, transparent 0)', backgroundSize: '32px 32px' }} />
-
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1400px] flex-col lg:flex-row">
-        {/* Left: Login form */}
-        <section className="order-1 flex w-full items-center justify-center px-4 py-12 sm:px-6 lg:w-[45%] lg:px-12">
-          <div className="w-full max-w-md">
-            {!isDesktopShell && (
-              <Link
-                to="/"
-                className="mb-8 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                aria-label="Back to home"
+    <AuthPageShell
+      backTo={isDesktopShell ? null : '/'}
+      heading="Sign in to CareVance"
+      intro="Welcome back. Open the dashboard, monitoring, attendance, reporting, payroll, and internal operations modules from one place."
+      introAside={
+        <>
+          New here?{' '}
+          <Link to="/signup-owner" className="font-semibold text-blue-600 transition hover:text-blue-700">
+            Start your workspace
+          </Link>
+        </>
+      }
+      showcaseHeading="Access the real CareVance HRMS workflows after sign in."
+      showcaseIntro="This login takes you into the same modules shown on the front page: employee monitoring, attendance, reports, payroll, invoices, projects, tasks, chat, and settings."
+      features={FEATURES}
+      showcaseBelow={
+        desktopDownloadUrl && !isDesktopShell ? (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600">Desktop Tracker</p>
+                <p className="mt-1.5 text-sm font-semibold text-slate-900">Windows companion for live monitoring inputs</p>
+              </div>
+              <a
+                href={desktopDownloadUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
               >
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            )}
-            <div className="mb-8">
-              <BrandLogo variant="full" size="sm" className="mb-6 block max-w-[14rem]" />
-              <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-                Sign in to CareVance
-              </h1>
-              <p className="mt-3 text-[15px] leading-7 text-slate-500">
-                Welcome back. Open the dashboard, monitoring, attendance, reporting, payroll, and internal operations modules from one place.
-              </p>
-              <p className="mt-2 text-sm text-slate-500">
-                New here?{' '}
-                <Link
-                  to="/signup-owner"
-                  className="font-semibold text-blue-600 transition hover:text-blue-700"
-                >
-                  Start your workspace
-                </Link>
-              </p>
+                <Download className="h-3 w-3" />
+                Download for Windows
+              </a>
             </div>
-
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <div className="col-span-2 overflow-hidden rounded-lg border border-slate-200 surface-fixed-dark p-4">
+                <div className="mb-2 h-1.5 w-28 rounded-full bg-white/25" />
+                <div className="mb-3 h-1.5 w-16 rounded-full bg-white/15" />
+                <div className="h-20 rounded-lg bg-gradient-to-br from-cyan-500/20 via-blue-500/15 to-white/5" />
+              </div>
+              <div className="overflow-hidden rounded-lg border border-slate-200 surface-fixed-dark p-4">
+                <div className="mb-2 h-1.5 w-full rounded-full bg-white/25" />
+                <div className="mb-3 h-1.5 w-2/3 rounded-full bg-white/15" />
+                <div className="h-12 rounded-lg bg-white/10" />
+              </div>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Use the Windows app when you need screenshot capture, idle detection, active-window tracking, and timer sync with the web dashboard.
+            </p>
+          </div>
+        ) : null
+      }
+      belowForm={
+        desktopDownloadUrl && !isDesktopShell ? (
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-inverse text-on-inverse">
+                <Monitor className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Desktop Tracker</p>
+                <h3 className="mt-1 text-sm font-semibold text-slate-900">Windows app for screenshots, idle detection, and sync</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Use screenshot capture, idle detection, and timer sync from the Windows desktop app.
+                </p>
+                <a
+                  href={desktopDownloadUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <Download className="h-3 w-3" />
+                  Download for Windows
+                </a>
+              </div>
+            </div>
+          </div>
+        ) : null
+      }
+    >
+      <>
             {invitedEmail && !error && (
               <div className="mb-5 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -210,11 +286,11 @@ export default function Login() {
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
-                <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="email" className={authLabelClass}>
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Mail className={authIconClass} />
                   <input
                     id="email"
                     name="email"
@@ -230,11 +306,11 @@ export default function Login() {
               </div>
 
               <div>
-                <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label htmlFor="password" className={authLabelClass}>
                   Password
                 </label>
                 <div className="relative">
-                  <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <LockKeyhole className={authIconClass} />
                   <input
                     id="password"
                     name="password"
@@ -277,11 +353,7 @@ export default function Login() {
                 </Link>
               </div>
 
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="group inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition duration-200 hover:bg-blue-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <button type="submit" disabled={isLoading} className={authPrimaryButtonClass}>
                 {isLoading ? (
                   <>
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -295,134 +367,7 @@ export default function Login() {
                 )}
               </button>
             </form>
-
-            {desktopDownloadUrl && !isDesktopShell ? (
-              <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-inverse text-on-inverse">
-                    <Monitor className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">Desktop Tracker</p>
-                    <h3 className="mt-1 text-sm font-semibold text-slate-900">Windows app for screenshots, idle detection, and sync</h3>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      Use screenshot capture, idle detection, and timer sync from the Windows desktop app.
-                    </p>
-                    <a
-                      href={desktopDownloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                    >
-                      <Download className="h-3 w-3" />
-                      Download for Windows
-                    </a>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="mt-8 border-t border-slate-100 pt-5">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
-                <Link to="/privacy" className="transition hover:text-slate-600">
-                  Privacy Policy
-                </Link>
-                <Link to="/terms" className="transition hover:text-slate-600">
-                  Terms & Conditions
-                </Link>
-                <Link to="/support" className="transition hover:text-slate-600">
-                  Support
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => {}}
-                  className="transition hover:text-slate-600"
-                >
-                  Cookie Preferences
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Right: Feature showcase */}
-        <section className="order-2 hidden w-full lg:flex lg:w-[55%] lg:items-center lg:justify-center lg:px-12 lg:py-12">
-          <div className="w-full max-w-xl">
-            <h2 className="text-4xl font-semibold leading-tight tracking-tight text-slate-900 lg:text-5xl">
-              Access the real CareVance HRMS workflows after sign in.
-            </h2>
-            <p className="mt-4 text-base leading-7 text-slate-500">
-              This login takes you into the same modules shown on the front page: employee monitoring, attendance, reports, payroll, invoices, projects, tasks, chat, and settings.
-            </p>
-
-            <ul className="mt-8 grid gap-3 sm:grid-cols-2">
-              <li className="rounded-lg border border-slate-200 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
-                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <Clock className="h-4 w-4" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Dashboard + Attendance</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Primary timer, today&apos;s entries, punch in or out, and shift tracking.</p>
-              </li>
-              <li className="rounded-lg border border-slate-200 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
-                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <BarChart3 className="h-4 w-4" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Monitoring + Reports</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Review productive vs unproductive activity, screenshots, rankings, and exports.</p>
-              </li>
-              <li className="rounded-lg border border-slate-200 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
-                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <ShieldCheck className="h-4 w-4" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Payroll + Invoices</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Generate payroll records, track payouts, issue payslips, and manage invoices.</p>
-              </li>
-              <li className="rounded-lg border border-slate-200 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
-                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                  <CheckCircle2 className="h-4 w-4" />
-                </div>
-                <p className="text-sm font-semibold text-slate-900">Admin Workflows</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Manage users, report groups, leave approvals, time edits, notifications, and chat.</p>
-              </li>
-            </ul>
-
-            {desktopDownloadUrl && !isDesktopShell ? (
-              <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-600">Desktop Tracker</p>
-                    <p className="mt-1.5 text-sm font-semibold text-slate-900">Windows companion for live monitoring inputs</p>
-                  </div>
-                  <a
-                    href={desktopDownloadUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-                  >
-                    <Download className="h-3 w-3" />
-                    Download for Windows
-                  </a>
-                </div>
-                <div className="mt-4 grid grid-cols-3 gap-3">
-                  <div className="col-span-2 overflow-hidden rounded-lg border border-slate-200 surface-fixed-dark p-4">
-                    <div className="mb-2 h-1.5 w-28 rounded-full bg-white/25" />
-                    <div className="mb-3 h-1.5 w-16 rounded-full bg-white/15" />
-                    <div className="h-20 rounded-lg bg-gradient-to-br from-cyan-500/20 via-blue-500/15 to-white/5" />
-                  </div>
-                  <div className="overflow-hidden rounded-lg border border-slate-200 surface-fixed-dark p-4">
-                    <div className="mb-2 h-1.5 w-full rounded-full bg-white/25" />
-                    <div className="mb-3 h-1.5 w-2/3 rounded-full bg-white/15" />
-                    <div className="h-12 rounded-lg bg-white/10" />
-                  </div>
-                </div>
-                <p className="mt-3 text-xs leading-5 text-slate-500">
-                  Use the Windows app when you need screenshot capture, idle detection, active-window tracking, and timer sync with the web dashboard.
-                </p>
-              </div>
-            ) : null}
-          </div>
-        </section>
-      </div>
-    </main>
+      </>
+    </AuthPageShell>
   );
 }

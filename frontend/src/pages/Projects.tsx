@@ -12,16 +12,29 @@ import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/
 import ProjectBurnBar from '@/features/projects/ProjectBurnBar';
 import {
   PROJECT_COLORS,
+  decimalToInputValue,
+  describeBurn,
+  formatBudget,
   formatDeadline,
   formatHours,
   getProjectBurn,
   sortProjects,
   daysUntil,
+  type BudgetType,
   type ProjectSort,
 } from '@/features/projects/projectUtils';
+import { formatCurrency, formatNumber } from '@/lib/formatters';
 import type { Project } from '@/types';
 import { cn } from '@/utils/cn';
 import { useAuth } from '@/contexts/AuthContext';
+
+/** decimal(10,2) on the column, so this is the largest storable budget. */
+const MAX_BUDGET = 99999999.99;
+
+const BUDGET_TYPES: Array<{ value: BudgetType; label: string }> = [
+  { value: 'hours', label: 'Hours' },
+  { value: 'amount', label: 'Amount' },
+];
 
 interface ProjectFormState {
   name: string;
@@ -29,9 +42,27 @@ interface ProjectFormState {
   description: string;
   color: string;
   budget: string;
+  budget_type: BudgetType;
+  hourly_rate: string;
   deadline: string;
   status: string;
 }
+
+/**
+ * Validation failures come back as `{ message: 'The given data was invalid.',
+ * errors: { budget: ['The budget field must not be greater than…'] } }`, so
+ * showing `message` alone tells the user only that something is wrong. The
+ * field error is the part worth reading — "too many zeroes" is exactly the
+ * mistake this form now rejects instead of crashing on.
+ */
+const extractSaveError = (error: any): string => {
+  const fieldErrors = error?.response?.data?.errors;
+  const firstFieldError = fieldErrors
+    ? Object.values(fieldErrors).flat().find(Boolean)
+    : null;
+
+  return (firstFieldError as string) || error?.response?.data?.message || 'Failed to save project.';
+};
 
 const emptyForm = (): ProjectFormState => ({
   name: '',
@@ -39,6 +70,8 @@ const emptyForm = (): ProjectFormState => ({
   description: '',
   color: PROJECT_COLORS[0],
   budget: '',
+  budget_type: 'hours',
+  hourly_rate: '',
   deadline: '',
   status: 'active',
 });
@@ -110,10 +143,7 @@ export default function Projects() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
     onError: (mutationError: any) => {
-      setFeedback({
-        tone: 'error',
-        message: mutationError?.response?.data?.message || 'Failed to save project.',
-      });
+      setFeedback({ tone: 'error', message: extractSaveError(mutationError) });
     },
   });
 
@@ -146,7 +176,11 @@ export default function Projects() {
       group_id: project.group_id ? String(project.group_id) : '',
       description: project.description || '',
       color: project.color || PROJECT_COLORS[0],
-      budget: project.budget?.toString() || '',
+      // Not `.toString()`: the decimal:2 cast serialises as "150000.00", which
+      // is what the edit form used to put in the box.
+      budget: decimalToInputValue(project.budget),
+      budget_type: project.budget_type === 'amount' ? 'amount' : 'hours',
+      hourly_rate: decimalToInputValue(project.hourly_rate),
       deadline: project.deadline?.split('T')[0] || '',
       status: project.status,
     });
@@ -369,20 +403,20 @@ export default function Projects() {
                           </div>
                         </td>
                         <td className="px-3 py-2.5">
-                          <ProjectBurnBar
-                            burn={burn}
-                            label={
-                              burn.percent === null
-                                ? `${project.name}: no budget set`
-                                : `${project.name}: ${burn.percent}% of budget used`
-                            }
-                          />
+                          <ProjectBurnBar burn={burn} label={describeBurn(project.name, burn)} />
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">
                           {formatHours(project.tracked_seconds)}
+                          {/* Without this the bar shows a percentage of a
+                              number the table never states. */}
+                          {burn.spentAmount !== null ? (
+                            <span className="block text-xs text-slate-500">
+                              {formatCurrency(burn.spentAmount)}
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-600">
-                          {burn.budgetHours ? `${burn.budgetHours}h` : '—'}
+                          {formatBudget(burn)}
                         </td>
                         <td className="px-3 py-2.5">
                           <span
@@ -469,20 +503,19 @@ export default function Projects() {
                 </div>
 
                 <div className="mt-3">
-                  <ProjectBurnBar
-                    burn={burn}
-                    label={
-                      burn.percent === null
-                        ? `${project.name}: no budget set`
-                        : `${project.name}: ${burn.percent}% of budget used`
-                    }
-                  />
+                  <ProjectBurnBar burn={burn} label={describeBurn(project.name, burn)} />
                 </div>
 
-                <dl className="mt-3 flex items-center justify-between text-xs">
+                <dl className="mt-3 flex items-center justify-between gap-3 text-xs">
                   <div>
                     <dt className="text-slate-600">Tracked</dt>
                     <dd className="mt-0.5 font-medium tabular-nums text-slate-950">{formatHours(project.tracked_seconds)}</dd>
+                  </div>
+                  {/* Kept in step with the ledger's Budget column so the two
+                      views cannot disagree about what a project costs. */}
+                  <div className="text-center">
+                    <dt className="text-slate-600">Budget</dt>
+                    <dd className="mt-0.5 font-medium tabular-nums text-slate-950">{formatBudget(burn)}</dd>
                   </div>
                   <div className="text-right">
                     <dt className="text-slate-600">Deadline</dt>
@@ -518,6 +551,14 @@ export default function Projects() {
                   group_id: formData.group_id ? Number(formData.group_id) : undefined,
                   status: formData.status as Project['status'],
                   budget: formData.budget ? parseFloat(formData.budget) : undefined,
+                  budget_type: formData.budget_type,
+                  // Explicitly null, not undefined: update() reads the payload
+                  // with $request->only(), which skips absent keys, so an
+                  // undefined here would leave a stale rate on the row.
+                  hourly_rate:
+                    formData.budget_type === 'amount' && formData.hourly_rate
+                      ? parseFloat(formData.hourly_rate)
+                      : null,
                   deadline: formData.deadline || undefined,
                 });
               }}
@@ -555,15 +596,56 @@ export default function Projects() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <FieldLabel>Budget (hours)</FieldLabel>
-                  <TextInput
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.budget}
-                    onChange={(event) => setFormData({ ...formData, budget: event.target.value })}
-                    placeholder="200"
-                  />
+                  <FieldLabel>Budget</FieldLabel>
+                  <div className="flex gap-2">
+                    <TextInput
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={MAX_BUDGET}
+                      value={formData.budget}
+                      onChange={(event) => setFormData({ ...formData, budget: event.target.value })}
+                      placeholder={formData.budget_type === 'amount' ? '150000' : '200'}
+                    />
+                    <div
+                      className="inline-flex shrink-0 overflow-hidden rounded-lg border border-slate-200"
+                      role="group"
+                      aria-label="Budget type"
+                    >
+                      {BUDGET_TYPES.map((option) => {
+                        const active = formData.budget_type === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={active}
+                            /* Switching unit keeps the number and reinterprets
+                               it — it does not convert. Converting hours to
+                               money needs a rate the user may not have given
+                               yet, and would silently multiply their figure by
+                               a four-digit number. Reinterpreting is visible
+                               the instant the preview line below re-renders.
+                               The rate is kept in state so toggling back
+                               restores it; only the payload nulls it. */
+                            onClick={() => setFormData({ ...formData, budget_type: option.value })}
+                            className={cn(
+                              'inline-flex min-h-10 items-center px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300',
+                              active ? 'bg-blue-700 text-on-brand' : 'bg-surface-card text-slate-700 hover:bg-slate-50'
+                            )}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {formData.budget && Number.isFinite(Number(formData.budget)) ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formData.budget_type === 'amount'
+                        ? formatCurrency(Number(formData.budget))
+                        : `${formatNumber(Number(formData.budget))} hours`}
+                    </p>
+                  ) : null}
                 </div>
                 <div>
                   {/* The column, the model and the validator have always
@@ -576,6 +658,25 @@ export default function Projects() {
                   />
                 </div>
               </div>
+
+              {formData.budget_type === 'amount' ? (
+                <div>
+                  <FieldLabel hint="Optional">Hourly rate</FieldLabel>
+                  <TextInput
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={MAX_BUDGET}
+                    value={formData.hourly_rate}
+                    onChange={(event) => setFormData({ ...formData, hourly_rate: event.target.value })}
+                    placeholder="1200"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Used to value tracked hours against this budget. Without it the budget still
+                    shows, but no spend can be measured against it.
+                  </p>
+                </div>
+              ) : null}
 
               <div>
                 <FieldLabel>Status</FieldLabel>
