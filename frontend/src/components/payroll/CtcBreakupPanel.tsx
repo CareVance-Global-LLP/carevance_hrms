@@ -12,8 +12,10 @@ import {
   type BreakupLine,
   calculateCtcBreakup,
   formatRupees,
+  estimateMonthlyTds,
   resolvePtAmount,
   structureToConfig,
+  type TaxRegime,
 } from '@/lib/payroll/ctcBreakup';
 
 interface CtcBreakupPanelProps {
@@ -73,6 +75,7 @@ export default function CtcBreakupPanel({
    * that payroll then contradicts.
    */
   const [ptStateCode, setPtStateCode] = useState('');
+  const [taxRegime, setTaxRegime] = useState<TaxRegime>('new');
 
   const ptStatesQuery = useQuery({
     queryKey: ['pt-states'],
@@ -177,6 +180,15 @@ export default function CtcBreakupPanel({
 
   const ptSlabs = ptConfigQuery.data?.configuration?.monthly ?? null;
   const ptAmount = resolvePtAmount(ptSlabs, breakup.gross);
+
+  /*
+   * A ceiling, not a prediction. It applies the slabs, the standard deduction,
+   * the 87A rebate and cess, but knows nothing about declared 80C, HRA
+   * exemption against real rent, or anything else in the proof workflow — all
+   * of which only reduce it.
+   */
+  const tdsEstimate = estimateMonthlyTds(breakup.gross * 12, taxRegime);
+  const takeHome = breakup.netBeforeTax - ptAmount - tdsEstimate;
   const ptStates = ptStatesQuery.data?.all_states ?? [];
   const ptStateHasNone = Boolean(ptStateCode) && ptConfigQuery.data && ptConfigQuery.data.has_pt === false;
 
@@ -345,6 +357,30 @@ export default function CtcBreakupPanel({
         </select>
       </div>
 
+      <div>
+        <FieldLabel hint="changes the TDS estimate">Tax regime</FieldLabel>
+        <div className="flex gap-2">
+          {[
+            { key: 'new' as const, label: 'New regime' },
+            { key: 'old' as const, label: 'Old regime' },
+          ].map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={taxRegime === option.key}
+              onClick={() => setTaxRegime(option.key)}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                taxRegime === option.key
+                  ? 'border-blue-500 bg-blue-50 text-blue-800'
+                  : 'border-border-strong bg-surface-card text-slate-600 hover:border-blue-300'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {!breakup.meetsLabourCodeFloor ? (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <p className="font-semibold">Basic{breakup.da > 0 ? ' plus DA' : ''} is {Math.round(breakup.basicShareOfCtc * 100)}% of CTC</p>
@@ -439,6 +475,16 @@ export default function CtcBreakupPanel({
               </tr>
               <tr className="border-b border-border-strong/40">
                 <td className="px-4 py-2 align-top">
+                  <span className="text-slate-700">Income tax (TDS)</span>
+                  <span className="block text-[11px] text-slate-500">
+                    estimate — {taxRegime === 'new' ? 'new' : 'old'} regime, standard deduction only. Declared
+                    investments and HRA exemption reduce it.
+                  </span>
+                </td>
+                <td className="px-4 py-2 text-right tabular-nums text-slate-900">{formatRupees(tdsEstimate)}</td>
+              </tr>
+              <tr className="border-b border-border-strong/40">
+                <td className="px-4 py-2 align-top">
                   <span className="text-slate-700">Employer PF</span>
                   <span className="block text-[11px] text-slate-500">part of CTC, not paid to the employee</span>
                 </td>
@@ -467,16 +513,16 @@ export default function CtcBreakupPanel({
 
       <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-          Monthly, before income tax
+          Estimated monthly take-home
         </p>
         <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">
-          {formatRupees(breakup.netBeforeTax - ptAmount)}
+          {formatRupees(takeHome)}
         </p>
         <p className="mt-1 text-xs text-slate-600">
-          {Math.round(((breakup.netBeforeTax - ptAmount) * 12) / parsedCtc * 100)}% of the{' '}
-          {formatRupees(parsedCtc)} CTC.{' '}
-          {ptStateCode ? 'Professional tax is included.' : 'Professional tax is not included — no work state set.'}{' '}
-          Income tax is applied at the payroll run and is not included here.
+          {Math.round(((takeHome * 12) / parsedCtc) * 100)}% of the {formatRupees(parsedCtc)} CTC.{' '}
+          {ptStateCode ? 'Professional tax included.' : 'Professional tax not included — no work state set.'}{' '}
+          The tax figure is an estimate at the highest it can be; declared investments and HRA exemption only
+          reduce it, so actual take-home is this or better.
         </p>
       </div>
     </div>

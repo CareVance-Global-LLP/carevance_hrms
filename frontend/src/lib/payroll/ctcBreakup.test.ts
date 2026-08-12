@@ -9,6 +9,7 @@ import {
   NON_METRO_HRA_PERCENTAGE_OF_BASIC,
   PF_WAGE_CAP,
   calculateCtcBreakup,
+  estimateMonthlyTds,
   formatRupees,
   pfWages,
   resolvePtAmount,
@@ -245,5 +246,65 @@ describe('resolvePtAmount', () => {
   it('returns zero for a gross of zero or nonsense', () => {
     expect(resolvePtAmount(maharashtra, 0)).toBe(0);
     expect(resolvePtAmount(maharashtra, Number.NaN)).toBe(0);
+  });
+});
+
+describe('estimateMonthlyTds', () => {
+  it('is zero below the 87A rebate limit under the new regime', () => {
+    // 12L taxable is fully rebated, so a 12L gross pays nothing.
+    expect(estimateMonthlyTds(1_200_000, 'new')).toBe(0);
+    expect(estimateMonthlyTds(600_000, 'new')).toBe(0);
+  });
+
+  it('taxes above the rebate limit using the slab table', () => {
+    // 20L gross, new regime: taxable 19.25L after the 75k standard deduction.
+    // 4L nil + 4L@5% (20,000) + 4L@10% (40,000) + 4L@15% (60,000)
+    // + 3.25L@20% (65,000) = 185,000, plus 4% cess = 192,400 a year.
+    const monthly = estimateMonthlyTds(2_000_000, 'new');
+    expect(monthly * 12).toBeCloseTo(192_400, 0);
+  });
+
+  it('differs between regimes, because the slabs and deduction do', () => {
+    const newRegime = estimateMonthlyTds(2_000_000, 'new');
+    const oldRegime = estimateMonthlyTds(2_000_000, 'old');
+    expect(oldRegime).toBeGreaterThan(newRegime);
+  });
+
+  it('returns zero for empty or nonsense input', () => {
+    expect(estimateMonthlyTds(0)).toBe(0);
+    expect(estimateMonthlyTds(-1)).toBe(0);
+    expect(estimateMonthlyTds(Number.NaN)).toBe(0);
+  });
+});
+
+describe('resolvePtAmount boundaries and special months', () => {
+  const maharashtra = [
+    { min: 0, max: 7500, amount: 0 },
+    { min: 7501, max: 10000, amount: 175 },
+    { min: 10001, max: null, amount: 200 },
+  ];
+
+  it('matches on the upper bound, so boundary values do not fall through', () => {
+    // The declared minimums are one rupee above the previous maximum, so a
+    // gross between them belongs to the NEXT band. A min/max test returned 0.
+    expect(resolvePtAmount(maharashtra, 7500.5)).toBe(175);
+    expect(resolvePtAmount(maharashtra, 10000.5)).toBe(200);
+    expect(resolvePtAmount(maharashtra, 7500)).toBe(0);
+    expect(resolvePtAmount(maharashtra, 7501)).toBe(175);
+  });
+
+  it('applies a special month rate to the top band only', () => {
+    const special = { february: 300 };
+    // February, top band -> the higher instalment.
+    expect(resolvePtAmount(maharashtra, 50_000, 2, special)).toBe(300);
+    // February, but a lower band -> the ordinary rate, because that person is
+    // already under the annual cap.
+    expect(resolvePtAmount(maharashtra, 9_000, 2, special)).toBe(175);
+    // Any other month -> ordinary rate.
+    expect(resolvePtAmount(maharashtra, 50_000, 3, special)).toBe(200);
+  });
+
+  it('ignores a special table when no month is given', () => {
+    expect(resolvePtAmount(maharashtra, 50_000, undefined, { february: 300 })).toBe(200);
   });
 });

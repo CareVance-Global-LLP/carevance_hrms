@@ -296,13 +296,109 @@ export interface PtSlab {
  * returns the ordinary monthly amount, because the panel shows a typical month
  * rather than a specific one.
  */
-export function resolvePtAmount(slabs: PtSlab[] | null | undefined, monthlyGross: number): number {
+export function resolvePtAmount(
+  slabs: PtSlab[] | null | undefined,
+  monthlyGross: number,
+  month?: number,
+  special?: Record<string, number> | null,
+): number {
   if (!Array.isArray(slabs) || slabs.length === 0) return 0;
   if (!Number.isFinite(monthlyGross) || monthlyGross <= 0) return 0;
 
-  const band = slabs.find(
-    (slab) => monthlyGross >= slab.min && (slab.max === null || slab.max === undefined || monthlyGross <= slab.max),
-  );
+  /*
+   * Matched on the UPPER bound only, which is what PTStateService does and for
+   * the reason its comment gives: declared minimums sit one rupee above the
+   * previous maximum (7500 then 7501), so a `gross >= min && gross <= max`
+   * test leaves a hole at every boundary — a gross of 7500.50 matches nothing
+   * and silently returns zero PT. This file shipped that exact predicate.
+   */
+  const band = slabs.find((slab) => slab.max === null || slab.max === undefined || monthlyGross <= slab.max);
+  const amount = band && Number.isFinite(band.amount) ? band.amount : 0;
 
-  return band && Number.isFinite(band.amount) ? band.amount : 0;
+  /*
+   * Some states charge a higher instalment in one month — Maharashtra's
+   * February brings the top band to the 2,500 annual cap. It applies ONLY to
+   * the top band: someone in a lower band is already under the cap and keeps
+   * their ordinary rate.
+   */
+  if (month !== undefined && special && amount > 0) {
+    const monthName = new Date(2000, month - 1, 1)
+      .toLocaleString('en-US', { month: 'long' })
+      .toLowerCase();
+    const topBand = slabs.reduce((max, slab) => Math.max(max, slab.amount || 0), 0);
+    const specialAmount = special[monthName];
+
+    if (Number.isFinite(specialAmount) && amount >= topBand) {
+      return specialAmount;
+    }
+  }
+
+  return amount;
+}
+
+/** PayrollCalculatorService::STANDARD_DEDUCTION_NEW / _OLD */
+export const STANDARD_DEDUCTION_NEW = 75000;
+export const STANDARD_DEDUCTION_OLD = 50000;
+/** PayrollCalculatorService::REBATE_LIMIT_NEW — full 87A rebate at or below this total income. */
+export const REBATE_LIMIT_NEW = 1200000;
+export const REBATE_LIMIT_OLD = 500000;
+export const REBATE_MAX_OLD = 12500;
+/** PayrollCalculatorService::HEALTH_EDUCATION_CESS */
+export const HEALTH_EDUCATION_CESS = 0.04;
+
+export type TaxRegime = 'new' | 'old';
+
+/** PayrollCalculatorService::TAX_SLABS_BY_FY[2025] */
+export const TAX_SLABS: Record<TaxRegime, Array<{ min: number; max: number; rate: number }>> = {
+  new: [
+    { min: 0, max: 400000, rate: 0 },
+    { min: 400000, max: 800000, rate: 0.05 },
+    { min: 800000, max: 1200000, rate: 0.1 },
+    { min: 1200000, max: 1600000, rate: 0.15 },
+    { min: 1600000, max: 2000000, rate: 0.2 },
+    { min: 2000000, max: 2400000, rate: 0.25 },
+    { min: 2400000, max: Number.POSITIVE_INFINITY, rate: 0.3 },
+  ],
+  old: [
+    { min: 0, max: 250000, rate: 0 },
+    { min: 250000, max: 500000, rate: 0.05 },
+    { min: 500000, max: 1000000, rate: 0.2 },
+    { min: 1000000, max: Number.POSITIVE_INFINITY, rate: 0.3 },
+  ],
+};
+
+/**
+ * Monthly TDS estimate for an annual gross.
+ *
+ * An ESTIMATE, and labelled as one everywhere it is shown. It applies the slab
+ * table, the standard deduction, the 87A rebate and cess — which is what makes
+ * it close — but it cannot know the things that actually move a person's tax:
+ * declared 80C investments, HRA exemption against real rent, home-loan
+ * interest, or anything else in the proof workflow. Those all reduce it, so
+ * this figure is a ceiling rather than a prediction.
+ *
+ * Surcharge is deliberately not applied. It starts at ₹50L of taxable income,
+ * where a preview built during onboarding is not the right tool anyway, and
+ * including it would imply a precision this does not have.
+ */
+export function estimateMonthlyTds(annualGross: number, regime: TaxRegime = 'new'): number {
+  if (!Number.isFinite(annualGross) || annualGross <= 0) return 0;
+
+  const standardDeduction = regime === 'new' ? STANDARD_DEDUCTION_NEW : STANDARD_DEDUCTION_OLD;
+  const taxable = Math.max(0, annualGross - standardDeduction);
+
+  let tax = 0;
+  for (const slab of TAX_SLABS[regime]) {
+    if (taxable <= slab.min) break;
+    tax += (Math.min(taxable, slab.max) - slab.min) * slab.rate;
+  }
+
+  // 87A: a full rebate at or below the limit, so low incomes pay nothing.
+  if (regime === 'new' && taxable <= REBATE_LIMIT_NEW) {
+    tax = 0;
+  } else if (regime === 'old' && taxable <= REBATE_LIMIT_OLD) {
+    tax = Math.max(0, tax - REBATE_MAX_OLD);
+  }
+
+  return (tax * (1 + HEALTH_EDUCATION_CESS)) / 12;
 }
