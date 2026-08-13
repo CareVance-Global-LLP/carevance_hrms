@@ -8,6 +8,12 @@ export interface PendingSession {
   window_title?: string | null;
   url?: string | null;
   started_at: string;
+  // Without this a drained row inserts open, and the server's
+  // closeConflictingOpenSessions then closes it against whatever session
+  // starts next — fabricating a duration that double-counts real time.
+  // ensureDesktopSessionStarted seeds this to started_at (zero-length) and
+  // stamps the real value in when the session is actually closed.
+  ended_at?: string | null;
   confidence?: number;
   local_id: string;
   device_id: string | null;
@@ -18,6 +24,18 @@ export interface PendingSessionQueue {
   drain: (send: (payload: PendingSession) => Promise<unknown>) => Promise<void>;
   size: () => number;
   droppedCount: () => number;
+}
+
+// A head that fails forever (a 422 for a time entry the user no longer has,
+// a 401 after logout) must not block everything queued behind it forever —
+// it would pile up until maxSize evicted the whole backlog uncounted. Once a
+// single item has failed this many times, give up on it specifically and let
+// the rest keep draining.
+const MAX_ATTEMPTS = 5;
+
+interface QueueEntry {
+  payload: PendingSession;
+  attempts: number;
 }
 
 /**
@@ -34,7 +52,7 @@ export interface PendingSessionQueue {
  * model. Persisting across a process restart is a separate piece of work.
  */
 export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): PendingSessionQueue => {
-  const items: PendingSession[] = [];
+  const items: QueueEntry[] = [];
   let dropped = 0;
   let draining = false;
 
@@ -50,7 +68,7 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
         return;
       }
 
-      items.push(payload);
+      items.push({ payload, attempts: 0 });
       while (items.length > maxSize) {
         items.shift();
         dropped += 1;
@@ -65,12 +83,23 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
 
       try {
         while (items.length > 0) {
+          const entry = items[0];
           try {
-            await send(items[0]);
+            await send(entry.payload);
           } catch {
-            // Stop at the first failure. Skipping ahead would deliver a later
-            // session before an earlier one, and the next drain retries this
-            // same head.
+            entry.attempts += 1;
+            if (entry.attempts > MAX_ATTEMPTS) {
+              // Given up on this one specifically. Move on rather than
+              // stopping here, so a permanently-failing head does not block
+              // everything sent after it.
+              items.shift();
+              dropped += 1;
+              continue;
+            }
+
+            // Still under the cap: stop at this failure. Skipping ahead
+            // would deliver a later session before an earlier one, and the
+            // next drain retries this same head.
             return;
           }
           items.shift();

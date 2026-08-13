@@ -202,6 +202,12 @@ type ActiveDesktopSession = {
   // known, but the server has not issued an id yet, so there is nothing to
   // PATCH. The queued create carries started_at, so nothing is lost.
   sessionId: number | null;
+  // The exact object sitting in pendingSessionQueueRef while sessionId is
+  // null, so closeActiveDesktopSession can stamp ended_at directly onto it
+  // before it drains. Without this the row inserts open and the server
+  // fabricates a duration for it against whatever session starts next
+  // (closeConflictingOpenSessions) — see the amendment on this task.
+  pendingPayload: PendingSession | null;
   timeEntryId: number;
   signature: string;
   startedAt: string;
@@ -759,20 +765,27 @@ export const useDesktopTracker = () => {
         return;
       }
 
+      const parsedEndedAtMs = Date.parse(String(endedAt || ''));
+      const endedAtMs = Number.isFinite(parsedEndedAtMs)
+        ? Math.max(activeDesktopSession.startedAtMs, parsedEndedAtMs)
+        : Date.now();
+      const resolvedEndedAt = new Date(endedAtMs).toISOString();
+
       if (activeDesktopSession.sessionId === null) {
-        // Never reached the server. Its create is queued and will be retried
-        // with the start time already on it; there is no row to close.
+        // Never reached the server. Its create is still queued — stamp the
+        // close time onto the same object sitting in the queue so it drains
+        // already closed. Left as the started_at seeded when it was built,
+        // the server would insert it open and closeConflictingOpenSessions
+        // would fabricate a duration against whatever session starts next.
+        if (activeDesktopSession.pendingPayload) {
+          activeDesktopSession.pendingPayload.ended_at = resolvedEndedAt;
+        }
         activeDesktopSessionRef.current = null;
         return;
       }
 
       activeDesktopSessionRef.current = null;
 
-      const parsedEndedAtMs = Date.parse(String(endedAt || ''));
-      const endedAtMs = Number.isFinite(parsedEndedAtMs)
-        ? Math.max(activeDesktopSession.startedAtMs, parsedEndedAtMs)
-        : Date.now();
-      const resolvedEndedAt = new Date(endedAtMs).toISOString();
       // max(0), not max(1) — see closeActiveBrowserSession.
       const durationSeconds = Math.max(0, Math.round((endedAtMs - activeDesktopSession.startedAtMs) / 1000));
 
@@ -888,6 +901,12 @@ export const useDesktopTracker = () => {
         window_title: windowTitle,
         url: payload.url || null,
         started_at: capturedAt,
+        // Belt and braces: if closeActiveDesktopSession never gets a chance
+        // to stamp the real close time (see below), draining this seeded
+        // value inserts a zero-length row instead of an open one. Zero-length
+        // understates; open lets the server fabricate a duration against
+        // whatever session starts next — worse.
+        ended_at: capturedAt,
         confidence: 100,
         local_id: newSessionLocalId(),
         device_id: desktopDeviceIdentityRef.current?.device_id ?? null,
@@ -897,18 +916,23 @@ export const useDesktopTracker = () => {
       const resolvedStartedAtMs = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
 
       let sessionId: number | null = null;
+      let pendingPayload: PendingSession | null = null;
       try {
         const response = await activitySessionApi.create(pending);
         sessionId = response.data.id;
       } catch (error) {
         // The session still happened. Queue it and keep local state so the
-        // segment is not lost; the tick below retries it.
+        // segment is not lost; the tick below retries it. Keep the same
+        // object reference so closeActiveDesktopSession can stamp ended_at
+        // onto the item actually sitting in the queue.
         pendingSessionQueueRef.current.enqueue(pending);
+        pendingPayload = pending;
         reportSilentError('desktop-tracker', error);
       }
 
       activeDesktopSessionRef.current = {
         sessionId,
+        pendingPayload,
         timeEntryId: activeEntry.id,
         signature,
         startedAt: capturedAt,

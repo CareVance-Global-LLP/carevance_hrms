@@ -671,6 +671,54 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('closes a queued session with the switch-away time so a retry is not counted as still open', async () => {
+    // Isolate this test from the tick's own polling: with no polled window,
+    // only the explicit foreground events below drive desktop sessions.
+    mocks.getActiveWindowContextMock.mockResolvedValue(null);
+    // The create fails once (so the session queues) and the retry the tick
+    // drains it with succeeds.
+    mocks.createActivitySessionMock
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValue({ data: { id: 2001 } });
+
+    render(<TrackerHarness />);
+    await act(async () => {}); // let desktop device identity resolve
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Notepad',
+        title: 'notes.txt - Notepad',
+        url: null,
+        captured_at: '2026-04-21T10:00:00.000Z',
+      });
+    });
+
+    // Switch away before the tick has a chance to retry. Without stamping
+    // ended_at here, the queued row drains open and the server's
+    // closeConflictingOpenSessions fabricates a duration against whatever
+    // session starts next — double-counting the hour spent in Notepad.
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Visual Studio Code',
+        title: 'Tracking Work',
+        url: null,
+        captured_at: '2026-04-21T10:05:00.000Z',
+      });
+    });
+
+    mocks.createActivitySessionMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      display_name: 'Notepad',
+      started_at: '2026-04-21T10:00:00.000Z',
+      ended_at: '2026-04-21T10:05:00.000Z',
+    }));
+  });
+
   it('prefers the explorer window title for file explorer foreground sessions', async () => {
     render(<TrackerHarness />);
 

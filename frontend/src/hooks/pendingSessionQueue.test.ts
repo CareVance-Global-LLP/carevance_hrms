@@ -99,4 +99,34 @@ describe('pendingSessionQueue', () => {
     expect(queue.size()).toBe(0);
     expect(queue.droppedCount()).toBe(1);
   });
+
+  it('gives up on a head that keeps failing so it does not block everything behind it forever', async () => {
+    const queue = createPendingSessionQueue({ maxSize: 10 });
+    const sent: string[] = [];
+    queue.enqueue(session('a'));
+    queue.enqueue(session('b'));
+
+    const send = async (p: { local_id: string }) => {
+      if (p.local_id === 'a') throw new Error('a permanent 422, e.g. a deleted time entry');
+      sent.push(p.local_id);
+    };
+
+    // Under the cap: 'a' fails and drain stops there each time, same as the
+    // ordinary transient-failure case — 'b' is not touched yet.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await queue.drain(send);
+    }
+    expect(sent).toEqual([]);
+    expect(queue.size()).toBe(2);
+    expect(queue.droppedCount()).toBe(0);
+
+    // One more failure pushes 'a' past the cap: it is evicted and counted,
+    // and 'b' — which was never the problem — sends right behind it.
+    await queue.drain(send);
+
+    expect(sent).toEqual(['b']);
+    expect(queue.size()).toBe(0);
+    expect(queue.droppedCount()).toBe(1);
+  });
 });
