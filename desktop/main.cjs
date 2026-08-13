@@ -1716,11 +1716,18 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
 
     const app = context.owner?.name || null;
     const description = app ? await getProcessDescription(app) : null;
+    // Same UIA read as the foreground watcher. This is the path the tracker's
+    // tick uses, and the tick is what drives activity classification, so the
+    // field has to be here too or the capture only reaches half the pipeline.
+    const inferred = await getBrowserUrlReader().read();
 
     return {
       app: app,
       title: context.title || null,
       url: context.url || null,
+      inferred_url: inferred ? inferred.url : null,
+      inferred_url_source: inferred ? inferred.source : null,
+      inferred_url_confidence: inferred ? inferred.confidence : null,
       description: description,
       captured_at: new Date().toISOString(),
     };

@@ -18,6 +18,18 @@ declare global {
     app: string | null;
     title: string | null;
     url: string | null;
+    /**
+     * URL read from the browser's own UI via Windows UI Automation, for when
+     * the extension is not installed. `url` above stays null on Windows —
+     * get-windows only fills it on macOS.
+     *
+     * 'document' is Chrome's real page URL and is exact. 'address_bar' is a
+     * host-only hint from Edge/Brave, where typed-but-unsent text lingers, so
+     * it must never be treated as a confirmed visit.
+     */
+    inferred_url?: string | null;
+    inferred_url_source?: 'document' | 'address_bar' | null;
+    inferred_url_confidence?: number | null;
     description?: string | null;
     captured_at?: string;
   }
@@ -84,6 +96,9 @@ declare global {
       app: string | null;
       title: string | null;
       url: string | null;
+      inferred_url?: string | null;
+      inferred_url_source?: 'document' | 'address_bar' | null;
+      inferred_url_confidence?: number | null;
       description?: string | null;
       captured_at?: string;
     } | null>;

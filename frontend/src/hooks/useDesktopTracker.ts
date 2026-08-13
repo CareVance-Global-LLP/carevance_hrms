@@ -9,6 +9,7 @@ import {
 } from '@/lib/browserTracking';
 import { idleGuardIntervalMs } from '@/lib/runtimeConfig';
 import { idleStopWarningSecondsRemaining } from '@/lib/idleStopWarning';
+import { resolveBrowserUrlForContext } from '@/lib/inferredBrowserUrl';
 import { isCaptureBlockedContext, resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
@@ -294,6 +295,13 @@ const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload)
     String(payload.app || '').trim().toLowerCase(),
     String(payload.title || '').trim().toLowerCase(),
     String(payload.url || '').trim().toLowerCase(),
+    /*
+     * The inferred URL is part of the identity of a session, not decoration.
+     * `url` is always null on Windows, so without this a navigation between
+     * two pages that happen to share a title — common within one site — would
+     * be treated as the same session and keep the first page's URL for both.
+     */
+    String(payload.inferred_url || '').trim().toLowerCase(),
   ].join('|')
 );
 
@@ -899,6 +907,21 @@ export const useDesktopTracker = () => {
 
       await closeActiveDesktopSession(capturedAt);
 
+      /*
+       * Same precedence as the tick. A desktop_app session for a browser can
+       * now carry a URL, but only when the extension is not the authority for
+       * that browser, and the confidence travels with it so a host inferred
+       * from an Edge address bar never reads like a confirmed visit.
+       */
+      const payloadIsBrowser = BROWSER_APP_KEYWORDS.some(
+        (keyword) => String(payload.app || '').toLowerCase().includes(keyword)
+      );
+      const sessionUrl = resolveBrowserUrlForContext({
+        context: payload,
+        extensionHealthy: hasHealthyExactBrowserTracking(payload.app),
+        isBrowser: payloadIsBrowser,
+      });
+
       const displayName = resolveDesktopSessionDisplayName(payload);
       const appName = String(payload.app || '').trim() || displayName;
       const windowTitle = String(payload.title || '').trim() || displayName;
@@ -910,7 +933,7 @@ export const useDesktopTracker = () => {
         display_name: displayName,
         app_name: appName,
         window_title: windowTitle,
-        url: payload.url || null,
+        url: sessionUrl.url,
         started_at: capturedAt,
         // Belt and braces: if closeActiveDesktopSession never gets a chance
         // to stamp the real close time (see below), draining this seeded
@@ -918,7 +941,9 @@ export const useDesktopTracker = () => {
         // understates; open lets the server fabricate a duration against
         // whatever session starts next — worse.
         ended_at: capturedAt,
-        confidence: 100,
+        // 100 for an app or an exact page; lower when the URL is only a host
+        // read out of an address bar.
+        confidence: sessionUrl.url ? sessionUrl.confidence : 100,
         local_id: newSessionLocalId(),
         device_id: desktopDeviceIdentityRef.current?.device_id ?? null,
       };
@@ -1853,9 +1878,22 @@ export const useDesktopTracker = () => {
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
         const recordedAt = new Date(now).toISOString();
         const rawAppName = String(activeContext?.app || '').trim();
-        const rawUrl = String(activeContext?.url || '').trim();
         const rawIsBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => rawAppName.toLowerCase().includes(keyword));
         const exactBrowserTrackingHealthy = hasHealthyExactBrowserTracking(rawAppName, now);
+        /*
+         * On Windows the platform never fills `url` — get-windows only does
+         * that on macOS — so without this a browser with no extension produced
+         * a title and nothing else. The desktop agent now reads the URL out of
+         * the browser's own UI, and this decides whether that reading is
+         * allowed to count: never over a healthy extension, which owns website
+         * sessions, and never for a non-browser window.
+         */
+        const resolvedBrowserUrl = resolveBrowserUrlForContext({
+          context: activeContext,
+          extensionHealthy: exactBrowserTrackingHealthy,
+          isBrowser: rawIsBrowserApp,
+        });
+        const rawUrl = resolvedBrowserUrl.url ?? '';
         const rawContextName = buildTrackedContextName(activeContext || {});
         const rawActivityType: 'app' | 'url' = rawUrl || rawIsBrowserApp ? 'url' : 'app';
         const rawAppFamily = resolveAppFamily(rawAppName, rawActivityType);
