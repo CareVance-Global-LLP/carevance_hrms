@@ -30,6 +30,8 @@ declare global {
     inferred_url?: string | null;
     inferred_url_source?: 'document' | 'address_bar' | null;
     inferred_url_confidence?: number | null;
+    /** True when the Electron tracker window itself holds focus. */
+    is_self_window?: boolean | null;
     description?: string | null;
     captured_at?: string;
   }
@@ -99,6 +101,8 @@ declare global {
       inferred_url?: string | null;
       inferred_url_source?: 'document' | 'address_bar' | null;
       inferred_url_confidence?: number | null;
+    /** True when the Electron tracker window itself holds focus. */
+    is_self_window?: boolean | null;
       description?: string | null;
       captured_at?: string;
     } | null>;

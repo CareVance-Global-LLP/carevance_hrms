@@ -870,6 +870,11 @@ const getForegroundWindowPayload = async () => {
       inferred_url: inferred ? inferred.url : null,
       inferred_url_source: inferred ? inferred.source : null,
       inferred_url_confidence: inferred ? inferred.confidence : null,
+      // Electron knows whether OUR window has focus. Asking it is exact,
+      // unlike matching the product name against a window title — which
+      // silently dropped any window that merely mentioned CareVance, such as
+      // an editor with the project folder open.
+      is_self_window: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
       description: description,
       captured_at: new Date().toISOString(),
     };
@@ -905,6 +910,7 @@ const emitForegroundWindowChange = async () => {
      * emitted, and the renderer keeps the first page's URL for both.
      */
     inferred_url: payload.inferred_url || null,
+    is_self_window: payload.is_self_window || false,
     description: payload.description || null,
   });
 
@@ -1784,6 +1790,11 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
       inferred_url: inferred ? inferred.url : null,
       inferred_url_source: inferred ? inferred.source : null,
       inferred_url_confidence: inferred ? inferred.confidence : null,
+      // Electron knows whether OUR window has focus. Asking it is exact,
+      // unlike matching the product name against a window title — which
+      // silently dropped any window that merely mentioned CareVance, such as
+      // an editor with the project folder open.
+      is_self_window: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
       description: description,
       captured_at: new Date().toISOString(),
     };

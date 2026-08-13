@@ -227,13 +227,64 @@ type ActiveBrowserSession = {
   lastSeenAtMs: number;
 };
 
-const isSelfTrackerContext = (context: { app?: string | null; title?: string | null; url?: string | null }) => {
-  const haystack = [context.app, context.title, context.url]
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean)
-    .join(' ');
+/**
+ * Is this the tracker looking at itself?
+ *
+ * Two genuinely self cases, and both are identified by WHAT the window is
+ * rather than by what its title says:
+ *
+ *   - the Electron tracker window, which the desktop reports as
+ *     `is_self_window` by asking Electron whether it holds focus;
+ *   - the CareVance web app open in a browser, matched on this page's own
+ *     origin.
+ *
+ * It used to match the product name against the window title, which dropped
+ * any window that merely MENTIONED CareVance. Measured on 13 Aug 2026: Visual
+ * Studio Code never once appeared in the timeline on this machine, because the
+ * project folder is called CareVance_Hrms_IDE and every VS Code title carried
+ * it. The same silence would swallow an email about CareVance, a support
+ * ticket, a spreadsheet named CareVance_Report.xlsx, or a tab on the company's
+ * own marketing site — a customer's real work, invisible.
+ *
+ * The app NAME is still matched, because the tracker's own process is
+ * legitimately identified that way when the focus flag is unavailable.
+ */
+const isSelfTrackerContext = (context: {
+  app?: string | null;
+  title?: string | null;
+  url?: string | null;
+  inferred_url?: string | null;
+  is_self_window?: boolean | null;
+}) => {
+  if (context.is_self_window) {
+    return true;
+  }
 
-  return SELF_TRACKER_KEYWORDS.some((keyword) => haystack.includes(keyword));
+  const appName = String(context.app || '').trim().toLowerCase();
+  if (appName && SELF_TRACKER_KEYWORDS.some((keyword) => appName.includes(keyword))) {
+    return true;
+  }
+
+  const url = String(context.inferred_url || context.url || '').trim().toLowerCase();
+  const selfOrigin = typeof window !== 'undefined'
+    ? String(window.location?.origin || '').trim().toLowerCase()
+    : '';
+  if (url && selfOrigin && url.startsWith(selfOrigin)) {
+    return true;
+  }
+
+  /*
+   * Title matched at the START only, never anywhere inside it.
+   *
+   * The app's own page announces itself as "CareVance HRMS Workspace", so a
+   * prefix is enough to recognise it in a browser. A substring match is what
+   * caused the damage: "useDesktopTracker.ts - CareVance_Hrms_IDE - Visual
+   * Studio Code" contains the product name two thirds of the way through and
+   * was being discarded as though the tracker were looking at itself.
+   */
+  const title = String(context.title || '').trim().toLowerCase();
+
+  return SELF_TRACKER_KEYWORDS.some((keyword) => title.startsWith(keyword));
 };
 
 const isGenericBrowserContext = (contextName: string, activityType: 'app' | 'url') => {

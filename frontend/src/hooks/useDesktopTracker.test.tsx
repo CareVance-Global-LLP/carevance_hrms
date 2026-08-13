@@ -680,6 +680,51 @@ describe('useDesktopTracker', () => {
     expect(recordedUrls).not.toContain('http://localhost:5173/add-user');
   });
 
+  it('records an app whose window title merely mentions the product', async () => {
+    /*
+     * The defect this pins, measured on 13 Aug 2026: Visual Studio Code never
+     * once reached the timeline on a machine whose project folder is called
+     * CareVance_Hrms_IDE, because self-detection matched the product name
+     * against the window TITLE. The same silence swallows an email about
+     * CareVance, a support ticket, or a spreadsheet named CareVance_Report.
+     */
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Visual Studio Code',
+        title: 'useDesktopTracker.ts - CareVance_Hrms_IDE - Visual Studio Code',
+        url: null,
+        is_self_window: false,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      app_name: 'Visual Studio Code',
+      window_title: 'useDesktopTracker.ts - CareVance_Hrms_IDE - Visual Studio Code',
+    }));
+  });
+
+  it('still excludes the tracker window itself', async () => {
+    // Electron reports its own focus, which cannot be confused with a title.
+    render(<TrackerHarness />);
+    mocks.createActivitySessionMock.mockClear();
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'CareVance Tracker',
+        title: 'CareVance HRMS Workspace',
+        url: null,
+        is_self_window: true,
+        captured_at: '2026-04-21T09:05:00.000Z',
+      });
+    });
+
+    const titles = mocks.createActivitySessionMock.mock.calls.map(([p]: [any]) => p?.window_title);
+    expect(titles).not.toContain('CareVance HRMS Workspace');
+  });
+
   it('extends an active desktop app session while the same app stays focused', async () => {
     vi.setSystemTime(new Date('2026-04-21T09:00:00Z'));
     mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1601 } });
