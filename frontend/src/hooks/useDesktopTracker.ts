@@ -35,10 +35,19 @@ const ACTIVITY_TRACK_INTERVAL_MS = 1000;
 // Matches the server's system default (config/screenshots.php). This is only a
 // last-resort fallback now: the server resolves the effective interval
 // (per-user override -> org default -> system default) and sends it down.
-// Capture cadence is jittered by up to +/- this fraction so screenshots are not
-// perfectly periodic (and so a whole fleet on the same setting does not fire in
-// lockstep).
-const SCREENSHOT_INTERVAL_JITTER_RATIO = 0.1;
+/*
+ * Capture cadence used to be jittered by +/-10%, so a "1 minute" setting fired
+ * anywhere between 54 and 66 seconds. That was removed at the product owner's
+ * request (13 Aug 2026) in favour of an exact, verifiable interval — see
+ * nextCaptureDelayMs.
+ *
+ * What the jitter bought is worth stating, because an exact cadence gives it
+ * up: screenshots now land at predictable moments, which someone who wants to
+ * be unobserved can learn and work around, and every device sharing an interval
+ * and a start time uploads in lockstep rather than spread across the period.
+ * Neither is a correctness problem, and the phase still varies per person
+ * because the anchor is their own timer start.
+ */
 // How long capture may continue against a cached active entry while the server
 // is unreachable, before pausing until the timer is confirmed again.
 const SCREENSHOT_OFFLINE_GRACE_MS = 10 * 60 * 1000;
@@ -137,14 +146,37 @@ const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
 let desktopTrackerRunSequence = 0;
 
 /**
- * Spread captures around the configured period so they are not perfectly
- * predictable. Kept small so the long-run capture rate still matches the
- * configured interval.
+ * How long to wait before the next capture, against a fixed schedule.
+ *
+ * Captures are due at `anchorMs + n * intervalMs`, so the delay is measured
+ * from the schedule rather than from when the previous capture happened to
+ * finish. Re-arming with a fresh full interval after each capture added that
+ * capture's own duration — screenshot, encode and upload — to every period, so
+ * a "1 minute" cadence drifted a few seconds further behind on every cycle and
+ * the timestamps were never round.
+ *
+ * Always returns a slot strictly in the future. If a cycle overruns its period
+ * (a slow upload, a suspended machine) the missed slots are skipped rather than
+ * fired back-to-back, so the tracker never bursts to catch up.
+ *
+ * Exported for tests: it is the whole timing contract, and it is pure.
  */
-const jitteredScreenshotDelayMs = (intervalMs: number) => {
-  const spread = intervalMs * SCREENSHOT_INTERVAL_JITTER_RATIO;
+export const nextCaptureDelayMs = (anchorMs: number, nowMs: number, intervalMs: number): number => {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return 0;
 
-  return Math.max(1000, Math.round(intervalMs + (Math.random() * 2 - 1) * spread));
+  /*
+   * A clock that moved backwards re-anchors rather than honouring the old
+   * schedule. Keeping the schedule would mean waiting the interval PLUS the
+   * size of the jump — an hour's correction would open an hour-long hole in
+   * the capture record, which is far worse than one period landing off-grid.
+   */
+  if (nowMs <= anchorMs) return intervalMs;
+
+  const nextSlot = Math.floor((nowMs - anchorMs) / intervalMs) + 1;
+
+  // Always within (0, intervalMs]: never negative, never a gap longer than the
+  // configured period.
+  return anchorMs + nextSlot * intervalMs - nowMs;
 };
 
 type ActiveSegment = {
@@ -517,8 +549,11 @@ export const useDesktopTracker = () => {
      * the server proposed idle stops that were rejected with 409 until it
      * exhausted its three-attempt cap.
      *
-     * The effect re-runs on `user`, so a policy change reaches a running
-     * tracker on the next /auth/me without restarting the app.
+     * The effect re-runs on `user`, so a policy change reaches the tracker as
+     * soon as a fresh payload lands — but AuthContext calls /auth/me only
+     * during bootstrap, so in practice that means a reload or a fresh sign-in.
+     * An admin who changes someone's capture interval mid-session will not see
+     * it take effect until then, which is why every admin surface says so.
      */
     const trackerPolicy = resolveTrackerPolicy(user);
     const IDLE_THRESHOLD_SECONDS = trackerPolicy.idle_track_threshold_seconds;
@@ -598,14 +633,30 @@ export const useDesktopTracker = () => {
         return;
       }
 
+      /*
+       * The schedule is anchored, not relative.
+       *
+       * Every capture is due at `anchor + n * interval`, and each timer is set
+       * from that schedule rather than "one full interval from now". Chaining a
+       * fresh interval after each capture completed meant every period silently
+       * carried the capture's own cost — grab, encode, upload — so the gap
+       * between screenshots was always longer than the configured one and grew
+       * further out of step the longer a timer ran.
+       *
+       * When the immediate shot below is suppressed, the anchor is the capture
+       * that already landed, so the next one still falls exactly one interval
+       * after it rather than one interval after this restart.
+       */
+      const msSinceLastCapture = Date.now() - lastScreenshotCaptureAtRef.current;
+      const captureNow = msSinceLastCapture >= screenshotIntervalMs;
+      const anchorMs = captureNow ? Date.now() : lastScreenshotCaptureAtRef.current;
+
       console.info('[desktop-tracker] screenshot interval started', {
         timeEntryId,
         intervalMs: screenshotIntervalMs,
+        anchorMs,
       });
 
-      // setTimeout rather than setInterval so each period can carry its own
-      // jitter. A fixed setInterval produced a perfectly predictable cadence,
-      // identical across every device on the same setting.
       const scheduleNextCapture = () => {
         screenshotIntervalRef.current = setTimeout(() => {
           void captureScreenshotOnInterval().finally(() => {
@@ -615,7 +666,7 @@ export const useDesktopTracker = () => {
               scheduleNextCapture();
             }
           });
-        }, jitteredScreenshotDelayMs(screenshotIntervalMs)) as unknown as number;
+        }, nextCaptureDelayMs(anchorMs, Date.now(), screenshotIntervalMs)) as unknown as number;
       };
 
       scheduleNextCapture();
@@ -630,8 +681,7 @@ export const useDesktopTracker = () => {
       // restarts (timer restart, snapshot restore, id mismatch) rebuild this
       // interval, and firing the immediate shot every time produced bursts well
       // above the configured rate.
-      const msSinceLastCapture = Date.now() - lastScreenshotCaptureAtRef.current;
-      if (msSinceLastCapture >= screenshotIntervalMs) {
+      if (captureNow) {
         void captureScreenshotOnInterval();
       } else {
         console.info('[desktop-tracker] immediate capture suppressed; one already landed this period', {
