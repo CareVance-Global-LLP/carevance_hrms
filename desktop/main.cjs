@@ -1278,11 +1278,31 @@ const createWindow = async () => {
     showMainWindow();
   }, 5000);
 
-  mainWindow.webContents.on('did-finish-load', () => {
+  /*
+   * Everything that must happen once the renderer is actually up.
+   *
+   * Extracted and invoked below for the already-loaded case, because the
+   * initial `await mainWindow.loadURL(APP_URL)` earlier in this function
+   * RESOLVES when the load finishes — which means did-finish-load has already
+   * fired by the time this listener is attached, and the listener never runs.
+   *
+   * The consequence was severe and silent: startForegroundWindowWatcher() only
+   * ever ran when the initial loadURL was aborted by SPA routing (see the warn
+   * above), so on a clean load the tracker never watched the foreground window
+   * at all. Measured on 13 Aug 2026 — every activity_session ever written on
+   * this install was a transient system window, because those rare aborted
+   * loads were the only runs where the watcher started.
+   */
+  const handleRendererReady = () => {
     const loadedUrl = String(mainWindow?.webContents?.getURL() || '');
     if (!/^https?:\/\//i.test(loadedUrl)) {
       return;
     }
+
+    // The watcher has been emitting to a renderer that was not listening yet.
+    // Clearing the cached signature makes the next poll re-send the current
+    // foreground instead of suppressing it as unchanged.
+    lastForegroundWindowSignature = null;
 
     showMainWindow();
     broadcastUpdateState();
@@ -1292,7 +1312,36 @@ const createWindow = async () => {
     if (!tray && process.platform === 'win32') {
       createTray();
     }
-  });
+  };
+
+  mainWindow.webContents.on('did-finish-load', handleRendererReady);
+  // dom-ready too: did-finish-load does not arrive when the SPA aborts the
+  // initial navigation, which is the ordinary case here (see the warn above).
+  mainWindow.webContents.once('dom-ready', handleRendererReady);
+  // And the already-loaded case, for a load that beat the listener.
+  if (!mainWindow.webContents.isLoading()) {
+    handleRendererReady();
+  }
+
+  /*
+   * The foreground watcher starts with the WINDOW, not with the renderer.
+   *
+   * It used to start only from did-finish-load. Measured here on 13 Aug 2026:
+   * `isLoading` was still true when the listener attached, and no
+   * did-finish-load ever followed, because React Router aborts the initial
+   * navigation. So the watcher never ran and the tracker never observed which
+   * application was in front — which is why every activity_session ever
+   * written on this install was a transient system window, from the rare runs
+   * where that event happened to arrive.
+   *
+   * Nothing about polling the OS foreground depends on the renderer being
+   * loaded. emitForegroundWindowChange guards on mainWindow, and
+   * webContents.send is a no-op before the page is up; handleRendererReady
+   * clears the cached signature so the renderer still gets the current
+   * foreground once it is listening. Safe to call twice — it clears any
+   * existing interval first.
+   */
+  startForegroundWindowWatcher();
 
   /*
    * The renderer loads a remote origin while holding a preload API that can

@@ -1306,8 +1306,34 @@ export const useDesktopTracker = () => {
       pendingTrackedSecondsRef.current = 0;
       clearTrackedActivitySegment();
 
-      if (isReliableDesktopAppForegroundContext(payload)) {
-        await closeActiveBrowserSession(resolveForegroundCapturedAt(payload));
+      /*
+       * Browsers used to be refused here outright, on the basis that the
+       * extension owns website sessions. The extension is optional, so when it
+       * is not connected that left browser time recorded as NOTHING — not a
+       * fallback row, not an app row. Measured on 13 Aug 2026: every
+       * activity_session ever written on this install was a transient system
+       * window (Explorer, the Alt-Tab overlay, Snipping Tool), because those
+       * were the only foreground windows that were not a browser.
+       *
+       * The desktop agent can now read the URL itself, so a browser without a
+       * healthy extension is recorded here instead of discarded.
+       * resolveBrowserUrlForContext still yields to the extension whenever it
+       * IS healthy, so the two can never both write the same timeline.
+       */
+      const foregroundIsBrowser = isBrowserForegroundContext(payload);
+      const extensionOwnsThisBrowser = foregroundIsBrowser
+        && hasHealthyExactBrowserTracking(payload.app);
+
+      const shouldRecordHere = isSelfTrackerContext(payload)
+        ? false
+        : foregroundIsBrowser
+          ? !extensionOwnsThisBrowser
+          : isReliableDesktopAppForegroundContext(payload);
+
+      if (shouldRecordHere) {
+        if (!foregroundIsBrowser) {
+          await closeActiveBrowserSession(resolveForegroundCapturedAt(payload));
+        }
         try {
           await ensureDesktopSessionStarted(payload);
         } catch (error) {
