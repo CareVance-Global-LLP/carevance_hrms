@@ -9,6 +9,8 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Support\ExternalTimestamp;
 use App\Services\Monitoring\ActivityFeedService;
+use App\Services\Monitoring\IdleResolutionService;
+use App\Services\Monitoring\TrackerPolicyResolver;
 use App\Services\Reports\UsageProcessingService;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -23,8 +25,41 @@ class ActivityController extends Controller
     public function __construct(
         private readonly ActivityFeedService $activityFeedService,
         private readonly UsageProcessingService $usageProcessingService,
-        private readonly \App\Services\Monitoring\IdleResolutionService $idleResolution,
+        private readonly IdleResolutionService $idleResolution,
+        private readonly TrackerPolicyResolver $trackerPolicy,
     ) {
+    }
+
+    /**
+     * Apply the organization's idle policy the moment an idle span is recorded.
+     *
+     * Deliberately server-side. If this lived only in the desktop prompt, then
+     * quitting the app, closing the lid or a crash would leave a `never_keep`
+     * organization's idle time silently KEPT — the exact opposite of the
+     * policy, in a number that TimeEntry duration and payroll are computed
+     * from. The client still skips its prompt under these policies;
+     * IdleResolutionService is idempotent (it returns early once
+     * `idle_resolution` is set), so both paths running cannot deduct the same
+     * minutes twice.
+     */
+    private function applyIdlePolicy(Activity $activity, ?User $actor): void
+    {
+        if ($activity->type !== 'idle' || $activity->idle_resolution !== null || ! $actor) {
+            return;
+        }
+
+        $action = match ($this->trackerPolicy->idleResolutionPolicyForUser($actor)) {
+            TrackerPolicyResolver::IDLE_POLICY_ALWAYS_KEEP => IdleResolutionService::KEPT,
+            TrackerPolicyResolver::IDLE_POLICY_NEVER_KEEP => IdleResolutionService::DISCARDED,
+            // prompt: leave it unanswered so the person is the one who decides.
+            default => null,
+        };
+
+        if ($action === null) {
+            return;
+        }
+
+        $this->idleResolution->resolve($activity, $actor, $action);
     }
 
     /**
@@ -516,13 +551,14 @@ class ActivityController extends Controller
 
         // Bust idle cache so reports pick up fresh idle durations immediately
         if (($validated['type'] ?? '') === 'idle') {
+            $this->applyIdlePolicy($activity, $request->user());
             $this->usageProcessingService->bustIdleCacheForUser(
                 (int) $validated['user_id'],
                 $validated['recorded_at'] instanceof Carbon ? $validated['recorded_at'] : now(),
             );
         }
 
-        return response()->json($activity, 201);
+        return response()->json($activity->fresh(), 201);
     }
 
     public function show(Activity $activity)

@@ -189,6 +189,31 @@ describe('EmployeeManagementWorkspace', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('renders the row action menu outside the table so the scroll container cannot clip it', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Zara Khan' }));
+
+    const menu = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-row-menu]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+
+    /*
+     * The menu used to be absolutely positioned inside the table's
+     * `overflow-x-auto` wrapper, which clips an absolute child just as it clips
+     * an in-flow one — on the last row only the first item survived, sliced in
+     * half. It has to portal out to escape that.
+     */
+    expect(menu.closest('table')).toBeNull();
+    expect(menu.parentElement).toBe(document.body);
+    expect(within(menu).getByRole('link', { name: /Open profile/ })).toBeInTheDocument();
+    expect(within(menu).getByRole('button', { name: /Settings/ })).toBeInTheDocument();
+  });
+
   it('filters role assignments with the roles search box', async () => {
     renderWithProviders(<EmployeeManagementWorkspace mode="roles" />, { route: '/employees/roles' });
 

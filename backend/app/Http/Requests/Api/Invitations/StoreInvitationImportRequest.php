@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\Invitations;
 
 use App\Http\Requests\Api\ApiFormRequest;
 use App\Rules\ValidTimezone;
+use App\Services\Monitoring\MonitoringSettingsResolver;
 use Illuminate\Validation\Rule;
 
 class StoreInvitationImportRequest extends ApiFormRequest
@@ -78,7 +79,7 @@ class StoreInvitationImportRequest extends ApiFormRequest
             // batch-level key below is the fallback for rows that omit it.
             'rows.*.joining_date' => 'nullable|date|before_or_equal:'.now()->addYears(2)->format('Y-m-d'),
             'rows.*.settings' => 'nullable|array',
-            'rows.*.settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in([1, 3, 5, 10, 15, 30])],
+            'rows.*.settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in(app(MonitoringSettingsResolver::class)->allowedIntervals())],
             'rows.*.settings.can_edit_time' => 'nullable|boolean',
             'rows.*.settings.attendance_monitoring' => 'nullable|boolean',
             'rows.*.settings.payroll_visibility' => 'nullable|boolean',
@@ -89,7 +90,7 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'default_project_ids' => 'nullable|array',
             'default_project_ids.*' => 'integer',
             'settings' => 'nullable|array',
-            'settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in([1, 3, 5, 10, 15, 30])],
+            'settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in(app(MonitoringSettingsResolver::class)->allowedIntervals())],
             'settings.can_edit_time' => 'nullable|boolean',
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',

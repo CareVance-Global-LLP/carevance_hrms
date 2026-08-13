@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DndContext,
   DragOverlay,
@@ -42,6 +43,15 @@ import {
   type Placement,
   type TeamGroup,
 } from './departmentUtils';
+import useAnchoredMenu from '@/components/ui/useAnchoredMenu';
+
+/*
+ * Both board menus live inside the columns' `overflow-x-auto` strip, which
+ * clips an absolutely-positioned child. They are portalled and positioned from
+ * these widths — fixed so the first paint is already placed.
+ */
+const PERSON_MENU_WIDTH = 208;
+const COLUMN_MENU_WIDTH = 192;
 
 /* ────────────────────────────────────────────────────────────────
    Person card
@@ -66,14 +76,17 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
   const [open, setOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const { menuRef: panelRef, style: menuStyle } = useAnchoredMenu(triggerRef, open, { width: PERSON_MENU_WIDTH, onDismiss: () => { setOpen(false); setMoveOpen(false); } });
 
   useEffect(() => {
     if (!open) return undefined;
     const handleOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-        setMoveOpen(false);
-      }
+      const target = event.target as Node;
+      // The panel is portalled, so it is no longer inside containerRef.
+      if (containerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+      setMoveOpen(false);
     };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -87,7 +100,7 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [open]);
+  }, [open, panelRef]);
 
   const others = departments.filter((dept) => dept.id !== card.deptId);
 
@@ -95,7 +108,9 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
     <div className="relative shrink-0" ref={containerRef}>
       <button
         type="button"
+        ref={triggerRef}
         aria-label={`Actions for ${card.user.name}`}
+        aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
@@ -108,8 +123,13 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
         <MoreVertical className="h-3.5 w-3.5" />
       </button>
 
-      {open ? (
-        <div className="absolute right-0 z-40 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-modal">
+      {open && menuStyle ? createPortal(
+        <div
+          ref={panelRef}
+          data-person-menu=""
+          style={menuStyle}
+          className="rounded-xl border border-slate-200 bg-surface-raised p-1.5 shadow-modal"
+        >
           <div className="relative">
             <button
               type="button"
@@ -155,7 +175,8 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
           >
             <Trash2 className="h-3.5 w-3.5" /> Remove from department
           </button>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
@@ -337,6 +358,8 @@ function Column({
   const [addingTeam, setAddingTeam] = useState(false);
   const [teamName, setTeamName] = useState('');
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const { menuRef: panelRef, style: menuStyle } = useAnchoredMenu(triggerRef, menuOpen, { width: COLUMN_MENU_WIDTH, onDismiss: () => setMenuOpen(false) });
   const { dept, groups, total, hasLead } = column;
 
   const breakdown = useMemo(
@@ -347,11 +370,24 @@ function Column({
   useEffect(() => {
     if (!menuOpen) return undefined;
     const close = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+      const target = event.target as Node;
+      // The panel is portalled, so it is no longer inside menuRef.
+      if (menuRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [menuOpen]);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen, panelRef]);
 
   return (
     <div className="flex w-[248px] shrink-0 flex-col rounded-xl border border-slate-200 bg-white">
@@ -368,14 +404,22 @@ function Column({
           <div className="relative shrink-0" ref={menuRef}>
             <button
               type="button"
+              ref={triggerRef}
               aria-label={`Actions for ${dept.name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
               onClick={() => setMenuOpen((current) => !current)}
               className="rounded-md p-1 text-slate-400 transition hover:bg-white/70 hover:text-slate-700"
             >
               <MoreVertical className="h-3.5 w-3.5" />
             </button>
-            {menuOpen ? (
-              <div className="absolute right-0 z-40 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1.5 shadow-modal">
+            {menuOpen && menuStyle ? createPortal(
+              <div
+                ref={panelRef}
+                data-column-menu=""
+                style={menuStyle}
+                className="rounded-xl border border-slate-200 bg-surface-raised p-1.5 shadow-modal"
+              >
                 <button
                   type="button"
                   onClick={() => { setMenuOpen(false); onOpen(dept.id); }}
@@ -404,7 +448,8 @@ function Column({
                     </button>
                   </>
                 ) : null}
-              </div>
+              </div>,
+              document.body,
             ) : null}
           </div>
         </div>

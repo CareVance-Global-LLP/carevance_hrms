@@ -17,6 +17,7 @@ import { formatNotificationTitle, formatNotificationMessage, getNotificationSoun
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import IdleReturnPrompt from '@/components/desktop/IdleReturnPrompt';
+import IdleStopWarning from '@/components/desktop/IdleStopWarning';
 import AIHelpBubble from '@/components/AIHelpBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -915,6 +916,7 @@ export default function Layout() {
         <AIHelpBubble userRole={user?.role} />
         {commandBar}
         <IdleReturnPrompt />
+        <IdleStopWarning />
       </div>
     );
   }
@@ -1092,6 +1094,7 @@ export default function Layout() {
         <AIHelpBubble />
         {commandBar}
         <IdleReturnPrompt />
+        <IdleStopWarning />
 
         {isDesktopShell && updatePanelOpen ? (
           <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/28 px-4 py-20 backdrop-blur-sm sm:px-6">

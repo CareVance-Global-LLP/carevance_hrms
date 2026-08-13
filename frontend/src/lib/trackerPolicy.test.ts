@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCaptureBlockedContext, resolveTrackerPolicy } from './trackerPolicy';
+import { isCaptureBlockedContext, readIdleResolutionPolicy, resolveTrackerPolicy } from './trackerPolicy';
 
 const basePolicy = {
   idle_track_threshold_seconds: 300,
@@ -125,5 +125,36 @@ describe('isCaptureBlockedContext', () => {
     expect(
       isCaptureBlockedContext(permissive, { app: 'Chrome', title: 'Search - Incognito' })
     ).toBe(false);
+  });
+});
+
+describe('readIdleResolutionPolicy', () => {
+  it('accepts the three real policies', () => {
+    expect(readIdleResolutionPolicy('prompt')).toBe('prompt');
+    expect(readIdleResolutionPolicy('always_keep')).toBe('always_keep');
+    expect(readIdleResolutionPolicy('never_keep')).toBe('never_keep');
+  });
+
+  it('falls back to prompting for anything else', () => {
+    /*
+     * The fail-safe. Either automatic answer changes someone's timesheet
+     * without asking, so a missing, misspelled or wrongly-typed value must
+     * never resolve to one — including the 0 that SettingsController's
+     * int-cast used to produce for this key.
+     */
+    for (const junk of [undefined, null, '', 0, 'discard', 'always', true, {}]) {
+      expect(readIdleResolutionPolicy(junk)).toBe('prompt');
+    }
+  });
+
+  it('defaults the resolved policy to prompt when the server sends none', () => {
+    expect(resolveTrackerPolicy({}).idle_resolution_policy).toBe('prompt');
+  });
+
+  it('carries a served policy through', () => {
+    expect(
+      resolveTrackerPolicy({ tracker_policy: { idle_resolution_policy: 'never_keep' } } as any)
+        .idle_resolution_policy
+    ).toBe('never_keep');
   });
 });

@@ -5,6 +5,7 @@ namespace App\Http\Requests\Api\Settings;
 use App\Http\Requests\Api\ApiFormRequest;
 use App\Rules\ValidTimezone;
 use App\Services\Monitoring\MonitoringSettingsResolver;
+use App\Services\Monitoring\TrackerPolicyResolver;
 use Illuminate\Validation\Rule;
 
 class UpdateOrganizationRequest extends ApiFormRequest
@@ -67,6 +68,16 @@ class UpdateOrganizationRequest extends ApiFormRequest
             'idle_track_threshold_seconds' => 'nullable|integer|min:60|max:3600',
             'idle_auto_stop_threshold_seconds' => 'nullable|integer|min:300|max:3600',
             'lock_auto_stop_threshold_seconds' => 'nullable|integer|min:60|max:3600',
+            /*
+             * What happens to idle time when someone returns. Null clears the
+             * override so the organization falls back to prompting, which is
+             * the only option that does not change a timesheet without asking.
+             */
+            'idle_resolution_policy' => ['nullable', Rule::in([
+                TrackerPolicyResolver::IDLE_POLICY_PROMPT,
+                TrackerPolicyResolver::IDLE_POLICY_ALWAYS_KEEP,
+                TrackerPolicyResolver::IDLE_POLICY_NEVER_KEEP,
+            ])],
 
             /*
              * Whether an employee may delete their own screenshots.

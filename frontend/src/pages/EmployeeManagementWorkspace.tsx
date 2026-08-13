@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,7 +14,9 @@ import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui
 import { useAuth } from '@/contexts/AuthContext';
 import { getAssignableRoles, hasStrictAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import { profileCompleteness } from '@/lib/employeeProfileFields';
-import { Download, MailPlus, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
+import SettingsCard from '@/features/settings/components/SettingsCard';
+import SettingRow from '@/features/settings/components/SettingRow';
+import { CalendarCheck, Clock, Download, ListChecks, MailPlus, SlidersHorizontal, UserPlus, Users, Wallet } from 'lucide-react';
 import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 
@@ -349,6 +351,24 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     () => users.find((item: any) => item.id === settingsUserId) || null,
     [settingsUserId, users]
   );
+
+  const monitoringIntervalId = useId();
+  /* First name only — the drawer already carries the full name in its heading. */
+  const settingsFirstName = String(settingsTargetUser?.name ?? 'this person').trim().split(/\s+/)[0] || 'this person';
+  /*
+   * Employees sit at hierarchy 100 and never receive payroll reporting. The
+   * fallback mirrors the server default for a user whose level is not loaded.
+   */
+  const settingsPayrollLocked =
+    (settingsTargetUser?.hierarchy_level ?? (settingsTargetUser?.role === 'employee' ? 100 : 50)) >= 100;
+  const settingsGrantedCount = settingsDraft
+    ? [
+        settingsDraft.canEditTime,
+        settingsDraft.attendanceMonitoring,
+        settingsDraft.payrollVisibility,
+        settingsDraft.taskAssignmentAccess,
+      ].filter(Boolean).length
+    : 0;
 
   useEffect(() => {
     if (!selectedUserId && users.length > 0) {
@@ -1011,7 +1031,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
           <SlideOver
             open={Boolean(settingsTargetUser && settingsDraft)}
             title={settingsTargetUser?.name ?? ''}
-            subtitle={`Monitoring and access for this ${resolveUserRoleLabel(settingsTargetUser, customRolesQuery.data || [])}`}
+            subtitle={[resolveUserRoleLabel(settingsTargetUser, customRolesQuery.data || []), settingsTargetUser?.email].filter(Boolean).join(' · ')}
             onClose={handleCloseSettings}
             footer={(
               <>
@@ -1024,88 +1044,96 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               </>
             )}
           >
-            <p className="mb-4 text-xs leading-relaxed text-slate-500">
-              Screenshot capture picks up a new monitoring interval after the user refreshes or signs in again.
-            </p>
-            {settingsDraft ? (            <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <FieldLabel>Monitoring Interval</FieldLabel>
-                    <SelectInput
-                      value={settingsDraft.monitoringInterval ?? ''}
-                      onChange={(event) => setSettingsDraft((current) => current ? {
-                        ...current,
-                        monitoringInterval: event.target.value === ''
-                          ? null
-                          : Number(event.target.value) as MonitoringInterval,
-                      } : current)}
-                    >
-                      <option value="">
-                        {`Inherit from organization (every ${settingsTargetUser?.effective_monitoring_interval_minutes ?? 10} minutes)`}
-                      </option>
-                      {monitoringIntervalOptions.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </SelectInput>
-                    <p className="mt-2 text-xs text-slate-500">Desktop screenshot capture follows this interval for the selected user.</p>
-                  </div>
+            {settingsDraft ? (
+              <div className="space-y-4">
+                <SettingsCard
+                  title="Screenshot capture"
+                  description={`How often the desktop tracker takes a screenshot. A change takes effect after ${settingsFirstName} refreshes or signs in again.`}
+                >
+                  <FieldLabel htmlFor={monitoringIntervalId}>Capture interval</FieldLabel>
+                  <SelectInput
+                    id={monitoringIntervalId}
+                    value={settingsDraft.monitoringInterval ?? ''}
+                    onChange={(event) => setSettingsDraft((current) => current ? {
+                      ...current,
+                      monitoringInterval: event.target.value === ''
+                        ? null
+                        : Number(event.target.value) as MonitoringInterval,
+                    } : current)}
+                  >
+                    <option value="">
+                      {`Inherit from organization (every ${settingsTargetUser?.effective_monitoring_interval_minutes ?? 10} minutes)`}
+                    </option>
+                    {monitoringIntervalOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </SelectInput>
+                </SettingsCard>
 
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Can edit time</p>
-                        <p className="mt-1 text-sm text-slate-500">Allow time edit and overtime correction requests.</p>
-                      </div>
+                <SettingsCard
+                  title="Access"
+                  description={`What ${settingsFirstName} can reach in CareVance.`}
+                  aside={(
+                    <span className="rounded-full border border-slate-200 bg-surface-sunken px-2.5 py-1 text-xs font-semibold text-slate-600">
+                      {settingsGrantedCount} of 4 on
+                    </span>
+                  )}
+                >
+                  <SettingRow
+                    icon={Clock}
+                    title="Time edits"
+                    description="Raise time edit and overtime correction requests."
+                    control={(
                       <ToggleInput
                         checked={settingsDraft.canEditTime}
                         onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, canEditTime: checked }) : current)}
                       />
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Attendance monitoring</p>
-                        <p className="mt-1 text-sm text-slate-500">Show attendance overview and attendance workflows.</p>
-                      </div>
+                    )}
+                  />
+                  <SettingRow
+                    icon={CalendarCheck}
+                    title="Attendance overview"
+                    description="See the attendance overview and its workflows."
+                    control={(
                       <ToggleInput
                         checked={settingsDraft.attendanceMonitoring}
                         onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, attendanceMonitoring: checked }) : current)}
                       />
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Payroll visibility</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          {(settingsTargetUser?.hierarchy_level ?? (settingsTargetUser?.role === 'employee' ? 100 : 50)) >= 100
-                            ? 'Employees do not receive payroll reporting access.'
-                            : 'Allow payroll and reporting visibility for this user.'}
-                        </p>
-                      </div>
-                      <ToggleInput
-                        checked={settingsDraft.payrollVisibility}
-                        disabled={(settingsTargetUser?.hierarchy_level ?? (settingsTargetUser?.role === 'employee' ? 100 : 50)) >= 100}
-                        onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, payrollVisibility: checked }) : current)}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 md:col-span-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-950">Task assignment defaults</p>
-                        <p className="mt-1 text-sm text-slate-500">Grant task assignment workflow access by default.</p>
-                      </div>
+                    )}
+                  />
+                  <SettingRow
+                    icon={Wallet}
+                    title="Payroll and reporting"
+                    description={settingsPayrollLocked
+                      ? 'Employees do not receive payroll reporting access. Change the role to grant it.'
+                      : 'Open payroll figures and the reporting screens.'}
+                    control={(
+                      <>
+                        {settingsPayrollLocked ? (
+                          <span className="text-xs font-semibold text-slate-500">Locked</span>
+                        ) : null}
+                        <ToggleInput
+                          checked={settingsDraft.payrollVisibility}
+                          disabled={settingsPayrollLocked}
+                          onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, payrollVisibility: checked }) : current)}
+                        />
+                      </>
+                    )}
+                  />
+                  <SettingRow
+                    icon={ListChecks}
+                    title="Task assignment"
+                    description="Assign tasks to other people by default."
+                    control={(
                       <ToggleInput
                         checked={settingsDraft.taskAssignmentAccess}
                         onChange={(checked) => setSettingsDraft((current) => current ? ({ ...current, taskAssignmentAccess: checked }) : current)}
                       />
-                    </div>
-                  </div>
-            </div>            ) : null}
+                    )}
+                  />
+                </SettingsCard>
+              </div>
+            ) : null}
           </SlideOver>
         </>
       )}

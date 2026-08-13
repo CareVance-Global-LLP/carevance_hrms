@@ -676,17 +676,6 @@ OfflineDatabase.prototype.markTimelineSyncing = function (localId) {
 //
 // App usage operations
 //
-OfflineDatabase.prototype.saveAppUsage = function (localId, userId, appName, duration, timestamp, title, deviceId) {
-  if (!this.isReady()) return null;
-  const id = localId || generateLocalId();
-  const ok = this._run(
-    'INSERT OR IGNORE INTO offline_app_usage (local_id, user_id, app_name, duration, timestamp, title, device_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [id, userId, appName, duration, timestamp, title || null, deviceId]
-  );
-  if (ok) { this._enqueueSync('app_usage', id, 3); return id; }
-  return null;
-};
-
 OfflineDatabase.prototype.getPendingAppUsage = function (limit = 50) {
   return this._all(
     'SELECT * FROM offline_app_usage WHERE sync_status IN (\'pending\',\'failed\') ORDER BY created_at ASC LIMIT ?',

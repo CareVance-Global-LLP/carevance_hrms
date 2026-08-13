@@ -29,6 +29,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -227,7 +228,13 @@ class UserController extends Controller
              */
             'password' => ['nullable', 'string', Password::defaults()],
             'settings' => 'nullable|array',
-            'settings.monitoring_interval_minutes' => 'nullable|integer|in:1,3,5,10,15,30',
+            /*
+             * Derived from config, never restated. A literal list here is how a
+             * value the resolver will not honour reaches storage: it validates,
+             * saves, reads back into the admin UI, and is then silently dropped
+             * at capture time in favour of the inherited interval.
+             */
+            'settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in($this->monitoringSettingsResolver->allowedIntervals())],
             'settings.can_edit_time' => 'nullable|boolean',
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',
@@ -543,7 +550,13 @@ class UserController extends Controller
             'role' => 'sometimes|in:admin,manager,employee,client',
             'role_id' => 'nullable|integer|exists:roles,id',
             'settings' => 'nullable|array',
-            'settings.monitoring_interval_minutes' => 'nullable|integer|in:1,3,5,10,15,30',
+            /*
+             * Derived from config, never restated. A literal list here is how a
+             * value the resolver will not honour reaches storage: it validates,
+             * saves, reads back into the admin UI, and is then silently dropped
+             * at capture time in favour of the inherited interval.
+             */
+            'settings.monitoring_interval_minutes' => ['nullable', 'integer', Rule::in($this->monitoringSettingsResolver->allowedIntervals())],
             'settings.can_edit_time' => 'nullable|boolean',
             'settings.attendance_monitoring' => 'nullable|boolean',
             'settings.payroll_visibility' => 'nullable|boolean',

@@ -671,6 +671,215 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('closes a queued session with the switch-away time so a retry is not counted as still open', async () => {
+    // Isolate this test from the tick's own polling: with no polled window,
+    // only the explicit foreground events below drive desktop sessions.
+    mocks.getActiveWindowContextMock.mockResolvedValue(null);
+    // The create fails once (so the session queues) and the retry the tick
+    // drains it with succeeds.
+    mocks.createActivitySessionMock
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValue({ data: { id: 2001 } });
+
+    render(<TrackerHarness />);
+    await act(async () => {}); // let desktop device identity resolve
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Notepad',
+        title: 'notes.txt - Notepad',
+        url: null,
+        captured_at: '2026-04-21T10:00:00.000Z',
+      });
+    });
+
+    // Switch away before the tick has a chance to retry. Without stamping
+    // ended_at here, the queued row drains open and the server's
+    // closeConflictingOpenSessions fabricates a duration against whatever
+    // session starts next — double-counting the hour spent in Notepad.
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Visual Studio Code',
+        title: 'Tracking Work',
+        url: null,
+        captured_at: '2026-04-21T10:05:00.000Z',
+      });
+    });
+
+    mocks.createActivitySessionMock.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      display_name: 'Notepad',
+      started_at: '2026-04-21T10:00:00.000Z',
+      ended_at: '2026-04-21T10:05:00.000Z',
+    }));
+  });
+
+  it('adopts the server id on a successful drain, so a later close PATCHes the real end time instead of leaving the row at its seeded zero-length duration', async () => {
+    // Drive this entirely through the tick's own polling, matching real
+    // usage: the mount tick's create fails and queues while Notepad is
+    // focused, the very next tick (1s later, well before the user has moved
+    // on) drains and adopts the server id, Notepad stays focused for 5
+    // minutes of ordinary extends, then the poll sees VS Code and closes it.
+    const notepadWindow = { app: 'Notepad', title: 'notes.txt - Notepad', url: null };
+    const vsCodeWindow = { app: 'Visual Studio Code', title: 'Tracking Work', url: null };
+    mocks.getActiveWindowContextMock.mockResolvedValue(notepadWindow);
+    // The mount tick's create fails and queues; every retry after that
+    // (the drain, and the eventual VS Code create) succeeds.
+    mocks.createActivitySessionMock
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValue({ data: { id: 3001 } });
+
+    render(<TrackerHarness />);
+
+    // The mount tick creates the Notepad session (fails, queues it); the
+    // very next tick — one second later — drains the queue and adopts the
+    // server id while Notepad is still the polled app.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    // Stay on Notepad for the rest of 5 minutes of ordinary polling/extends
+    // (1s already elapsed above; one more tick below lands exactly on 5:00).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 58 * 1000);
+    });
+
+    mocks.getActiveWindowContextMock.mockResolvedValue(vsCodeWindow);
+    mocks.updateActivitySessionMock.mockClear();
+
+    // The tick exactly 5 minutes after mount sees VS Code and closes Notepad.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    // The drained session must have adopted the id the server issued, so
+    // closing it goes through the normal PATCH path with the real 5-minute
+    // duration. Without adopting the id, sessionId stays null forever and
+    // this session is stuck at the seeded zero-length ended_at — five
+    // minutes of Notepad recorded as zero seconds, with no update call for
+    // the real close to show for it.
+    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(3001, expect.objectContaining({
+      duration_seconds: 300,
+    }));
+  });
+
+  it('patches the real end time when the user switches away while the drained create is still in flight', async () => {
+    const notepadWindow = { app: 'Notepad', title: 'notes.txt - Notepad', url: null };
+    const vsCodeWindow = { app: 'Visual Studio Code', title: 'Tracking Work', url: null };
+    mocks.getActiveWindowContextMock.mockResolvedValue(notepadWindow);
+
+    let releaseDrainedCreate = () => {};
+    mocks.createActivitySessionMock
+      // Notepad's first create fails, so it queues.
+      .mockRejectedValueOnce(new Error('network blip'))
+      // The tick's retry hangs, leaving the request in flight across the
+      // switch-away below.
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        releaseDrainedCreate = () => resolve({ data: { id: 4001 } });
+      }))
+      // Anything after that (the VS Code session) succeeds normally.
+      .mockResolvedValue({ data: { id: 4002 } });
+
+    render(<TrackerHarness />);
+
+    // The mount tick creates the Notepad session (fails, queues it); the next
+    // tick drains it, and that create is still awaiting the server from here on.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledTimes(2);
+
+    // Five minutes of Notepad, all of it while that create is in flight.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    // The switch away closes the session: it stamps the real ended_at onto a
+    // payload that was serialised and sent five minutes ago, and clears the
+    // active ref — so the id-adoption branch can never fire for it.
+    mocks.getActiveWindowContextMock.mockResolvedValue(vsCodeWindow);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    await act(async () => {
+      releaseDrainedCreate();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Without amending the row it keeps ended_at === started_at, and
+    // ActivityFeedService::mapSession drops sessions where end <= start — so
+    // five minutes of real work would vanish from the timeline entirely.
+    const seededCreate = mocks.createActivitySessionMock.mock.calls[0][0];
+    const patch = mocks.updateActivitySessionMock.mock.calls.find((call) => call[0] === 4001);
+    expect(patch).toBeDefined();
+    expect(Date.parse(String(patch?.[1]?.ended_at)))
+      .toBeGreaterThan(Date.parse(String(seededCreate.started_at)));
+  });
+
+  it('does not adopt an id from an empty 2xx body, which would PATCH /activity-sessions/undefined', async () => {
+    const notepadWindow = { app: 'Notepad', title: 'notes.txt - Notepad', url: null };
+    const vsCodeWindow = { app: 'Visual Studio Code', title: 'Tracking Work', url: null };
+    mocks.getActiveWindowContextMock.mockResolvedValue(notepadWindow);
+    mocks.createActivitySessionMock
+      .mockRejectedValueOnce(new Error('network blip'))
+      // The retry is accepted but answers with no body — response.data.id is
+      // undefined, which is not null, so every `sessionId === null` guard
+      // downstream lets it through.
+      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValue({ data: { id: 5001 } });
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+
+    mocks.getActiveWindowContextMock.mockResolvedValue(vsCodeWindow);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    const patchedIds = mocks.updateActivitySessionMock.mock.calls.map((call) => call[0]);
+    expect(patchedIds.every((id) => Number.isFinite(id))).toBe(true);
+  });
+
+  it('reports dropped sessions once, so tracked time thrown away is not indistinguishable from time never worked', async () => {
+    // No device_id means the server cannot recognise a replay, so the queue
+    // refuses the session rather than risk double-counting it — a real loss
+    // that must not be silent.
+    mocks.getDesktopDeviceIdentityMock.mockResolvedValue({
+      device_id: null,
+      device_label: 'DESKTOP-ALPHA',
+    });
+    mocks.createActivitySessionMock.mockRejectedValue(new Error('network blip'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    const dropReports = warnSpy.mock.calls.filter(
+      (call) => String(call[0]).includes('unsent activity session(s)')
+    );
+
+    expect(dropReports).toHaveLength(1);
+    expect(String(dropReports[0][0])).toContain('no_device_id=1');
+
+    warnSpy.mockRestore();
+  });
+
   it('prefers the explorer window title for file explorer foreground sessions', async () => {
     render(<TrackerHarness />);
 

@@ -24,11 +24,29 @@ export type TrackerPrivacyPolicy = {
   skip_on_private_browsing: boolean;
 };
 
+/**
+ * What happens to an idle span when someone returns.
+ *
+ * 'prompt' is the fail-safe. An absent, unknown or malformed value resolves to
+ * it rather than to either automatic answer: silently discarding someone's
+ * time because a setting was mistyped is not a failure worth risking, and
+ * silently keeping it is how a tracker stops being believed.
+ */
+export type IdleResolutionPolicy = 'prompt' | 'always_keep' | 'never_keep';
+
+const IDLE_RESOLUTION_POLICIES: IdleResolutionPolicy[] = ['prompt', 'always_keep', 'never_keep'];
+
+export const readIdleResolutionPolicy = (value: unknown): IdleResolutionPolicy =>
+  IDLE_RESOLUTION_POLICIES.includes(value as IdleResolutionPolicy)
+    ? (value as IdleResolutionPolicy)
+    : 'prompt';
+
 export type TrackerPolicy = {
   idle_track_threshold_seconds: number;
   idle_auto_stop_threshold_seconds: number;
   lock_auto_stop_threshold_seconds: number;
   capture_interval_minutes: number;
+  idle_resolution_policy: IdleResolutionPolicy;
   screenshot_retention_days: number;
   privacy: TrackerPrivacyPolicy;
   /** Whether this organisation lets people see their own tracker record. */
@@ -122,6 +140,7 @@ export const resolveTrackerPolicy = (user: TrackerPolicyCarrier): TrackerPolicy 
     capture_interval_minutes: Number.isFinite(capture) && capture > 0
       ? Math.floor(capture)
       : FALLBACK_CAPTURE_INTERVAL_MINUTES,
+    idle_resolution_policy: readIdleResolutionPolicy(served.idle_resolution_policy),
     screenshot_retention_days: Number.isFinite(retention) && retention > 0
       ? Math.floor(retention)
       : FALLBACK_RETENTION_DAYS,

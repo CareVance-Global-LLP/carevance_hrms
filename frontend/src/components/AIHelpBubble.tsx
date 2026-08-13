@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, Send, X } from 'lucide-react';
 import { aiChatApi } from '@/services/api';
+import { useAnyDialogOpen } from '@/components/ui/dialog';
 import { getQuickActionsForRole } from '@/lib/aiKnowledge';
 
 type ChatRole = 'user' | 'assistant';
@@ -17,6 +18,7 @@ export default function AIHelpBubble({ userRole, showOnLanding: _showOnLanding =
   ]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const dialogOpen = useAnyDialogOpen();
 
   const quickActions = useMemo(() => getQuickActionsForRole(userRole), [userRole]);
 
@@ -44,6 +46,15 @@ export default function AIHelpBubble({ userRole, showOnLanding: _showOnLanding =
       setIsLoading(false);
     }
   };
+
+  /*
+   * Step aside for modal surfaces. The bubble is pinned to bottom-right at
+   * z-[100] and dialogs start at z-index 50, so it sat on top of the footer of
+   * every Modal and SlideOver — the corner that holds the primary button. It
+   * covered "Save settings" on the employee settings drawer. Unmounting rather
+   * than dimming also keeps it out of the dialog's focus trap.
+   */
+  if (dialogOpen) return null;
 
   return (
     <>

@@ -8,6 +8,8 @@ import {
   isSupportedBrowserTrackingApp,
 } from '@/lib/browserTracking';
 import { idleGuardIntervalMs } from '@/lib/runtimeConfig';
+import { idleStopWarningSecondsRemaining } from '@/lib/idleStopWarning';
+import { resolveBrowserUrlForContext } from '@/lib/inferredBrowserUrl';
 import { isCaptureBlockedContext, resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
@@ -17,6 +19,7 @@ import {
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
   emitIdleReturnPrompt,
+  emitIdleStopWarning,
   suppressAutoStart,
   suppressAutoStartGlobally,
 } from '@/lib/desktopTimerSession';
@@ -30,15 +33,26 @@ import type {
   TimeEntry,
 } from '@/types';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { newSessionLocalId } from './desktopSessionIdentity';
+import { createPendingSessionQueue, type PendingSession } from './pendingSessionQueue';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 1000;
 // Matches the server's system default (config/screenshots.php). This is only a
 // last-resort fallback now: the server resolves the effective interval
 // (per-user override -> org default -> system default) and sends it down.
-// Capture cadence is jittered by up to +/- this fraction so screenshots are not
-// perfectly periodic (and so a whole fleet on the same setting does not fire in
-// lockstep).
-const SCREENSHOT_INTERVAL_JITTER_RATIO = 0.1;
+/*
+ * Capture cadence used to be jittered by +/-10%, so a "1 minute" setting fired
+ * anywhere between 54 and 66 seconds. That was removed at the product owner's
+ * request (13 Aug 2026) in favour of an exact, verifiable interval — see
+ * nextCaptureDelayMs.
+ *
+ * What the jitter bought is worth stating, because an exact cadence gives it
+ * up: screenshots now land at predictable moments, which someone who wants to
+ * be unobserved can learn and work around, and every device sharing an interval
+ * and a start time uploads in lockstep rather than spread across the period.
+ * Neither is a correctness problem, and the phase still varies per person
+ * because the anchor is their own timer start.
+ */
 // How long capture may continue against a cached active entry while the server
 // is unreachable, before pausing until the timer is confirmed again.
 const SCREENSHOT_OFFLINE_GRACE_MS = 10 * 60 * 1000;
@@ -137,14 +151,37 @@ const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
 let desktopTrackerRunSequence = 0;
 
 /**
- * Spread captures around the configured period so they are not perfectly
- * predictable. Kept small so the long-run capture rate still matches the
- * configured interval.
+ * How long to wait before the next capture, against a fixed schedule.
+ *
+ * Captures are due at `anchorMs + n * intervalMs`, so the delay is measured
+ * from the schedule rather than from when the previous capture happened to
+ * finish. Re-arming with a fresh full interval after each capture added that
+ * capture's own duration — screenshot, encode and upload — to every period, so
+ * a "1 minute" cadence drifted a few seconds further behind on every cycle and
+ * the timestamps were never round.
+ *
+ * Always returns a slot strictly in the future. If a cycle overruns its period
+ * (a slow upload, a suspended machine) the missed slots are skipped rather than
+ * fired back-to-back, so the tracker never bursts to catch up.
+ *
+ * Exported for tests: it is the whole timing contract, and it is pure.
  */
-const jitteredScreenshotDelayMs = (intervalMs: number) => {
-  const spread = intervalMs * SCREENSHOT_INTERVAL_JITTER_RATIO;
+export const nextCaptureDelayMs = (anchorMs: number, nowMs: number, intervalMs: number): number => {
+  if (!Number.isFinite(intervalMs) || intervalMs <= 0) return 0;
 
-  return Math.max(1000, Math.round(intervalMs + (Math.random() * 2 - 1) * spread));
+  /*
+   * A clock that moved backwards re-anchors rather than honouring the old
+   * schedule. Keeping the schedule would mean waiting the interval PLUS the
+   * size of the jump — an hour's correction would open an hour-long hole in
+   * the capture record, which is far worse than one period landing off-grid.
+   */
+  if (nowMs <= anchorMs) return intervalMs;
+
+  const nextSlot = Math.floor((nowMs - anchorMs) / intervalMs) + 1;
+
+  // Always within (0, intervalMs]: never negative, never a gap longer than the
+  // configured period.
+  return anchorMs + nextSlot * intervalMs - nowMs;
 };
 
 type ActiveSegment = {
@@ -164,7 +201,16 @@ type ReliableTrackingContext = {
 };
 
 type ActiveDesktopSession = {
-  sessionId: number;
+  // null while the create is still queued: the session is real and locally
+  // known, but the server has not issued an id yet, so there is nothing to
+  // PATCH. The queued create carries started_at, so nothing is lost.
+  sessionId: number | null;
+  // The exact object sitting in pendingSessionQueueRef while sessionId is
+  // null, so closeActiveDesktopSession can stamp ended_at directly onto it
+  // before it drains. Without this the row inserts open and the server
+  // fabricates a duration for it against whatever session starts next
+  // (closeConflictingOpenSessions) — see the amendment on this task.
+  pendingPayload: PendingSession | null;
   timeEntryId: number;
   signature: string;
   startedAt: string;
@@ -249,6 +295,13 @@ const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload)
     String(payload.app || '').trim().toLowerCase(),
     String(payload.title || '').trim().toLowerCase(),
     String(payload.url || '').trim().toLowerCase(),
+    /*
+     * The inferred URL is part of the identity of a session, not decoration.
+     * `url` is always null on Windows, so without this a navigation between
+     * two pages that happen to share a title — common within one site — would
+     * be treated as the same session and keep the first page's URL for both.
+     */
+    String(payload.inferred_url || '').trim().toLowerCase(),
   ].join('|')
 );
 
@@ -367,6 +420,12 @@ export const useDesktopTracker = () => {
   // recorded until the person comes back and is asked what it was, so the
   // prompt can name a duration and point at the row it belongs to.
   const unansweredIdleRef = useRef<{ activityId: number; idleSeconds: number } | null>(null);
+  /*
+   * Whether a countdown is currently on screen. Without it the "cleared" event
+   * would fire on every tick of every non-idle second, which is almost all of
+   * them.
+   */
+  const idleStopWarningShownRef = useRef(false);
   const dedicatedIdleStopIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
@@ -387,6 +446,11 @@ export const useDesktopTracker = () => {
   const lastReliableTrackingContextRef = useRef<ReliableTrackingContext | null>(null);
   const pendingTrackedSecondsRef = useRef(0);
   const activeDesktopSessionRef = useRef<ActiveDesktopSession | null>(null);
+  // ~8 hours of switching at one session per 10s, then oldest-first drop.
+  const pendingSessionQueueRef = useRef(createPendingSessionQueue({ maxSize: 3000 }));
+  // Last dropped total already reported, so the tick reports a loss once
+  // instead of every second for as long as the count stays above zero.
+  const reportedDroppedSessionCountRef = useRef(0);
   const activeBrowserSessionRef = useRef<ActiveBrowserSession | null>(null);
   const browserTrackingStateRef = useRef<BrowserTrackingState | null>(null);
   const exactBrowserHealthyUntilMsRef = useRef(0);
@@ -517,8 +581,11 @@ export const useDesktopTracker = () => {
      * the server proposed idle stops that were rejected with 409 until it
      * exhausted its three-attempt cap.
      *
-     * The effect re-runs on `user`, so a policy change reaches a running
-     * tracker on the next /auth/me without restarting the app.
+     * The effect re-runs on `user`, so a policy change reaches the tracker as
+     * soon as a fresh payload lands — but AuthContext calls /auth/me only
+     * during bootstrap, so in practice that means a reload or a fresh sign-in.
+     * An admin who changes someone's capture interval mid-session will not see
+     * it take effect until then, which is why every admin surface says so.
      */
     const trackerPolicy = resolveTrackerPolicy(user);
     const IDLE_THRESHOLD_SECONDS = trackerPolicy.idle_track_threshold_seconds;
@@ -598,14 +665,30 @@ export const useDesktopTracker = () => {
         return;
       }
 
+      /*
+       * The schedule is anchored, not relative.
+       *
+       * Every capture is due at `anchor + n * interval`, and each timer is set
+       * from that schedule rather than "one full interval from now". Chaining a
+       * fresh interval after each capture completed meant every period silently
+       * carried the capture's own cost — grab, encode, upload — so the gap
+       * between screenshots was always longer than the configured one and grew
+       * further out of step the longer a timer ran.
+       *
+       * When the immediate shot below is suppressed, the anchor is the capture
+       * that already landed, so the next one still falls exactly one interval
+       * after it rather than one interval after this restart.
+       */
+      const msSinceLastCapture = Date.now() - lastScreenshotCaptureAtRef.current;
+      const captureNow = msSinceLastCapture >= screenshotIntervalMs;
+      const anchorMs = captureNow ? Date.now() : lastScreenshotCaptureAtRef.current;
+
       console.info('[desktop-tracker] screenshot interval started', {
         timeEntryId,
         intervalMs: screenshotIntervalMs,
+        anchorMs,
       });
 
-      // setTimeout rather than setInterval so each period can carry its own
-      // jitter. A fixed setInterval produced a perfectly predictable cadence,
-      // identical across every device on the same setting.
       const scheduleNextCapture = () => {
         screenshotIntervalRef.current = setTimeout(() => {
           void captureScreenshotOnInterval().finally(() => {
@@ -615,7 +698,7 @@ export const useDesktopTracker = () => {
               scheduleNextCapture();
             }
           });
-        }, jitteredScreenshotDelayMs(screenshotIntervalMs)) as unknown as number;
+        }, nextCaptureDelayMs(anchorMs, Date.now(), screenshotIntervalMs)) as unknown as number;
       };
 
       scheduleNextCapture();
@@ -630,8 +713,7 @@ export const useDesktopTracker = () => {
       // restarts (timer restart, snapshot restore, id mismatch) rebuild this
       // interval, and firing the immediate shot every time produced bursts well
       // above the configured rate.
-      const msSinceLastCapture = Date.now() - lastScreenshotCaptureAtRef.current;
-      if (msSinceLastCapture >= screenshotIntervalMs) {
+      if (captureNow) {
         void captureScreenshotOnInterval();
       } else {
         console.info('[desktop-tracker] immediate capture suppressed; one already landed this period', {
@@ -702,13 +784,27 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      activeDesktopSessionRef.current = null;
-
       const parsedEndedAtMs = Date.parse(String(endedAt || ''));
       const endedAtMs = Number.isFinite(parsedEndedAtMs)
         ? Math.max(activeDesktopSession.startedAtMs, parsedEndedAtMs)
         : Date.now();
       const resolvedEndedAt = new Date(endedAtMs).toISOString();
+
+      if (activeDesktopSession.sessionId === null) {
+        // Never reached the server. Its create is still queued — stamp the
+        // close time onto the same object sitting in the queue so it drains
+        // already closed. Left as the started_at seeded when it was built,
+        // the server would insert it open and closeConflictingOpenSessions
+        // would fabricate a duration against whatever session starts next.
+        if (activeDesktopSession.pendingPayload) {
+          activeDesktopSession.pendingPayload.ended_at = resolvedEndedAt;
+        }
+        activeDesktopSessionRef.current = null;
+        return;
+      }
+
+      activeDesktopSessionRef.current = null;
+
       // max(0), not max(1) — see closeActiveBrowserSession.
       const durationSeconds = Math.max(0, Math.round((endedAtMs - activeDesktopSession.startedAtMs) / 1000));
 
@@ -725,6 +821,10 @@ export const useDesktopTracker = () => {
     const extendActiveDesktopSession = async (capturedAt: string) => {
       const activeDesktopSession = activeDesktopSessionRef.current;
       if (!activeDesktopSession) {
+        return;
+      }
+
+      if (activeDesktopSession.sessionId === null) {
         return;
       }
 
@@ -807,10 +907,25 @@ export const useDesktopTracker = () => {
 
       await closeActiveDesktopSession(capturedAt);
 
+      /*
+       * Same precedence as the tick. A desktop_app session for a browser can
+       * now carry a URL, but only when the extension is not the authority for
+       * that browser, and the confidence travels with it so a host inferred
+       * from an Edge address bar never reads like a confirmed visit.
+       */
+      const payloadIsBrowser = BROWSER_APP_KEYWORDS.some(
+        (keyword) => String(payload.app || '').toLowerCase().includes(keyword)
+      );
+      const sessionUrl = resolveBrowserUrlForContext({
+        context: payload,
+        extensionHealthy: hasHealthyExactBrowserTracking(payload.app),
+        isBrowser: payloadIsBrowser,
+      });
+
       const displayName = resolveDesktopSessionDisplayName(payload);
       const appName = String(payload.app || '').trim() || displayName;
       const windowTitle = String(payload.title || '').trim() || displayName;
-      const response = await activitySessionApi.create({
+      const pending: PendingSession = {
         time_entry_id: activeEntry.id,
         source: 'desktop',
         activity_kind: 'desktop_app',
@@ -818,19 +933,47 @@ export const useDesktopTracker = () => {
         display_name: displayName,
         app_name: appName,
         window_title: windowTitle,
-        url: payload.url || null,
+        url: sessionUrl.url,
         started_at: capturedAt,
-        confidence: 100,
-      });
+        // Belt and braces: if closeActiveDesktopSession never gets a chance
+        // to stamp the real close time (see below), draining this seeded
+        // value inserts a zero-length row instead of an open one. Zero-length
+        // understates; open lets the server fabricate a duration against
+        // whatever session starts next — worse.
+        ended_at: capturedAt,
+        // 100 for an app or an exact page; lower when the URL is only a host
+        // read out of an address bar.
+        confidence: sessionUrl.url ? sessionUrl.confidence : 100,
+        local_id: newSessionLocalId(),
+        device_id: desktopDeviceIdentityRef.current?.device_id ?? null,
+      };
 
       const startedAtMs = Date.parse(capturedAt);
+      const resolvedStartedAtMs = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+
+      let sessionId: number | null = null;
+      let pendingPayload: PendingSession | null = null;
+      try {
+        const response = await activitySessionApi.create(pending);
+        sessionId = response.data.id;
+      } catch (error) {
+        // The session still happened. Queue it and keep local state so the
+        // segment is not lost; the tick below retries it. Keep the same
+        // object reference so closeActiveDesktopSession can stamp ended_at
+        // onto the item actually sitting in the queue.
+        pendingSessionQueueRef.current.enqueue(pending);
+        pendingPayload = pending;
+        reportSilentError('desktop-tracker', error);
+      }
+
       activeDesktopSessionRef.current = {
-        sessionId: response.data.id,
+        sessionId,
+        pendingPayload,
         timeEntryId: activeEntry.id,
         signature,
         startedAt: capturedAt,
-        startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-        lastSeenAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+        startedAtMs: resolvedStartedAtMs,
+        lastSeenAtMs: resolvedStartedAtMs,
       };
     };
 
@@ -1617,6 +1760,70 @@ export const useDesktopTracker = () => {
         
         syncScreenshotInterval(activeEntryRef.current?.id || null);
 
+        // Retry anything a network blip lost. Safe to repeat: every queued
+        // session carries (local_id, device_id) and the server resolves a
+        // replay to the row it already created.
+        void pendingSessionQueueRef.current.drain(async (p) => {
+          // Read before the await: closeActiveDesktopSession can stamp the
+          // real close time onto this same object while the create is in
+          // flight, and by then the payload on the wire already carries the
+          // seeded zero-length value.
+          const sentEndedAt = p.ended_at ?? null;
+          const response = await activitySessionApi.create(p);
+
+          // An empty 2xx body yields undefined here, which would pass the
+          // `sessionId === null` guards on the close and extend paths and
+          // PATCH /activity-sessions/undefined. Nothing to adopt or amend.
+          const sessionId = response?.data?.id;
+          if (!Number.isFinite(sessionId)) {
+            return;
+          }
+
+          const laterEndedAt = p.ended_at ?? null;
+          if (laterEndedAt && laterEndedAt !== sentEndedAt) {
+            // The user switched away mid-request, so the row the server just
+            // created still holds the seeded ended_at === started_at. The
+            // adoption branch below cannot fix it: closeActiveDesktopSession
+            // already cleared activeDesktopSessionRef, so no PATCH would ever
+            // follow and the segment would land as zero seconds — which
+            // ActivityFeedService::mapSession drops entirely (end <= start).
+            await activitySessionApi.update(sessionId, { ended_at: laterEndedAt });
+            return;
+          }
+
+          // If this payload is still the live session's, adopt the id the
+          // server just issued so the normal close path can PATCH the real
+          // end time. Without this the row keeps the seeded zero-length
+          // ended_at forever, because sessionId stays null and both the
+          // close and extend paths short-circuit on it.
+          const active = activeDesktopSessionRef.current;
+          if (active && active.pendingPayload === p) {
+            active.sessionId = sessionId;
+            active.pendingPayload = null;
+          }
+        }, now);
+
+        // Every eviction path — an unidentifiable device, the retry window,
+        // overflow — throws away time an employee actually worked, and this
+        // data feeds ProductivityPayrollService. Unreported it is
+        // indistinguishable from time never tracked. Report on change only:
+        // this runs every second.
+        const droppedSessionCount = pendingSessionQueueRef.current.droppedCount();
+        if (droppedSessionCount > reportedDroppedSessionCountRef.current) {
+          const newlyDropped = droppedSessionCount - reportedDroppedSessionCountRef.current;
+          reportedDroppedSessionCountRef.current = droppedSessionCount;
+          const reasons = pendingSessionQueueRef.current.droppedReasons();
+          reportSilentError(
+            'desktop-tracker',
+            new Error(
+              `dropped ${newlyDropped} unsent activity session(s); ${droppedSessionCount} total `
+              + `(no_device_id=${reasons.no_device_id}, `
+              + `retry_window_exceeded=${reasons.retry_window_exceeded}, `
+              + `overflow=${reasons.overflow})`
+            )
+          );
+        }
+
         if (systemLockedAtMsRef.current !== null && lockAutoStopTimeoutRef.current === null) {
           scheduleLockAutoStop();
         }
@@ -1671,9 +1878,22 @@ export const useDesktopTracker = () => {
         const fallbackTitle = typeof document !== 'undefined' ? document.title : '';
         const recordedAt = new Date(now).toISOString();
         const rawAppName = String(activeContext?.app || '').trim();
-        const rawUrl = String(activeContext?.url || '').trim();
         const rawIsBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => rawAppName.toLowerCase().includes(keyword));
         const exactBrowserTrackingHealthy = hasHealthyExactBrowserTracking(rawAppName, now);
+        /*
+         * On Windows the platform never fills `url` — get-windows only does
+         * that on macOS — so without this a browser with no extension produced
+         * a title and nothing else. The desktop agent now reads the URL out of
+         * the browser's own UI, and this decides whether that reading is
+         * allowed to count: never over a healthy extension, which owns website
+         * sessions, and never for a non-browser window.
+         */
+        const resolvedBrowserUrl = resolveBrowserUrlForContext({
+          context: activeContext,
+          extensionHealthy: exactBrowserTrackingHealthy,
+          isBrowser: rawIsBrowserApp,
+        });
+        const rawUrl = resolvedBrowserUrl.url ?? '';
         const rawContextName = buildTrackedContextName(activeContext || {});
         const rawActivityType: 'app' | 'url' = rawUrl || rawIsBrowserApp ? 'url' : 'app';
         const rawAppFamily = resolveAppFamily(rawAppName, rawActivityType);
@@ -1748,6 +1968,23 @@ export const useDesktopTracker = () => {
           url: rawUrl || null,
           captured_at: recordedAt,
         };
+
+        /*
+         * Warn before taking the timer away.
+         *
+         * Emitted every tick so the countdown moves, and once with null when
+         * input resumes so the UI can clear itself. Sits outside the idle
+         * branch below because the person may already be back — that is
+         * exactly the case that has to clear the warning.
+         */
+        const warningSecondsRemaining = idleStopWarningSecondsRemaining(
+          idleSeconds,
+          IDLE_AUTO_STOP_THRESHOLD_SECONDS
+        );
+        if (warningSecondsRemaining !== null || idleStopWarningShownRef.current) {
+          emitIdleStopWarning({ secondsRemaining: warningSecondsRemaining, idleSeconds });
+          idleStopWarningShownRef.current = warningSecondsRemaining !== null;
+        }
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           await closeActiveDesktopSession(new Date(lastActivityAtMs).toISOString());
