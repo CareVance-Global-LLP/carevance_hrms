@@ -82,36 +82,50 @@ The legacy `activities` *read* fallback is untouched.
 
 ### Local buffer
 
-Sessions are written to a new `pending_activity_sessions` table in the existing
-offline database, shaped to `activity_sessions` rather than to the legacy model.
+The buffer is **in memory first, persistence later**, in two steps.
 
-`offline-db.cjs` persists by exporting the whole database and rewriting the file
-(`db.export()` then `writeFileSync`). At one write per app switch that rewrites
-the entire file on every switch. The buffer therefore accumulates in memory and
-persists on whichever comes first:
+A failed create is queued in renderer memory and retried on the existing tick.
+That alone converts the common failure — a network blip — from a permanent hole
+into a delayed write, and it is small enough to ship on its own.
 
-- 25 buffered sessions,
-- 30 seconds since the last persist,
-- any app lifecycle event that could lose memory (`before-quit`, `suspend`,
-  `lock-screen`).
+Persisting the queue across a process restart is deliberately deferred. The
+offline store persists by exporting the whole database and rewriting the file
+(`offline-db.cjs` `_persist`: `db.export()` then `writeFileSync`), so a write
+per app switch rewrites the entire file each time. Making that cheap enough
+needs its own flush policy and its own measurement, and the coverage records
+below are what make an un-persisted loss *visible* rather than silent — which
+is the property that actually matters. Persistence is worth its cost only once
+coverage shows how often a hard kill really loses anything.
 
-Losing up to 30 seconds of buffered sessions to a hard kill is acceptable; the
-coverage record in the next section makes that loss visible rather than silent.
+The queue is bounded (oldest dropped, drops counted) so a long outage cannot
+exhaust renderer memory.
 
-### Idempotent batch upload
+### Idempotent replay — mostly already built
 
-New endpoint: `POST /api/activity-sessions/batch`.
+**Correction to an earlier draft of this document, which proposed adding a
+`client_uuid` column and a batch endpoint. Both were over-specified.**
 
-- Body: `{ sessions: [...] }`, at most 200 per request.
-- Every session carries a client-generated `client_uuid` (UUIDv4, minted when
-  the session opens).
-- `client_uuid` gets a unique index. Insert is an upsert on it, so a retry after
-  a timeout that actually succeeded cannot double-count.
-- Partial success is explicit: the response reports accepted and rejected
-  `client_uuid`s. The client only clears what was accepted.
+`2026_06_10_000001_add_idempotency_keys.php` already added `local_id` and
+`device_id` to `activity_sessions` with a unique composite index
+(`activity_sessions_idempotent`), and `ActivitySessionController::store`
+already resolves a replay against it and returns the original row rather than
+inserting a duplicate. Its comment says the keys are "sent by the desktop
+tracker when replaying its offline queue".
 
-`store` and `update` remain for the live online path; the batch endpoint is the
-recovery and bulk path.
+The gap is that **the live path never sends them**. `activitySessionApi.create`
+is called without `local_id` or `device_id`, so today a retry would duplicate —
+which is very likely why no retry was ever added.
+
+So the work is:
+
+- mint a `local_id` (UUIDv4) when a desktop session opens, and send it with the
+  already-resolved `device_id` from `desktopDeviceIdentityRef` (the screenshot
+  path already uses it);
+- then, and only then, retrying a failed create becomes safe.
+
+No new column, no unique index, no batch endpoint. A batch endpoint is a
+throughput optimisation, and with idempotent replay a sequential retry is
+already correct; it is not built until something measurably needs it.
 
 ### Coverage records
 
@@ -242,7 +256,7 @@ Input counting is a material change in what is collected. It ships with:
 
 | Table | Change |
 |---|---|
-| `activity_sessions` | `+ client_uuid` (unique), `+ duration_ms`, `+ keyboard_count`, `+ mouse_count`, `+ input_seconds`, `+ client_reported_at`; `started_at`/`ended_at` to ms precision |
+| `activity_sessions` | `+ duration_ms`, `+ keyboard_count`, `+ mouse_count`, `+ input_seconds`, `+ client_reported_at`; `started_at`/`ended_at` to ms precision. `local_id`/`device_id` already exist and are already unique — no change |
 | `activity_coverage` | new |
 | offline `pending_activity_sessions` | new, replaces the dead `app_usage` path |
 | legacy `activities` | untouched; read fallback preserved |
@@ -257,8 +271,10 @@ Per increment, gated on failing-test-name diffs against the committed baselines
 rather than counts.
 
 **Increment 1**
-- A batch replayed twice inserts one row per `client_uuid`.
-- A partially rejected batch clears only accepted rows from the buffer.
+- A session create replayed twice inserts one row, resolved on
+  `local_id` + `device_id`.
+- A create that fails is retried and eventually lands, rather than being lost.
+- The buffer clears only what the server confirmed.
 - Killing the process with a full buffer loses at most the un-persisted window,
   and the lost span appears as a derived gap rather than vanishing.
 - Coverage plus gaps equals the time entry duration, exactly, for a synthetic
