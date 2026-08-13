@@ -719,6 +719,55 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('adopts the server id on a successful drain, so a later close PATCHes the real end time instead of leaving the row at its seeded zero-length duration', async () => {
+    // Drive this entirely through the tick's own polling, matching real
+    // usage: the mount tick's create fails and queues while Notepad is
+    // focused, the very next tick (1s later, well before the user has moved
+    // on) drains and adopts the server id, Notepad stays focused for 5
+    // minutes of ordinary extends, then the poll sees VS Code and closes it.
+    const notepadWindow = { app: 'Notepad', title: 'notes.txt - Notepad', url: null };
+    const vsCodeWindow = { app: 'Visual Studio Code', title: 'Tracking Work', url: null };
+    mocks.getActiveWindowContextMock.mockResolvedValue(notepadWindow);
+    // The mount tick's create fails and queues; every retry after that
+    // (the drain, and the eventual VS Code create) succeeds.
+    mocks.createActivitySessionMock
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockResolvedValue({ data: { id: 3001 } });
+
+    render(<TrackerHarness />);
+
+    // The mount tick creates the Notepad session (fails, queues it); the
+    // very next tick — one second later — drains the queue and adopts the
+    // server id while Notepad is still the polled app.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    // Stay on Notepad for the rest of 5 minutes of ordinary polling/extends
+    // (1s already elapsed above; one more tick below lands exactly on 5:00).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4 * 60 * 1000 + 58 * 1000);
+    });
+
+    mocks.getActiveWindowContextMock.mockResolvedValue(vsCodeWindow);
+    mocks.updateActivitySessionMock.mockClear();
+
+    // The tick exactly 5 minutes after mount sees VS Code and closes Notepad.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    // The drained session must have adopted the id the server issued, so
+    // closing it goes through the normal PATCH path with the real 5-minute
+    // duration. Without adopting the id, sessionId stays null forever and
+    // this session is stuck at the seeded zero-length ended_at — five
+    // minutes of Notepad recorded as zero seconds, with no update call for
+    // the real close to show for it.
+    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(3001, expect.objectContaining({
+      duration_seconds: 300,
+    }));
+  });
+
   it('prefers the explorer window title for file explorer foreground sessions', async () => {
     render(<TrackerHarness />);
 

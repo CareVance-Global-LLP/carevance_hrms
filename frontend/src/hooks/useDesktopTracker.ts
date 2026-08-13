@@ -1727,7 +1727,20 @@ export const useDesktopTracker = () => {
         // Retry anything a network blip lost. Safe to repeat: every queued
         // session carries (local_id, device_id) and the server resolves a
         // replay to the row it already created.
-        void pendingSessionQueueRef.current.drain((p) => activitySessionApi.create(p));
+        void pendingSessionQueueRef.current.drain(async (p) => {
+          const response = await activitySessionApi.create(p);
+
+          // If this payload is still the live session's, adopt the id the
+          // server just issued so the normal close path can PATCH the real
+          // end time. Without this the row keeps the seeded zero-length
+          // ended_at forever, because sessionId stays null and both the
+          // close and extend paths short-circuit on it.
+          const active = activeDesktopSessionRef.current;
+          if (active && active.pendingPayload === p) {
+            active.sessionId = response.data.id;
+            active.pendingPayload = null;
+          }
+        });
 
         if (systemLockedAtMsRef.current !== null && lockAutoStopTimeoutRef.current === null) {
           scheduleLockAutoStop();
