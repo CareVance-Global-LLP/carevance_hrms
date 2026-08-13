@@ -161,13 +161,6 @@ declare global {
       recorded_at: string;
       metadata?: Record<string, unknown>;
     }) => Promise<{ saved: boolean; local_id?: string; error?: string }>;
-    saveAppUsageOffline?: (payload: {
-      user_id: number;
-      app_name: string;
-      duration: number;
-      timestamp: string;
-      title?: string;
-    }) => Promise<{ saved: boolean; local_id?: string; error?: string }>;
     saveWebsiteUsageOffline?: (payload: {
       user_id: number;
       url: string;

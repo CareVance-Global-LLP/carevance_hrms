@@ -113,7 +113,6 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   saveAttendanceOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-attendance', payload),
   saveScreenshotOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-screenshot', payload),
   saveActivityOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-activity', payload),
-  saveAppUsageOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-app-usage', payload),
   saveWebsiteUsageOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-website-usage', payload),
   saveTimelineOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-timeline', payload),
   saveTimeEntryOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-time-entry', payload),

@@ -1931,22 +1931,6 @@ ipcMain.handle('desktop:offline-save-activity', async (_event, payload) => {
   return { saved: !!savedId, local_id: savedId };
 });
 
-ipcMain.handle('desktop:offline-save-app-usage', async (_event, payload) => {
-  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
-  const localId = generateLocalId();
-  const savedId = offlineDb.saveAppUsage(
-    localId,
-    payload.user_id,
-    payload.app_name,
-    payload.duration || 0,
-    payload.timestamp,
-    payload.title || null,
-    getDesktopDeviceIdentity().device_id
-  );
-  broadcastOfflineStatus();
-  return { saved: !!savedId, local_id: savedId };
-});
-
 ipcMain.handle('desktop:offline-save-website-usage', async (_event, payload) => {
   if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
   const localId = generateLocalId();

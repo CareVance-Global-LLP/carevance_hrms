@@ -238,9 +238,6 @@ SyncEngine.prototype._syncItem = async function (queueItem) {
     case 'activity':
       await this._syncActivity(record);
       break;
-    case 'app_usage':
-      await this._syncAppUsage(record);
-      break;
     case 'website_usage':
       await this._syncWebsiteUsage(record);
       break;
@@ -506,24 +503,6 @@ SyncEngine.prototype._syncActivity = async function (record) {
       throw err;
     }
   };
-
-SyncEngine.prototype._syncAppUsage = async function (record) {
-  try {
-    await this._apiRequest('POST', '/api/activities', {
-      local_id: record.local_id,
-      device_id: record.device_id,
-      type: 'app',
-      name: record.app_name || 'Unknown',
-      app_name: record.app_name || null,
-      duration: record.duration || 0,
-      recorded_at: record.timestamp,
-    });
-    this.queueManager.markSynced('app_usage', record.local_id);
-  } catch (err) {
-    if (this._handleSoftFailure('app_usage', record, err)) return;
-    throw err;
-  }
-};
 
 SyncEngine.prototype._syncWebsiteUsage = async function (record) {
   try {

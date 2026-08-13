@@ -144,19 +144,6 @@ export const saveActivityOffline = async (
   });
 };
 
-export const saveAppUsageOffline = async (
-  userId: number,
-  appName: string,
-  duration: number,
-  timestamp: string,
-  title?: string,
-): Promise<{ saved: boolean; local_id?: string; error?: string }> => {
-  if (!api?.saveAppUsageOffline) {
-    return { saved: false, error: 'Desktop API not available' };
-  }
-  return api.saveAppUsageOffline({ user_id: userId, app_name: appName, duration, timestamp, title });
-};
-
 export const saveWebsiteUsageOffline = async (
   userId: number,
   url: string,
