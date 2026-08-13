@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
@@ -9,9 +10,11 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  UserRound,
   X,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import useAnchoredMenu from '@/components/ui/useAnchoredMenu';
 import { formatDurationSmart } from '@/lib/formatters';
 
 export type DirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
@@ -25,6 +28,9 @@ export interface RosterUser {
   total_duration?: number;
   total_elapsed_duration?: number;
 }
+
+/** Fixed so the menu can be placed on its first paint, before it is measured. */
+const ROW_MENU_WIDTH = 192;
 
 const trackedSeconds = (user: RosterUser): number =>
   Number(user.total_elapsed_duration || user.total_duration || 0);
@@ -231,16 +237,35 @@ function RosterRowBase({
 }: RowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const { menuRef: panelRef, style: menuStyle } = useAnchoredMenu(triggerRef, menuOpen, { width: ROW_MENU_WIDTH, onDismiss: () => setMenuOpen(false) });
   const working = Boolean(user.is_working);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
     const close = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false);
+      const target = event.target as Node;
+      /*
+       * The panel is portalled out of the row, so it is not inside menuRef any
+       * more. Without checking it too, mousedown on a menu item counted as an
+       * outside click and unmounted the item before its click could fire.
+       */
+      if (menuRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [menuOpen]);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen, panelRef]);
 
   return (
     <tr className={selected ? 'bg-blue-50' : 'hover:bg-blue-50/60'}>
@@ -325,19 +350,28 @@ function RosterRowBase({
         <div className="relative inline-block" ref={menuRef}>
           <button
             type="button"
+            ref={triggerRef}
             aria-label={`Actions for ${user.name}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             onClick={() => setMenuOpen((current) => !current)}
             className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
-          {menuOpen ? (
-            <div className="absolute right-0 z-40 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-modal">
+          {menuOpen && menuStyle ? createPortal(
+            <div
+              ref={panelRef}
+              data-row-menu=""
+              style={menuStyle}
+              className="rounded-xl border border-slate-200 bg-surface-raised p-1.5 text-left shadow-modal"
+            >
               <Link
                 to={href}
+                onClick={() => setMenuOpen(false)}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-slate-700 transition hover:bg-slate-50"
               >
-                Open profile
+                <UserRound className="h-3.5 w-3.5 text-slate-400" /> Open profile
               </Link>
               <button
                 type="button"
@@ -364,7 +398,8 @@ function RosterRowBase({
                   </button>
                 </>
               ) : null}
-            </div>
+            </div>,
+            document.body,
           ) : null}
         </div>
       </td>
