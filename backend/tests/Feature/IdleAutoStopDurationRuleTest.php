@@ -27,6 +27,26 @@ class IdleAutoStopDurationRuleTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * These scenarios are written around a 5-minute auto-stop, which was the
+     * system default when the rule was specified. The default has since moved
+     * to 15 minutes, so the threshold is pinned here rather than inherited.
+     *
+     * What this class is actually about is the duration arithmetic — bill to
+     * the last keypress, record the idle separately, and have all three stop
+     * paths agree. That arithmetic must hold at any threshold, so depending on
+     * the ambient default only made the tests break when the default moved,
+     * which is precisely what happened.
+     */
+    private const AUTO_STOP_SECONDS = 300;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['time_tracking.idle_auto_stop_threshold_seconds' => self::AUTO_STOP_SECONDS]);
+    }
+
     private function makeUser(string $email): User
     {
         $organization = Organization::firstOrCreate(

@@ -29,6 +29,25 @@ class TrackerPolicyResolver
     private const MIN_IDLE_AUTO_STOP_SECONDS = 300;
     private const MAX_IDLE_SECONDS = 3600;
 
+    /**
+     * What happens to an idle span when someone comes back.
+     *
+     * PROMPT is the default and the fail-safe: an absent, unknown or malformed
+     * value resolves to it rather than to either automatic answer. Silently
+     * discarding someone's time because a setting was misspelled is not a
+     * failure mode worth risking, and silently keeping it is how a tracker
+     * stops being trusted.
+     */
+    public const IDLE_POLICY_PROMPT = 'prompt';
+    public const IDLE_POLICY_ALWAYS_KEEP = 'always_keep';
+    public const IDLE_POLICY_NEVER_KEEP = 'never_keep';
+
+    private const IDLE_POLICIES = [
+        self::IDLE_POLICY_PROMPT,
+        self::IDLE_POLICY_ALWAYS_KEEP,
+        self::IDLE_POLICY_NEVER_KEEP,
+    ];
+
     private const MIN_RETENTION_DAYS = 7;
     private const MAX_RETENTION_DAYS = 730;
 
@@ -76,6 +95,7 @@ class TrackerPolicyResolver
                 self::MIN_IDLE_TRACK_SECONDS,
             ),
             'capture_interval_minutes' => $this->monitoringSettings->resolveForUser($user),
+            'idle_resolution_policy' => $this->idleResolutionPolicy($settings, $orgSettings),
             'screenshot_retention_days' => $this->retentionDays($orgSettings),
             'privacy' => $this->privacy($orgSettings),
             'can_view_own_activity' => $this->employeeActivityVisible($orgSettings),
@@ -159,6 +179,39 @@ class TrackerPolicyResolver
     }
 
     /** @param array<string, mixed> $orgSettings */
+    /**
+     * Per-user override, else the organization's, else prompt.
+     *
+     * Same chain as every other tracker setting. Anything not in the allow-list
+     * falls through to the next level rather than short-circuiting, so a junk
+     * per-user value cannot bypass what the organization chose.
+     *
+     * @param array<string, mixed> $settings
+     * @param array<string, mixed> $orgSettings
+     */
+    public function idleResolutionPolicy(array $settings, array $orgSettings): string
+    {
+        foreach ([$settings['idle_resolution_policy'] ?? null, $orgSettings['idle_resolution_policy'] ?? null] as $candidate) {
+            if (is_string($candidate) && in_array($candidate, self::IDLE_POLICIES, true)) {
+                return $candidate;
+            }
+        }
+
+        return self::IDLE_POLICY_PROMPT;
+    }
+
+    /**
+     * The policy for a user, read straight off the models. For callers that
+     * hold a User but not its resolved policy array.
+     */
+    public function idleResolutionPolicyForUser(?User $user): string
+    {
+        return $this->idleResolutionPolicy(
+            is_array($user?->settings) ? $user->settings : [],
+            $this->orgSettings($user)
+        );
+    }
+
     private function retentionDays(array $orgSettings): int
     {
         $configured = $orgSettings['screenshot_retention_days']

@@ -1293,7 +1293,7 @@ export const activityApi = {
 };
 
 export const activitySessionApi = {
-  create: (data: Partial<ActivitySession>) =>
+  create: (data: Partial<ActivitySession> & { local_id?: string; device_id?: string | null }) =>
     api.post<ActivitySession>('/activity-sessions', data),
 
   update: (id: number, data: Partial<ActivitySession>) =>

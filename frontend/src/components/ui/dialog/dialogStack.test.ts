@@ -4,6 +4,7 @@ import {
   openDialogCount,
   registerDialog,
   resetDialogStack,
+  subscribeDialogStack,
   unregisterDialog,
 } from './dialogStack';
 
@@ -52,6 +53,49 @@ describe('dialogStack scroll lock', () => {
 
   it('ignores unregistering a dialog that was never registered', () => {
     expect(() => unregisterDialog(Symbol('ghost'))).not.toThrow();
+  });
+});
+
+describe('dialogStack subscription', () => {
+  it('notifies subscribers as the stack opens and empties', () => {
+    // The AI help bubble hides itself off this signal; without a notification
+    // on register it stays pinned over the dialog's footer button.
+    const seen: number[] = [];
+    const unsubscribe = subscribeDialogStack(() => seen.push(openDialogCount()));
+    const a = Symbol('a');
+    const b = Symbol('b');
+
+    registerDialog(a, 0);
+    registerDialog(b, 1);
+    unregisterDialog(b);
+    unregisterDialog(a);
+
+    expect(seen).toEqual([1, 2, 1, 0]);
+
+    unsubscribe();
+  });
+
+  it('stops notifying after unsubscribe', () => {
+    let calls = 0;
+    const unsubscribe = subscribeDialogStack(() => { calls += 1; });
+
+    unsubscribe();
+    registerDialog(Symbol('a'), 0);
+
+    expect(calls).toBe(0);
+  });
+
+  it('does not notify when a duplicate registration is ignored', () => {
+    const a = Symbol('a');
+    registerDialog(a, 0);
+
+    let calls = 0;
+    const unsubscribe = subscribeDialogStack(() => { calls += 1; });
+    registerDialog(a, 0);
+
+    expect(calls).toBe(0);
+
+    unsubscribe();
   });
 });
 

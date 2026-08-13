@@ -37,6 +37,7 @@ const { LocalShellServer } = require('./offline/local-shell.cjs');
 const { NetworkMonitor } = require('./offline/network-monitor.cjs');
 const { QueueManager } = require('./offline/queue-manager.cjs');
 const SyncEngineModule = require('./offline/sync-engine.cjs');
+const { BrowserUrlReader } = require('./browser-url/browser-url-reader.cjs');
 console.log('[Desktop] SyncEngine loaded, keys:', Object.keys(SyncEngineModule));
 const { SyncEngine } = SyncEngineModule;
 let activeWindowGetter = null;
@@ -821,6 +822,32 @@ const getAllProcessesWithWindows = async () => {
   return [];
 };
 
+/*
+ * Reads the foreground browser's URL through UI Automation.
+ *
+ * get-windows only returns a `url` on macOS, so on this Windows build that
+ * field has always been null and a browser without the extension installed
+ * produced nothing but a window title. This fills that gap.
+ *
+ * Reported under `inferred_url` rather than `url` on purpose. The renderer
+ * already keys activity classification and context naming off `url`, and the
+ * browser extension owns website sessions when it is connected — overwriting
+ * `url` here would silently change how sessions are classified and could
+ * double-source against the extension. Deciding that precedence is its own
+ * change; this one only makes the data available.
+ */
+let browserUrlReader = null;
+
+const getBrowserUrlReader = () => {
+  if (!browserUrlReader) {
+    browserUrlReader = new BrowserUrlReader({
+      onError: (error) => console.warn('[desktop-tracker] browser url reader:', error?.message || error),
+    });
+    browserUrlReader.start();
+  }
+  return browserUrlReader;
+};
+
 const getForegroundWindowPayload = async () => {
   const getActiveWindow = await loadActiveWindowGetter();
   if (!getActiveWindow) {
@@ -832,10 +859,17 @@ const getForegroundWindowPayload = async () => {
     const app = context?.owner?.name || null;
     // Lookup process description asynchronously (non-blocking)
     const description = app ? await getProcessDescription(app) : null;
+    // Never rejects and resolves null off a browser, so it cannot fail a poll.
+    const inferred = await getBrowserUrlReader().read();
     return {
       app: app,
       title: context?.title || null,
       url: context?.url || null,
+      // 'document' is Chrome's real page URL; 'address_bar' is a host-only
+      // hint from Edge/Brave that must not be treated as a confirmed visit.
+      inferred_url: inferred ? inferred.url : null,
+      inferred_url_source: inferred ? inferred.source : null,
+      inferred_url_confidence: inferred ? inferred.confidence : null,
       description: description,
       captured_at: new Date().toISOString(),
     };
@@ -864,6 +898,13 @@ const emitForegroundWindowChange = async () => {
     app: payload.app || null,
     title: payload.title || null,
     url: payload.url || null,
+    /*
+     * Part of the identity, not decoration. `url` is always null on Windows —
+     * get-windows only fills it on macOS — so without this, navigating between
+     * two pages that share a title never changes the signature, no event is
+     * emitted, and the renderer keeps the first page's URL for both.
+     */
+    inferred_url: payload.inferred_url || null,
     description: payload.description || null,
   });
 
@@ -1682,11 +1723,18 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
 
     const app = context.owner?.name || null;
     const description = app ? await getProcessDescription(app) : null;
+    // Same UIA read as the foreground watcher. This is the path the tracker's
+    // tick uses, and the tick is what drives activity classification, so the
+    // field has to be here too or the capture only reaches half the pipeline.
+    const inferred = await getBrowserUrlReader().read();
 
     return {
       app: app,
       title: context.title || null,
       url: context.url || null,
+      inferred_url: inferred ? inferred.url : null,
+      inferred_url_source: inferred ? inferred.source : null,
+      inferred_url_confidence: inferred ? inferred.confidence : null,
       description: description,
       captured_at: new Date().toISOString(),
     };
@@ -1926,22 +1974,6 @@ ipcMain.handle('desktop:offline-save-activity', async (_event, payload) => {
     payload.metadata || null,
     getDesktopDeviceIdentity().device_id,
     payload.time_entry_local_id
-  );
-  broadcastOfflineStatus();
-  return { saved: !!savedId, local_id: savedId };
-});
-
-ipcMain.handle('desktop:offline-save-app-usage', async (_event, payload) => {
-  if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
-  const localId = generateLocalId();
-  const savedId = offlineDb.saveAppUsage(
-    localId,
-    payload.user_id,
-    payload.app_name,
-    payload.duration || 0,
-    payload.timestamp,
-    payload.title || null,
-    getDesktopDeviceIdentity().device_id
   );
   broadcastOfflineStatus();
   return { saved: !!savedId, local_id: savedId };
@@ -2219,6 +2251,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (browserUrlReader) {
+    browserUrlReader.dispose();
+    browserUrlReader = null;
+  }
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;

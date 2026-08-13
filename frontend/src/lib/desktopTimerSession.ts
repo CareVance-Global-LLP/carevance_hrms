@@ -10,6 +10,12 @@ export const DESKTOP_TIMER_IDLE_STOP_EVENT = 'desktop-timer:idle-auto-stop';
  * unanswered. The UI turns this into the keep/discard prompt.
  */
 export const DESKTOP_TIMER_IDLE_RETURN_EVENT = 'desktop-timer:idle-return';
+/**
+ * Raised each second while an idle stretch is closing on the automatic stop,
+ * and once with `secondsRemaining: null` when the person comes back before it
+ * fires. The UI turns this into a countdown.
+ */
+export const DESKTOP_TIMER_IDLE_WARNING_EVENT = 'desktop-timer:idle-stop-warning';
 export const DESKTOP_TIMER_STARTED_EVENT = 'desktop-timer:started';
 export const DESKTOP_TIMER_STOPPED_EVENT = 'desktop-timer:stopped';
 
@@ -25,6 +31,12 @@ export type DesktopTimerIdleReturnDetail = {
   idleSeconds: number;
   /** Whether the timer is still running, which decides if "stop" is offered. */
   timerRunning: boolean;
+};
+
+export type DesktopTimerIdleWarningDetail = {
+  /** Seconds until the timer stops, or null when the warning is over. */
+  secondsRemaining: number | null;
+  idleSeconds: number;
 };
 
 export type DesktopTimerSessionDetail = {
@@ -231,6 +243,17 @@ export const emitDesktopTimerIdleStop = (detail: DesktopTimerIdleStopDetail) => 
 export const emitIdleReturnPrompt = (detail: DesktopTimerIdleReturnDetail) => {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent<DesktopTimerIdleReturnDetail>(DESKTOP_TIMER_IDLE_RETURN_EVENT, { detail }));
+};
+
+/**
+ * Tell the UI how long is left before the timer stops itself.
+ *
+ * Emitted every tick inside the window, so the countdown updates rather than
+ * freezing on the value it opened with, and once with null when input resumes.
+ */
+export const emitIdleStopWarning = (detail: DesktopTimerIdleWarningDetail) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<DesktopTimerIdleWarningDetail>(DESKTOP_TIMER_IDLE_WARNING_EVENT, { detail }));
 };
 
 export const emitDesktopTimerStarted = (detail: DesktopTimerSessionDetail) => {

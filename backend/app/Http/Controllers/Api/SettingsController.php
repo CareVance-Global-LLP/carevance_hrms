@@ -389,6 +389,7 @@ class SettingsController extends Controller
             'idle_track_threshold_seconds',
             'idle_auto_stop_threshold_seconds',
             'lock_auto_stop_threshold_seconds',
+            'idle_resolution_policy',
             'screenshot_retention_days',
             'employee_activity_visible',
             'screenshot_employee_delete',
@@ -409,9 +410,18 @@ class SettingsController extends Controller
                 continue;
             }
 
-            $existingSettings[$key] = in_array($key, ['screenshot_employee_delete', 'employee_activity_visible'], true)
-                ? filter_var($value, FILTER_VALIDATE_BOOL)
-                : (int) $value;
+            /*
+             * Cast per key rather than "boolean if listed, otherwise int".
+             * That shape silently turned the first string setting added here
+             * (idle_resolution_policy) into 0, which the resolver then read as
+             * malformed and ignored — the setting saved, reported success, and
+             * did nothing. Anything new must declare its own type.
+             */
+            $existingSettings[$key] = match ($key) {
+                'screenshot_employee_delete', 'employee_activity_visible' => filter_var($value, FILTER_VALIDATE_BOOL),
+                'idle_resolution_policy' => (string) $value,
+                default => (int) $value,
+            };
         }
 
         $updatedSettings = array_merge($existingSettings, [

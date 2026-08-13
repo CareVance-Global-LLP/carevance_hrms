@@ -23,6 +23,26 @@ class AttendanceAndTimerFlowTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * The idle scenarios below are written around a 5-minute auto-stop — the
+     * system default when they were written, and visible in their boundary
+     * cases: 240 seconds is meant to sit under the line and 301 just over it.
+     *
+     * The default moved to 15 minutes on 13 Aug 2026. Pinning it here keeps
+     * those boundaries meaningful; inheriting the ambient default silently
+     * turned "just over the line" into "well under it", which is how a
+     * threshold change broke tests that were really about the rule, not the
+     * number.
+     */
+    private const AUTO_STOP_SECONDS = 300;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['time_tracking.idle_auto_stop_threshold_seconds' => self::AUTO_STOP_SECONDS]);
+    }
+
     public function test_check_in_creates_attendance_record_and_open_punch(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);

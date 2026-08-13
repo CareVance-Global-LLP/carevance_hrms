@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock } from 'lucide-react';
 import { activityApi, timeEntryApi } from '@/services/api';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/components/ui/Toast';
+import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import {
   DESKTOP_TIMER_IDLE_RETURN_EVENT,
   type DesktopTimerIdleReturnDetail,
@@ -18,6 +21,13 @@ import {
  * deducts idle from worked hours without an answer. Discard leads because that
  * is the industry default and the conservative choice, but it is a choice the
  * person makes rather than one made for them.
+ *
+ * An organization may take that choice away in either direction — always keep,
+ * or never keep — which is Hubstaff's model too. Under those policies the
+ * server has already resolved the span by the time this component hears about
+ * it, so there is nothing to ask; this only reports what happened. It does
+ * still report it. Someone's timesheet changed, and finding that out by
+ * noticing the number is wrong is how people stop trusting a tracker.
  */
 
 const formatIdle = (seconds: number) => {
@@ -37,11 +47,45 @@ export default function IdleReturnPrompt() {
   const [busy, setBusy] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const discardRef = useRef<HTMLButtonElement | null>(null);
+  const { user } = useAuth();
+  const toast = useToast();
+
+  const idlePolicy = resolveTrackerPolicy(user).idle_resolution_policy;
+
+  /*
+   * Held in a ref so the listener below can stay mounted once. Reading the
+   * policy from the closure instead would pin it to whatever it was when the
+   * component mounted, and this component never remounts during a session.
+   */
+  const idlePolicyRef = useRef(idlePolicy);
+  useEffect(() => {
+    idlePolicyRef.current = idlePolicy;
+  }, [idlePolicy]);
+
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
 
   useEffect(() => {
     const onIdleReturn = (event: Event) => {
       const detail = (event as CustomEvent<DesktopTimerIdleReturnDetail>).detail;
       if (!detail?.activityId) return;
+
+      const policy = idlePolicyRef.current;
+      if (policy !== 'prompt') {
+        // The server resolved this when it recorded the span, so asking now
+        // would offer a choice that no longer exists. Say what happened.
+        const label = formatIdle(detail.idleSeconds);
+        toastRef.current.show({
+          kind: 'info',
+          message: policy === 'never_keep'
+            ? `${label} away from the keyboard was removed from your timesheet — your organization does not count idle time.`
+            : `${label} away from the keyboard was kept on your timesheet — your organization counts idle time as work.`,
+        });
+        return;
+      }
+
       // One question at a time. A second idle span while this is open would
       // otherwise replace the first and leave it silently unanswered.
       setPrompt((current) => current ?? detail);

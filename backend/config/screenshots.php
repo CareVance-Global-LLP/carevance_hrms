@@ -27,19 +27,34 @@ return [
     'monitoring_interval' => [
         'default_minutes' => (int) env('MONITORING_INTERVAL_DEFAULT_MINUTES', 10),
         /*
-         * 1- and 3-minute capture is deliberately gone.
+         * THE list of selectable intervals. Every validation rule reads it
+         * from here — see MonitoringSettingsResolver::allowedIntervals().
+         * Three frontend dropdowns still restate it as a literal
+         * (EmployeeManagementWorkspace.tsx, add-user/AddUserDrawer.tsx,
+         * settings/panes/OrganizationPane.tsx), so widening this list does not
+         * offer the new value anywhere until those are updated too, and
+         * narrowing it turns an option those screens still show into a 422 on
+         * save. The 422 is the tolerable failure: before validation derived
+         * from this list, a value the UI offered but this list omitted was
+         * accepted, stored, displayed back, and then silently discarded at
+         * read time, so capture ran at the inherited interval while every
+         * screen insisted otherwise. That is exactly what happened while 1 and
+         * 3 were absent here but still offered by three admin UIs.
          *
-         * Per-minute screenshots read as continuous screen recording rather
-         * than periodic sampling, which needs a far stronger justification
-         * than "productivity" under both GDPR and the DPDP Act — and it is a
-         * 10x storage multiplier for very little extra signal. The defensible
-         * band across the industry is 5-15 minutes.
+         * 1- and 3-minute capture is enabled at the product owner's explicit
+         * direction (13 Aug 2026), reversing an earlier withdrawal.
          *
-         * Organizations already set to 1 or 3 are not rejected; they are
-         * rounded up to the nearest allowed value (see
-         * MonitoringSettingsResolver::sanitize).
+         * The reasoning for that withdrawal still stands and is recorded here
+         * because re-enabling does not answer it: per-minute screenshots read
+         * as continuous screen recording rather than periodic sampling, which
+         * needs a far stronger justification than "productivity" under both
+         * GDPR and the DPDP Act, and it is a 10x storage multiplier for very
+         * little extra signal. The defensible band across the industry is
+         * 5-15 minutes. An organization running at 1 minute should have a
+         * documented basis for it, and `screenshots.retention.default_days`
+         * becomes the thing carrying the storage cost.
          */
-        'allowed_minutes' => [5, 10, 15, 30],
+        'allowed_minutes' => [1, 3, 5, 10, 15, 30],
     ],
 
     /*

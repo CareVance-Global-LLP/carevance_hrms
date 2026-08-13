@@ -131,41 +131,62 @@ class TrackerPolicyTest extends TestCase
         $this->assertTrue($policy['privacy']['skip_on_private_browsing']);
     }
 
-    public function test_per_minute_capture_is_no_longer_offered(): void
+    /**
+     * Per-minute capture was withdrawn and then re-enabled at the product
+     * owner's explicit direction (13 Aug 2026). The privacy reasoning behind
+     * the withdrawal is recorded in config/screenshots.php and is unanswered by
+     * the reversal; this test now pins the current decision rather than the old
+     * one, so a future change back is a deliberate edit here too.
+     */
+    public function test_the_offered_intervals_match_the_configured_allow_list(): void
     {
         $allowed = app(MonitoringSettingsResolver::class)->allowedIntervals();
 
-        $this->assertNotContains(1, $allowed, 'per-minute capture reads as continuous recording');
-        $this->assertNotContains(3, $allowed);
+        $this->assertSame(config('screenshots.monitoring_interval.allowed_minutes'), $allowed);
+        $this->assertContains(1, $allowed, 'per-minute capture is enabled by explicit decision');
         $this->assertContains(5, $allowed);
     }
 
-    public function test_a_legacy_sub_five_minute_setting_now_inherits(): void
+    public function test_sanitize_honours_allowed_values_and_inherits_anything_else(): void
     {
         $resolver = app(MonitoringSettingsResolver::class);
 
-        // Null means "inherit", which hands these users the organization
-        // default their admin actually chose. That is deliberately preferred
-        // over rounding up to the nearest allowed value: the org default is
-        // almost always LESS frequent than the sub-5-minute setting it
-        // replaces, so rounding would override a deliberate choice with a more
-        // intrusive one.
-        $this->assertNull($resolver->sanitize(1));
-        $this->assertNull($resolver->sanitize(3));
+        // Null means "inherit", which hands the user the organization default
+        // their admin actually chose. That is deliberately preferred over
+        // rounding to the nearest allowed value, which would override a
+        // deliberate choice with a value nobody selected.
+        $this->assertSame(1, $resolver->sanitize(1));
+        $this->assertSame(3, $resolver->sanitize(3));
         $this->assertSame(10, $resolver->sanitize(10));
+        $this->assertNull($resolver->sanitize(7), 'a value outside the allow list inherits');
         $this->assertNull($resolver->sanitize(null));
         $this->assertNull($resolver->sanitize('not a number'));
     }
 
-    public function test_a_legacy_one_minute_user_ends_up_on_the_org_default(): void
+    public function test_a_one_minute_user_override_reaches_the_tracker(): void
     {
+        // The bug this pins: the override was stored and shown back in the
+        // admin UI while the resolver discarded it, so the tracker captured at
+        // the organization's 15 minutes and every screen claimed 1.
         $organization = $this->makeOrganization(['monitoring' => ['interval_minutes' => 15]]);
         $user = $this->makeUser($organization, ['monitoring_interval_minutes' => 1]);
 
         $this->assertSame(
+            1,
+            app(TrackerPolicyResolver::class)->resolveForUser($user)['capture_interval_minutes'],
+            'the per-user override is what the desktop tracker must act on'
+        );
+    }
+
+    public function test_an_override_outside_the_allow_list_still_falls_back_to_the_org(): void
+    {
+        $organization = $this->makeOrganization(['monitoring' => ['interval_minutes' => 15]]);
+        $user = $this->makeUser($organization, ['monitoring_interval_minutes' => 7]);
+
+        $this->assertSame(
             15,
             app(TrackerPolicyResolver::class)->resolveForUser($user)['capture_interval_minutes'],
-            'a withdrawn per-minute setting falls back to what the organization chose'
+            'an unrecognised override inherits rather than short-circuiting to the system default'
         );
     }
 

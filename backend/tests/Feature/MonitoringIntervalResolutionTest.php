@@ -69,6 +69,72 @@ class MonitoringIntervalResolutionTest extends TestCase
         $this->assertSame(30, app(MonitoringSettingsResolver::class)->resolveForUser($user->fresh()));
     }
 
+    /**
+     * The invariant that broke: `settings.monitoring_interval_minutes` was
+     * validated against a literal `in:1,3,5,10,15,30` while the resolver's
+     * allow-list held only [5,10,15,30]. Saving 1 therefore succeeded, stored
+     * 1, and read back as "Every 1 minute" in the admin UI — while
+     * resolveForUser() rejected it as invalid and fell through to the inherited
+     * interval, so capture ran ten times slower than every screen claimed.
+     *
+     * Anything the API accepts must be something the resolver will honour.
+     */
+    public function test_every_accepted_interval_is_one_the_resolver_honours(): void
+    {
+        $organization = $this->makeOrganization(30);
+        $admin = $this->makeUser($organization, null, 'admin-allowlist@example.com', 'admin');
+        $resolver = app(MonitoringSettingsResolver::class);
+
+        foreach ($resolver->allowedIntervals() as $minutes) {
+            $employee = $this->makeUser($organization, null, "allow-{$minutes}@example.com");
+
+            $this->putJson("/api/users/{$employee->id}", [
+                'name' => $employee->name,
+                'email' => $employee->email,
+                'role' => 'employee',
+                'settings' => ['monitoring_interval_minutes' => $minutes],
+            ], $this->apiHeadersFor($admin))->assertOk();
+
+            $this->assertSame(
+                $minutes,
+                $resolver->resolveForUser($employee->fresh()),
+                "The API accepted {$minutes} minutes but the resolver did not honour it."
+            );
+        }
+    }
+
+    public function test_an_interval_outside_the_allow_list_is_rejected_rather_than_silently_ignored(): void
+    {
+        $organization = $this->makeOrganization(30);
+        $admin = $this->makeUser($organization, null, 'admin-reject@example.com', 'admin');
+        $employee = $this->makeUser($organization, null, 'reject@example.com');
+
+        /*
+         * Derived, not a literal. The probe is the smallest positive interval
+         * the resolver does NOT honour, so it tracks whatever the allow-list
+         * currently is — and it is precisely the value a wider hardcoded
+         * validation rule would wrongly let through. With the allow-list at
+         * [5,10,15,30] and the old literal `in:1,3,5,10,15,30`, this probe is 1
+         * and the request returns 200, which is the bug this test exists for.
+         */
+        $allowed = app(MonitoringSettingsResolver::class)->allowedIntervals();
+        $probe = 1;
+        while (in_array($probe, $allowed, true)) {
+            $probe++;
+        }
+
+        // Storing it and then discarding it at read time is the failure mode
+        // this guards: refuse at the boundary instead.
+        $this->putJson("/api/users/{$employee->id}", [
+            'name' => $employee->name,
+            'email' => $employee->email,
+            'role' => 'employee',
+            'settings' => ['monitoring_interval_minutes' => $probe],
+        ], $this->apiHeadersFor($admin))->assertStatus(422);
+
+        $this->assertArrayNotHasKey('monitoring_interval_minutes', (array) $employee->fresh()->settings);
+    }
+
     public function test_resolved_interval_is_serialized_on_the_user_payload(): void
     {
         $organization = $this->makeOrganization(5);
