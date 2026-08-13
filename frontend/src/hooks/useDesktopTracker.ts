@@ -30,6 +30,7 @@ import type {
   TimeEntry,
 } from '@/types';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { newSessionLocalId } from './desktopSessionIdentity';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 1000;
 // Matches the server's system default (config/screenshots.php). This is only a
@@ -871,6 +872,11 @@ export const useDesktopTracker = () => {
         url: payload.url || null,
         started_at: capturedAt,
         confidence: 100,
+        // Lets the server recognise a replay instead of inserting a second row
+        // for the same stretch of time. Without these, the retry in the queue
+        // below would double-count.
+        local_id: newSessionLocalId(),
+        device_id: desktopDeviceIdentityRef.current?.device_id ?? null,
       });
 
       const startedAtMs = Date.parse(capturedAt);
