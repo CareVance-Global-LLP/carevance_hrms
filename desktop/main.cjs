@@ -898,6 +898,13 @@ const emitForegroundWindowChange = async () => {
     app: payload.app || null,
     title: payload.title || null,
     url: payload.url || null,
+    /*
+     * Part of the identity, not decoration. `url` is always null on Windows —
+     * get-windows only fills it on macOS — so without this, navigating between
+     * two pages that share a title never changes the signature, no event is
+     * emitted, and the renderer keeps the first page's URL for both.
+     */
+    inferred_url: payload.inferred_url || null,
     description: payload.description || null,
   });
 
