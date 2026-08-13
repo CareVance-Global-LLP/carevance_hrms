@@ -27,6 +27,28 @@ interface DialogEntry {
 
 const stack: DialogEntry[] = [];
 
+/**
+ * Subscribers notified whenever the stack changes.
+ *
+ * Ambient floating UI needs this. The AI chat bubble sits at z-[100] and every
+ * dialog starts at z-index 50, so the bubble covered the bottom-right corner of
+ * every drawer — which is exactly where the footer's primary button lives. It
+ * sat on top of "Save settings". The bubble subscribes and hides itself while
+ * anything modal is open rather than the two fighting over z-index.
+ */
+const listeners = new Set<() => void>();
+
+const emit = (): void => {
+  for (const listener of listeners) listener();
+};
+
+export const subscribeDialogStack = (listener: () => void): (() => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+
 /** The body overflow value captured when the stack went from empty to one. */
 let overflowBeforeLock: string | null = null;
 
@@ -46,6 +68,7 @@ export const registerDialog = (id: DialogId, depth: number): void => {
   if (stack.some((entry) => entry.id === id)) return;
   stack.push({ id, depth });
   if (stack.length === 1) lockBodyScroll();
+  emit();
 };
 
 export const unregisterDialog = (id: DialogId): void => {
@@ -53,6 +76,7 @@ export const unregisterDialog = (id: DialogId): void => {
   if (index === -1) return;
   stack.splice(index, 1);
   if (stack.length === 0) unlockBodyScroll();
+  emit();
 };
 
 export const isTopDialog = (id: DialogId): boolean => {
@@ -73,4 +97,5 @@ export const openDialogCount = (): number => stack.length;
 export const resetDialogStack = (): void => {
   stack.length = 0;
   unlockBodyScroll();
+  emit();
 };
