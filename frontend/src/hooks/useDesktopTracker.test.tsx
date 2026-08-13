@@ -600,6 +600,86 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('records a browser session with its captured URL when no extension is connected', async () => {
+    /*
+     * The behaviour that was missing entirely. Browsers used to be refused a
+     * desktop session on the basis that the extension owns website sessions —
+     * but the extension is optional, so with it absent browser time was
+     * recorded as nothing at all. Measured on this install: 50 activity
+     * sessions since 16 July, every one of them a transient system window.
+     */
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Google Chrome',
+        title: 'chrome.tabs | API | Chrome for Developers',
+        url: null,
+        inferred_url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs',
+        inferred_url_source: 'document',
+        inferred_url_confidence: 100,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      source: 'desktop',
+      app_name: 'Google Chrome',
+      url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs',
+      // Chrome's Document element is the real page URL, so it is exact.
+      confidence: 100,
+    }));
+  });
+
+  it('records only the host, at lower confidence, when the URL came from an address bar', async () => {
+    // Edge and Brave can fall back to the address bar, which may still hold
+    // text somebody typed and never submitted, so the path is not claimed.
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Microsoft Edge',
+        title: 'Example Domain',
+        url: null,
+        inferred_url: 'https://example.org',
+        inferred_url_source: 'address_bar',
+        inferred_url_confidence: 60,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://example.org',
+      confidence: 60,
+    }));
+  });
+
+  it('does not record the tracker own page as browsing', async () => {
+    // CareVance viewed in a browser is the tracker looking at itself, not work.
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Google Chrome',
+        title: 'CareVance HRMS Workspace',
+        url: null,
+        inferred_url: 'http://localhost:5173/add-user',
+        inferred_url_source: 'document',
+        inferred_url_confidence: 100,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    /*
+     * Asserted against the URL rather than "never called": the harness's own
+     * tick creates a Visual Studio Code session from its default active-window
+     * context, so a blanket not.toHaveBeenCalled() would pass or fail for
+     * reasons that have nothing to do with self-exclusion.
+     */
+    const recordedUrls = mocks.createActivitySessionMock.mock.calls.map(([payload]: [any]) => payload?.url);
+    expect(recordedUrls).not.toContain('http://localhost:5173/add-user');
+  });
+
   it('extends an active desktop app session while the same app stays focused', async () => {
     vi.setSystemTime(new Date('2026-04-21T09:00:00Z'));
     mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1601 } });
