@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/Toast';
 import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, canAccess } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
+import { validateIdleThresholds } from './idlePolicy';
 import { employeeWorkspaceApi, settingsApi, supportApi, organizationApi } from '@/services/api';
 import type { BillingSnapshot } from '@/types';
 import {
@@ -101,6 +102,9 @@ type OrganizationSnapshot = {
   officeStartTime: string;
   lateAfterTime: string;
   monitoringInterval: string;
+  idleTrackSeconds: string;
+  idleAutoStopSeconds: string;
+  lockAutoStopSeconds: string;
   timezone: string;
   leaveCategories: LeaveCategorySetting[];
 };
@@ -134,10 +138,18 @@ const countOrganizationChanges = (
   if (base.officeStartTime !== current.officeStartTime) count += 1;
   if (base.lateAfterTime !== current.lateAfterTime) count += 1;
   if (base.monitoringInterval !== current.monitoringInterval) count += 1;
+  if (base.idleTrackSeconds !== current.idleTrackSeconds) count += 1;
+  if (base.idleAutoStopSeconds !== current.idleAutoStopSeconds) count += 1;
+  if (base.lockAutoStopSeconds !== current.lockAutoStopSeconds) count += 1;
   if (base.timezone !== current.timezone) count += 1;
   if (JSON.stringify(base.leaveCategories) !== JSON.stringify(current.leaveCategories)) count += 1;
   if (hasLogoFile) count += 1;
   return count;
+};
+
+const readIdleSeconds = (settings: any, key: string): string => {
+  const raw = settings?.[key];
+  return raw === null || raw === undefined || raw === '' ? '' : String(raw);
 };
 
 export function useSettingsController() {
@@ -183,6 +195,15 @@ export function useSettingsController() {
   // Organization-wide screenshot capture default. '' means "no org default",
   // in which case users fall through to the system default.
   const [orgMonitoringInterval, setOrgMonitoringInterval] = useState('');
+  /*
+   * Organization-wide idle policy. Same '' convention as the capture interval:
+   * no org override, so users fall through to the system default. The API has
+   * accepted these three since the tracker-policy block was added; until now
+   * no screen sent them, so no organization could change them.
+   */
+  const [orgIdleTrackSeconds, setOrgIdleTrackSeconds] = useState('');
+  const [orgIdleAutoStopSeconds, setOrgIdleAutoStopSeconds] = useState('');
+  const [orgLockAutoStopSeconds, setOrgLockAutoStopSeconds] = useState('');
   const [orgTimezone, setOrgTimezone] = useState(DEFAULT_APP_TIMEZONE);
   const [leaveCategories, setLeaveCategories] = useState<LeaveCategorySetting[]>(() => readLeaveCategories(organization));
   const [isSavingOrganization, setIsSavingOrganization] = useState(false);
@@ -192,6 +213,9 @@ export function useSettingsController() {
     officeStartTime: '',
     lateAfterTime: '',
     monitoringInterval: '',
+    idleTrackSeconds: '',
+    idleAutoStopSeconds: '',
+    lockAutoStopSeconds: '',
     timezone: DEFAULT_APP_TIMEZONE,
     leaveCategories: readLeaveCategories(organization),
   });
@@ -276,12 +300,15 @@ export function useSettingsController() {
           officeStartTime,
           lateAfterTime,
           monitoringInterval: orgMonitoringInterval,
+          idleTrackSeconds: orgIdleTrackSeconds,
+          idleAutoStopSeconds: orgIdleAutoStopSeconds,
+          lockAutoStopSeconds: orgLockAutoStopSeconds,
           timezone: orgTimezone,
           leaveCategories,
         },
         Boolean(orgLogoFile)
       ),
-    [orgBaseline, orgName, orgSlug, officeStartTime, lateAfterTime, orgMonitoringInterval, orgTimezone, leaveCategories, orgLogoFile]
+    [orgBaseline, orgName, orgSlug, officeStartTime, lateAfterTime, orgMonitoringInterval, orgIdleTrackSeconds, orgIdleAutoStopSeconds, orgLockAutoStopSeconds, orgTimezone, leaveCategories, orgLogoFile]
   );
 
   const dirtyCount = activeTab === 'profile'
@@ -334,11 +361,18 @@ export function useSettingsController() {
     const nextOfficeStart = toTimeInputValue((organization?.settings as any)?.attendance?.office_start_time);
     const nextLateAfter = toTimeInputValue((organization?.settings as any)?.attendance?.late_after_time);
     const nextInterval = String((organization?.settings as any)?.monitoring?.interval_minutes ?? '');
+    const orgSettings = organization?.settings as any;
+    const nextIdleTrack = readIdleSeconds(orgSettings, 'idle_track_threshold_seconds');
+    const nextIdleAutoStop = readIdleSeconds(orgSettings, 'idle_auto_stop_threshold_seconds');
+    const nextLockAutoStop = readIdleSeconds(orgSettings, 'lock_auto_stop_threshold_seconds');
     const nextTimezone = resolveTimeZone((organization?.settings as any)?.timezone);
     const nextLeave = readLeaveCategories(organization);
     setOfficeStartTime(nextOfficeStart);
     setLateAfterTime(nextLateAfter);
     setOrgMonitoringInterval(nextInterval);
+    setOrgIdleTrackSeconds(nextIdleTrack);
+    setOrgIdleAutoStopSeconds(nextIdleAutoStop);
+    setOrgLockAutoStopSeconds(nextLockAutoStop);
     setOrgTimezone(nextTimezone);
     setLeaveCategories(nextLeave);
     setOrgBaseline({
@@ -347,6 +381,9 @@ export function useSettingsController() {
       officeStartTime: nextOfficeStart,
       lateAfterTime: nextLateAfter,
       monitoringInterval: nextInterval,
+      idleTrackSeconds: nextIdleTrack,
+      idleAutoStopSeconds: nextIdleAutoStop,
+      lockAutoStopSeconds: nextLockAutoStop,
       timezone: nextTimezone,
       leaveCategories: nextLeave,
     });
@@ -389,6 +426,10 @@ export function useSettingsController() {
           const nextOfficeStart = toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.office_start_time);
           const nextLateAfter = toTimeInputValue((fetchedOrg?.settings as any)?.attendance?.late_after_time);
           const nextInterval = String((fetchedOrg?.settings as any)?.monitoring?.interval_minutes ?? '');
+          const fetchedOrgSettings = fetchedOrg?.settings as any;
+          const nextIdleTrack = readIdleSeconds(fetchedOrgSettings, 'idle_track_threshold_seconds');
+          const nextIdleAutoStop = readIdleSeconds(fetchedOrgSettings, 'idle_auto_stop_threshold_seconds');
+          const nextLockAutoStop = readIdleSeconds(fetchedOrgSettings, 'lock_auto_stop_threshold_seconds');
           const nextOrgTimezone = resolveTimeZone((fetchedOrg?.settings as any)?.timezone);
           const nextLeave = readLeaveCategories(fetchedOrg);
           const nextUserTimezone = resolveTimeZone(settings.timezone || DEFAULT_APP_TIMEZONE);
@@ -396,6 +437,9 @@ export function useSettingsController() {
           setOfficeStartTime(nextOfficeStart);
           setLateAfterTime(nextLateAfter);
           setOrgMonitoringInterval(nextInterval);
+          setOrgIdleTrackSeconds(nextIdleTrack);
+          setOrgIdleAutoStopSeconds(nextIdleAutoStop);
+          setOrgLockAutoStopSeconds(nextLockAutoStop);
           setOrgTimezone(nextOrgTimezone);
           setLeaveCategories(nextLeave);
           setTimezone(nextUserTimezone);
@@ -406,6 +450,9 @@ export function useSettingsController() {
             officeStartTime: nextOfficeStart,
             lateAfterTime: nextLateAfter,
             monitoringInterval: nextInterval,
+            idleTrackSeconds: nextIdleTrack,
+            idleAutoStopSeconds: nextIdleAutoStop,
+            lockAutoStopSeconds: nextLockAutoStop,
             timezone: nextOrgTimezone,
             leaveCategories: nextLeave,
           });
@@ -712,6 +759,19 @@ export function useSettingsController() {
   // ---- organization --------------------------------------------------------
   const saveOrganization = async () => {
     setError('');
+
+    /*
+     * Refused here rather than left to the server, which accepts this pair and
+     * then silently raises auto-stop to the idle threshold
+     * (TrackerPolicyResolver). The admin would see their own choice echoed back
+     * while the tracker used a different number.
+     */
+    const idleConflict = validateIdleThresholds(orgIdleTrackSeconds, orgIdleAutoStopSeconds);
+    if (idleConflict) {
+      setError(idleConflict);
+      return;
+    }
+
     setIsSavingOrganization(true);
     try {
       const name = orgName.trim();
@@ -746,6 +806,10 @@ export function useSettingsController() {
               formData.append('leave_categories_json', JSON.stringify(normalizedLeaveCategories));
               // FormData cannot carry null; '' is read as "clear the org default".
               formData.append('monitoring_interval_minutes', orgMonitoringInterval);
+              // Same '' == "clear the org override" convention as the interval.
+              formData.append('idle_track_threshold_seconds', orgIdleTrackSeconds);
+              formData.append('idle_auto_stop_threshold_seconds', orgIdleAutoStopSeconds);
+              formData.append('lock_auto_stop_threshold_seconds', orgLockAutoStopSeconds);
             }
             formData.append('logo_file', orgLogoFile);
             return formData;
@@ -760,6 +824,9 @@ export function useSettingsController() {
               ? {
                   leave_categories: normalizedLeaveCategories,
                   monitoring_interval_minutes: orgMonitoringInterval === '' ? null : Number(orgMonitoringInterval),
+                  idle_track_threshold_seconds: orgIdleTrackSeconds === '' ? null : Number(orgIdleTrackSeconds),
+                  idle_auto_stop_threshold_seconds: orgIdleAutoStopSeconds === '' ? null : Number(orgIdleAutoStopSeconds),
+                  lock_auto_stop_threshold_seconds: orgLockAutoStopSeconds === '' ? null : Number(orgLockAutoStopSeconds),
                 }
               : {}),
           };
@@ -778,6 +845,9 @@ export function useSettingsController() {
         officeStartTime,
         lateAfterTime,
         monitoringInterval: orgMonitoringInterval,
+        idleTrackSeconds: orgIdleTrackSeconds,
+        idleAutoStopSeconds: orgIdleAutoStopSeconds,
+        lockAutoStopSeconds: orgLockAutoStopSeconds,
         timezone: orgTimezone,
         leaveCategories,
       });
@@ -799,6 +869,9 @@ export function useSettingsController() {
     setOfficeStartTime(orgBaseline.officeStartTime);
     setLateAfterTime(orgBaseline.lateAfterTime);
     setOrgMonitoringInterval(orgBaseline.monitoringInterval);
+    setOrgIdleTrackSeconds(orgBaseline.idleTrackSeconds);
+    setOrgIdleAutoStopSeconds(orgBaseline.idleAutoStopSeconds);
+    setOrgLockAutoStopSeconds(orgBaseline.lockAutoStopSeconds);
     setOrgTimezone(orgBaseline.timezone);
     setLeaveCategories(orgBaseline.leaveCategories);
     setOrgLogoFile(null);
@@ -1109,6 +1182,12 @@ export function useSettingsController() {
     setLateAfterTime,
     orgMonitoringInterval,
     setOrgMonitoringInterval,
+    orgIdleTrackSeconds,
+    setOrgIdleTrackSeconds,
+    orgIdleAutoStopSeconds,
+    setOrgIdleAutoStopSeconds,
+    orgLockAutoStopSeconds,
+    setOrgLockAutoStopSeconds,
     orgTimezone,
     setOrgTimezone,
     leaveCategories,

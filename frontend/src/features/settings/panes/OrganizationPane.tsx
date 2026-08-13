@@ -5,6 +5,12 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import SettingsCard from '../components/SettingsCard';
 import SegmentedControl from '../components/SegmentedControl';
+import {
+  IDLE_AUTO_STOP_OPTIONS,
+  IDLE_TRACK_OPTIONS,
+  LOCK_AUTO_STOP_OPTIONS,
+  validateIdleThresholds,
+} from '../idlePolicy';
 import ImageDropzone from '../components/ImageDropzone';
 import BreakTypesSection from './BreakTypesSection';
 import type { SettingsController } from '../useSettingsController';
@@ -136,6 +142,12 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     setLateAfterTime,
     orgMonitoringInterval,
     setOrgMonitoringInterval,
+    orgIdleTrackSeconds,
+    setOrgIdleTrackSeconds,
+    orgIdleAutoStopSeconds,
+    setOrgIdleAutoStopSeconds,
+    orgLockAutoStopSeconds,
+    setOrgLockAutoStopSeconds,
     orgTimezone,
     setOrgTimezone,
     leaveCategories,
@@ -155,6 +167,8 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     () => leaveCategories.reduce((total, category) => total + (Number(category.annual_quota) || 0), 0),
     [leaveCategories]
   );
+
+  const idleConflict = validateIdleThresholds(orgIdleTrackSeconds, orgIdleAutoStopSeconds);
 
   const capturesPerDay = orgMonitoringInterval
     ? Math.round(480 / Number(orgMonitoringInterval))
@@ -384,6 +398,7 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
 
       {section === 'monitoring' ? (
         isStrictAdminUser ? (
+          <>
           <SettingsCard
             title="Screenshot interval"
             description="The organization default. Anyone with a personal override keeps it."
@@ -410,6 +425,67 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
               {' '}Lowering this multiplies capture for the whole organization at once, which is why it is admin-only.
             </p>
           </SettingsCard>
+
+          <SettingsCard
+            title="Idle and inactivity"
+            description="When time away from the keyboard stops counting as work. Anyone with a personal override keeps it."
+            className="mt-4"
+          >
+            <div className="space-y-5">
+              <div>
+                <FieldLabel>Mark as idle after</FieldLabel>
+                <SegmentedControl
+                  ariaLabel="Mark as idle after"
+                  disabled={!isOrgEditable}
+                  value={orgIdleTrackSeconds}
+                  onChange={setOrgIdleTrackSeconds}
+                  options={IDLE_TRACK_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
+                  Time with no keyboard or mouse input stops counting towards the app someone had open, and is
+                  recorded as idle instead.
+                </p>
+              </div>
+
+              <div>
+                <FieldLabel>Stop the timer after</FieldLabel>
+                <SegmentedControl
+                  ariaLabel="Stop the timer after"
+                  disabled={!isOrgEditable}
+                  value={orgIdleAutoStopSeconds}
+                  onChange={setOrgIdleAutoStopSeconds}
+                  options={IDLE_AUTO_STOP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
+                  The timer stops on its own after this much inactivity. On their return the person is asked whether
+                  to keep or discard the idle time — it is never deducted without an answer. Set this generously:
+                  reading, a call and a whiteboard all look identical to a keyboard.
+                </p>
+              </div>
+
+              <div>
+                <FieldLabel>Stop when the screen is locked for</FieldLabel>
+                <SegmentedControl
+                  ariaLabel="Stop when the screen is locked for"
+                  disabled={!isOrgEditable}
+                  value={orgLockAutoStopSeconds}
+                  onChange={setOrgLockAutoStopSeconds}
+                  options={LOCK_AUTO_STOP_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
+                  A locked screen is stronger evidence of stepping away than silence alone, so this can be shorter
+                  than the idle threshold.
+                </p>
+              </div>
+
+              {idleConflict ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                  {idleConflict}
+                </p>
+              ) : null}
+            </div>
+          </SettingsCard>
+          </>
         ) : null
       ) : null}
 

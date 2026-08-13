@@ -144,10 +144,18 @@ export const idleTrackThresholdSeconds = resolveNumericConfigValue(
   30
 );
 
+/*
+ * Kept in step with the server's config/time_tracking.php default, which was
+ * raised from 5 to 15 minutes on 13 Aug 2026. This value is only the
+ * pre-hydration fallback — the server is the authority and ships the resolved
+ * policy on the user payload (see trackerPolicy.ts) — but a fallback that
+ * disagrees with the server means the first moments of a session run a
+ * different rule from the rest of it.
+ */
 export const idleAutoStopThresholdSeconds = resolveNumericConfigValue(
   runtimeConfig.VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS,
   import.meta.env.VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS,
-  5 * 60,
+  15 * 60,
   60
 );
 

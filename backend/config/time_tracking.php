@@ -20,8 +20,19 @@ return [
     | Number of continuous idle seconds required before the backend accepts
     | an automatic timer stop for idle inactivity.
     |
+    | Raised from 300 to 900 on 13 Aug 2026. Five minutes stopped a timer
+    | during a phone call, a design review or a long read — all of which look
+    | identical to a keyboard. The comparable products are far less aggressive:
+    | Time Doctor defaults to 15 minutes over a 3-minute-to-6-hour range, and
+    | Insightful's automatic clock-out defaults to 4 hours. Nothing is lost by
+    | waiting, because the tracker asks the person what the gap was on their
+    | return rather than deducting it silently.
+    |
+    | An organization that wants the old behaviour can now set it directly:
+    | Settings -> Organization -> Monitoring -> Idle and inactivity.
+    |
     */
-    'idle_auto_stop_threshold_seconds' => (int) env('IDLE_AUTO_STOP_THRESHOLD_SECONDS', 300),
+    'idle_auto_stop_threshold_seconds' => (int) env('IDLE_AUTO_STOP_THRESHOLD_SECONDS', 900),
 
     /*
     |--------------------------------------------------------------------------
