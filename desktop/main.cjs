@@ -37,6 +37,7 @@ const { LocalShellServer } = require('./offline/local-shell.cjs');
 const { NetworkMonitor } = require('./offline/network-monitor.cjs');
 const { QueueManager } = require('./offline/queue-manager.cjs');
 const SyncEngineModule = require('./offline/sync-engine.cjs');
+const { BrowserUrlReader } = require('./browser-url/browser-url-reader.cjs');
 console.log('[Desktop] SyncEngine loaded, keys:', Object.keys(SyncEngineModule));
 const { SyncEngine } = SyncEngineModule;
 let activeWindowGetter = null;
@@ -821,6 +822,32 @@ const getAllProcessesWithWindows = async () => {
   return [];
 };
 
+/*
+ * Reads the foreground browser's URL through UI Automation.
+ *
+ * get-windows only returns a `url` on macOS, so on this Windows build that
+ * field has always been null and a browser without the extension installed
+ * produced nothing but a window title. This fills that gap.
+ *
+ * Reported under `inferred_url` rather than `url` on purpose. The renderer
+ * already keys activity classification and context naming off `url`, and the
+ * browser extension owns website sessions when it is connected — overwriting
+ * `url` here would silently change how sessions are classified and could
+ * double-source against the extension. Deciding that precedence is its own
+ * change; this one only makes the data available.
+ */
+let browserUrlReader = null;
+
+const getBrowserUrlReader = () => {
+  if (!browserUrlReader) {
+    browserUrlReader = new BrowserUrlReader({
+      onError: (error) => console.warn('[desktop-tracker] browser url reader:', error?.message || error),
+    });
+    browserUrlReader.start();
+  }
+  return browserUrlReader;
+};
+
 const getForegroundWindowPayload = async () => {
   const getActiveWindow = await loadActiveWindowGetter();
   if (!getActiveWindow) {
@@ -832,10 +859,17 @@ const getForegroundWindowPayload = async () => {
     const app = context?.owner?.name || null;
     // Lookup process description asynchronously (non-blocking)
     const description = app ? await getProcessDescription(app) : null;
+    // Never rejects and resolves null off a browser, so it cannot fail a poll.
+    const inferred = await getBrowserUrlReader().read();
     return {
       app: app,
       title: context?.title || null,
       url: context?.url || null,
+      // 'document' is Chrome's real page URL; 'address_bar' is a host-only
+      // hint from Edge/Brave that must not be treated as a confirmed visit.
+      inferred_url: inferred ? inferred.url : null,
+      inferred_url_source: inferred ? inferred.source : null,
+      inferred_url_confidence: inferred ? inferred.confidence : null,
       description: description,
       captured_at: new Date().toISOString(),
     };
@@ -2203,6 +2237,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (browserUrlReader) {
+    browserUrlReader.dispose();
+    browserUrlReader = null;
+  }
   if (updateCheckInterval) {
     clearInterval(updateCheckInterval);
     updateCheckInterval = null;
