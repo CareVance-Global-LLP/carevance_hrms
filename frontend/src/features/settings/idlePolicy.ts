@@ -104,3 +104,21 @@ export const validateIdleThresholds = (
 
   return null;
 };
+
+/**
+ * What happens to an idle span when someone comes back.
+ *
+ * Mirrors Hubstaff's organization setting, whose default is also to ask. The
+ * two automatic answers change a timesheet without the person's input, which
+ * is why "Ask" leads and is what an unset or unrecognised value falls back to
+ * (see readIdleResolutionPolicy in lib/trackerPolicy.ts).
+ *
+ * No empty option here: unlike the durations, there is no meaningful "system
+ * default" to inherit — prompting IS the default, so it is a real choice
+ * rather than an absence.
+ */
+export const IDLE_RESOLUTION_POLICY_OPTIONS: IdleThresholdOption[] = [
+  { value: 'prompt', label: 'Ask the person' },
+  { value: 'always_keep', label: 'Always keep' },
+  { value: 'never_keep', label: 'Never keep' },
+];

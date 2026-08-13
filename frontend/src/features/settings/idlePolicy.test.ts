@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   IDLE_AUTO_STOP_OPTIONS,
+  IDLE_RESOLUTION_POLICY_OPTIONS,
   IDLE_TRACK_OPTIONS,
   LOCK_AUTO_STOP_OPTIONS,
   validateIdleThresholds,
@@ -88,5 +89,28 @@ describe('validateIdleThresholds', () => {
 
     expect(message).toContain('Mark as idle after');
     expect(message).toContain('Stop the timer after');
+  });
+});
+
+describe('idle resolution policy options', () => {
+  it('offers exactly the three the API accepts', () => {
+    expect(IDLE_RESOLUTION_POLICY_OPTIONS.map((option) => option.value)).toEqual([
+      'prompt',
+      'always_keep',
+      'never_keep',
+    ]);
+  });
+
+  it('leads with asking rather than with an automatic answer', () => {
+    // The two automatic answers change a timesheet without the person's input.
+    // Whichever is listed first is the one an admin skims past, so it must be
+    // the one that takes nothing away.
+    expect(IDLE_RESOLUTION_POLICY_OPTIONS[0].value).toBe('prompt');
+  });
+
+  it('has no empty option, unlike the durations', () => {
+    // Prompting IS the default, so it is a real choice rather than an absence
+    // to inherit — '' would have no meaning to send.
+    expect(IDLE_RESOLUTION_POLICY_OPTIONS.some((option) => option.value === '')).toBe(false);
   });
 });

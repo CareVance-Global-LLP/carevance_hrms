@@ -7,6 +7,7 @@ import SettingsCard from '../components/SettingsCard';
 import SegmentedControl from '../components/SegmentedControl';
 import {
   IDLE_AUTO_STOP_OPTIONS,
+  IDLE_RESOLUTION_POLICY_OPTIONS,
   IDLE_TRACK_OPTIONS,
   LOCK_AUTO_STOP_OPTIONS,
   validateIdleThresholds,
@@ -148,6 +149,8 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     setOrgIdleAutoStopSeconds,
     orgLockAutoStopSeconds,
     setOrgLockAutoStopSeconds,
+    orgIdleResolutionPolicy,
+    setOrgIdleResolutionPolicy,
     orgTimezone,
     setOrgTimezone,
     leaveCategories,
@@ -475,6 +478,25 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
                 <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
                   A locked screen is stronger evidence of stepping away than silence alone, so this can be shorter
                   than the idle threshold.
+                </p>
+              </div>
+
+
+              <div>
+                <FieldLabel>When someone comes back from being idle</FieldLabel>
+                <SegmentedControl
+                  ariaLabel="When someone comes back from being idle"
+                  disabled={!isOrgEditable}
+                  value={orgIdleResolutionPolicy}
+                  onChange={setOrgIdleResolutionPolicy}
+                  options={IDLE_RESOLUTION_POLICY_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
+                  {orgIdleResolutionPolicy === 'prompt'
+                    ? 'They are asked whether the time away was work, and nothing is added or removed until they answer. This is the default and what Hubstaff and Time Doctor do.'
+                    : orgIdleResolutionPolicy === 'always_keep'
+                      ? 'Idle time is counted as work automatically. Nobody is asked, and they are told it was kept.'
+                      : 'Idle time is removed from the timesheet automatically. Nobody is asked, and they are told it was removed.'}
                 </p>
               </div>
 
