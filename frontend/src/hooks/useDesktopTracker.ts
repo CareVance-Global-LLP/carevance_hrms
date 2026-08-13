@@ -31,6 +31,7 @@ import type {
 } from '@/types';
 import { reportSilentError } from '@/lib/reportSilentError';
 import { newSessionLocalId } from './desktopSessionIdentity';
+import { createPendingSessionQueue, type PendingSession } from './pendingSessionQueue';
 
 const ACTIVITY_TRACK_INTERVAL_MS = 1000;
 // Matches the server's system default (config/screenshots.php). This is only a
@@ -197,7 +198,10 @@ type ReliableTrackingContext = {
 };
 
 type ActiveDesktopSession = {
-  sessionId: number;
+  // null while the create is still queued: the session is real and locally
+  // known, but the server has not issued an id yet, so there is nothing to
+  // PATCH. The queued create carries started_at, so nothing is lost.
+  sessionId: number | null;
   timeEntryId: number;
   signature: string;
   startedAt: string;
@@ -420,6 +424,8 @@ export const useDesktopTracker = () => {
   const lastReliableTrackingContextRef = useRef<ReliableTrackingContext | null>(null);
   const pendingTrackedSecondsRef = useRef(0);
   const activeDesktopSessionRef = useRef<ActiveDesktopSession | null>(null);
+  // ~8 hours of switching at one session per 10s, then oldest-first drop.
+  const pendingSessionQueueRef = useRef(createPendingSessionQueue({ maxSize: 3000 }));
   const activeBrowserSessionRef = useRef<ActiveBrowserSession | null>(null);
   const browserTrackingStateRef = useRef<BrowserTrackingState | null>(null);
   const exactBrowserHealthyUntilMsRef = useRef(0);
@@ -753,6 +759,13 @@ export const useDesktopTracker = () => {
         return;
       }
 
+      if (activeDesktopSession.sessionId === null) {
+        // Never reached the server. Its create is queued and will be retried
+        // with the start time already on it; there is no row to close.
+        activeDesktopSessionRef.current = null;
+        return;
+      }
+
       activeDesktopSessionRef.current = null;
 
       const parsedEndedAtMs = Date.parse(String(endedAt || ''));
@@ -776,6 +789,10 @@ export const useDesktopTracker = () => {
     const extendActiveDesktopSession = async (capturedAt: string) => {
       const activeDesktopSession = activeDesktopSessionRef.current;
       if (!activeDesktopSession) {
+        return;
+      }
+
+      if (activeDesktopSession.sessionId === null) {
         return;
       }
 
@@ -861,7 +878,7 @@ export const useDesktopTracker = () => {
       const displayName = resolveDesktopSessionDisplayName(payload);
       const appName = String(payload.app || '').trim() || displayName;
       const windowTitle = String(payload.title || '').trim() || displayName;
-      const response = await activitySessionApi.create({
+      const pending: PendingSession = {
         time_entry_id: activeEntry.id,
         source: 'desktop',
         activity_kind: 'desktop_app',
@@ -872,21 +889,31 @@ export const useDesktopTracker = () => {
         url: payload.url || null,
         started_at: capturedAt,
         confidence: 100,
-        // Lets the server recognise a replay instead of inserting a second row
-        // for the same stretch of time. Without these, the retry in the queue
-        // below would double-count.
         local_id: newSessionLocalId(),
         device_id: desktopDeviceIdentityRef.current?.device_id ?? null,
-      });
+      };
 
       const startedAtMs = Date.parse(capturedAt);
+      const resolvedStartedAtMs = Number.isFinite(startedAtMs) ? startedAtMs : Date.now();
+
+      let sessionId: number | null = null;
+      try {
+        const response = await activitySessionApi.create(pending);
+        sessionId = response.data.id;
+      } catch (error) {
+        // The session still happened. Queue it and keep local state so the
+        // segment is not lost; the tick below retries it.
+        pendingSessionQueueRef.current.enqueue(pending);
+        reportSilentError('desktop-tracker', error);
+      }
+
       activeDesktopSessionRef.current = {
-        sessionId: response.data.id,
+        sessionId,
         timeEntryId: activeEntry.id,
         signature,
         startedAt: capturedAt,
-        startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-        lastSeenAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
+        startedAtMs: resolvedStartedAtMs,
+        lastSeenAtMs: resolvedStartedAtMs,
       };
     };
 
@@ -1672,6 +1699,11 @@ export const useDesktopTracker = () => {
         }
         
         syncScreenshotInterval(activeEntryRef.current?.id || null);
+
+        // Retry anything a network blip lost. Safe to repeat: every queued
+        // session carries (local_id, device_id) and the server resolves a
+        // replay to the row it already created.
+        void pendingSessionQueueRef.current.drain((p) => activitySessionApi.create(p));
 
         if (systemLockedAtMsRef.current !== null && lockAutoStopTimeoutRef.current === null) {
           scheduleLockAutoStop();
