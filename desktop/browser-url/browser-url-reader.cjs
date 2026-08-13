@@ -149,9 +149,32 @@ class BrowserUrlReader {
       this.start();
       return null;                 // first call only primes the helper
     }
-    if (!this.ready || this.pending) return null;
+    if (!this.ready) return null;
 
-    const raw = await new Promise((resolve) => {
+    /*
+     * Join a read already in flight rather than giving up on it.
+     *
+     * main.cjs reads from two places on the same one-second cadence — the
+     * foreground watcher, and the get-active-window-context IPC that the
+     * renderer's tick calls — so their reads overlap constantly. Returning
+     * null to whichever arrived second wrote a URL-less row for a page whose
+     * URL had just been read successfully, which appeared in the timeline as
+     * alternating url/NULL rows for one page. Both callers want the same
+     * thing: what is in front right now.
+     */
+    const raw = this.pending ? await this.pending.promise : await this.requestRead();
+
+    if (!raw || raw.ok === false || !raw.source) return null;
+
+    const normalized = normalizeCapturedUrl({ source: raw.source, value: raw.value });
+    if (!normalized.url) return null;
+
+    return { url: normalized.url, confidence: normalized.confidence, source: raw.source };
+  }
+
+  /** Ask the helper once, exposing the in-flight promise for others to join. */
+  requestRead() {
+    const promise = new Promise((resolve) => {
       const timer = setTimeout(() => {
         if (this.pending && this.pending.timer === timer) {
           this.pending = null;
@@ -160,7 +183,7 @@ class BrowserUrlReader {
       }, READ_TIMEOUT_MS);
       if (typeof timer.unref === 'function') timer.unref();
 
-      this.pending = { resolve, timer };
+      this.pending = { resolve, timer, promise: null };
 
       try {
         this.child.stdin.write('read\n');
@@ -172,12 +195,12 @@ class BrowserUrlReader {
       }
     });
 
-    if (!raw || raw.ok === false || !raw.source) return null;
+    // Assigned after construction, so a synchronous write failure above — which
+    // clears `pending` — cannot leave a stale promise for a later caller to
+    // join.
+    if (this.pending) this.pending.promise = promise;
 
-    const normalized = normalizeCapturedUrl({ source: raw.source, value: raw.value });
-    if (!normalized.url) return null;
-
-    return { url: normalized.url, confidence: normalized.confidence, source: raw.source };
+    return promise;
   }
 
   dispose() {
