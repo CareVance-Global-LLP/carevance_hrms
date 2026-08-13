@@ -57,16 +57,20 @@ class MonitoringSettingsResolver
         $minutes = (int) $value;
 
         /*
-         * Anything not in the allowed list means "inherit", including the
-         * legacy 1- and 3-minute settings that were selectable before
-         * per-minute capture was withdrawn.
+         * Anything not in the allowed list means "inherit".
          *
-         * Inheriting is the right answer rather than rounding up to the
-         * nearest allowed value: the next value in the chain is the
-         * organization default, which an admin actually chose, and it is
-         * almost always LESS frequent than the sub-5-minute setting being
-         * replaced. Rounding up would override that deliberate choice with a
-         * more intrusive one.
+         * Inheriting is the right answer rather than rounding to the nearest
+         * allowed value: the next value in the chain is the organization
+         * default, which an admin actually chose, and rounding would override
+         * that deliberate choice with a value nobody selected.
+         *
+         * The cost of this rule is that a rejected value is rejected SILENTLY —
+         * it is still stored on the user and still shown back in the admin UI,
+         * while capture quietly runs at the inherited interval. That is a real
+         * trap, and the guard against it is that the allowed list has exactly
+         * one definition (config/screenshots.php) which the request validation
+         * also reads, so a value can never reach storage unless this method
+         * will honour it.
          */
         return in_array($minutes, $this->allowedIntervals(), true) ? $minutes : null;
     }
