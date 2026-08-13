@@ -5,17 +5,26 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
+import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
+import { currentFinancialYear } from '@/lib/payroll/financialYear';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'auto_approved'];
+
+/** Current FY and the three before it, in the 'YYYY-YYYY' form tax proofs are stored under. */
+function taxProofFinancialYears(): string[] {
+  const startYear = Number.parseInt(currentFinancialYear().slice(0, 4), 10);
+  return [0, 1, 2, 3].map((back) => `${startYear - back}-${startYear - back + 1}`);
+}
 
 export default function TaxProofsReviewPage() {
   const queryClient = useQueryClient();
@@ -29,7 +38,9 @@ export default function TaxProofsReviewPage() {
   const [rejecting, setRejecting] = useState<{ id: number; name: string } | null>(null);
   const [bulkConfirming, setBulkConfirming] = useState(false);
 
-  const { data: proofsData, isLoading } = useQuery({
+  const financialYearOptions = taxProofFinancialYears();
+
+  const { data: proofsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['tax-proofs', financialYear, statusFilter, userFilter],
     queryFn: () => payrollApi.listTaxProofs({
       financial_year: financialYear || undefined,
@@ -88,12 +99,35 @@ export default function TaxProofsReviewPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Tax Proofs Review" description="Review and approve/reject employee tax proof submissions" />
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Tax Proofs Review"
+        description="Review and approve or reject the bills and receipts employees submit against what they declared."
+      />
 
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <HowItWorksCard
+        whatIsThis="The verification step behind a tax declaration. An employee declares an investment in April and uploads the proof later; until it is approved here, the deduction is only a claim."
+        whenToUse={[
+          'Proof submission season, usually January to March',
+          'Before the final quarter\'s TDS, so unproved declarations can be reversed in time',
+          'When an employee disputes the tax deducted from their salary',
+        ]}
+        howItFlows={[
+          { step: 1, label: 'Employee uploads', desc: 'A bill or receipt against each declared item' },
+          { step: 2, label: 'You review', desc: 'Approve, or reject with a reason the employee can act on' },
+          { step: 3, label: 'TDS recalculates', desc: 'Approved proofs keep the deduction; rejected ones raise the tax' },
+          { step: 4, label: 'Form 16', desc: 'Only verified amounts appear on the annual certificate' },
+        ]}
+        commonMistakes={[
+          'Approving a proof for more than the amount declared',
+          'Leaving proofs pending past the last run of the year — the deduction stands unverified',
+          'Rejecting without a reason, which gives the employee nothing to correct',
+        ]}
+      />
+
+      <div className="space-y-6">
         {/* Filters */}
-        <SurfaceCard className="p-5">
+        <FilterPanel>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <FieldLabel>Financial Year</FieldLabel>
@@ -102,9 +136,16 @@ export default function TaxProofsReviewPage() {
                 onChange={(e) => setFinancialYear(e.target.value)}
               >
                 <option value="">Select FY</option>
-                <option value="2024-2025">2024-2025</option>
-                <option value="2025-2026">2025-2026</option>
-                <option value="2023-2024">2023-2024</option>
+                {/*
+                  * Derived, not hardcoded: this list used to stop at 2025-2026,
+                  * so once that year passed there was no way to review the
+                  * current year's proofs at all. Kept in the 'YYYY-YYYY' shape
+                  * this endpoint stores (see TaxProofUploadController), which is
+                  * not the 'YYYY-YY' key declarations match on.
+                  */}
+                {financialYearOptions.map((fy) => (
+                  <option key={fy} value={fy}>{fy}</option>
+                ))}
               </SelectInput>
             </div>
             <div>
@@ -151,7 +192,7 @@ export default function TaxProofsReviewPage() {
               </Button>
             </div>
           </div>
-        </SurfaceCard>
+        </FilterPanel>
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -164,12 +205,22 @@ export default function TaxProofsReviewPage() {
 
         {/* Proofs Table */}
         <SurfaceCard className="overflow-hidden">
-          {isLoading ? (
+          {!financialYear ? (
+            <PageEmptyState
+              title="Select a financial year"
+              description="Pick a financial year above to review the proofs employees have submitted for it."
+            />
+          ) : isLoading ? (
             <PageLoadingState label="Loading tax proofs…" />
+          ) : isError ? (
+            <PageErrorState
+              message={getApiErrorMessage(error, "Couldn't load tax proofs.")}
+              onRetry={() => refetch()}
+            />
           ) : proofs.length === 0 ? (
             <PageEmptyState
               title="No tax proofs found"
-              description="Select a financial year to review employee tax proof submissions."
+              description="No employee has submitted a proof for this financial year yet."
             />
           ) : (
             <div className="overflow-x-auto">

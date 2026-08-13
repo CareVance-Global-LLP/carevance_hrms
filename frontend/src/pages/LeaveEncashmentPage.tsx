@@ -5,14 +5,16 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -77,13 +79,11 @@ export default function LeaveEncashmentPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Leave Encashment</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Pay out unused earned/privilege leaves — typically at exit, or annually per company policy.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Leave Encashment"
+        description="Pay out unused earned/privilege leaves — typically at exit, or annually per company policy."
+      />
         <HowItWorksCard
           whatIsThis="Converts unused earned leaves into cash. Per-day rate = (Monthly Basic ÷ Working Days). Tax-free up to ₹25 lakh for non-government employees at exit."
           whenToUse={[
@@ -105,7 +105,7 @@ export default function LeaveEncashmentPage() {
         />
 
         {/* Filters */}
-        <SurfaceCard className="p-5">
+        <FilterPanel>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <FieldLabel>Status</FieldLabel>
@@ -143,11 +143,11 @@ export default function LeaveEncashmentPage() {
               <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => {
                 show({ kind: 'info', message: 'Select an employee from the Employee Payroll Cards page to process leave encashment for them.' });
               }}>
-                + Process Encashment
+                Process Encashment
               </Button>
             )}
           </div>
-        </SurfaceCard>
+        </FilterPanel>
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -162,14 +162,9 @@ export default function LeaveEncashmentPage() {
           {isLoading ? (
             <PageLoadingState label="Loading leave encashments…" />
           ) : isError ? (
-            <PageEmptyState
-              title="Couldn't load leave encashments"
-              description={getApiErrorMessage(error, 'Please try again.')}
-              action={
-                <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                  Retry
-                </Button>
-              }
+            <PageErrorState
+              message={getApiErrorMessage(error, "Couldn't load leave encashments.")}
+              onRetry={() => refetch()}
             />
           ) : encashments.length === 0 ? (
             <PageEmptyState

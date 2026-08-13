@@ -25,8 +25,12 @@ export default function FbpDashboard() {
   });
 
   const allocateMutation = useMutation({
+    // The endpoint upserts a list — see the payload note on payrollApi.allocateFbp.
     mutationFn: (data: { user_id: number; fbp_component_id: number; amount: number }) =>
-      payrollApi.allocateFbp(data),
+      payrollApi.allocateFbp({
+        user_id: data.user_id,
+        allocations: [{ fbp_component_id: data.fbp_component_id, allocated_amount: data.amount }],
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fbp-allocations'] });
       setShowAllocate(false);

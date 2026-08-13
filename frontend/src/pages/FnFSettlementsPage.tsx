@@ -5,14 +5,16 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 import { formatDate } from '@/lib/dateTime';
 
@@ -38,7 +40,7 @@ export default function FnFSettlementsPage() {
   const [approving, setApproving] = useState<{ id: number; name: string } | null>(null);
   const [processing, setProcessing] = useState<{ id: number; name: string } | null>(null);
 
-  const { data: settlementsData, isLoading } = useQuery({
+  const { data: settlementsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['fnf-settlements', statusFilter, userFilter],
     queryFn: () => payrollApi.listFnFSettlements({ status: statusFilter || undefined, user_id: userFilter ? parseInt(userFilter) : undefined }).then(res => res.data?.data ?? res.data ?? []),
   });
@@ -244,13 +246,11 @@ export default function FnFSettlementsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Full & Final Settlements</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Used when an employee exits — calculates final dues (unpaid salary, leave encashment, gratuity) minus outstanding loans.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Full & Final Settlements"
+        description="Used when an employee exits — calculates final dues (unpaid salary, leave encashment, gratuity) minus outstanding loans."
+      />
         <HowItWorksCard
           whatIsThis="A one-time final payment to an exiting employee. Covers salary for days worked in the last month, encashment of unused earned leaves, and gratuity (if eligible) — minus any outstanding loans or advances."
           whenToUse={[
@@ -271,7 +271,7 @@ export default function FnFSettlementsPage() {
           ]}
         />
         {/* Filters */}
-        <SurfaceCard className="p-5">
+        <FilterPanel>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <FieldLabel>Status</FieldLabel>
@@ -306,7 +306,7 @@ export default function FnFSettlementsPage() {
               </div>
             </div>
           </div>
-        </SurfaceCard>
+        </FilterPanel>
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -321,6 +321,11 @@ export default function FnFSettlementsPage() {
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
             <PageLoadingState label="Loading settlements…" />
+          ) : isError ? (
+            <PageErrorState
+              message={getApiErrorMessage(error, "Couldn't load settlements.")}
+              onRetry={() => refetch()}
+            />
           ) : settlements.length === 0 ? (
             <PageEmptyState
               title="No F&F settlement records found"

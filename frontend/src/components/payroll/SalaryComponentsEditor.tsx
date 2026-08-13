@@ -3,6 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import type { SalaryStructure, CreateSalaryStructurePayload } from '@/types';
+import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { PageEmptyState } from '@/components/ui/PageState';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import SalaryStructureFormModal from './SalaryStructureFormModal';
 
 interface OtherEarning {
@@ -15,6 +20,7 @@ export default function SalaryComponentsEditor() {
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStructure, setEditingStructure] = useState<SalaryStructure | null>(null);
+  const [deleting, setDeleting] = useState<SalaryStructure | null>(null);
 
   const { data: structuresData, isLoading } = useQuery({
     queryKey: ['salary-structures'],
@@ -25,6 +31,7 @@ export default function SalaryComponentsEditor() {
     mutationFn: (id: number) => payrollApi.deleteSalaryStructure(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['salary-structures'] });
+      setDeleting(null);
     },
   });
 
@@ -65,12 +72,25 @@ export default function SalaryComponentsEditor() {
     return names;
   };
 
+  const header = (
+    <ModuleHeader
+      title="Salary Templates"
+      description="The component breakdown a CTC is split into — Basic, HRA, allowances and deductions — assigned to employees on their payroll card."
+      actions={
+        <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
+          New Template
+        </Button>
+      }
+    />
+  );
+
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="space-y-6">
+        {header}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-52 bg-gray-100 rounded-lg animate-pulse" />
+            <div key={i} className="h-52 bg-slate-100 rounded-lg animate-pulse" />
           ))}
         </div>
       </div>
@@ -78,18 +98,40 @@ export default function SalaryComponentsEditor() {
   }
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-900">Salary Templates</h2>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-teal-700 rounded-md hover:bg-teal-800 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Template
-        </button>
-      </div>
+    <div className="space-y-6">
+      {header}
 
+      <HowItWorksCard
+        whatIsThis="A reusable split of annual CTC into its parts. Assigning a template to an employee is what turns a single CTC figure into a payslip with Basic, HRA, allowances and statutory deductions."
+        whenToUse={[
+          'Setting up payroll for the first time — one template per band or grade',
+          'When a group of employees should share an identical salary structure',
+          'Before hiring, so a new joiner\'s card has a template to point at',
+        ]}
+        howItFlows={[
+          { step: 1, label: 'Define percentages', desc: 'Basic and HRA as a share of CTC; the remainder becomes Special Allowance' },
+          { step: 2, label: 'Add fixed allowances', desc: 'Conveyance, meal, internet and any custom earnings' },
+          { step: 3, label: 'Assign to employees', desc: 'Pick the template on each Employee Card alongside their annual CTC' },
+          { step: 4, label: 'Payroll splits the CTC', desc: 'Every run computes components, PF, ESI and PT from this structure' },
+        ]}
+        commonMistakes={[
+          'Setting Basic too low — PF, gratuity and HRA exemption are all computed from it',
+          'Editing a template mid-year, which changes the split for every employee already on it',
+          'Leaving Basic + HRA above 100%, which drives Special Allowance to zero',
+        ]}
+      />
+
+      {structures.length === 0 ? (
+        <PageEmptyState
+          title="No salary templates yet"
+          description="Create a template to define how a CTC is split into components. Employees cannot be paid until they are assigned one."
+          action={
+            <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
+              New Template
+            </Button>
+          }
+        />
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {structures.map((structure) => {
           const earns = earningNames(structure);
@@ -157,12 +199,8 @@ export default function SalaryComponentsEditor() {
                   + Deduction
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm(`Delete template "${structure.name}"? This cannot be undone.`)) {
-                      deleteMutation.mutate(structure.id);
-                    }
-                  }}
-                  className="px-2.5 py-1 text-[11px] font-medium text-red-500 hover:text-red-600 transition-colors ml-auto"
+                  onClick={() => setDeleting(structure)}
+                  className="px-2.5 py-1 text-[11px] font-medium text-rose-500 hover:text-rose-600 transition-colors ml-auto"
                 >
                   Delete
                 </button>
@@ -179,6 +217,7 @@ export default function SalaryComponentsEditor() {
           <div className="text-xs text-slate-400 mt-2">New Template</div>
         </button>
       </div>
+      )}
 
       {(showCreateModal || editingStructure) && (
         <SalaryStructureFormModal
@@ -189,6 +228,19 @@ export default function SalaryComponentsEditor() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={!!deleting}
+        title="Delete salary template"
+        message={`Delete template "${deleting?.name ?? ''}"? This cannot be undone, and employees assigned to it will have no structure to compute pay from.`}
+        confirmLabel="Delete"
+        tone="danger"
+        isLoading={deleteMutation.isPending}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => {
+          if (deleting) deleteMutation.mutate(deleting.id);
+        }}
+      />
     </div>
   );
 }

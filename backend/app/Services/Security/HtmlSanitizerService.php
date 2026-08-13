@@ -57,7 +57,9 @@ class HtmlSanitizerService
      */
     public function sanitize(?string $content): string
     {
-        if (empty($content)) {
+        // Not empty(): empty('0') is true in PHP, so the string "0" was being
+        // replaced with "" on the way in. See sanitizePlainText below.
+        if ($content === null || $content === '') {
             return '';
         }
 
@@ -79,7 +81,17 @@ class HtmlSanitizerService
      */
     public function sanitizePlainText(?string $content): string
     {
-        if (empty($content)) {
+        /*
+         * Not empty(): empty('0') is true in PHP, so the literal string "0" was
+         * being turned into "".
+         *
+         * SanitizeInput runs this over every request in the app, so any field
+         * submitted as the string "0" arrived as an empty string — a 0%
+         * percentage, a 0 quantity, a 0 amount. Most callers then saw '' fail a
+         * `numeric` rule or land in the database as null; the payroll breakdown
+         * saw it reach a decimal cast and 500.
+         */
+        if ($content === null || $content === '') {
             return '';
         }
 

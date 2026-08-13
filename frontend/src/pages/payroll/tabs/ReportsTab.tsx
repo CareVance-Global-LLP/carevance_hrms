@@ -91,11 +91,8 @@ const BANK_RECON_COLUMNS = [
 
 export default function ReportsTab() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const isStrictAdmin = hasStrictAdminAccess(user);
-
-  const handleBackToPayroll = () => navigate('/payroll');
 
   const requested = searchParams.get('panel') as PanelId | null;
   const active: PanelId =
@@ -136,7 +133,7 @@ export default function ReportsTab() {
 
       <div>
         {active === 'register' && <PayrollRegisterPanel />}
-        {active === 'filings' && isStrictAdmin &&           <FilingsDashboard onBack={handleBackToPayroll} />}
+        {active === 'filings' && isStrictAdmin && <FilingsDashboard />}
         {active === 'filings' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Statutory Filings.</div>}
         {active === 'bank-payout' && isStrictAdmin && <BankPayoutDashboard />}
         {active === 'bank-payout' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Bank Payout.</div>}

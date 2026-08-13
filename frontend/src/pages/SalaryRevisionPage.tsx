@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, TrendingUp } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['draft', 'generated', 'accepted', 'rejected'];
@@ -61,23 +65,77 @@ export default function SalaryRevisionPage() {
     return true;
   });
 
+  const stats = {
+    total: letters.length,
+    draft: letters.filter((l: any) => l.status === 'draft').length,
+    generated: letters.filter((l: any) => l.status === 'generated').length,
+    accepted: letters.filter((l: any) => l.status === 'accepted').length,
+  };
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Salary Revisions</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Record CTC changes — increments, promotions, corrections. Auto-detects arrears for back-dated revisions.
-          </p>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Salary Revisions"
+        description="Record CTC changes — increments, promotions, corrections. Auto-detects arrears for back-dated revisions."
+      />
+
+      <HowItWorksCard
+        whatIsThis="A record of an employee's CTC changing from one figure to another on a given date. The revision letter is the document the employee receives; the effective date is what payroll and arrears are calculated from."
+        whenToUse={[
+          'Annual increment cycle — raise CTC for a group of employees',
+          'Promotion or role change mid-year',
+          'Correcting a CTC that was entered wrong at hiring',
+        ]}
+        howItFlows={[
+          { step: 1, label: 'Pick employee and new CTC', desc: 'The current CTC comes from their payroll template' },
+          { step: 2, label: 'Set the effective date', desc: 'A past date means arrears are owed for the months already run' },
+          { step: 3, label: 'Generate the letter', desc: 'Creates the revision record and, if asked, queues the arrears' },
+          { step: 4, label: 'Arrears paid', desc: 'Approve the arrear against a run in the Arrears panel' },
+        ]}
+        commonMistakes={[
+          'Back-dating without ticking Generate Arrears — the employee is underpaid for the elapsed months',
+          'Revising CTC directly on the payroll template instead of here, which leaves no audit trail',
+          'Setting an effective date mid-month when the run for that month is already locked',
+        ]}
+      />
+
+      <FilterPanel>
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <FieldLabel>Status</FieldLabel>
+            <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All Status</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
+            </SelectInput>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <FieldLabel>Search</FieldLabel>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <TextInput
+                placeholder="Search employee..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            iconLeft={<Plus className="h-4 w-4" />}
+            onClick={() => setShowForm(!showForm)}
+          >
+            {showForm ? 'Cancel' : 'New Revision'}
+          </Button>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          iconLeft={<Plus className="h-4 w-4" />}
-          onClick={() => setShowForm(!showForm)}
-        >
-          {showForm ? 'Cancel' : '+ New Revision'}
-        </Button>
+      </FilterPanel>
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <MetricCard label="Total" value={stats.total} accent="sky" icon={TrendingUp} />
+        <MetricCard label="Draft" value={stats.draft} accent="slate" />
+        <MetricCard label="Generated" value={stats.generated} accent="amber" />
+        <MetricCard label="Accepted" value={stats.accepted} accent="emerald" />
       </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -85,19 +143,18 @@ export default function SalaryRevisionPage() {
             {isLoading ? (
               <PageLoadingState label="Loading salary revisions…" />
             ) : isError ? (
-              <PageEmptyState
-                title="Couldn't load salary revisions"
-                description={getApiErrorMessage(error, 'Please try again.')}
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                    Retry
-                  </Button>
-                }
+              <PageErrorState
+                message={getApiErrorMessage(error, "Couldn't load salary revisions.")}
+                onRetry={() => refetch()}
               />
             ) : filteredLetters.length === 0 ? (
               <PageEmptyState
-                title="No salary revisions found"
-                description="When salary revisions are created, they'll appear here."
+                title={letters.length === 0 ? 'No salary revisions found' : 'No matching revisions'}
+                description={
+                  letters.length === 0
+                    ? "When salary revisions are created, they'll appear here."
+                    : 'No revision matches your filters. Clear the search or status to see all.'
+                }
               />
             ) : (
               <div className="overflow-x-auto">

@@ -713,7 +713,6 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
       {currentStep === 3 && (
         <Step3Profile
           form={form}
-          setForm={setForm}
           isCreatingUser={isCreatingUser}
           creationError={creationError}
           onGoBack={handleBack}

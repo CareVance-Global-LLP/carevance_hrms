@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\SalaryTemplate;
 use App\Models\PayGroupAssignment;
+use App\Services\SalaryBreakdownService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -163,6 +164,138 @@ class EmployeePayrollCardController extends Controller
         ]);
     }
 
+    /**
+     * The employee's CTC split into components, driven by a salary structure.
+     *
+     * Read-only by design: nothing here writes. Every parameter is a what-if —
+     * `salary_template_id`, `annual_ctc` and `pt_state` swap the inputs, and
+     * `custom[...]` replaces the structure entirely with percentages the admin
+     * types, so they can ask "what if basic were 50%?" without touching the
+     * employee's saved configuration. Each defaults to the stored value.
+     */
+    public function breakdown(Request $request, int $userId, SalaryBreakdownService $breakdowns): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $validated = $request->validate([
+            'salary_template_id' => 'nullable|integer|exists:salary_templates,id',
+            'annual_ctc' => 'nullable|numeric|min:0',
+            'pt_state' => 'nullable|string',
+            'custom' => 'nullable|array',
+            'custom.basic_percentage' => 'nullable|numeric|min:0|max:100',
+            'custom.hra_percentage' => 'nullable|numeric|min:0|max:100',
+            'custom.da_percentage' => 'nullable|numeric|min:0|max:100',
+            'custom.conveyance_amount' => 'nullable|numeric|min:0',
+            'custom.nps_percentage' => 'nullable|numeric|min:0|max:100',
+            'custom.vpf_percentage' => 'nullable|numeric|min:0|max:100',
+        ]);
+
+        $employee = User::query()
+            ->with(['employeeProfile', 'employeePayrollTemplate', 'payGroupAssignments.payGroup', 'groups'])
+            ->where('organization_id', $user->organization_id)
+            ->where('id', $userId)
+            ->first();
+
+        if (!$employee) {
+            return response()->json(['message' => 'Employee not found.'], 404);
+        }
+
+        $config = $employee->employeePayrollTemplate
+            ?: new EmployeePayrollTemplate([
+                'user_id' => $employee->id,
+                'organization_id' => $user->organization_id,
+            ]);
+
+        $annualCtc = array_key_exists('annual_ctc', $validated) && $validated['annual_ctc'] !== null
+            ? (float) $validated['annual_ctc']
+            : (float) ($config->annual_ctc ?? 0);
+
+        $isPreview = false;
+
+        $structureId = $config->salary_template_id;
+        if (array_key_exists('salary_template_id', $validated)) {
+            $structureId = $validated['salary_template_id'];
+            $isPreview = $isPreview || $structureId !== $config->salary_template_id;
+        }
+
+        $ptState = null;
+        if (array_key_exists('pt_state', $validated) && $validated['pt_state'] !== null) {
+            $ptState = $validated['pt_state'];
+            $isPreview = $isPreview || $ptState !== $config->pt_state;
+        }
+
+        if (array_key_exists('annual_ctc', $validated) && $validated['annual_ctc'] !== null) {
+            $isPreview = $isPreview || (float) $validated['annual_ctc'] !== (float) ($config->annual_ctc ?? 0);
+        }
+
+        /*
+         * Custom mode builds a transient, never-saved SalaryTemplate from the
+         * admin's percentages. calculateBreakdown() is an instance method that
+         * reads its own attributes, so an unsaved model runs the identical
+         * arithmetic a real structure would — no second implementation to drift.
+         */
+        // '' as well as null: an absent number must not reach a decimal cast.
+        $custom = array_filter($validated['custom'] ?? [], fn ($v) => $v !== null && $v !== '');
+
+        if ($custom !== []) {
+            $structure = SalaryTemplate::transient([
+                'organization_id' => $user->organization_id,
+                'name' => 'Custom',
+                'basic_percentage' => $custom['basic_percentage'] ?? 40,
+                'hra_percentage' => $custom['hra_percentage'] ?? 50,
+                'da_percentage' => $custom['da_percentage'] ?? 0,
+                'conveyance_amount' => $custom['conveyance_amount'] ?? 0,
+                'nps_percentage' => $custom['nps_percentage'] ?? 0,
+                'vpf_percentage' => $custom['vpf_percentage'] ?? 0,
+            ]);
+            $isPreview = true;
+        } else {
+            // where(organization_id), not find(): a salary template belongs to a
+            // tenant and the id arrives from the client.
+            $structure = $structureId
+                ? SalaryTemplate::where('organization_id', $user->organization_id)->find($structureId)
+                : null;
+        }
+
+        if ($annualCtc <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This employee has no annual CTC set, so there is nothing to break down.',
+            ], 422);
+        }
+
+        $payGroup = $employee->payGroupAssignments->first()?->payGroup;
+
+        return response()->json([
+            'success' => true,
+            'employee' => [
+                'id' => $employee->id,
+                'name' => trim(($employee->employeeProfile->first_name ?? '') . ' ' . ($employee->employeeProfile->last_name ?? ''))
+                    ?: ($employee->employeeProfile->first_name ?? null)
+                    ?: $employee->email,
+                'email' => $employee->email,
+                'designation' => $employee->employeeProfile?->designation ?? null,
+                'department' => $employee->groups->first()?->name ?? null,
+                'pay_group' => $payGroup?->name ?? null,
+            ],
+            'source' => [
+                // A transient custom structure has no id — the panel uses that
+                // to tell "Custom" apart from a saved structure.
+                'salary_template_id' => $structure?->id,
+                'salary_template_name' => $structure?->name,
+                'is_custom' => $custom !== [],
+                'annual_ctc' => round($annualCtc, 2),
+                'pt_state' => $ptState ?? $config->pt_state,
+                'tax_regime' => $config->tax_regime ?? 'new',
+                'is_metro_city' => (bool) ($config->is_metro_city ?? true),
+                'is_preview' => $isPreview,
+            ],
+        ] + $breakdowns->forEmployee($employee, $structure, $annualCtc, $config, $ptState));
+    }
+
     public function update(Request $request, int $userId): JsonResponse
     {
         $user = $request->user();
@@ -223,29 +356,46 @@ class EmployeePayrollCardController extends Controller
                 ]
             );
 
-            $updateData = array_filter([
-                'annual_ctc' => $validated['annual_ctc'] ?? null,
-                'basic_percentage' => $validated['basic_percentage'] ?? null,
-                'hra_percentage' => $validated['hra_percentage'] ?? null,
-                'da_percentage' => $validated['da_percentage'] ?? null,
-                'conveyance_allowance' => $validated['conveyance_allowance'] ?? null,
-                'salary_template_id' => $validated['salary_template_id'] ?? null,
-                'pt_state' => $validated['pt_state'] ?? null,
-                'tax_regime' => $validated['tax_regime'] ?? null,
-                'is_metro_city' => $validated['is_metro_city'] ?? null,
-                'pf_enabled' => $validated['pf_enabled'] ?? null,
-                'esi_enabled' => $validated['esi_enabled'] ?? null,
-                'pt_enabled' => $validated['pt_enabled'] ?? null,
-                'tds_enabled' => $validated['tds_enabled'] ?? null,
-                'lwf_enabled' => $validated['lwf_enabled'] ?? null,
-                'pf_employee_percentage' => $validated['pf_employee_percentage'] ?? null,
-                'pf_employer_percentage' => $validated['pf_employer_percentage'] ?? null,
-                'pf_wage_cap' => $validated['pf_wage_cap'] ?? null,
-                'esi_employee_percentage' => $validated['esi_employee_percentage'] ?? null,
-                'esi_employer_percentage' => $validated['esi_employer_percentage'] ?? null,
-                'esi_threshold' => $validated['esi_threshold'] ?? null,
-                'is_active' => $validated['is_active'] ?? null,
-            ], fn ($v) => !is_null($v));
+            /*
+             * Only the fields the request actually sent, nulls included.
+             *
+             * This was an array_filter that dropped every null, which made
+             * nullable fields impossible to clear: blanking Annual CTC or
+             * choosing "— None —" for the salary template sent null, the null
+             * was stripped, and the old value was returned intact — the save
+             * reported success and changed nothing. Fields the caller omits are
+             * still left untouched, which is what array_filter was reaching for.
+             */
+            $templateFields = [
+                'annual_ctc',
+                'basic_percentage',
+                'hra_percentage',
+                'da_percentage',
+                'conveyance_allowance',
+                'salary_template_id',
+                'pt_state',
+                'tax_regime',
+                'is_metro_city',
+                'pf_enabled',
+                'esi_enabled',
+                'pt_enabled',
+                'tds_enabled',
+                'lwf_enabled',
+                'pf_employee_percentage',
+                'pf_employer_percentage',
+                'pf_wage_cap',
+                'esi_employee_percentage',
+                'esi_employer_percentage',
+                'esi_threshold',
+                'is_active',
+            ];
+
+            $updateData = [];
+            foreach ($templateFields as $field) {
+                if (array_key_exists($field, $validated)) {
+                    $updateData[$field] = $validated[$field];
+                }
+            }
 
             if (!empty($updateData)) {
                 $template->update($updateData);

@@ -444,14 +444,26 @@ export default function AddUserDrawer({
       ) : null}
       <aside className={presentation === 'modal' ? 'absolute inset-0 flex items-start justify-center overflow-y-auto p-4 sm:p-6 lg:p-8' : 'relative'}>
         {/*
-          Inline mode had no width cap, so on a wide monitor every input
-          stretched the full page — Employee Code rendered about 700px wide.
-          Capped at the same 72rem the modal already used.
+          Inline mode spans the full page.
+
+          It was capped at 72rem because an uncapped single-column layout
+          stretched one input across the whole monitor — Employee Code rendered
+          about 700px wide. The cap fixed that by wasting the rest of the
+          screen: on a wide display the wizard sat in the left third with the
+          salary breakup squeezed into it.
+
+          The fields no longer stretch, so the cap is not what keeps them
+          readable: every form grid below carries xl/2xl breakpoints, so extra
+          width turns into more columns instead of wider inputs. If you add a
+          grid here, give it those tiers too.
+
+          The modal branch keeps its own cap — a dialog floating over the page
+          is a different thing and should not be full-bleed.
         */}
         <div className={`flex w-full flex-col gap-6 ${
           presentation === 'modal'
             ? 'rounded-lg border border-border-strong bg-surface-card p-4 shadow-sm sm:p-6 mt-16 max-w-[72rem] sm:mt-20'
-            : 'max-w-[72rem]'
+            : ''
         }`}>
           <div className="flex items-start justify-between gap-4">
             <div>

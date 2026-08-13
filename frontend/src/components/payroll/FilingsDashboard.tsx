@@ -5,8 +5,12 @@ import { payrollApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import MetricCard from '@/components/dashboard/MetricCard';
+import { SelectInput, FieldLabel } from '@/components/ui/FormField';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
 import InfoTooltip from '@/components/ui/InfoTooltip';
 import HowItWorksCard from './HowItWorksCard';
+import ModuleHeader from './ModuleHeader';
 import { useToast } from '@/components/ui/Toast';
 import Modal from '@/components/ui/dialog/Modal';
 import type { PayGroupFilingDetail } from '@/types';
@@ -438,7 +442,7 @@ const STATUS_BADGE: Record<FilingStatus, string> = {
   error: 'bg-rose-50 text-rose-700',
 };
 
-export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
+export default function FilingsDashboard() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const { organization } = useAuth();
@@ -622,6 +626,13 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
 
   const payGroups = (payGroupSettingsData as any)?.pay_groups ?? [];
 
+  const filingStats = {
+    generated: filingsList.length,
+    filed: filingsList.filter((f: any) => f.status === 'filed' || f.status === 'acknowledged').length,
+    pending: filingsList.filter((f: any) => f.status === 'generated' || f.status === 'pending').length,
+    failed: filingsList.filter((f: any) => f.status === 'failed').length,
+  };
+
   // When a run is selected, find its pay group and populate state defaults from filing_details
   const selectedRunData = runsList.find((r: any) => r.id === selectedRun);
   const runPayGroupId = selectedRunData?.pay_group_id as number | undefined;
@@ -712,18 +723,10 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
 
   return (
     <div className="space-y-6">
-      {onBack && (
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            iconLeft={<ArrowLeft className="h-4 w-4" />}
-          >
-            Back to Payroll
-          </Button>
-        </div>
-      )}
+      <ModuleHeader
+        title="Statutory Filings"
+        description="Generate PF, ESI, PT, TDS and Form 16 returns from an approved payroll run — then file them on the relevant portal yourself."
+      />
       <HowItWorksCard
         intro="Generate statutory returns locally, then you (the human) file them on the relevant portal. Different filing types have very different real workflows — the badge on each card tells you which."
         whatIsThis={
@@ -819,7 +822,7 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
       {activeTab === 'generate' ? (
         <>
           <div className="flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-slate-900">Statutory Filings — FilingsDashboard</h2>
+            <h3 className="text-[15px] font-semibold text-slate-900">Generate Filings</h3>
             <div className="flex items-center gap-2">
               <Button
                 variant="secondary"
@@ -841,27 +844,33 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <MetricCard label="Generated" value={filingStats.generated} accent="sky" icon={FileText} />
+            <MetricCard label="Awaiting Filing" value={filingStats.pending} accent="amber" />
+            <MetricCard label="Filed" value={filingStats.filed} accent="emerald" />
+            <MetricCard label="Failed" value={filingStats.failed} accent="rose" />
+          </div>
+
           <SurfaceCard className="p-5">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Select Payroll Run
-            </label>
+            <FieldLabel>Select Payroll Run</FieldLabel>
             {runsLoading ? (
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading runs...
               </div>
             ) : (
-              <select
-                value={selectedRun ?? ''}
-                onChange={(e) => setSelectedRun(Number(e.target.value) || null)}
-                className="w-full max-w-md border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Choose a payroll run...</option>
-                {runsList.map((run: any) => (
-                  <option key={run.id} value={run.id}>
-                    {run.month_year} — {run.status} ({run.total_employees || run.employee_count || 0} employees)
-                  </option>
-                ))}
-              </select>
+              <div className="max-w-md">
+                <SelectInput
+                  value={selectedRun ?? ''}
+                  onChange={(e) => setSelectedRun(Number(e.target.value) || null)}
+                >
+                  <option value="">Choose a payroll run...</option>
+                  {runsList.map((run: any) => (
+                    <option key={run.id} value={run.id}>
+                      {run.month_year} — {run.status} ({run.total_employees || run.employee_count || 0} employees)
+                    </option>
+                  ))}
+                </SelectInput>
+              </div>
             )}
             {runsList.length === 0 && !runsLoading && (
               <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
@@ -1044,6 +1053,17 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
             )}
             </>
           )}
+
+          {/*
+            * Without this the area below the run picker was simply blank, which
+            * reads as a broken page rather than a step you have not taken yet.
+            */}
+          {!selectedRun && !runsLoading && runsList.length > 0 && (
+            <PageEmptyState
+              title="Select a payroll run"
+              description="Filings are generated from a specific run. Choose one above to see the 19 returns available for it."
+            />
+          )}
         </>
       ) : activeTab === 'form16' ? (
         <SurfaceCard className="p-5">
@@ -1061,11 +1081,10 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Employee</label>
-                <select
+                <FieldLabel>Employee</FieldLabel>
+                <SelectInput
                   value={form16EmployeeId ?? ''}
                   onChange={(e) => setForm16EmployeeId(Number(e.target.value) || null)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select employee...</option>
                   {employeesList.map((emp: any) => (
@@ -1073,23 +1092,22 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
                       {emp.name} ({emp.email})
                     </option>
                   ))}
-                </select>
+                </SelectInput>
                 {employeesList.length === 0 && (
                   <p className="mt-1 text-xs text-amber-600">No employees found in your organization.</p>
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Financial Year</label>
-                <select
+                <FieldLabel>Financial Year</FieldLabel>
+                <SelectInput
                   value={form16FinancialYear}
                   onChange={(e) => setForm16FinancialYear(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select financial year...</option>
                   {financialYears.map(fy => (
                     <option key={fy} value={fy}>{fy}</option>
                   ))}
-                </select>
+                </SelectInput>
               </div>
             </div>
           )}
@@ -1131,15 +1149,12 @@ export default function FilingsDashboard({ onBack }: { onBack?: () => void }) {
       ) : (
         <SurfaceCard className="overflow-hidden">
           {filingsLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            </div>
+            <PageLoadingState label="Loading filing history…" />
           ) : !Array.isArray(filingsList) || filingsList.length === 0 ? (
-            <div className="text-center py-12">
-              <FileText className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-500">No filings generated yet</p>
-              <p className="text-xs text-slate-400 mt-1">Use the Generate tab to create PF, ESI, TDS, PT or LWF returns.</p>
-            </div>
+            <PageEmptyState
+              title="No filings generated yet"
+              description="Use the Generate tab to create PF, ESI, TDS, PT or LWF returns."
+            />
           ) : (
             <>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50">

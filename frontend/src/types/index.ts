@@ -1821,6 +1821,74 @@ export interface EmployeePayrollCard {
   template_active: boolean;
 }
 
+/**
+ * The `employee` half of GET /payroll/employee-cards/{id}.
+ *
+ * Was typed `any`, which mattered once the Salary Breakdown panel started
+ * reading `department_id` off it to resolve a deep link.
+ */
+export interface EmployeePayrollCardIdentity {
+  id: number;
+  name: string;
+  email: string;
+  department: string | null;
+  department_id: number | null;
+  designation: string | null;
+}
+
+/** One row of the Salary Breakdown panel's earnings/deductions tables. */
+export interface SalaryBreakdownLine {
+  key: string;
+  label: string;
+  monthly: number;
+  annual: number;
+  /**
+   * Where the figure came from: a named component on the salary structure, the
+   * residual that balances the breakdown to CTC, a statutory calculation, or
+   * the engine defaults used when no structure is assigned.
+   */
+  origin: 'structure' | 'residual' | 'statutory' | 'default';
+}
+
+export interface EmployeeSalaryBreakdown {
+  success: boolean;
+  employee: {
+    id: number;
+    name: string;
+    email: string;
+    designation: string | null;
+    department: string | null;
+    pay_group: string | null;
+  };
+  source: {
+    salary_template_id: number | null;
+    salary_template_name: string | null;
+    /** True when the figures come from typed percentages rather than a saved structure. */
+    is_custom: boolean;
+    annual_ctc: number;
+    pt_state: string | null;
+    tax_regime: 'new' | 'old';
+    is_metro_city: boolean;
+    /** True when the inputs differ from the employee's stored configuration. */
+    is_preview: boolean;
+  };
+  monthly: { ctc: number; gross: number; total_deductions: number; net: number };
+  annual: { ctc: number; gross: number; total_deductions: number; net: number };
+  earnings: SalaryBreakdownLine[];
+  deductions: SalaryBreakdownLine[];
+  employer_contributions: SalaryBreakdownLine[];
+  notes: {
+    pf_wages: number;
+    pf_cap_applied: boolean;
+    esi_applicable: boolean;
+    tax_regime: 'new' | 'old';
+    pt_state: string | null;
+    is_metro_city: boolean;
+    tds_is_estimate: boolean;
+  };
+  warnings: string[];
+}
+
 export interface EmployeePayrollConfig {
   annual_ctc: number | null;
   basic_percentage: number;

@@ -12,7 +12,17 @@ use Illuminate\Support\Facades\DB;
 class LoanController extends Controller
 {
     /**
-     * Request a new loan or advance (employee).
+     * Request a new loan or advance.
+     *
+     * Self-service by default: the borrower is the caller. An admin may pass
+     * `user_id` to raise one on an employee's behalf — without that, the only
+     * create button in the UI had to be hidden from admins, so an admin
+     * recording an advance they had already paid out had nowhere to do it.
+     *
+     * `user_id` from a non-privileged caller is ignored rather than rejected:
+     * the borrower is still resolved to the caller, so this endpoint keeps the
+     * "resolves its subject from the caller" guarantee its route group relies
+     * on for anyone who is not an admin.
      */
     public function requestLoan(Request $request): JsonResponse
     {
@@ -22,9 +32,30 @@ class LoanController extends Controller
             'emi_amount' => 'required|numeric|min:100',
             'total_installments' => 'required|integer|min:1|max:60',
             'purpose' => 'nullable|string|max:500',
+            'user_id' => 'nullable|integer|exists:users,id',
         ]);
 
-        $user = $request->user();
+        $actor = $request->user();
+        $borrower = $actor;
+
+        if ($request->filled('user_id') && in_array($actor->role, ['admin', 'super_admin'], true)) {
+            /*
+             * User is deliberately outside BelongsToOrganization (the scope
+             * resolves the acting user through Auth), so the tenant check here
+             * is explicit: an admin may only borrow-on-behalf within their own
+             * organization.
+             */
+            $borrower = User::where('id', $request->user_id)
+                ->where('organization_id', $actor->organization_id)
+                ->first();
+
+            if (! $borrower) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Employee not found in your organization.',
+                ], 404);
+            }
+        }
 
         $remainingAmount = $request->amount;
 
@@ -32,8 +63,8 @@ class LoanController extends Controller
             'success' => true,
             'message' => 'Loan request submitted for approval',
             'loan' => EmployeeLoan::create([
-                'organization_id' => $user->organization_id,
-                'user_id' => $user->id,
+                'organization_id' => $borrower->organization_id,
+                'user_id' => $borrower->id,
                 'loan_type' => $request->loan_type,
                 'amount' => $request->amount,
                 'emi_amount' => $request->emi_amount,

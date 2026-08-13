@@ -80,7 +80,8 @@ export function Step2AccountCreated({ form }: Step2Props) {
   };
 
   return (
-    <div className="px-6 py-6 space-y-5 max-h-[60vh] overflow-y-auto">
+    // The page scrolls; a step must not be a scroll container inside one.
+    <div className="px-6 py-6 space-y-5">
       <div className="flex flex-col items-center text-center space-y-3">
         <div className="h-14 w-14 rounded-full bg-blue-100 flex items-center justify-center">
           <ClipboardCheck className="h-8 w-8 text-blue-600" />

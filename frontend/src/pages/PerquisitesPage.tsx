@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, Plus, IndianRupee, Home, Car, GraduationCap, Wifi, Coffee, Pencil } from 'lucide-react';
+import { Briefcase, Plus, IndianRupee, Home, Car, GraduationCap, Wifi, Coffee, Pencil, Search } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
+import { currentFinancialYear } from '@/lib/payroll/financialYear';
 
 const PERQUISITE_TYPES = [
   { value: 'car', label: 'Company Car', icon: Car },
@@ -27,6 +31,7 @@ export default function PerquisitesPage() {
   const queryClient = useQueryClient();
   const { show } = useToast();
   const [userFilter, setUserFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     user_id: '',
@@ -49,10 +54,20 @@ export default function PerquisitesPage() {
   });
 
   const createMutation = useMutation({
+    /*
+     * `taxable_value` and `financial_year` are both `required` on
+     * PayrollFilingController::createPerquisite, and this form used to send
+     * neither — every submit came back 422. The taxable value equals the annual
+     * value for the types listed here (the IT Rules valuations that differ,
+     * like concessional accommodation, are not editable from this form), and
+     * the FY is the canonical 'YYYY-YY' key the rest of payroll matches on.
+     */
     mutationFn: () => payrollApi.createPerquisite({
       user_id: parseInt(formData.user_id),
       perquisite_type: formData.perquisite_type,
       annual_value: parseFloat(formData.annual_value),
+      taxable_value: parseFloat(formData.annual_value),
+      financial_year: currentFinancialYear(),
       description: formData.description || undefined,
     }),
     onSuccess: () => {
@@ -67,14 +82,29 @@ export default function PerquisitesPage() {
   const users = Array.isArray(usersData) ? usersData : [];
   const perquisites = Array.isArray(perquisitesData) ? perquisitesData : (perquisitesData as any)?.records ?? [];
 
+  const filteredPerquisites = perquisites.filter((p: any) => {
+    if (!searchQuery) return true;
+    const needle = searchQuery.toLowerCase();
+    const typeLabel = PERQUISITE_TYPES.find(t => t.value === p.perquisite_type)?.label ?? '';
+    return (
+      typeLabel.toLowerCase().includes(needle) ||
+      String(p.perquisite_type ?? '').toLowerCase().includes(needle) ||
+      String(p.description ?? '').toLowerCase().includes(needle)
+    );
+  });
+
+  const selectedEmployee = users.find((u: any) => String(u.id) === userFilter);
+  const totalTaxable = perquisites.reduce(
+    (sum: number, p: any) => sum + Number(p.taxable_value || p.annual_value || 0),
+    0,
+  );
+
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Perquisites</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Track taxable non-cash benefits (rent-free house, company car, club membership) — added to TDS.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Perquisites"
+        description="Track taxable non-cash benefits (rent-free house, company car, club membership) — added to TDS."
+      />
         <HowItWorksCard
           whatIsThis="Non-cash benefits provided to employees that have a taxable value per Income Tax Rules. Perquisite value is added to employee\'s taxable income, increasing TDS for the year."
           whenToUse={[
@@ -96,22 +126,48 @@ export default function PerquisitesPage() {
           ]}
         />
 
-        {/* Action Bar */}
-        <div className="flex items-center justify-between">
-          <SurfaceCard className="p-4 flex-1 mr-4">
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <FieldLabel>Select Employee to View Perquisites</FieldLabel>
-                <SelectInput value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
-                  <option value="">Select employee...</option>
-                  {users.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
-                </SelectInput>
+        {/*
+          * Perquisites are only readable one employee at a time: the API
+          * exposes GET /payroll/perquisites/user/{userId} and no org-wide
+          * index, so the employee select is a required argument rather than an
+          * optional filter. The table below says so instead of rendering
+          * nothing until one is picked.
+          */}
+        <FilterPanel>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="flex-1 min-w-[240px]">
+              <FieldLabel>Employee</FieldLabel>
+              <SelectInput value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
+                <option value="">Select employee...</option>
+                {users.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+              </SelectInput>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <FieldLabel>Search</FieldLabel>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <TextInput
+                  placeholder="Search type, description..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
               </div>
             </div>
-          </SurfaceCard>
-          <Button variant="primary" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowForm(true)}>
-            Add Perquisite
-          </Button>
+            <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowForm(true)}>
+              Add Perquisite
+            </Button>
+          </div>
+        </FilterPanel>
+
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <MetricCard label="Records" value={perquisites.length} accent="sky" icon={Briefcase} />
+          <MetricCard
+            label="Total Taxable Value"
+            value={formatPayrollAmount(totalTaxable, { compact: true })}
+            accent="rose"
+            hint={selectedEmployee ? selectedEmployee.name : 'No employee selected'}
+          />
         </div>
 
         {/* Perquisites Types Info */}
@@ -182,25 +238,28 @@ export default function PerquisitesPage() {
         )}
 
         {/* Perquisites List */}
-        {userFilter && (
           <SurfaceCard className="overflow-hidden">
-            <h3 className="text-lg font-semibold text-slate-900 p-5 border-b">Perquisites Records</h3>
-            {isLoading ? (
+            <h3 className="text-lg font-semibold text-slate-900 p-5 border-b border-slate-200">Perquisite Records</h3>
+            {!userFilter ? (
+              <PageEmptyState
+                title="Select an employee"
+                description="Perquisites are recorded per employee. Pick someone above to see what they hold."
+              />
+            ) : isLoading ? (
               <PageLoadingState label="Loading perquisites…" />
             ) : isError ? (
-              <PageEmptyState
-                title="Couldn't load perquisites"
-                description={getApiErrorMessage(error, 'Please try again.')}
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                    Retry
-                  </Button>
-                }
+              <PageErrorState
+                message={getApiErrorMessage(error, "Couldn't load perquisites.")}
+                onRetry={() => refetch()}
               />
-            ) : perquisites.length === 0 ? (
+            ) : filteredPerquisites.length === 0 ? (
               <PageEmptyState
-                title="No perquisites recorded"
-                description="No perquisites have been recorded for this employee yet."
+                title={perquisites.length === 0 ? 'No perquisites recorded' : 'No matching perquisites'}
+                description={
+                  perquisites.length === 0
+                    ? 'No perquisites have been recorded for this employee yet.'
+                    : 'No record matches your search. Clear it to see all of them.'
+                }
               />
             ) : (
               <div className="overflow-x-auto">
@@ -215,7 +274,7 @@ export default function PerquisitesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {perquisites.map((p: any, idx: number) => {
+                    {filteredPerquisites.map((p: any, idx: number) => {
                       const emp = users.find((u: any) => String(u.id) === String(p.user_id));
                       return (
                         <tr key={p.id || idx} className="hover:bg-slate-50">
@@ -243,7 +302,6 @@ export default function PerquisitesPage() {
               </div>
             )}
           </SurfaceCard>
-        )}
 
         {/* Info Banner */}
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-700">

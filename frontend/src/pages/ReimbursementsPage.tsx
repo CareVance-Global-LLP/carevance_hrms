@@ -8,14 +8,16 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import MonthPicker from '@/components/ui/MonthPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
@@ -196,34 +198,39 @@ export default function ReimbursementsPage() {
 
   // ─── Queries ───────────────────────────────────────────────
 
-  const { data: myData, isLoading: myLoading } = useQuery({
+  const myQuery = useQuery({
     queryKey: ['reimbursements', 'mine', monthFilter],
     queryFn: () => payrollApi.myReimbursements({ month_year: monthFilter || undefined }).then(r => r.data),
   });
+  const { data: myData, isLoading: myLoading } = myQuery;
 
-  const { data: managerInboxData, isLoading: managerLoading } = useQuery({
+  const managerQuery = useQuery({
     queryKey: ['reimbursements', 'manager-inbox', search, monthFilter],
     queryFn: () => payrollApi.managerInbox({ search, month_year: monthFilter || undefined }).then(r => r.data),
     enabled: isManager && activeTab === 'inbox',
   });
+  const { data: managerInboxData, isLoading: managerLoading } = managerQuery;
 
-  const { data: adminInboxData, isLoading: adminLoading } = useQuery({
+  const adminQuery = useQuery({
     queryKey: ['reimbursements', 'admin-inbox', search, monthFilter],
     queryFn: () => payrollApi.adminInbox({ search, month_year: monthFilter || undefined }).then(r => r.data),
     enabled: isStrictAdmin && activeTab === 'inbox',
   });
+  const { data: adminInboxData, isLoading: adminLoading } = adminQuery;
 
-  const { data: allData, isLoading: allLoading } = useQuery({
+  const allQuery = useQuery({
     queryKey: ['reimbursements', 'all', monthFilter],
     queryFn: () => payrollApi.listReimbursements({ month_year: monthFilter || undefined }).then(r => r.data),
     enabled: activeTab === 'all' || activeTab === 'history',
   });
+  const { data: allData, isLoading: allLoading } = allQuery;
 
-  const { data: pendingPaymentsData, isLoading: pendingPaymentsLoading } = useQuery({
+  const pendingPaymentsQuery = useQuery({
     queryKey: ['reimbursements', 'pending-payments', monthFilter],
     queryFn: () => payrollApi.pendingPayments({ month_year: monthFilter || undefined }).then(r => r.data),
     enabled: isStrictAdmin && activeTab === 'pending_payments',
   });
+  const { data: pendingPaymentsData, isLoading: pendingPaymentsLoading } = pendingPaymentsQuery;
 
   const { data: summaryData } = useQuery({
     queryKey: ['reimbursements', 'summary', monthFilter],
@@ -464,6 +471,16 @@ export default function ReimbursementsPage() {
     : activeTab === 'pending_payments' ? pendingPaymentsLoading
     : allLoading;
 
+  /*
+   * The query behind the active tab, so a failed load says so instead of
+   * rendering the same "no claims found" panel an empty inbox does.
+   */
+  const activeQuery = activeTab === 'inbox'
+    ? (isStrictAdmin ? adminQuery : managerQuery)
+    : activeTab === 'my_submissions' ? myQuery
+    : activeTab === 'pending_payments' ? pendingPaymentsQuery
+    : allQuery;
+
   // ─── Tabs ──────────────────────────────────────────────────
 
   const tabs: { key: Tab; label: string; count?: number }[] = [];
@@ -490,13 +507,11 @@ export default function ReimbursementsPage() {
       : tabs.filter(t => t.key === 'my_submissions' || t.key === 'history');
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Reimbursements</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Submit and manage expense claims with manager and admin approval.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Reimbursements"
+        description="Submit and manage expense claims with manager and admin approval."
+      />
         <HowItWorksCard
           whatIsThis="Refunds for out-of-pocket business expenses. Employee submits a claim with receipts, manager verifies, admin gives final approval, and the amount is added to payroll."
           whenToUse={[
@@ -517,8 +532,8 @@ export default function ReimbursementsPage() {
           ]}
         />
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {/* Summary Cards — count varies by role (2 for an employee, up to 6 for an admin) */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
           <MetricCard
             label="Total Claims"
             value={summary.total_count}
@@ -570,6 +585,7 @@ export default function ReimbursementsPage() {
         </div>
 
         {/* Tabs + Action Bar */}
+        <FilterPanel>
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-1 border-b border-slate-200 -mb-px">
             {visibleTabs.map((tab) => (
@@ -622,13 +638,13 @@ export default function ReimbursementsPage() {
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
-            <div className="relative">
+            <div className="relative w-48">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
+              <TextInput
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search..."
-                className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+                className="pl-9"
               />
             </div>
             <Button
@@ -641,6 +657,7 @@ export default function ReimbursementsPage() {
             </Button>
           </div>
         </div>
+        </FilterPanel>
 
         {/* Bulk action bar — visible only in inbox tabs with a selection */}
         {activeTab === 'inbox' && selectedIds.length > 0 && (
@@ -947,6 +964,11 @@ export default function ReimbursementsPage() {
         <SurfaceCard className="overflow-hidden">
           {isLoading ? (
             <PageLoadingState label="Loading reimbursements…" />
+          ) : activeQuery.isError ? (
+            <PageErrorState
+              message={getApiErrorMessage(activeQuery.error, "Couldn't load reimbursements.")}
+              onRetry={() => activeQuery.refetch()}
+            />
           ) : filteredData.length === 0 ? (
             <PageEmptyState
               title={

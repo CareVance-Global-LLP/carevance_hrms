@@ -5,7 +5,8 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
+import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { useToast } from '@/components/ui/Toast';
@@ -95,10 +96,33 @@ export default function TaxSimulatorPage() {
   const hraResult = hraMutation.data?.data || hraMutation.data;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader title="Tax Simulator" description="Compare tax regimes and plan your taxes" />
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Tax Simulator"
+        description="Model an annual tax liability before committing to it — compare regimes, project take-home, and size an HRA exemption."
+      />
 
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <HowItWorksCard
+        whatIsThis="A calculator, not a record. Nothing here is saved to an employee or to payroll — it exists to answer 'what would the tax be if…' before a declaration or a salary revision is made."
+        whenToUse={[
+          'An employee is choosing between the old and new regime for the year',
+          'Sizing an increment — what a CTC change is actually worth after tax',
+          'Working out how much rent to declare for the best HRA exemption',
+        ]}
+        howItFlows={[
+          { step: 1, label: 'Enter the CTC', desc: 'Plus city type, which sets the HRA exemption ceiling' },
+          { step: 2, label: 'Add exemptions', desc: '80C, 80D, HRA and the rest, as the employee expects to claim them' },
+          { step: 3, label: 'Calculate', desc: 'Both regimes are computed side by side' },
+          { step: 4, label: 'Act on it', desc: 'Record the outcome as a Tax Declaration — this page stores nothing itself' },
+        ]}
+        commonMistakes={[
+          'Assuming the result is filed somewhere — it is not; enter it as a declaration',
+          'Comparing regimes without the standard deduction, which applies to both',
+          'Forgetting that most 80C and 80D deductions do not exist under the new regime',
+        ]}
+      />
+
+      <div className="space-y-6">
         {/* Tabs */}
         <div className="flex gap-2">
           <Button

@@ -95,6 +95,69 @@ class PayrollSelfServiceAuthorizationTest extends TestCase
         ], $this->apiHeadersFor($this->employee))->assertOk();
     }
 
+    /**
+     * The borrower is the caller, whatever user_id an employee sends.
+     *
+     * Without this, letting admins pass user_id would have handed every
+     * employee a way to raise a loan in a colleague's name.
+     */
+    public function test_employee_cannot_raise_a_loan_in_someone_elses_name(): void
+    {
+        $this->postJson('/api/payroll/loans/request', [
+            'loan_type' => 'advance',
+            'amount' => 10000,
+            'emi_amount' => 2000,
+            'total_installments' => 5,
+            'user_id' => $this->otherEmployee->id,
+        ], $this->apiHeadersFor($this->employee))->assertOk();
+
+        $this->assertDatabaseHas('employee_loans', [
+            'user_id' => $this->employee->id,
+            'amount' => 10000,
+        ]);
+        $this->assertDatabaseMissing('employee_loans', [
+            'user_id' => $this->otherEmployee->id,
+        ]);
+    }
+
+    public function test_admin_can_raise_a_loan_on_behalf_of_an_employee(): void
+    {
+        $this->postJson('/api/payroll/loans/request', [
+            'loan_type' => 'loan',
+            'amount' => 50000,
+            'emi_amount' => 5000,
+            'total_installments' => 10,
+            'user_id' => $this->otherEmployee->id,
+        ], $this->apiHeadersFor($this->admin))->assertOk();
+
+        $this->assertDatabaseHas('employee_loans', [
+            'user_id' => $this->otherEmployee->id,
+            'organization_id' => $this->organization->id,
+            'amount' => 50000,
+        ]);
+    }
+
+    public function test_admin_cannot_raise_a_loan_for_another_organisations_employee(): void
+    {
+        $otherOrg = Organization::factory()->create();
+        $outsider = User::factory()->create([
+            'organization_id' => $otherOrg->id,
+            'role' => 'employee',
+        ]);
+
+        $this->postJson('/api/payroll/loans/request', [
+            'loan_type' => 'loan',
+            'amount' => 50000,
+            'emi_amount' => 5000,
+            'total_installments' => 10,
+            'user_id' => $outsider->id,
+        ], $this->apiHeadersFor($this->admin))->assertNotFound();
+
+        $this->assertDatabaseMissing('employee_loans', [
+            'user_id' => $outsider->id,
+        ]);
+    }
+
     public function test_employee_can_get_tax_savings_advice(): void
     {
         $this->getJson('/api/payroll/tax-savings/recommendation', $this->apiHeadersFor($this->employee))

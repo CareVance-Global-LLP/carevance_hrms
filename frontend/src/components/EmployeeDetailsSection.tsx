@@ -291,7 +291,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
 
           {canEditOwnProfile ? (
             <>
-              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
                 {Object.keys(aboutForm).map((key) => (
                   <div key={key}>
                     <FieldLabel>{labelize(key)}</FieldLabel>
@@ -323,7 +323,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
               </div>
             </>
           ) : (
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
               {aboutSummaryFields.map((field) => (
                 <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
@@ -342,7 +342,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         </div>
         <p className="mt-1 text-sm text-slate-500">Employment details, work schedule, and timezone settings.</p>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
           {workSummaryFields.map((field) => (
             <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
@@ -444,7 +444,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         {(canEditOwnProfile || canEditWorkInfo) && (
           <div className="mt-6 border-t border-slate-200 pt-6">
             <p className="text-sm font-medium text-slate-900">Add New Government ID</p>
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
               <div>
                 <FieldLabel>ID Type</FieldLabel>
                 <SelectInput
@@ -580,7 +580,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           {(canEditOwnProfile || canEditWorkInfo) && (
             <div className="mt-6 border-t border-slate-200 pt-6">
               <p className="text-sm font-medium text-slate-900">Add New Bank Account</p>
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
                 <div>
                   <FieldLabel>Bank Name</FieldLabel>
                   <TextInput
@@ -702,7 +702,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           {(canEditOwnProfile || canEditWorkInfo) && (
             <div className="mt-6 border-t border-slate-200 pt-6">
               <p className="text-sm font-medium text-slate-900">Upload New Document</p>
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
                 <div>
                   <FieldLabel>Document Title</FieldLabel>
                   <TextInput

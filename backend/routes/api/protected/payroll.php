@@ -195,6 +195,8 @@ Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->gr
 
     // Employee Payroll Cards
     Route::get('/employee-cards', [EmployeePayrollCardController::class, 'index']);
+    // Ahead of /{userId} so the literal segment is not swallowed by the pattern.
+    Route::get('/employee-cards/{userId}/breakdown', [EmployeePayrollCardController::class, 'breakdown']);
     Route::get('/employee-cards/{userId}', [EmployeePayrollCardController::class, 'show']);
     Route::put('/employee-cards/{userId}', [EmployeePayrollCardController::class, 'update']);
 

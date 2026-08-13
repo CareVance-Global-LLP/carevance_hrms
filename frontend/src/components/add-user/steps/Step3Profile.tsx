@@ -1,17 +1,19 @@
 import { ArrowLeft, IndianRupee } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import EmployeeDetailsSection from '../../../components/EmployeeDetailsSection';
-import CtcBreakupPanel from '@/components/payroll/CtcBreakupPanel';
+import Button from '@/components/ui/Button';
 import type { AddUserWizardForm } from './types';
 
 interface Step3Props {
   form: AddUserWizardForm;
-  setForm: React.Dispatch<React.SetStateAction<AddUserWizardForm>>;
   isCreatingUser: boolean;
   creationError: string | null;
   onGoBack: () => void;
 }
 
-export function Step3Profile({ form, setForm, isCreatingUser, creationError, onGoBack }: Step3Props) {
+export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: Step3Props) {
+  const navigate = useNavigate();
+
   if (isCreatingUser) {
     return (
       <div className="px-6 py-16 text-center space-y-3">
@@ -54,13 +56,17 @@ export function Step3Profile({ form, setForm, isCreatingUser, creationError, onG
   }
 
   return (
-    <div className="max-h-[60vh] overflow-y-auto">
+    // The page scrolls; a step must not be a scroll container inside one.
+    // This one clipped the salary breakup mid-table.
+    <div>
       <div className="px-6 py-3 bg-blue-50 border-b border-blue-100">
         <p className="text-xs text-blue-700 font-medium">
           Complete the employee's profile below. All fields are optional — the employee can also fill them later.
         </p>
       </div>
-      <div className="space-y-6 p-4">
+      {/* py only: the wrapping section already pads horizontally, and three
+          stacked paddings cost the breakup tables ~64px of width. */}
+      <div className="space-y-6 py-4">
         <EmployeeDetailsSection
           userId={form.userId}
           employeeCode={form.employeeCode || String(form.userId ?? '')}
@@ -68,31 +74,36 @@ export function Step3Profile({ form, setForm, isCreatingUser, creationError, onG
         />
 
         {/*
-          The CTC breakup lands here rather than beside the field in step 1.
+          The breakup used to be rendered inline here, by a component that
+          recomputed the whole split in TypeScript.
 
-          Step 1 is already fourteen fields and the person filling it is still
-          entering identity and access — a salary breakdown there is noise at
-          the wrong moment. By step 3 the account exists and this is the review
-          surface, which is where a number worth checking belongs.
-
-          Every figure comes from lib/payroll/ctcBreakup, which mirrors
-          PayrollCalculatorService constant for constant.
+          Payroll ▸ Employee Pay ▸ Salary Breakdown now answers the same
+          question from the server, using PayrollCalculatorService itself, and
+          lets you try other structures against the same person. Two engines
+          for one number is how they drift, so this links there instead.
         */}
         <section className="rounded-lg border border-border-strong bg-surface-card p-4">
-          <div className="flex items-center gap-2">
-            <IndianRupee className="h-4 w-4 text-slate-400" />
-            <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
-              Salary breakup
-            </h3>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
+                Salary breakdown
+              </h3>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                See what this employee's CTC pays them month to month — component by
+                component, with PF, ESI, professional tax and the TDS estimate.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              iconLeft={<IndianRupee className="h-4 w-4" />}
+              onClick={() =>
+                navigate(`/payroll/employee-pay?type=salary-breakdown&employee=${form.userId}`)
+              }
+            >
+              View salary breakdown
+            </Button>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
-            What the annual CTC entered in step 1 means month to month. When a salary structure is selected there the figures follow it; switch to Custom to override any head.</p>
-          <CtcBreakupPanel
-            annualCtc={form.annualCtc ? String(form.annualCtc) : ''}
-            salaryStructureId={form.salaryStructureId}
-            isMetroCity={form.ctcIsMetroCity}
-            onMetroChange={(value) => setForm((current) => ({ ...current, ctcIsMetroCity: value }))}
-          />
         </section>
       </div>
     </div>

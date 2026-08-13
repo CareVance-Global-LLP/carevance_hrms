@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Save, Users, Loader2, ArrowLeft } from 'lucide-react';
+import { Search, Save, Users, Loader2 } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput } from '@/components/ui/FormField';
+import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 
 const INDIAN_STATES = [
   { value: 'andhra_pradesh', label: 'Andhra Pradesh' },
@@ -34,10 +36,6 @@ const defaultEmpForm: EmpFormState = {
   pt_state: 'maharashtra',
 };
 
-interface EmployeePayrollCardsProps {
-  onBack: () => void;
-}
-
 function getInitials(name: string): string {
   return name
     .split(' ')
@@ -47,7 +45,7 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsProps) {
+export default function EmployeePayrollCards() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [selectedPayGroupId, setSelectedPayGroupId] = useState<number | null>(null);
@@ -138,9 +136,18 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
     } else {
       setEmpForm(defaultEmpForm);
     }
+  }, [selectedEmployeeId, payrollConfig]);
+
+  /*
+   * Messages clear when you switch employee — deliberately not when
+   * payrollConfig changes. Saving refetches the card, which handed the effect
+   * above a new object and made it wipe the "saved" confirmation the mutation
+   * had just set, so a successful save flashed and left no trace.
+   */
+  useEffect(() => {
     setSavedMessage(null);
     setErrorMessage(null);
-  }, [selectedEmployeeId, payrollConfig]);
+  }, [selectedEmployeeId]);
 
   const handleSave = () => {
     if (!selectedEmployeeId) return;
@@ -149,39 +156,36 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
 
   if (loadingEmployees && payGroupsList.length === 0) {
     return (
-      <div className="p-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-        </div>
+      <div className="animate-pulse space-y-4">
+        <div className="h-8 bg-slate-100 rounded w-1/4"></div>
+        <div className="h-64 bg-slate-100 rounded"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          iconLeft={<ArrowLeft className="h-4 w-4" />}
-        >
-          Back to Payroll
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="Employee Cards"
+        description="Each employee's payroll card — annual CTC, salary template and professional-tax state, set per pay group."
+      />
 
-      <div className="grid grid-cols-[180px_240px_1fr] gap-0 border border-gray-200 rounded-lg overflow-hidden h-[520px]">
-        <div className="border-r border-gray-200 overflow-y-auto">
-          <div className="p-3 border-b border-gray-200 text-xs font-semibold text-gray-400">
+      {/*
+        * Three panes at ≥lg; below that they stack, because the fixed
+        * 180/240/1fr track list cannot fit a phone and used to overflow the
+        * viewport horizontally.
+        */}
+      <div className="grid grid-cols-1 lg:grid-cols-[180px_240px_1fr] gap-0 border border-slate-200 rounded-lg overflow-hidden lg:h-[520px]">
+        <div className="border-b lg:border-b-0 lg:border-r border-slate-200 overflow-y-auto">
+          <div className="p-3 border-b border-slate-200 text-xs font-semibold text-slate-400">
             PAY GROUPS
           </div>
           {payGroupsLoading ? (
             <div className="flex items-center justify-center py-6">
-              <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </div>
           ) : payGroupsList.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-6 px-2">No pay groups found.</p>
+            <p className="text-xs text-slate-400 text-center py-6 px-2">No pay groups found.</p>
           ) : (
             payGroupsList.map((g) => (
               <button
@@ -189,8 +193,8 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                 onClick={() => setSelectedPayGroupId(g.id)}
                 className={`w-full text-left px-3 py-2.5 text-sm cursor-pointer transition-colors ${
                   selectedPayGroupId === g.id
-                    ? 'bg-teal-50 border-l-[3px] border-l-teal-700 font-semibold text-gray-900'
-                    : 'border-l-[3px] border-l-transparent hover:bg-gray-50 text-gray-500'
+                    ? 'bg-blue-50 border-l-[3px] border-l-blue-600 font-semibold text-slate-900'
+                    : 'border-l-[3px] border-l-transparent hover:bg-slate-50 text-slate-500'
                 }`}
               >
                 {g.name}
@@ -199,28 +203,27 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
           )}
         </div>
 
-        <div className="border-r border-gray-200 overflow-y-auto">
-          <div className="p-2.5 border-b border-gray-200">
+        <div className="border-b lg:border-b-0 lg:border-r border-slate-200 overflow-y-auto">
+          <div className="p-2.5 border-b border-slate-200">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input
-                type="text"
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 z-10" />
+              <TextInput
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search…"
-                className="w-full pl-7 pr-2.5 py-1.5 border border-gray-200 rounded-md text-xs focus:ring-1 focus:ring-teal-500 focus:border-teal-500 outline-none"
+                className="pl-7"
               />
             </div>
           </div>
 
           {!selectedPayGroup ? (
-            <p className="text-xs text-gray-400 text-center py-6">Select a pay group to view employees.</p>
+            <p className="text-xs text-slate-400 text-center py-6">Select a pay group to view employees.</p>
           ) : loadingEmployees ? (
             <div className="flex items-center justify-center py-6">
-              <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </div>
           ) : filteredEmployees.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-6">No employees in this pay group.</p>
+            <p className="text-xs text-slate-400 text-center py-6">No employees in this pay group.</p>
           ) : (
             filteredEmployees.map((emp) => (
               <div
@@ -228,20 +231,30 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                 onClick={() => { setSelectedEmployeeId(emp.id); setSavedMessage(null); setErrorMessage(null); }}
                 className={`px-2.5 py-2.5 cursor-pointer transition-colors ${
                   selectedEmployeeId === emp.id
-                    ? 'bg-teal-50 border-l-[3px] border-l-teal-700'
-                    : 'border-l-[3px] border-l-transparent hover:bg-gray-50'
+                    ? 'bg-blue-50 border-l-[3px] border-l-blue-600'
+                    : 'border-l-[3px] border-l-transparent hover:bg-slate-50'
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <div className="w-[26px] h-[26px] rounded-full bg-teal-700 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+                  <div className="w-[26px] h-[26px] rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold flex-shrink-0">
                     {getInitials(emp.name)}
                   </div>
                   <div className="min-w-0">
-                    <div className={`text-[13px] truncate ${selectedEmployeeId === emp.id ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
+                    <div className={`text-[13px] truncate ${selectedEmployeeId === emp.id ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
                       {emp.name}
                     </div>
-                    <div className="text-[11px] text-gray-500 truncate">
-                      {Number(emp.annual_ctc) > 0 ? `₹${(Number(emp.annual_ctc) / 100000).toFixed(1)}L CTC` : 'CTC not set'}
+                    {/*
+                      * Exact, not rounded to lakhs. This used to render
+                      * `(ctc / 100000).toFixed(1) + 'L'`, which quantises to
+                      * ₹10,000: editing a CTC from ₹1,50,500 to ₹1,54,000 left
+                      * the label reading "₹1.5L" both times, so a save that had
+                      * worked looked like it had not. It also overstated
+                      * sub-lakh salaries — ₹99,000 displayed as "₹1.0L".
+                      */}
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {Number(emp.annual_ctc) > 0
+                        ? `${formatPayrollAmount(emp.annual_ctc, { compact: true })} CTC`
+                        : 'CTC not set'}
                     </div>
                   </div>
                 </div>
@@ -253,7 +266,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
         <div className="overflow-y-auto p-4">
           {loadingDetail ? (
             <div className="flex-1 flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-teal-700" />
+              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
             </div>
           ) : detailError ? (
             <div className="flex-1 flex items-center justify-center py-12">
@@ -272,9 +285,9 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <div className="text-sm font-bold text-gray-900">{selectedEmployee.name} — Payroll Card</div>
+                  <div className="text-sm font-bold text-slate-900">{selectedEmployee.name} — Payroll Card</div>
                   {selectedEmployee.department && (
-                    <div className="text-xs text-gray-500">{selectedEmployee.department}</div>
+                    <div className="text-xs text-slate-500">{selectedEmployee.department}</div>
                   )}
                 </div>
                 <Button
@@ -290,7 +303,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Annual CTC (₹)</label>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">Annual CTC (₹)</label>
                   <TextInput
                     type="text"
                     inputMode="numeric"
@@ -305,7 +318,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">Salary Template</label>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">Salary Template</label>
                   <SelectInput
                     value={empForm.salary_template_id ?? ''}
                     onChange={e => setEmpForm({ ...empForm, salary_template_id: e.target.value ? Number(e.target.value) : null })}
@@ -317,7 +330,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                   </SelectInput>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-gray-500 mb-1 block">PT State</label>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">PT State</label>
                   <SelectInput
                     value={empForm.pt_state}
                     onChange={e => setEmpForm({ ...empForm, pt_state: e.target.value })}
@@ -329,7 +342,7 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
                 </div>
               </div>
 
-              <div className="h-px bg-gray-200 my-4"></div>
+              <div className="h-px bg-slate-200 my-4"></div>
 
               {savedMessage && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-800 mb-3">
@@ -344,8 +357,8 @@ export default function EmployeePayrollCards({ onBack }: EmployeePayrollCardsPro
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center py-12">
-              <div className="text-center text-gray-500">
-                <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+              <div className="text-center text-slate-500">
+                <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                 <p className="text-sm">Select an employee to view their payroll card</p>
               </div>
             </div>

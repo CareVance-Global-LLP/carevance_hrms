@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, IndianRupee, Ban, ThumbsUp, Eye } from 'lucide-react';
+import { Plus, IndianRupee, Ban, ThumbsUp, Eye, Search } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel, TextareaInput } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
-import PageHeader from '@/components/dashboard/PageHeader';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
@@ -43,32 +46,55 @@ export default function LoansPage() {
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [selectedLoan, setSelectedLoan] = useState<Loan | null>(null);
 
-  const { data: adminData } = useQuery({
+  const adminQuery = useQuery({
     queryKey: ['loans-admin', statusFilter],
     queryFn: () => payrollApi.listLoans({ status: statusFilter || undefined }).then(res => res.data),
     enabled: isAdmin,
   });
 
-  const { data: myData } = useQuery({
+  const myQuery = useQuery({
     queryKey: ['my-loans'],
     queryFn: () => payrollApi.getMyLoans().then(res => res.data),
     enabled: !isAdmin,
   });
 
+  const activeQuery = isAdmin ? adminQuery : myQuery;
+  const adminData = adminQuery.data;
+  const myData = myQuery.data;
+
   const loans: Loan[] = isAdmin ? (adminData?.loans || []) : (myData?.loans || []);
   const activeLoan: Loan | null = isAdmin ? null : (myData?.active_loan || null);
   const colCount = isAdmin ? 7 : 5;
 
+  const filteredLoans = loans.filter((l) => {
+    if (!search) return true;
+    const needle = search.toLowerCase();
+    return (
+      (l.user?.name ?? '').toLowerCase().includes(needle) ||
+      (l.purpose ?? '').toLowerCase().includes(needle)
+    );
+  });
+
+  const stats = {
+    total: loans.length,
+    pending: loans.filter(l => l.status === 'pending').length,
+    approved: loans.filter(l => l.status === 'approved').length,
+    outstanding: loans
+      .filter(l => l.status === 'approved')
+      .reduce((sum, l) => sum + Number(l.remaining_amount || 0), 0),
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      <PageHeader
+    <div className="space-y-6">
+      <ModuleHeader
         title="Active Loans"
         description="Salary advances and EMI-based loans — recovered automatically from monthly payroll."
       />
 
-      <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="space-y-6">
         <HowItWorksCard
           whatIsThis="Money given to an employee in advance of salary, or as a formal loan with monthly EMI deductions from payroll."
           whenToUse={[
@@ -121,44 +147,89 @@ export default function LoansPage() {
           </SurfaceCard>
         )}
 
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-3">
+        <FilterPanel>
+          <div className="flex flex-wrap items-end gap-4">
             {isAdmin && (
-              <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                <option value="">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="closed">Closed</option>
-              </SelectInput>
+              <div>
+                <FieldLabel>Status</FieldLabel>
+                <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="closed">Closed</option>
+                </SelectInput>
+              </div>
             )}
-          </div>
-          {!isAdmin && (
-            <Button variant="primary" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowRequestModal(true)}>
-              Request Advance / Loan
+            <div className="flex-1 min-w-[200px]">
+              <FieldLabel>Search</FieldLabel>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <TextInput
+                  placeholder={isAdmin ? 'Search employee, purpose...' : 'Search purpose...'}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            {/*
+              * This used to be `!isAdmin` only, so an admin had no way to raise
+              * a loan at all. The endpoint now accepts a user_id from admins,
+              * so the modal asks who it is for.
+              */}
+            <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowRequestModal(true)}>
+              {isAdmin ? 'Record Advance / Loan' : 'Request Advance / Loan'}
             </Button>
-          )}
+          </div>
+        </FilterPanel>
+
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <MetricCard label="Total" value={stats.total} accent="sky" icon={IndianRupee} />
+          <MetricCard label="Pending" value={stats.pending} accent="amber" />
+          <MetricCard label="Approved" value={stats.approved} accent="emerald" />
+          <MetricCard
+            label="Outstanding"
+            value={formatPayrollAmount(stats.outstanding, { compact: true })}
+            accent="violet"
+          />
         </div>
 
-        <SurfaceCard>
+        <SurfaceCard className="overflow-hidden">
+          {activeQuery.isLoading ? (
+            <PageLoadingState label="Loading loans…" />
+          ) : activeQuery.isError ? (
+            <PageErrorState
+              message={getApiErrorMessage(activeQuery.error, "Couldn't load loans.")}
+              onRetry={() => activeQuery.refetch()}
+            />
+          ) : filteredLoans.length === 0 ? (
+            <PageEmptyState
+              title={loans.length === 0 ? 'No loan requests found' : 'No matching loans'}
+              description={
+                loans.length === 0
+                  ? isAdmin
+                    ? 'No employee has an advance or loan on record yet.'
+                    : 'You have no advances or loans. Use the button above to request one.'
+                  : 'No loan matches your filters. Clear them to see all.'
+              }
+            />
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  {isAdmin && <th className="text-left p-3 font-medium text-slate-600">Employee</th>}
-                  <th className="text-right p-3 font-medium text-slate-600">Principal</th>
-                  <th className="text-right p-3 font-medium text-slate-600">EMI</th>
-                  <th className="text-right p-3 font-medium text-slate-600">Outstanding</th>
-                  <th className="text-center p-3 font-medium text-slate-600">Progress</th>
-                  <th className="text-center p-3 font-medium text-slate-600">Status</th>
-                  {isAdmin && <th className="text-center p-3 font-medium text-slate-600">Actions</th>}
+                  {isAdmin && <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee</th>}
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Principal</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">EMI</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Outstanding</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Progress</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                  {isAdmin && <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {loans.length === 0 ? (
-                  <tr><td colSpan={colCount} className="p-8 text-center text-slate-500">No loan requests found</td></tr>
-                ) : (
-                  loans.map(loan => (
+                {filteredLoans.map(loan => (
                     <LoanRow
                       key={loan.id}
                       loan={loan}
@@ -170,21 +241,23 @@ export default function LoansPage() {
                       }}
                       onViewSchedule={setSelectedLoan}
                     />
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
+          )}
         </SurfaceCard>
       </div>
 
       {showRequestModal && (
         <LoanRequestModal
+          isAdmin={isAdmin}
           onClose={() => setShowRequestModal(false)}
           onSuccess={(msg) => {
             show({ kind: 'success', message: msg });
             setShowRequestModal(false);
             queryClient.invalidateQueries({ queryKey: ['my-loans'] });
+            queryClient.invalidateQueries({ queryKey: ['loans-admin'] });
           }}
         />
       )}
@@ -390,14 +463,22 @@ function LoanRow({ loan, isAdmin, colCount, onAction, onViewSchedule }: { loan: 
   );
 }
 
-function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: (msg: string) => void }) {
+function LoanRequestModal({ isAdmin, onClose, onSuccess }: { isAdmin: boolean; onClose: () => void; onSuccess: (msg: string) => void }) {
   const { show } = useToast();
+  const [borrowerId, setBorrowerId] = useState('');
   const [loanType, setLoanType] = useState('advance');
   const [amount, setAmount] = useState('');
   const [emiAmount, setEmiAmount] = useState('');
   const [totalInstallments, setTotalInstallments] = useState('1');
   const [purpose, setPurpose] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const { data: employeesData } = useQuery({
+    queryKey: ['payroll-employees'],
+    queryFn: () => payrollApi.getEmployees().then(res => res.data ?? []),
+    enabled: isAdmin,
+  });
+  const employees = Array.isArray(employeesData) ? employeesData : [];
 
   const estimatedInstallments = emiAmount && amount && parseFloat(emiAmount) > 0
     ? Math.ceil(parseFloat(amount) / parseFloat(emiAmount))
@@ -406,6 +487,7 @@ function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSucce
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || !emiAmount || !totalInstallments) return;
+    if (isAdmin && !borrowerId) return;
     setSubmitting(true);
     try {
       await payrollApi.requestLoan({
@@ -414,6 +496,8 @@ function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSucce
         emi_amount: parseFloat(emiAmount),
         total_installments: parseInt(totalInstallments),
         purpose: purpose || undefined,
+        // Ignored by the API for non-admins, who can only borrow for themselves.
+        user_id: isAdmin && borrowerId ? parseInt(borrowerId) : undefined,
       });
       onSuccess('Loan request submitted for approval!');
     } catch (e: any) {
@@ -426,8 +510,22 @@ function LoanRequestModal({ onClose, onSuccess }: { onClose: () => void; onSucce
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="p-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Request Advance / Loan</h2>
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">
+            {isAdmin ? 'Record Advance / Loan' : 'Request Advance / Loan'}
+          </h2>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isAdmin && (
+              <div>
+                <FieldLabel>Employee</FieldLabel>
+                <SelectInput value={borrowerId} onChange={(e) => setBorrowerId(e.target.value)} required>
+                  <option value="">Select employee...</option>
+                  {employees.map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
+                  ))}
+                </SelectInput>
+              </div>
+            )}
+
             <div>
               <FieldLabel>Type</FieldLabel>
               <SelectInput value={loanType} onChange={(e) => setLoanType(e.target.value)}>

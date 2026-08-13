@@ -5,14 +5,16 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
 import MetricCard from '@/components/dashboard/MetricCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
-import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import RejectReasonModal from '@/components/ui/RejectReasonModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['draft', 'approved', 'rejected', 'paid'];
@@ -93,13 +95,11 @@ export default function ArrearsPage() {
   const activeRunMonth = arrears.length > 0 ? (arrears[0]?.arrear_month || arrears[0]?.calculation_month || 'Current') : 'Current';
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Pending Arrears — {activeRunMonth} Run</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Retroactive salary payments — for increments, promotions, or revisions applied after the effective date.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title={`Pending Arrears — ${activeRunMonth} Run`}
+        description="Retroactive salary payments — for increments, promotions, or revisions applied after the effective date."
+      />
         <HowItWorksCard
           whatIsThis="Salary paid for past months when something changed retrospectively — e.g. an increment approved in October but effective from April. The system calculates the differential for each affected month and pays the total in the current run."
           whenToUse={[
@@ -121,7 +121,7 @@ export default function ArrearsPage() {
         />
 
         {/* Filters */}
-        <SurfaceCard className="p-5">
+        <FilterPanel>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <FieldLabel>Status</FieldLabel>
@@ -176,10 +176,10 @@ export default function ArrearsPage() {
               }}
               disabled={createMutation.isPending || users.length === 0}
             >
-              {createMutation.isPending ? 'Creating...' : '+ Manual Arrear'}
+              {createMutation.isPending ? 'Creating...' : 'Manual Arrear'}
             </Button>
           </div>
-        </SurfaceCard>
+        </FilterPanel>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
@@ -195,14 +195,9 @@ export default function ArrearsPage() {
           {isLoading ? (
             <PageLoadingState label="Loading arrears…" />
           ) : isError ? (
-            <PageEmptyState
-              title="Couldn't load arrears"
-              description={getApiErrorMessage(error, 'Please try again.')}
-              action={
-                <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                  Retry
-                </Button>
-              }
+            <PageErrorState
+              message={getApiErrorMessage(error, "Couldn't load arrears.")}
+              onRetry={() => refetch()}
             />
           ) : filteredArrears.length === 0 ? (
             <PageEmptyState

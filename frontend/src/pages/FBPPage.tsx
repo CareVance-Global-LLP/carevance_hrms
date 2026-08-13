@@ -1,21 +1,27 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Wallet, Search, Plus, IndianRupee, FileText, Settings } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, TextareaInput, FieldLabel } from '@/components/ui/FormField';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
+import FilterPanel from '@/components/dashboard/FilterPanel';
+import MetricCard from '@/components/dashboard/MetricCard';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { PageLoadingState, PageEmptyState, PageErrorState, FeedbackBanner } from '@/components/ui/PageState';
 import { useToast } from '@/components/ui/Toast';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
+import ModuleHeader from '@/components/payroll/ModuleHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
+import { currentFinancialYear, formatFinancialYear } from '@/lib/payroll/financialYear';
 import { payrollStatusTone, titleCase } from '@/utils/payrollStatus';
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected'];
 
 export default function FBPPage() {
   const queryClient = useQueryClient();
+  const [, setSearchParams] = useSearchParams();
   const { show } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,14 +30,14 @@ export default function FBPPage() {
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [allocateData, setAllocateData] = useState({ user_id: '', fbp_component_id: '', amount: '' });
   const [claimData, setClaimData] = useState({
-    user_id: '',
     fbp_component_id: '',
-    fbp_allocation_id: '',
     claimed_amount: '',
     bill_number: '',
     bill_date: '',
     description: '',
   });
+
+  const financialYear = currentFinancialYear();
 
   const { data: componentsData, isLoading: componentsLoading, isError: componentsError, error: componentsErrorObj, refetch: refetchComponents } = useQuery({
     queryKey: ['fbp-components'],
@@ -43,11 +49,33 @@ export default function FBPPage() {
     queryFn: () => payrollApi.getEmployees().then(res => res.data ?? []),
   });
 
+  /*
+   * Allocations are readable one employee at a time
+   * (GET /payroll/fbp/allocations/{userId}), so the employee filter is what
+   * loads the table rather than narrowing an already-loaded list. Before this,
+   * the three filters rendered but drove nothing at all — the page only ever
+   * showed the basket components.
+   */
+  const {
+    data: allocationsData,
+    isLoading: allocationsLoading,
+    isError: allocationsError,
+    error: allocationsErrorObj,
+    refetch: refetchAllocations,
+  } = useQuery({
+    queryKey: ['fbp-allocations', userFilter, financialYear],
+    queryFn: () => payrollApi.getFbpAllocations(parseInt(userFilter), financialYear).then(res => res.data),
+    enabled: !!userFilter,
+  });
+
   const allocateMutation = useMutation({
     mutationFn: () => payrollApi.allocateFbp({
       user_id: parseInt(allocateData.user_id),
-      fbp_component_id: parseInt(allocateData.fbp_component_id),
-      amount: parseFloat(allocateData.amount),
+      allocations: [{
+        fbp_component_id: parseInt(allocateData.fbp_component_id),
+        allocated_amount: parseFloat(allocateData.amount),
+      }],
+      financial_year: financialYear,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fbp-allocations'] });
@@ -59,16 +87,23 @@ export default function FBPPage() {
   });
 
   const claimMutation = useMutation({
+    /*
+     * The endpoint files the claim against the caller (auth()->id()) and has no
+     * field for a bill number, so this form no longer asks for an employee — it
+     * would have been ignored — and folds the bill reference into the
+     * description, which is the only free-text field the API stores.
+     */
     mutationFn: () => payrollApi.submitFbpClaim({
-      ...claimData,
-      user_id: parseInt(claimData.user_id),
       fbp_component_id: parseInt(claimData.fbp_component_id),
-      fbp_allocation_id: claimData.fbp_allocation_id ? parseInt(claimData.fbp_allocation_id) : null,
-      claimed_amount: parseFloat(claimData.claimed_amount),
+      amount: parseFloat(claimData.claimed_amount),
+      claim_date: claimData.bill_date,
+      description: [claimData.bill_number && `Bill ${claimData.bill_number}`, claimData.description]
+        .filter(Boolean)
+        .join(' — ') || undefined,
     }),
     onSuccess: () => {
       setShowClaimForm(false);
-      setClaimData({ user_id: '', fbp_component_id: '', fbp_allocation_id: '', claimed_amount: '', bill_number: '', bill_date: '', description: '' });
+      setClaimData({ fbp_component_id: '', claimed_amount: '', bill_number: '', bill_date: '', description: '' });
       queryClient.invalidateQueries({ queryKey: ['fbp-allocations'] });
       show({ kind: 'success', message: 'FBP claim submitted.' });
     },
@@ -77,15 +112,31 @@ export default function FBPPage() {
 
   const components = Array.isArray(componentsData) ? componentsData : (componentsData as any)?.data ?? [];
   const users = Array.isArray(usersData) ? usersData : [];
+  const allocations: any[] = Array.isArray(allocationsData)
+    ? allocationsData
+    : (allocationsData as any)?.data ?? [];
+
+  const filteredAllocations = allocations.filter((a: any) => {
+    if (statusFilter && String(a.status ?? '').toLowerCase() !== statusFilter) return false;
+    if (searchQuery) {
+      const needle = searchQuery.toLowerCase();
+      const name = a.component?.name ?? a.component?.component_name ?? '';
+      if (!name.toLowerCase().includes(needle)) return false;
+    }
+    return true;
+  });
+
+  const totalAllocated = allocations.reduce(
+    (sum: number, a: any) => sum + Number(a.allocated_amount || 0),
+    0,
+  );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">FBP Basket</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Admin sets the FBP basket per template; employee allocates within their FBP amount, submits bills, admin verifies against exemption limits.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <ModuleHeader
+        title="FBP Basket"
+        description="Admin sets the FBP basket per template; employee allocates within their FBP amount, submits bills, admin verifies against exemption limits."
+      />
         <HowItWorksCard
           whatIsThis="Restructures part of CTC into tax-free components the employee picks (meal vouchers, fuel, phone, books, driver). Reduces taxable income vs plain cash allowance."
           whenToUse={[
@@ -106,52 +157,134 @@ export default function FBPPage() {
           ]}
         />
 
-        {/* Action Bar */}
-        <div className="flex items-center justify-between">
-          <div className="flex-1 mr-4">
-            <SurfaceCard className="p-4">
-              <div className="flex flex-wrap gap-4 items-end">
-                <div>
-                  <FieldLabel>Status</FieldLabel>
-                  <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                    <option value="">All Status</option>
-                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>Employee</FieldLabel>
-                  <SelectInput value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
-                    <option value="">All Employees</option>
-                    {users.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
-                  </SelectInput>
-                </div>
-                <div className="flex-1 min-w-[200px]">
-                  <FieldLabel>Search</FieldLabel>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <TextInput
-                      placeholder="Search employee..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
+        <FilterPanel>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div>
+              <FieldLabel>Employee</FieldLabel>
+              <SelectInput value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
+                <option value="">Select employee...</option>
+                {users.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+              </SelectInput>
+            </div>
+            <div>
+              <FieldLabel>Status</FieldLabel>
+              <SelectInput value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="">All Status</option>
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
+              </SelectInput>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <FieldLabel>Search</FieldLabel>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <TextInput
+                  placeholder="Search component..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
               </div>
-            </SurfaceCard>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" iconLeft={<Settings className="h-4 w-4" />}>
+            </div>
+            {/*
+              * "Configure Basket" used to sit here with no onClick at all.
+              * There is no create/update endpoint for fbp_components — only
+              * GET /payroll/fbp/components — so it now sends you to Salary
+              * Templates, where the basket is actually defined, instead of
+              * pretending to open an editor.
+              */}
+            <Button
+              variant="secondary"
+              size="sm"
+              iconLeft={<Settings className="h-4 w-4" />}
+              onClick={() => setSearchParams({ tab: 'employee-pay', type: 'dept-templates' })}
+            >
               Configure Basket
             </Button>
-            <Button variant="secondary" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowClaimForm(true)}>
+            <Button variant="secondary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowClaimForm(true)}>
               Submit Claim
             </Button>
-            <Button variant="primary" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowAllocateForm(true)}>
+            <Button variant="primary" size="sm" iconLeft={<Plus className="h-4 w-4" />} onClick={() => setShowAllocateForm(true)}>
               Allocate
             </Button>
           </div>
+        </FilterPanel>
+
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <MetricCard label="Basket Components" value={components.length} accent="sky" icon={Wallet} />
+          <MetricCard label="Allocations" value={userFilter ? allocations.length : '—'} accent="violet" />
+          <MetricCard
+            label="Total Allocated"
+            value={userFilter ? formatPayrollAmount(totalAllocated, { compact: true }) : '—'}
+            accent="emerald"
+            hint={userFilter ? formatFinancialYear(financialYear) : 'Select an employee'}
+          />
         </div>
+
+        {/* Employee Allocations */}
+        <SurfaceCard className="overflow-hidden">
+          <h3 className="text-lg font-semibold text-slate-900 p-5 border-b border-slate-200">
+            Employee Allocations
+          </h3>
+          {!userFilter ? (
+            <PageEmptyState
+              title="Select an employee"
+              description="Allocations are held per employee. Pick someone above to see what they have allocated this year."
+            />
+          ) : allocationsLoading ? (
+            <PageLoadingState label="Loading allocations…" />
+          ) : allocationsError ? (
+            <PageErrorState
+              message={getApiErrorMessage(allocationsErrorObj, "Couldn't load FBP allocations.")}
+              onRetry={() => refetchAllocations()}
+            />
+          ) : filteredAllocations.length === 0 ? (
+            <PageEmptyState
+              title={allocations.length === 0 ? 'No allocations yet' : 'No matching allocations'}
+              description={
+                allocations.length === 0
+                  ? 'This employee has not allocated any FBP components for this financial year.'
+                  : 'No allocation matches your filters. Clear them to see all.'
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Component</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Allocated</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Annual Cap</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Financial Year</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredAllocations.map((a: any) => (
+                    <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {a.component?.name || a.component?.component_name || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-900">
+                        {formatPayrollAmount(a.allocated_amount, { compact: true })}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {a.component?.max_amount
+                          ? formatPayrollAmount(a.component.max_amount, { compact: true })
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{a.financial_year || '—'}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge tone={payrollStatusTone(a.status || 'approved')}>
+                          {titleCase(a.status || 'active')}
+                        </StatusBadge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SurfaceCard>
 
         {/* Basket Components */}
         <SurfaceCard className="p-5">
@@ -232,15 +365,11 @@ export default function FBPPage() {
         {/* Claim Form */}
         {showClaimForm && (
           <SurfaceCard className="p-5">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Submit FBP Claim</h3>
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">Submit FBP Claim</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Claims are filed against your own allocation — the API records the signed-in user as the claimant.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>Employee</FieldLabel>
-                <SelectInput value={claimData.user_id} onChange={(e) => setClaimData({ ...claimData, user_id: e.target.value })}>
-                  <option value="">Select...</option>
-                  {users.map((u: any) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </SelectInput>
-              </div>
               <div>
                 <FieldLabel>Component</FieldLabel>
                 <SelectInput value={claimData.fbp_component_id} onChange={(e) => setClaimData({ ...claimData, fbp_component_id: e.target.value })}>
@@ -272,6 +401,7 @@ export default function FBPPage() {
                   value={claimData.bill_date}
                   onChange={(e) => setClaimData({ ...claimData, bill_date: e.target.value })}
                 />
+                <p className="mt-1 text-xs text-slate-500">Recorded as the claim date. Required.</p>
               </div>
               <div className="md:col-span-2">
                 <FieldLabel>Description</FieldLabel>
@@ -289,7 +419,7 @@ export default function FBPPage() {
                 variant="primary"
                 iconLeft={<FileText className="h-4 w-4" />}
                 onClick={() => claimMutation.mutate()}
-                disabled={!claimData.user_id || !claimData.fbp_component_id || !claimData.claimed_amount || claimMutation.isPending}
+                disabled={!claimData.fbp_component_id || !claimData.claimed_amount || !claimData.bill_date || claimMutation.isPending}
               >
                 {claimMutation.isPending ? 'Submitting...' : 'Submit Claim'}
               </Button>

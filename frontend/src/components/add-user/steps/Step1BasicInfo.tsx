@@ -220,18 +220,28 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
     errors[field] ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : '';
 
   return (
-    <div className="px-6 py-5 space-y-5 max-h-[60vh] overflow-y-auto">
+    // No max-h/overflow: the page scrolls, so a step must not be a scroll
+    // container nested inside one — it clipped the form mid-field.
+    <div className="px-6 py-5 space-y-5">
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Identity</p>
       {/*
         Name row. Three columns rather than two: the middle name is kept as its
         own field because statutory filings match on the name as printed on the
         PAN card, and a mismatch is a common cause of 24Q and Form 16 rejection.
 
-        `grid-cols-1 sm:grid-cols-3` rather than a bare `grid-cols-3` — this file
-        previously carried no breakpoints at all, so every row stayed multi-column
-        on a phone and the inputs were unusably narrow.
+        Auto-fill rather than a fixed column count, here and on the rows below.
+        The page is no longer width-capped, and a fixed `sm:grid-cols-2` on a
+        wide monitor gives each input half the screen — the ~700px Employee
+        Code the old cap existed to prevent. Auto-fill instead lays out as many
+        ~15rem columns as fit and leaves the remainder empty, so a field is the
+        same comfortable size at 1440px and at 2880px, and rows with more
+        fields simply pack more across.
+
+        auto-fill, not auto-fit: auto-fit collapses the empty tracks and
+        stretches the children back across the full width, which is the very
+        thing being avoided.
       */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label htmlFor={fieldId('f1')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Briefcase className="h-3.5 w-3.5 text-slate-400" />
@@ -281,7 +291,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         grid the third — Phone — wrapped onto its own row with an empty cell
         beside it, which is what it looked like in the running app.
       */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label htmlFor={fieldId('f3')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Mail className="h-3.5 w-3.5 text-slate-400" />
@@ -418,7 +428,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
       <p className="border-t border-slate-100 pt-5 mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Access</p>
       {/* Role & Designation */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Building2 className="h-3.5 w-3.5 text-slate-400" />
@@ -522,7 +532,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
 
       <p className="border-t border-slate-100 pt-5 mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Work</p>
       {/* Date of Joining & Work Location */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label htmlFor={fieldId('f10')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
             <Calendar className="h-3.5 w-3.5 text-slate-400" />

@@ -75,6 +75,45 @@ class SalaryTemplate extends Model
         return $this->hasMany(EmployeeSalaryAssignment::class);
     }
 
+    /**
+     * An unsaved template for a what-if breakdown, safe to call
+     * calculateBreakdown() on.
+     *
+     * Every numeric head is zero-filled first. `new SalaryTemplate([...])`
+     * leaves the columns you do not pass as null, and the `decimal:2` casts
+     * throw "Unable to cast value to a decimal" the moment calculateBreakdown()
+     * reads one — a 500, not a bad number. Models built through create() never
+     * hit this because the database supplies its column defaults on the way
+     * back, which is exactly why it survived the tests and failed in the app.
+     *
+     * @param array<string,mixed> $overrides
+     */
+    public static function transient(array $overrides = []): self
+    {
+        $zeroed = [
+            'basic_percentage' => 0,
+            'hra_percentage' => 0,
+            'conveyance_amount' => 0,
+            'da_percentage' => 0,
+            'cca_amount' => 0,
+            'education_allowance' => 0,
+            'internet_allowance' => 0,
+            'meal_allowance' => 0,
+            'transport_allowance' => 0,
+            'uniform_allowance' => 0,
+            'books_periodicals' => 0,
+            'fuel_maintenance' => 0,
+            'nps_percentage' => 0,
+            'vpf_percentage' => 0,
+            'other_earnings' => [],
+            'other_deductions' => [],
+        ];
+
+        // '' is dropped too — the decimal casts throw on an empty string where
+        // they quietly pass null through.
+        return new self(array_merge($zeroed, array_filter($overrides, fn ($v) => $v !== null && $v !== '')));
+    }
+
     public function calculateBreakdown(float $annualCtc): array
     {
         $monthlyCtc = $annualCtc / 12;

@@ -82,7 +82,9 @@ import type {
   SalaryStructureBreakdown,
   CreateSalaryStructurePayload,
   EmployeePayrollCard,
+  EmployeePayrollCardIdentity,
   EmployeePayrollConfig,
+  EmployeeSalaryBreakdown,
   UpdateEmployeePayrollCardPayload,
   PayGroupSettings,
   CreatePayGroupSettingsPayload,
@@ -2611,7 +2613,8 @@ export const payrollApi = {
     ),
 
   // Loan / Advance Management
-  requestLoan: (data: { loan_type: string; amount: number; emi_amount: number; total_installments: number; purpose?: string }) =>
+  // `user_id` is honoured only for admins — see LoanController::requestLoan.
+  requestLoan: (data: { loan_type: string; amount: number; emi_amount: number; total_installments: number; purpose?: string; user_id?: number }) =>
     api.post<{ success: boolean; message: string; loan: any }>('/payroll/loans/request', data),
 
   getMyLoans: () =>
@@ -2772,12 +2775,28 @@ export const payrollApi = {
   // ===== FBP =====
   getFbpComponents: () =>
     api.get<any>('/payroll/fbp/components'),
-  getFbpAllocations: (userId: number) =>
-    api.get<any>(`/payroll/fbp/allocations/${userId}`),
-  allocateFbp: (data: { user_id: number; fbp_component_id: number; amount: number }) =>
-    api.post<any>('/payroll/fbp/allocate', data),
-  submitFbpClaim: (data: Record<string, any>) =>
-    api.post<any>('/payroll/fbp/claims', data),
+  getFbpAllocations: (userId: number, financialYear?: string) =>
+    api.get<any>(`/payroll/fbp/allocations/${userId}`, {
+      params: financialYear ? { financial_year: financialYear } : undefined,
+    }),
+  /*
+   * The shapes below are the ones PayrollFilingController actually validates.
+   * Both used to be sent flat — `{user_id, fbp_component_id, amount}` to
+   * allocate, and the whole claim form state to claims — so every Allocate and
+   * every Submit Claim came back 422 without ever reaching the database.
+   * `allocateFbp` takes a batch because the endpoint upserts a list.
+   */
+  allocateFbp: (data: {
+    user_id: number;
+    allocations: Array<{ fbp_component_id: number; allocated_amount: number }>;
+    financial_year?: string;
+  }) => api.post<any>('/payroll/fbp/allocate', data),
+  submitFbpClaim: (data: {
+    fbp_component_id: number;
+    amount: number;
+    claim_date: string;
+    description?: string;
+  }) => api.post<any>('/payroll/fbp/claims', data),
   approveFbpClaim: (id: number, approvedAmount: number, monthYear?: string) =>
     api.post<any>(`/payroll/fbp/claims/${id}/approve`, { approved_amount: approvedAmount, month_year: monthYear }),
   rejectFbpClaim: (id: number, reason: string) =>
@@ -3144,9 +3163,34 @@ export const payrollApi = {
   getEmployeePayrollCards: (params?: { department_id?: number; pay_group_id?: number; state?: string }) =>
     api.get<{ success: boolean; employees: EmployeePayrollCard[] }>('/payroll/employee-cards', { params }),
   getEmployeePayrollCard: (userId: number) =>
-    api.get<{ success: boolean; employee: any; payroll_config: EmployeePayrollConfig }>(`/payroll/employee-cards/${userId}`),
+    api.get<{ success: boolean; employee: EmployeePayrollCardIdentity; payroll_config: EmployeePayrollConfig }>(`/payroll/employee-cards/${userId}`),
   updateEmployeePayrollCard: (userId: number, data: UpdateEmployeePayrollCardPayload) =>
     api.put<{ success: boolean; employee: any; payroll_config: EmployeePayrollConfig }>(`/payroll/employee-cards/${userId}`, data),
+  /**
+   * Component-wise breakdown of an employee's CTC. Read-only — this endpoint
+   * writes nothing, and the Salary Breakdown panel has no save path.
+   *
+   * Every parameter is a what-if. `custom` replaces the salary structure with
+   * typed percentages, so an admin can ask "what if basic were 50%?" without
+   * touching the employee's stored configuration. Omit them all for the
+   * stored figures.
+   */
+  getEmployeeSalaryBreakdown: (
+    userId: number,
+    params?: {
+      salary_template_id?: number | null;
+      annual_ctc?: number | null;
+      pt_state?: string | null;
+      custom?: {
+        basic_percentage?: number;
+        hra_percentage?: number;
+        da_percentage?: number;
+        conveyance_amount?: number;
+        nps_percentage?: number;
+        vpf_percentage?: number;
+      };
+    },
+  ) => api.get<EmployeeSalaryBreakdown>(`/payroll/employee-cards/${userId}/breakdown`, { params }),
 
   // Pay Group Settings
   getPayGroupSettings: () =>
