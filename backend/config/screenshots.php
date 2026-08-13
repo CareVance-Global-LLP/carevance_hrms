@@ -27,14 +27,19 @@ return [
     'monitoring_interval' => [
         'default_minutes' => (int) env('MONITORING_INTERVAL_DEFAULT_MINUTES', 10),
         /*
-         * THE list of selectable intervals. Every admin surface and every
-         * validation rule reads it from here — see
-         * MonitoringSettingsResolver::allowedIntervals(). Do not restate it in
-         * a controller or a dropdown: a value the UI offers but this list omits
-         * is accepted, stored, displayed back, and then silently discarded at
-         * read time, so capture runs at the inherited interval while every
-         * screen insists otherwise. That is exactly what happened while 1 and 3
-         * were absent here but still offered by three admin UIs.
+         * THE list of selectable intervals. Every validation rule reads it
+         * from here — see MonitoringSettingsResolver::allowedIntervals().
+         * Three frontend dropdowns still restate it as a literal
+         * (EmployeeManagementWorkspace.tsx, add-user/AddUserDrawer.tsx,
+         * settings/panes/OrganizationPane.tsx), so widening this list does not
+         * offer the new value anywhere until those are updated too, and
+         * narrowing it turns an option those screens still show into a 422 on
+         * save. The 422 is the tolerable failure: before validation derived
+         * from this list, a value the UI offered but this list omitted was
+         * accepted, stored, displayed back, and then silently discarded at
+         * read time, so capture ran at the inherited interval while every
+         * screen insisted otherwise. That is exactly what happened while 1 and
+         * 3 were absent here but still offered by three admin UIs.
          *
          * 1- and 3-minute capture is enabled at the product owner's explicit
          * direction (13 Aug 2026), reversing an earlier withdrawal.

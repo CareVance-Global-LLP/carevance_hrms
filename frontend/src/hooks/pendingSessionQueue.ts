@@ -19,23 +19,43 @@ export interface PendingSession {
   device_id: string | null;
 }
 
+// Why a session was thrown away without reaching the server. Reported rather
+// than counted only: lost tracked time is indistinguishable from time never
+// worked once it is gone, and this data feeds payroll.
+export type PendingSessionDropReason = 'no_device_id' | 'retry_window_exceeded' | 'overflow';
+
+export type PendingSessionDropCounts = Record<PendingSessionDropReason, number>;
+
 export interface PendingSessionQueue {
   enqueue: (payload: PendingSession) => void;
-  drain: (send: (payload: PendingSession) => Promise<unknown>) => Promise<void>;
+  /**
+   * `nowMs` is passed in rather than read off the clock so the retry window
+   * below is deterministic in tests and drivable from the caller's own tick.
+   */
+  drain: (send: (payload: PendingSession) => Promise<unknown>, nowMs: number) => Promise<void>;
   size: () => number;
   droppedCount: () => number;
+  droppedReasons: () => PendingSessionDropCounts;
 }
 
 // A head that fails forever (a 422 for a time entry the user no longer has,
 // a 401 after logout) must not block everything queued behind it forever —
-// it would pile up until maxSize evicted the whole backlog uncounted. Once a
-// single item has failed this many times, give up on it specifically and let
-// the rest keep draining.
-const MAX_ATTEMPTS = 5;
+// it would pile up until maxSize evicted the whole backlog uncounted. Give up
+// on a single item once it has been failing for this long and let the rest
+// keep draining.
+//
+// Deliberately measured in elapsed time, not attempts. drain() runs off the
+// tracker's 1-second tick, so an attempt cap of N is really an N-second cap:
+// at 5 attempts a head was evicted ~6 seconds after its first failure, and the
+// next head then burned its own 6 seconds, so a one-minute outage shed most of
+// the backlog. "A network blip costs a retry rather than a hole in the
+// timeline" only holds if the window is longer than a plausible blip.
+const MAX_RETRY_WINDOW_MS = 10 * 60 * 1000;
 
 interface QueueEntry {
   payload: PendingSession;
-  attempts: number;
+  // When this entry first failed to send; null while it has never failed.
+  firstFailedAtMs: number | null;
 }
 
 /**
@@ -53,8 +73,16 @@ interface QueueEntry {
  */
 export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): PendingSessionQueue => {
   const items: QueueEntry[] = [];
-  let dropped = 0;
+  const dropped: PendingSessionDropCounts = {
+    no_device_id: 0,
+    retry_window_exceeded: 0,
+    overflow: 0,
+  };
   let draining = false;
+
+  const drop = (reason: PendingSessionDropReason) => {
+    dropped[reason] += 1;
+  };
 
   return {
     enqueue: (payload) => {
@@ -64,18 +92,18 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
       // row for the same stretch of time. Losing one segment beats
       // double-counting time that feeds payroll.
       if (!payload.device_id) {
-        dropped += 1;
+        drop('no_device_id');
         return;
       }
 
-      items.push({ payload, attempts: 0 });
+      items.push({ payload, firstFailedAtMs: null });
       while (items.length > maxSize) {
         items.shift();
-        dropped += 1;
+        drop('overflow');
       }
     },
 
-    drain: async (send) => {
+    drain: async (send, nowMs) => {
       // A second concurrent drain would send the same head twice and reorder
       // the tail. The tick that calls this can overlap with a reconnect.
       if (draining) return;
@@ -87,22 +115,38 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
           try {
             await send(entry.payload);
           } catch {
-            entry.attempts += 1;
-            if (entry.attempts > MAX_ATTEMPTS) {
+            if (items[0] !== entry) {
+              // enqueue's overflow eviction removed this entry while its send
+              // was in flight; it is already counted. Stop here rather than
+              // skipping ahead — the new head is retried on the next drain.
+              return;
+            }
+
+            if (entry.firstFailedAtMs === null) {
+              entry.firstFailedAtMs = nowMs;
+            }
+
+            if (nowMs - entry.firstFailedAtMs > MAX_RETRY_WINDOW_MS) {
               // Given up on this one specifically. Move on rather than
               // stopping here, so a permanently-failing head does not block
               // everything sent after it.
               items.shift();
-              dropped += 1;
+              drop('retry_window_exceeded');
               continue;
             }
 
-            // Still under the cap: stop at this failure. Skipping ahead
-            // would deliver a later session before an earlier one, and the
-            // next drain retries this same head.
+            // Still inside the retry window: stop at this failure. Skipping
+            // ahead would deliver a later session before an earlier one, and
+            // the next drain retries this same head.
             return;
           }
-          items.shift();
+
+          // Only shift what was actually sent. enqueue's overflow eviction can
+          // fire while the send above is awaiting, and shifting blindly would
+          // discard a different, never-sent session without counting it.
+          if (items[0] === entry) {
+            items.shift();
+          }
         }
       } finally {
         draining = false;
@@ -110,6 +154,7 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
     },
 
     size: () => items.length,
-    droppedCount: () => dropped,
+    droppedCount: () => dropped.no_device_id + dropped.retry_window_exceeded + dropped.overflow,
+    droppedReasons: () => ({ ...dropped }),
   };
 };

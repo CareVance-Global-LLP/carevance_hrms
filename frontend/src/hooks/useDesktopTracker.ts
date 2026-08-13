@@ -432,6 +432,9 @@ export const useDesktopTracker = () => {
   const activeDesktopSessionRef = useRef<ActiveDesktopSession | null>(null);
   // ~8 hours of switching at one session per 10s, then oldest-first drop.
   const pendingSessionQueueRef = useRef(createPendingSessionQueue({ maxSize: 3000 }));
+  // Last dropped total already reported, so the tick reports a loss once
+  // instead of every second for as long as the count stays above zero.
+  const reportedDroppedSessionCountRef = useRef(0);
   const activeBrowserSessionRef = useRef<ActiveBrowserSession | null>(null);
   const browserTrackingStateRef = useRef<BrowserTrackingState | null>(null);
   const exactBrowserHealthyUntilMsRef = useRef(0);
@@ -1728,7 +1731,32 @@ export const useDesktopTracker = () => {
         // session carries (local_id, device_id) and the server resolves a
         // replay to the row it already created.
         void pendingSessionQueueRef.current.drain(async (p) => {
+          // Read before the await: closeActiveDesktopSession can stamp the
+          // real close time onto this same object while the create is in
+          // flight, and by then the payload on the wire already carries the
+          // seeded zero-length value.
+          const sentEndedAt = p.ended_at ?? null;
           const response = await activitySessionApi.create(p);
+
+          // An empty 2xx body yields undefined here, which would pass the
+          // `sessionId === null` guards on the close and extend paths and
+          // PATCH /activity-sessions/undefined. Nothing to adopt or amend.
+          const sessionId = response?.data?.id;
+          if (!Number.isFinite(sessionId)) {
+            return;
+          }
+
+          const laterEndedAt = p.ended_at ?? null;
+          if (laterEndedAt && laterEndedAt !== sentEndedAt) {
+            // The user switched away mid-request, so the row the server just
+            // created still holds the seeded ended_at === started_at. The
+            // adoption branch below cannot fix it: closeActiveDesktopSession
+            // already cleared activeDesktopSessionRef, so no PATCH would ever
+            // follow and the segment would land as zero seconds — which
+            // ActivityFeedService::mapSession drops entirely (end <= start).
+            await activitySessionApi.update(sessionId, { ended_at: laterEndedAt });
+            return;
+          }
 
           // If this payload is still the live session's, adopt the id the
           // server just issued so the normal close path can PATCH the real
@@ -1737,10 +1765,31 @@ export const useDesktopTracker = () => {
           // close and extend paths short-circuit on it.
           const active = activeDesktopSessionRef.current;
           if (active && active.pendingPayload === p) {
-            active.sessionId = response.data.id;
+            active.sessionId = sessionId;
             active.pendingPayload = null;
           }
-        });
+        }, now);
+
+        // Every eviction path — an unidentifiable device, the retry window,
+        // overflow — throws away time an employee actually worked, and this
+        // data feeds ProductivityPayrollService. Unreported it is
+        // indistinguishable from time never tracked. Report on change only:
+        // this runs every second.
+        const droppedSessionCount = pendingSessionQueueRef.current.droppedCount();
+        if (droppedSessionCount > reportedDroppedSessionCountRef.current) {
+          const newlyDropped = droppedSessionCount - reportedDroppedSessionCountRef.current;
+          reportedDroppedSessionCountRef.current = droppedSessionCount;
+          const reasons = pendingSessionQueueRef.current.droppedReasons();
+          reportSilentError(
+            'desktop-tracker',
+            new Error(
+              `dropped ${newlyDropped} unsent activity session(s); ${droppedSessionCount} total `
+              + `(no_device_id=${reasons.no_device_id}, `
+              + `retry_window_exceeded=${reasons.retry_window_exceeded}, `
+              + `overflow=${reasons.overflow})`
+            )
+          );
+        }
 
         if (systemLockedAtMsRef.current !== null && lockAutoStopTimeoutRef.current === null) {
           scheduleLockAutoStop();
