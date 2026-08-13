@@ -8,6 +8,7 @@ import {
   isSupportedBrowserTrackingApp,
 } from '@/lib/browserTracking';
 import { idleGuardIntervalMs } from '@/lib/runtimeConfig';
+import { idleStopWarningSecondsRemaining } from '@/lib/idleStopWarning';
 import { isCaptureBlockedContext, resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import {
@@ -17,6 +18,7 @@ import {
   emitDesktopTimerIdleStop,
   setIdleAutoStopNotice,
   emitIdleReturnPrompt,
+  emitIdleStopWarning,
   suppressAutoStart,
   suppressAutoStartGlobally,
 } from '@/lib/desktopTimerSession';
@@ -410,6 +412,12 @@ export const useDesktopTracker = () => {
   // recorded until the person comes back and is asked what it was, so the
   // prompt can name a duration and point at the row it belongs to.
   const unansweredIdleRef = useRef<{ activityId: number; idleSeconds: number } | null>(null);
+  /*
+   * Whether a countdown is currently on screen. Without it the "cleared" event
+   * would fire on every tick of every non-idle second, which is almost all of
+   * them.
+   */
+  const idleStopWarningShownRef = useRef(false);
   const dedicatedIdleStopIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingIdleRewindRef = useRef<Map<number, number>>(new Map());
   const lastAutoStoppedEntryIdRef = useRef<number | null>(null);
@@ -1922,6 +1930,23 @@ export const useDesktopTracker = () => {
           url: rawUrl || null,
           captured_at: recordedAt,
         };
+
+        /*
+         * Warn before taking the timer away.
+         *
+         * Emitted every tick so the countdown moves, and once with null when
+         * input resumes so the UI can clear itself. Sits outside the idle
+         * branch below because the person may already be back — that is
+         * exactly the case that has to clear the warning.
+         */
+        const warningSecondsRemaining = idleStopWarningSecondsRemaining(
+          idleSeconds,
+          IDLE_AUTO_STOP_THRESHOLD_SECONDS
+        );
+        if (warningSecondsRemaining !== null || idleStopWarningShownRef.current) {
+          emitIdleStopWarning({ secondsRemaining: warningSecondsRemaining, idleSeconds });
+          idleStopWarningShownRef.current = warningSecondsRemaining !== null;
+        }
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           await closeActiveDesktopSession(new Date(lastActivityAtMs).toISOString());
