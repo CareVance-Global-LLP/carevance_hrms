@@ -982,7 +982,14 @@ class PayrollOverrideController extends Controller
                     ]);
 
                     $this->audit->created($override, $actorId);
-                    $created[] = $this->rowFor($override);
+                    // Same rule as the grid and the single-create path. An
+                    // override that arrived by spreadsheet is not a different
+                    // kind of decision, and leaving imports pending while the
+                    // grid released immediately meant the same change needed
+                    // a different number of clicks depending on how it was
+                    // entered.
+                    $this->autoApproveIfUncontested($override, auth()->user());
+                    $created[] = $this->rowFor($override->fresh());
                 }
             }
         });

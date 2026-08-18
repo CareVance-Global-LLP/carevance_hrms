@@ -643,8 +643,14 @@ class OverrideImportExportTest extends TestCase
 
     // ------------------------------------------------------------- committing
 
+    /**
+     * The provenance an import has to leave behind: which upload produced this
+     * row, and which line of the officer's file it came from. Both are
+     * unanswerable without them, and "which line did this?" is the first thing
+     * anyone asks when a figure looks wrong.
+     */
     #[Test]
-    public function committing_writes_the_overrides_as_pending(): void
+    public function committing_records_where_each_override_came_from(): void
     {
         $this->employee('100001');
 
@@ -665,12 +671,61 @@ class OverrideImportExportTest extends TestCase
 
         $override = PayrollOverride::firstOrFail();
 
-        $this->assertSame(PayrollOverride::STATUS_PENDING, $override->status);
         $this->assertSame('import', $override->source);
         $this->assertSame(2, (int) $override->source_row, 'The spreadsheet row is what an officer can look up.');
         $this->assertNotNull($override->import_batch_id);
         // Stored monthly, like every other override.
         $this->assertEqualsWithDelta(45000.0, (float) $override->value, 0.01);
+    }
+
+    /**
+     * An override that arrived by spreadsheet is not a different kind of
+     * decision from one typed into the grid.
+     *
+     * Imports used to land pending while the grid released immediately, so the
+     * same change needed a different number of clicks depending on how it was
+     * entered — and a bulk import of fifty rows left fifty things to approve
+     * one at a time.
+     */
+    #[Test]
+    public function an_imported_override_is_released_on_the_same_terms_as_a_typed_one(): void
+    {
+        $this->employee('100001');
+
+        $csv = $this->withCell($this->exportCsv(), '100001', 'basic_annual', '540000');
+        $csv = $this->withCell($csv, '100001', 'reason', 'Annual revision');
+
+        $batchId = $this->validateCsv($csv, ['default_effective_from' => '2026-09-01'])->json('batch_id');
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/payroll/operations/overrides/import/commit', [
+                'batch_id' => $batchId, 'skip_errors' => true,
+            ])
+            ->assertStatus(200)
+            ->assertJsonPath('overrides.0.status', PayrollOverride::STATUS_APPROVED);
+
+        $this->assertSame(PayrollOverride::STATUS_APPROVED, PayrollOverride::firstOrFail()->status);
+    }
+
+    /** And with a second admin present, an import waits for them. */
+    #[Test]
+    public function an_import_still_waits_when_another_admin_could_review_it(): void
+    {
+        User::factory()->create(['organization_id' => $this->organization->id, 'role' => 'admin']);
+        $this->employee('100001');
+
+        $csv = $this->withCell($this->exportCsv(), '100001', 'basic_annual', '540000');
+        $csv = $this->withCell($csv, '100001', 'reason', 'Annual revision');
+
+        $batchId = $this->validateCsv($csv, ['default_effective_from' => '2026-09-01'])->json('batch_id');
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/payroll/operations/overrides/import/commit', [
+                'batch_id' => $batchId, 'skip_errors' => true,
+            ])
+            ->assertStatus(200);
+
+        $this->assertSame(PayrollOverride::STATUS_PENDING, PayrollOverride::firstOrFail()->status);
     }
 
     /** A double-click must not double-apply a raise. */
