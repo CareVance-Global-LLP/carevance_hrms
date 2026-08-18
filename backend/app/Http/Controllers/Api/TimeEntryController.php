@@ -342,7 +342,29 @@ class TimeEntryController extends Controller
         $slot = $request->get('timer_slot', 'primary');
 
         $this->logGeofenceAction($user, 'timer_stop', $request);
-        $this->closeStalePrimaryRunningEntries((int) $user->id, now()->startOfDay(), $slot);
+
+        /*
+         * The server's idle safety net stands down when the client is already
+         * reporting the idle stop itself.
+         *
+         * Both use the same threshold, and the net runs at the top of every
+         * stop() call — so a tracker that reported an idle auto-stop for a
+         * timer with no non-idle activity rows had its entry closed by the net
+         * first, then got "No running timer found" 404 for a stop that was
+         * entirely legitimate. Worse, the idle email is only sent from this
+         * action: the net closes the timer silently, so the employee was never
+         * told their timer had stopped.
+         *
+         * The net exists for when NOBODY reports — a crashed or offline
+         * tracker. When the client is reporting, it is redundant and it
+         * swallows the notification.
+         */
+        $this->closeStalePrimaryRunningEntries(
+            (int) $user->id,
+            now()->startOfDay(),
+            $slot,
+            skipIdleSweep: $request->boolean('auto_stopped_for_idle'),
+        );
 
         $runningEntries = $this->runningEntriesQuery((int) $user->id, $slot)
             ->orderByDesc('start_time')
@@ -801,8 +823,19 @@ class TimeEntryController extends Controller
         return $earliestEnd;
     }
 
-    private function closeStalePrimaryRunningEntries(int $userId, Carbon $boundaryAt, string $slot): void
-    {
+    /**
+     * @param  bool  $skipIdleSweep  Set when the caller is itself reporting an
+     *                               idle auto-stop. The day-boundary close
+     *                               below still runs; only the idle safety net
+     *                               stands down, because the client has
+     *                               already detected what it would detect.
+     */
+    private function closeStalePrimaryRunningEntries(
+        int $userId,
+        Carbon $boundaryAt,
+        string $slot,
+        bool $skipIdleSweep = false
+    ): void {
         if ($slot !== 'primary') {
             return;
         }
@@ -816,7 +849,9 @@ class TimeEntryController extends Controller
             $this->closeRunningEntries($staleEntries, $boundaryAt);
         }
 
-        $this->closeIdleRunningEntry($userId);
+        if (! $skipIdleSweep) {
+            $this->closeIdleRunningEntry($userId);
+        }
     }
 
     /**

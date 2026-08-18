@@ -124,14 +124,40 @@ class NotificationApiFlowTest extends TestCase
             'organization_id' => $organization->id,
             'user_id' => $employee->id,
             'sender_id' => $admin->id,
-            'type' => 'message',
+            /*
+             * The type ChatService actually emits.
+             *
+             * This said 'message', which the app has never produced and which
+             * NotificationController's chat list therefore does not exclude —
+             * so the fixture was not testing the exclusion at all, it was
+             * creating an ordinary notification and expecting it to vanish.
+             * The read-all call below already names the real types.
+             */
+            'type' => 'chat_direct_message',
             'title' => 'New message from Admin',
             'message' => 'Chat belongs in the chat area.',
             'meta' => ['route' => '/chat'],
             'is_read' => false,
         ]);
 
+        /*
+         * Chat notifications ARE returned unless the caller excludes them.
+         *
+         * This asserted the opposite — that the endpoint hides them by
+         * default. It must not: Layout.tsx fetches one list and splits it into
+         * a chat bucket and a general bucket client-side, so a server that
+         * withheld chat rows would leave the chat bucket permanently empty.
+         * The separation is the caller's to make, and the caller makes it.
+         */
         $this->getJson('/api/notifications', $employeeHeaders)
+            ->assertOk()
+            ->assertJsonPath('unread_count', 2)
+            ->assertJsonFragment(['title' => 'New message from Admin']);
+
+        // ...and excluding them is what actually keeps them out of the bell.
+        $this->getJson('/api/notifications?'.http_build_query([
+            'exclude_types' => ['chat_direct_message', 'chat_group_message'],
+        ]), $employeeHeaders)
             ->assertOk()
             ->assertJsonPath('unread_count', 1)
             ->assertJsonMissing(['title' => 'New message from Admin']);
@@ -140,14 +166,20 @@ class NotificationApiFlowTest extends TestCase
             'exclude_types' => ['chat_direct_message', 'chat_group_message'],
         ], $employeeHeaders)->assertOk();
 
+        // Read-all excluded the chat types, so the chat message is still
+        // unread — marking the bell read must not silently read your messages.
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
             'user_id' => $employee->id,
-            'type' => 'message',
+            'type' => 'chat_direct_message',
             'is_read' => false,
         ]);
 
-        $this->getJson('/api/notifications?unread_only=1', $employeeHeaders)
+        // Unread, excluding chat: nothing left. The chat row above survives.
+        $this->getJson('/api/notifications?'.http_build_query([
+            'unread_only' => 1,
+            'exclude_types' => ['chat_direct_message', 'chat_group_message'],
+        ]), $employeeHeaders)
             ->assertOk()
             ->assertJsonPath('unread_count', 0)
             ->assertJsonCount(0, 'data');
