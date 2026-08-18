@@ -187,16 +187,34 @@ class ActivityTimelineProcessingTest extends TestCase
 
         $response = $this->getJson('/api/activities?processed=1&per_page=10', $this->apiHeadersFor($user));
 
+        /*
+         * Eleven, not ten: the ten real rows plus one INFERRED IDLE row.
+         *
+         * Removing the workspace sessions leaves a gap in the timeline, and
+         * the processor fills gaps with an idle row. Idle is deliberately
+         * never hidden — isCareVanceWorkspaceRow exempts it, because hiding it
+         * produced the 48-minute-report / 0-entries mismatch its comment
+         * describes. So the page is full and there is a second page.
+         */
         $response->assertOk()
             ->assertJsonCount(10, 'data')
             ->assertJsonPath('per_page', 10)
-            ->assertJsonPath('total', 10)
-            ->assertJsonPath('has_more', false);
+            ->assertJsonPath('total', 11)
+            ->assertJsonPath('has_more', true);
 
         $rows = collect($response->json('data'));
+        $this->assertSame(1, $rows->where('type', 'idle')->count());
+        // Five app and four url on this page; the tenth real row is pushed to
+        // page two by the idle row taking a slot.
         $this->assertSame(5, $rows->where('type', 'app')->count());
-        $this->assertSame(5, $rows->where('type', 'url')->count());
-        $this->assertFalse($rows->contains(fn (array $row) => str_contains(strtolower((string) ($row['name'] ?? '')), 'carevance hrms')));
+        $this->assertSame(4, $rows->where('type', 'url')->count());
+
+        // The point of the test: not one of the twelve workspace rows survived.
+        $allRows = collect(
+            $this->getJson('/api/activities?processed=1&per_page=50', $this->apiHeadersFor($user))->json('data')
+        );
+        $this->assertCount(11, $allRows);
+        $this->assertFalse($allRows->contains(fn (array $row) => str_contains(strtolower((string) ($row['name'] ?? '')), 'carevance hrms')));
     }
 
     public function test_raw_activity_timeline_handles_snapshot_rows_without_exact_session_timestamps(): void

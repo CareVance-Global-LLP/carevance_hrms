@@ -71,7 +71,17 @@ class ChatApiFlowTest extends TestCase
             ->assertJsonPath('sender.id', $admin->id)
             ->json('id');
 
-        $this->assertDatabaseMissing('app_notifications', [
+        /*
+         * The recipient IS notified.
+         *
+         * This asserted the opposite. Chat notifications are a real feature:
+         * ChatService emits chat_direct_message, AppNotificationService has a
+         * `chat_messages` preference gating it, and Layout keeps a dedicated
+         * chat bucket to display them. Suppressing them entirely would leave
+         * that bucket permanently empty and the preference controlling
+         * nothing.
+         */
+        $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $primaryOrg->id,
             'user_id' => $employee->id,
             'type' => 'chat_direct_message',
@@ -193,7 +203,9 @@ class ChatApiFlowTest extends TestCase
             ->assertCreated()
             ->json('id');
 
-        $this->assertDatabaseMissing('app_notifications', [
+        // Group messages notify their members for the same reason direct
+        // messages notify their recipient.
+        $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $primaryOrg->id,
             'user_id' => $employee->id,
             'type' => 'chat_group_message',
@@ -367,8 +379,22 @@ class ChatApiFlowTest extends TestCase
         $this->post("/api/chat/conversations/{$conversationId}/messages", [
             'attachment' => UploadedFile::fake()->createWithContent('xss.html', '<script>alert(1)</script>'),
         ], $senderHeaders)
-            ->assertStatus(422)
-            ->assertJsonPath('errors.attachment.0', 'The attachment field must be a file of type: application/pdf, text/plain, text/csv, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, image/jpeg, image/png, image/webp.');
+            ->assertStatus(422);
+
+        /*
+         * What matters is that HTML is refused, not the exact allow-list.
+         *
+         * This pinned the whole sentence, so adding archive types (zip, rar,
+         * tar, gzip) to the permitted mimes broke a test about cross-site
+         * scripting. The rejection is the subject; the roster of allowed types
+         * is going to keep changing.
+         */
+        $error = $this->post("/api/chat/conversations/{$conversationId}/messages", [
+            'attachment' => UploadedFile::fake()->createWithContent('xss.html', '<script>alert(1)</script>'),
+        ], $senderHeaders)->json('errors.attachment.0');
+
+        $this->assertStringContainsString('must be a file of type', (string) $error);
+        $this->assertStringNotContainsString('text/html', (string) $error);
 
         $messageId = (int) $this->post("/api/chat/conversations/{$conversationId}/messages", [
             'attachment' => UploadedFile::fake()->createWithContent('Payroll Proof.txt', 'approved'),
