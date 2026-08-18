@@ -124,9 +124,23 @@ export default function ImportOverridesModal({ isOpen, month, onClose, onCommitt
         {result === null ? (
           <>
             <p className="text-sm text-slate-500">
-              Export the current view, change the <strong>basic_annual</strong> and{' '}
-              <strong>hra_annual</strong> columns in Excel, and upload it back. Blank means leave that
-              component alone; a literal 0 means zero and is a real change.
+              Export the current view, type the new figures into the{' '}
+              <strong>basic_annual</strong> and <strong>hra_annual</strong> columns in Excel, and
+              upload it back. Blank means leave that component alone; a literal 0 means zero and is
+              a real change.
+            </p>
+            {/*
+              Called out because the format invites the opposite. The figure an
+              officer wants to change sits in the read-only _current column and
+              the writable one beside it is empty, so editing the number they
+              can see is the natural move — and it used to be discarded in
+              silence.
+            */}
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Type into the <strong>blank</strong> columns, not the ones ending{' '}
+              <strong>_current</strong>. The <code>_current</code> columns show what is in force
+              today and are ignored on import — an edit made there will be reported back to you, not
+              applied.
             </p>
 
             <div className="flex flex-wrap gap-2">

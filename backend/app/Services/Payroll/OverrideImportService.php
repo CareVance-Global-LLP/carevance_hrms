@@ -305,8 +305,45 @@ class OverrideImportService
                 ], fn ($v) => $v !== null);
             };
 
-            // A row that changes nothing is neither valid nor an error.
+            /*
+             * A row that changes nothing is neither valid nor an error —
+             * unless the officer typed into the wrong column.
+             *
+             * The format puts the figure they want to change in a READ-ONLY
+             * column and asks them to type into the blank one beside it. That
+             * is backwards from how anyone edits a spreadsheet, and doing it
+             * the natural way produced "0 will change, 17 unchanged" with no
+             * hint that a deliberate edit had been discarded. Silently
+             * ignoring a payroll change somebody made on purpose is the worst
+             * outcome this importer has.
+             */
             if ($basicRaw === '' && $hraRaw === '') {
+                $misplaced = $this->misplacedEdit($organizationId, $number, [
+                    'basic' => trim((string) $cell('basic_annual_current')),
+                    'hra' => trim((string) $cell('hra_annual_current')),
+                ]);
+
+                if ($misplaced !== null) {
+                    $fail('E017', 'Edited the read-only column',
+                        sprintf(
+                            '%s_annual_current was changed to %s. That column reports what is in force today and is ignored on import.',
+                            $misplaced['target'],
+                            $misplaced['typed'],
+                        ),
+                        sprintf(
+                            'Put %s in the %s_annual column instead and clear %s_annual_current back to %s.',
+                            $misplaced['typed'],
+                            $misplaced['target'],
+                            $misplaced['target'],
+                            $misplaced['expected'],
+                        ),
+                        $misplaced['target'].'_annual',
+                        (int) $misplaced['typed'],
+                    );
+
+                    continue;
+                }
+
                 $noChange++;
 
                 continue;
@@ -585,6 +622,68 @@ class OverrideImportService
         }
 
         return ['valid' => $valid, 'errors' => $errors, 'no_change' => $noChange];
+    }
+
+    /**
+     * Did the officer change a _current column instead of the writable one?
+     *
+     * The server knows what each _current column held when the file was
+     * exported, so a difference is not ambiguity — it is a deliberate edit
+     * placed one column to the left. Best effort throughout: an employee that
+     * does not resolve, or a row with no figures, simply is not this mistake,
+     * and must stay `no_change` rather than becoming a spurious error. An
+     * export legitimately contains rows with a blank employee number.
+     *
+     * @param  array{basic: string, hra: string}  $currentCells
+     * @return array{target: string, typed: string, expected: int}|null
+     */
+    private function misplacedEdit(int $organizationId, string $employeeNumber, array $currentCells): ?array
+    {
+        if ($employeeNumber === '') {
+            return null;
+        }
+
+        $workInfo = EmployeeWorkInfo::query()
+            ->where('organization_id', $organizationId)
+            ->where('employee_code', $employeeNumber)
+            ->first();
+
+        if (! $workInfo) {
+            return null;
+        }
+
+        $template = EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->where('user_id', $workInfo->user_id)
+            ->first();
+
+        if (! $template || ! $template->annual_ctc) {
+            return null;
+        }
+
+        // The same builder the export used, so "what it said when you
+        // downloaded it" and "what we compare against now" are one answer.
+        $row = $this->grid->rows($organizationId, now()->format('Y-m'), [])
+            ->firstWhere('user_id', $workInfo->user_id);
+
+        if (! $row) {
+            return null;
+        }
+
+        foreach (['basic', 'hra'] as $target) {
+            $typed = $currentCells[$target] ?? '';
+
+            if ($typed === '' || ! preg_match('/^\d+$/', $typed)) {
+                continue;
+            }
+
+            $expected = $row['components'][$target]['annual'] ?? null;
+
+            if ($expected !== null && (int) $typed !== (int) $expected) {
+                return ['target' => $target, 'typed' => $typed, 'expected' => (int) $expected];
+            }
+        }
+
+        return null;
     }
 
     /**

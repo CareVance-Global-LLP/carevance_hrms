@@ -301,6 +301,73 @@ class OverrideImportExportTest extends TestCase
         $this->assertSame(0, $response->json('valid.0.changes.0.to'));
     }
 
+    /**
+     * The mistake the format invites.
+     *
+     * `basic_annual_current` holds the figure the officer wants to change, and
+     * `basic_annual` — the one they must type into — is blank beside it.
+     * Editing the column that shows the number is the natural thing to do, and
+     * it used to produce "0 will change, 17 unchanged": a deliberate payroll
+     * edit discarded without a word.
+     */
+    #[Test]
+    public function editing_the_read_only_column_is_reported_rather_than_ignored(): void
+    {
+        $this->employee('100001');
+
+        // 480000 is what the structure produces; the officer types over it.
+        $csv = $this->withCell($this->exportCsv(), '100001', 'basic_annual_current', '540000');
+
+        $response = $this->validateCsv($csv)->assertStatus(200);
+
+        $response->assertJsonPath('summary.no_change', 0);
+        $response->assertJsonPath('errors.0.code', 'E017');
+        $response->assertJsonPath('errors.0.column', 'basic_annual');
+        $response->assertJsonPath('errors.0.suggested_value', 540000);
+
+        $this->assertStringContainsString('basic_annual column instead', $response->json('errors.0.fix'));
+    }
+
+    #[Test]
+    public function the_same_guard_covers_the_hra_column(): void
+    {
+        $this->employee('100001');
+
+        $csv = $this->withCell($this->exportCsv(), '100001', 'hra_annual_current', '300000');
+
+        $this->validateCsv($csv)
+            ->assertStatus(200)
+            ->assertJsonPath('errors.0.code', 'E017')
+            ->assertJsonPath('errors.0.column', 'hra_annual');
+    }
+
+    /** An untouched _current column must never be mistaken for an edit. */
+    #[Test]
+    public function an_unedited_current_column_stays_no_change(): void
+    {
+        $this->employee('100001');
+
+        $this->validateCsv($this->exportCsv())
+            ->assertStatus(200)
+            ->assertJsonPath('summary.errors', 0)
+            ->assertJsonPath('summary.no_change', 1);
+    }
+
+    /** Typing into the right column still wins, whatever the left one says. */
+    #[Test]
+    public function a_correct_edit_is_unaffected_by_the_guard(): void
+    {
+        $this->employee('100001');
+
+        $csv = $this->withCell($this->exportCsv(), '100001', 'basic_annual', '540000');
+        $csv = $this->withCell($csv, '100001', 'reason', 'Revision');
+
+        $this->validateCsv($csv, ['default_effective_from' => '2026-09-01'])
+            ->assertStatus(200)
+            ->assertJsonPath('summary.will_change', 1)
+            ->assertJsonPath('summary.errors', 0);
+    }
+
     #[Test]
     public function an_unknown_employee_number_is_e001(): void
     {
