@@ -147,7 +147,7 @@ class ActivityTimelineProcessingTest extends TestCase
             ActivitySession::create([
                 'user_id' => $user->id,
                 'time_entry_id' => $entry->id,
-                'source' => 'browser_extension',
+                'source' => 'desktop',
                 'activity_kind' => 'website',
                 'tool_type' => 'website',
                 'display_name' => 'CareVance HRMS Workspace',
@@ -168,7 +168,7 @@ class ActivityTimelineProcessingTest extends TestCase
             ActivitySession::create([
                 'user_id' => $user->id,
                 'time_entry_id' => $entry->id,
-                'source' => $index % 2 === 0 ? 'desktop' : 'browser_extension',
+                'source' => 'desktop',
                 'activity_kind' => $index % 2 === 0 ? 'desktop_app' : 'website',
                 'tool_type' => $index % 2 === 0 ? 'software' : 'website',
                 'display_name' => $index % 2 === 0 ? 'Codex' : 'Feed | LinkedIn',
@@ -259,7 +259,7 @@ class ActivityTimelineProcessingTest extends TestCase
         ActivitySession::create([
             'user_id' => $user->id,
             'time_entry_id' => $entry->id,
-            'source' => 'browser_extension',
+            'source' => 'desktop',
             'activity_kind' => 'website',
             'tool_type' => 'website',
             'display_name' => 'Instagram',
@@ -274,7 +274,7 @@ class ActivityTimelineProcessingTest extends TestCase
         ActivitySession::create([
             'user_id' => $user->id,
             'time_entry_id' => $entry->id,
-            'source' => 'browser_extension',
+            'source' => 'desktop',
             'activity_kind' => 'website',
             'tool_type' => 'website',
             'display_name' => 'CareVance HRMS Workspace',

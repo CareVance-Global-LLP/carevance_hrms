@@ -10,19 +10,32 @@
 # Windows build that field has always been null and a browser with no extension
 # installed produced nothing but a window title.
 #
-# Two sources, in preference order (measured 13 Aug 2026):
+# Two sources, in preference order:
 #
-#   Document element   Chrome only. The real page URL including scheme, and
-#                      immune to a half-typed address bar. Needs a warm-up:
-#                      Chromium builds its accessibility tree lazily, so the
-#                      FIRST query after a window appears returns nothing and
-#                      the second succeeds.
+#   Document element   The real page URL including scheme, and immune to a
+#                      half-typed address bar. Needs a warm-up: Chromium builds
+#                      its accessibility tree lazily, so the FIRST query after a
+#                      window appears returns nothing and the second succeeds.
 #
-#   Address bar        Edge and Brave expose only this. It holds whatever is in
-#                      the box, including text typed and never submitted, which
-#                      survives Escape AND focus loss. Callers must treat it as
-#                      a hint - normalize-captured-url.cjs reduces it to a host
-#                      and drops anything not host-shaped.
+#                      Measured 14 Aug 2026 on Chrome AND Edge - both return the
+#                      full URL here, e.g.
+#                        name='Fetch API - Web APIs | MDN'
+#                        value='https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API'
+#                      An earlier note in this file claimed the Document element
+#                      was Chrome-only and that Edge exposed nothing but the
+#                      address bar. That was the cold-tree symptom being read as
+#                      a browser difference: query before the warm-up and every
+#                      Chromium browser looks address-bar-only.
+#
+#   Address bar        Fallback, used when the tree is still cold. It holds
+#                      whatever is in the box, including text typed and never
+#                      submitted, which survives Escape AND focus loss. Callers
+#                      must treat it as a hint - normalize-captured-url.cjs
+#                      reduces it to a host and drops anything not host-shaped.
+#
+# Brave, Vivaldi and Opera are listed below as Chromium siblings and are
+# expected to behave the same, but are NOT installed on the machine this was
+# measured on, so treat them as unverified.
 
 $ErrorActionPreference = 'Stop'
 

@@ -38,6 +38,25 @@ class TrackerPolicyResolver
      * failure mode worth risking, and silently keeping it is how a tracker
      * stops being trusted.
      */
+    /**
+     * How much of a visited URL is recorded.
+     *
+     * `full` keeps scheme, host and path; `host` reduces every visit to its
+     * domain; `off` records the browser as an application and no address at
+     * all. The query string is never stored at any level — see
+     * App\Support\CapturedUrl — because it is where single-use credentials
+     * live, and no organisation should be able to opt into keeping those.
+     */
+    public const URL_DETAIL_FULL = 'full';
+    public const URL_DETAIL_HOST = 'host';
+    public const URL_DETAIL_OFF = 'off';
+
+    private const URL_DETAIL_LEVELS = [
+        self::URL_DETAIL_FULL,
+        self::URL_DETAIL_HOST,
+        self::URL_DETAIL_OFF,
+    ];
+
     public const IDLE_POLICY_PROMPT = 'prompt';
     public const IDLE_POLICY_ALWAYS_KEEP = 'always_keep';
     public const IDLE_POLICY_NEVER_KEEP = 'never_keep';
@@ -201,6 +220,36 @@ class TrackerPolicyResolver
     }
 
     /**
+     * Per-user override, else the organization's, else full detail.
+     *
+     * Same chain and the same fall-through as idleResolutionPolicy: a junk
+     * per-user value drops to the organization's choice rather than bypassing
+     * it. Full is the default because it is what the product already did, and
+     * silently reducing every existing customer's history would be a data
+     * change dressed as an upgrade.
+     *
+     * @param array<string, mixed> $settings
+     * @param array<string, mixed> $orgSettings
+     */
+    public function urlDetailLevel(array $settings, array $orgSettings): string
+    {
+        foreach ([$settings['url_detail_level'] ?? null, $orgSettings['url_detail_level'] ?? null] as $candidate) {
+            if (is_string($candidate) && in_array($candidate, self::URL_DETAIL_LEVELS, true)) {
+                return $candidate;
+            }
+        }
+
+        return self::URL_DETAIL_FULL;
+    }
+
+    public function urlDetailLevelForUser(?User $user): string
+    {
+        $userSettings = is_array($user?->settings) ? $user->settings : [];
+
+        return $this->urlDetailLevel($userSettings, $this->orgSettings($user));
+    }
+
+    /**
      * The policy for a user, read straight off the models. For callers that
      * hold a User but not its resolved policy array.
      */
@@ -253,6 +302,7 @@ class TrackerPolicyResolver
             'blocked_apps' => $blockedApps,
             'skip_on_private_browsing' => (bool) ($orgSettings['screenshot_skip_private_browsing']
                 ?? config('screenshots.privacy.skip_on_private_browsing', true)),
+            'url_detail_level' => $this->urlDetailLevel([], $orgSettings),
         ];
     }
 

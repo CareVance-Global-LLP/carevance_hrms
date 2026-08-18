@@ -6,7 +6,6 @@ import SlideOver from '@/features/employees/SlideOver';
 import { formatDuration } from '@/lib/formatters';
 import { formatDateTime as formatDateTimeForTimezone } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
-import type { BrowserTrackingHealthSummary } from '@/types';
 import {
   CLASSIFICATION_META,
   CLASSIFICATION_ORDER,
@@ -45,18 +44,6 @@ const resolveLiveToolLabel = (liveRow?: any | null) => {
   return resolved || 'No active tool detected';
 };
 
-const browserTrackingLine = (summary?: BrowserTrackingHealthSummary | null) => {
-  switch (String(summary?.status || 'unknown')) {
-    case 'connected':
-      return 'Browser tracking connected';
-    case 'disconnected':
-      return 'Browser tracking off';
-    case 'disabled':
-      return 'Browser bridge offline';
-    default:
-      return 'No browser tracking health yet';
-  }
-};
 
 const shortDayLabel = (dateISO: string) => {
   const parsed = new Date(`${dateISO}T00:00:00`);
@@ -139,6 +126,21 @@ export default function MonitoringOverview({
     return [...ranked.map((row) => ({ row, user: row.user, untracked: false })), ...untracked];
   }, [rankingRows, presenceFilter, statusByUser, usersById]);
 
+  /*
+   * Each duration also as a share of tracked time.
+   *
+   * "Idle 0h 16m" only means something once you know whether it sits inside
+   * twenty minutes or eight hours, and reading that off the neighbouring
+   * figure is arithmetic the page can just do. Tracked itself carries no
+   * percentage — it is the denominator.
+   */
+  const shareOfTracked = (seconds: unknown) => {
+    const total = Number(organizationSummary.tracked_duration || 0);
+    const value = Number(seconds || 0);
+    if (total <= 0 || value <= 0) return '';
+    return ` (${Math.round((value / total) * 100)}%)`;
+  };
+
   const shareSegments = classificationSegments(organizationSummary);
   const focusShare = Number(
     focus === 'unproductive'
@@ -206,9 +208,9 @@ export default function MonitoringOverview({
           <ShareLegend segments={shareSegments} />
           <p className="mt-3 text-xs text-slate-500">
             Tracked {formatDuration(Number(organizationSummary.tracked_duration || 0))}
-            {' · '}Work {formatDuration(Number(organizationSummary.working_duration || 0))}
-            {' · '}Idle {formatDuration(Number(organizationSummary.idle_duration || 0))}
-            {' · '}Break {formatDuration(Number(organizationSummary.break_seconds || 0))}
+            {' · '}Work {formatDuration(Number(organizationSummary.working_duration || 0))}{shareOfTracked(organizationSummary.working_duration)}
+            {' · '}Idle {formatDuration(Number(organizationSummary.idle_duration || 0))}{shareOfTracked(organizationSummary.idle_duration)}
+            {' · '}Break {formatDuration(Number(organizationSummary.break_seconds || 0))}{shareOfTracked(organizationSummary.break_seconds)}
           </p>
         </Panel>
 
@@ -357,7 +359,6 @@ export default function MonitoringOverview({
                 <>
                   <p className="font-medium text-slate-800">{resolveLiveToolLabel(drawerLive)}</p>
                   <p className="mt-1 text-slate-500">Last activity {formatDateTime(drawerLive.last_activity_at, timezone)}</p>
-                  <p className="mt-1 text-slate-500">{browserTrackingLine(drawerLive.browser_tracking)}</p>
                 </>
               ) : (
                 <div className="space-y-2" aria-label="Loading live detail">

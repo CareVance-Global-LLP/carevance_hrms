@@ -191,3 +191,26 @@ const PRIVATE_BROWSING_MARKERS = [
   'private browsing',
   'private window',
 ];
+
+/**
+ * How much of a visited address the organisation keeps.
+ *
+ * The query string is stripped at every level and is not offered here: it is
+ * where single-use credentials live, and a live OAuth authorization code was
+ * found sitting in the monitoring table on 17 Aug 2026. An organisation
+ * chooses how much detail to record, never whether to record secrets.
+ */
+export const URL_DETAIL_LEVEL_OPTIONS = [
+  { value: 'full', label: 'Full page' },
+  { value: 'host', label: 'Website only' },
+  { value: 'off', label: 'No addresses' },
+] as const;
+
+export type UrlDetailLevel = (typeof URL_DETAIL_LEVEL_OPTIONS)[number]['value'];
+
+export const readUrlDetailLevel = (value: unknown): UrlDetailLevel => {
+  const candidate = String(value ?? '').trim();
+  return URL_DETAIL_LEVEL_OPTIONS.some((option) => option.value === candidate)
+    ? (candidate as UrlDetailLevel)
+    : 'full';
+};

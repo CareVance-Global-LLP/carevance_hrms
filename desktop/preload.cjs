@@ -9,6 +9,23 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   getAllWindowContexts: () => ipcRenderer.invoke('desktop:get-all-window-contexts'),
   revealWindow: () => ipcRenderer.invoke('desktop:reveal-window'),
   showNotification: (payload) => ipcRenderer.invoke('desktop:show-notification', payload),
+  // The idle warning, as a real always-on-top window. The in-app countdown it
+  // replaces could only be seen when the app window was on screen — which, for
+  // somebody who just walked away, is precisely when it is not.
+  showIdlePopup: (state) => ipcRenderer.invoke('desktop:show-idle-popup', state),
+  hideIdlePopup: () => ipcRenderer.invoke('desktop:hide-idle-popup'),
+  onIdlePopupAction: (callback) => {
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+    ipcRenderer.on('desktop:idle-popup-action', listener);
+    return () => {
+      ipcRenderer.removeListener('desktop:idle-popup-action', listener);
+    };
+  },
+  clearIdlePopupActionListeners: () => {
+    ipcRenderer.removeAllListeners('desktop:idle-popup-action');
+  },
   getUpdateState: () => ipcRenderer.invoke('desktop:get-update-state'),
   checkForUpdates: () => ipcRenderer.invoke('desktop:check-for-updates'),
   downloadUpdate: () => ipcRenderer.invoke('desktop:download-update'),
@@ -109,6 +126,10 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   // Offline Mode API
   isOfflineAvailable: () => ipcRenderer.invoke('desktop:offline-is-available'),
   getOfflineStatus: () => ipcRenderer.invoke('desktop:offline-get-status'),
+  // Disk backing for the renderer's pending activity-session queue, so an
+  // outage that outlasts the app does not lose the app/website timeline.
+  loadPendingSessions: () => ipcRenderer.invoke('desktop:pending-sessions-load'),
+  savePendingSessions: (sessions) => ipcRenderer.invoke('desktop:pending-sessions-save', sessions),
   getOfflineSummary: () => ipcRenderer.invoke('desktop:offline-get-summary'),
   saveAttendanceOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-attendance', payload),
   saveScreenshotOffline: (payload) => ipcRenderer.invoke('desktop:offline-save-screenshot', payload),

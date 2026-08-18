@@ -10,6 +10,7 @@ import { reportSilentError } from '@/lib/reportSilentError';
 const initialState: OfflineState = {
   status: 'online',
   pendingRecords: 0,
+  stuckRecords: 0,
   lastSyncAt: null,
   isDesktopApp: isDesktopApp(),
   queueSize: 0,

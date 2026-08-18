@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
-import DesktopBrowserTrackingPanel from '@/components/desktop/DesktopBrowserTrackingPanel';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useSettingsController } from '@/features/settings/useSettingsController';
 import SettingsRail from '@/features/settings/components/SettingsRail';
@@ -29,7 +28,6 @@ const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }>
   integrations: { title: 'Integrations', description: 'What CareVance is connected to right now.' },
   'custom-fields': { title: 'Custom fields', description: 'Extra data you want on every employee record.' },
   billing: { title: 'Billing', description: 'Your plan, seats and renewal.' },
-  'browser-tracking': { title: 'Browser tracking', description: 'Pair a browser so visited URLs join the activity timeline.' },
   help: { title: 'Help & support', description: 'Raise a ticket with the support team.' },
   development: { title: 'Development', description: 'Flags and environment details for dev builds.' },
 };
@@ -52,7 +50,6 @@ export default function SettingsPage() {
     notifications,
     billingPlan,
     billingSnapshot,
-    hasDesktopBrowserTracking,
   } = controller;
 
   const railHints = useMemo(() => {
@@ -107,11 +104,10 @@ export default function SettingsPage() {
           {activeTab === 'organization' && <OrganizationPane controller={controller} />}
           {activeTab === 'productivity' && <ProductivityPane />}
           {activeTab === 'integrations' && (
-            <IntegrationsPane onOpenTab={handleTabChange} hasDesktopBrowserTracking={hasDesktopBrowserTracking} />
+            <IntegrationsPane onOpenTab={handleTabChange} />
           )}
           {activeTab === 'custom-fields' && <CustomFieldsPane />}
           {activeTab === 'billing' && <BillingPane snapshot={billingSnapshot} />}
-          {activeTab === 'browser-tracking' && hasDesktopBrowserTracking && <DesktopBrowserTrackingPanel />}
           {activeTab === 'help' && <HelpPane controller={controller} />}
           {activeTab === 'development' && <DevelopmentPane />}
 

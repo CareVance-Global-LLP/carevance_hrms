@@ -16,20 +16,34 @@ const { normalizeCapturedUrl } = require('../browser-url/normalize-captured-url.
  * anything not clearly a host is dropped.
  */
 
-test('document source keeps the whole URL', () => {
+test('document source keeps the whole path, minus the query string', () => {
+  /*
+   * The query string goes even when it looks harmless.
+   *
+   * There is no reliable way to tell `?hl=en` from `?code=<authorization>`:
+   * a deny-list of known-secret parameter names is only ever as current as the
+   * last identity provider to invent one, and the cost of being wrong is a
+   * live credential sitting in a report. The path still names the page, which
+   * is the whole of what a productivity report needs.
+   *
+   * The fragment survives here because it carries no `=` — it is a document
+   * anchor, not a parameter set.
+   */
   const result = normalizeCapturedUrl({
     source: 'document',
     value: 'https://developer.chrome.com/docs/extensions/reference/api/tabs?hl=en#method-query',
   });
 
-  assert.equal(result.url, 'https://developer.chrome.com/docs/extensions/reference/api/tabs?hl=en#method-query');
+  assert.equal(result.url, 'https://developer.chrome.com/docs/extensions/reference/api/tabs#method-query');
   assert.equal(result.confidence, 100);
 });
 
 test('document source is trusted even when the address bar would be junk', () => {
+  // Still document-level confidence; the query is dropped for the reason above,
+  // and a search term is among the most sensitive things this could store.
   const result = normalizeCapturedUrl({ source: 'document', value: 'https://example.com/incognito-probe?q=1' });
 
-  assert.equal(result.url, 'https://example.com/incognito-probe?q=1');
+  assert.equal(result.url, 'https://example.com/incognito-probe');
   assert.equal(result.confidence, 100);
 });
 
@@ -121,4 +135,64 @@ test('userinfo in the value never survives into the recorded host', () => {
 
   assert.equal(result.url, 'https://example.com');
   assert.ok(!String(result.url).includes('hunter2'));
+});
+
+test('a document URL is stored without the credentials used to reach it', () => {
+  /*
+   * The defect this pins, found in the live database on 17 Aug 2026: a single
+   * captured visit held a complete OAuth callback — `code` (66 characters),
+   * `state`, `session_state` and `iss`. A live authorization code, readable by
+   * every admin who opens the timeline and included in CSV exports, recorded
+   * because the document branch stored whatever the browser reported verbatim.
+   */
+  const result = normalizeCapturedUrl({
+    source: 'document',
+    value: 'https://idp.example.com/callback?code=4%2F0AY0e-g7SECRET&state=abc123&session_state=xyz&iss=https%3A%2F%2Fidp',
+  });
+
+  assert.equal(result.url, 'https://idp.example.com/callback');
+  assert.equal(result.confidence, 100, 'stripping the query must not downgrade a document reading');
+  assert.ok(!result.url.includes('code='), 'no authorization code may survive');
+});
+
+test('an implicit-flow token in the fragment is stripped too', () => {
+  // OAuth implicit returns access_token in the fragment rather than the query,
+  // so stripping only the query string would leave the more dangerous half.
+  const result = normalizeCapturedUrl({
+    source: 'document',
+    value: 'https://app.example.com/#access_token=SECRET&token_type=bearer',
+  });
+
+  assert.ok(!result.url.includes('access_token'));
+  assert.ok(!result.url.includes('SECRET'));
+});
+
+test('hash routing keeps the page it names', () => {
+  // Single-page apps put the real page in the fragment. Dropping it wholesale
+  // would reduce every route in those products to a bare host.
+  const result = normalizeCapturedUrl({
+    source: 'document',
+    value: 'https://technocruitx.keka.com/#/me/attendance',
+  });
+
+  assert.equal(result.url, 'https://technocruitx.keka.com/#/me/attendance');
+});
+
+test('an ordinary deep path is left alone', () => {
+  const result = normalizeCapturedUrl({
+    source: 'document',
+    value: 'https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API',
+  });
+
+  assert.equal(result.url, 'https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API');
+});
+
+test('userinfo never reaches a report', () => {
+  const result = normalizeCapturedUrl({
+    source: 'document',
+    value: 'https://someone:hunter2@intranet.example.com/private',
+  });
+
+  assert.ok(!result.url.includes('hunter2'));
+  assert.ok(!result.url.includes('someone'));
 });

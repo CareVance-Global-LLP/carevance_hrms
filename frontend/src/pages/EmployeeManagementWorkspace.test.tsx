@@ -95,19 +95,26 @@ describe('EmployeeManagementWorkspace', () => {
     });
   });
 
-  it('sorts the employee directory by tracked time descending', async () => {
+  it('does not offer a tracked-time sort the directory cannot honour', async () => {
+    /*
+     * Replaces a test that sorted by tracked time and passed, while the feature
+     * was dead in production the whole time. The fixture above hands
+     * userApi.getAll a total_duration; the real /api/users returns no duration
+     * field of any kind, so every row rendered an em dash and the sort compared
+     * zeroes. Verified against the live API on 18 Aug 2026. The column and the
+     * sort are gone — tracked time belongs on the dashboard and in reports,
+     * where it comes with the date range it needs.
+     */
     renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
 
     expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sort' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Tracked time high to low' }));
+
+    expect(screen.queryByRole('option', { name: 'Tracked time high to low' })).not.toBeInTheDocument();
 
     const directoryTable = screen.getAllByRole('table')[0];
-    const bodyRows = within(directoryTable).getAllByRole('row').slice(1);
-    const firstEmployeeCell = within(bodyRows[0]).getByRole('link');
-
-    expect(firstEmployeeCell).toHaveTextContent('Ayush Temp');
+    expect(within(directoryTable).queryByText('Tracked')).not.toBeInTheDocument();
   });
 
   it('filters the employee directory by department', async () => {

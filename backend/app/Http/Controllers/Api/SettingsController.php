@@ -393,6 +393,7 @@ class SettingsController extends Controller
             'screenshot_retention_days',
             'employee_activity_visible',
             'screenshot_employee_delete',
+            'url_detail_level',
         ];
 
         foreach ($trackerPolicyKeys as $key) {
@@ -419,7 +420,7 @@ class SettingsController extends Controller
              */
             $existingSettings[$key] = match ($key) {
                 'screenshot_employee_delete', 'employee_activity_visible' => filter_var($value, FILTER_VALIDATE_BOOL),
-                'idle_resolution_policy' => (string) $value,
+                'idle_resolution_policy', 'url_detail_level' => (string) $value,
                 default => (int) $value,
             };
         }

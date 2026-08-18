@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\CapturedUrl;
 use App\Http\Controllers\Controller;
 use App\Models\ActivitySession;
 use App\Models\TimeEntry;
 use App\Support\ExternalTimestamp;
 use App\Services\Monitoring\ProductivityClassifier;
+use App\Services\Monitoring\TrackerPolicyResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -14,6 +16,7 @@ class ActivitySessionController extends Controller
 {
     public function __construct(
         private readonly ProductivityClassifier $productivityClassifier,
+        private readonly TrackerPolicyResolver $trackerPolicyResolver,
     ) {
     }
 
@@ -59,9 +62,36 @@ class ActivitySessionController extends Controller
             }
         }
 
+        /*
+         * A website session must carry a real URL, and the desktop agent is the
+         * only thing that writes one.
+         *
+         * This used to pin the source to `browser_extension`, from when the
+         * extension was the only thing that could know a URL. The desktop agent
+         * reads URLs itself now and the extension was removed on 14 Aug 2026,
+         * having never written a single session in the life of the database.
+         *
+         * The URL requirement is the part that matters and stays exactly as
+         * strict: a website row with no address names nothing.
+         */
+        $urlDetailLevel = $this->trackerPolicyResolver->urlDetailLevelForUser($request->user());
+
+        /*
+         * With addresses switched off, a browser visit is recorded as the
+         * application it happened in rather than as a website with no address.
+         * Storing a website row whose URL is null would contradict the rule
+         * below — and read in a report as a visit nobody can identify.
+         */
+        if ($urlDetailLevel === TrackerPolicyResolver::URL_DETAIL_OFF
+            && ($validated['activity_kind'] ?? null) === 'website') {
+            $validated['activity_kind'] = 'desktop_app';
+            $validated['tool_type'] = 'software';
+            $validated['url'] = null;
+        }
+
         if (($validated['activity_kind'] ?? null) === 'website') {
             validator($validated, [
-                'source' => 'required|in:browser_extension',
+                'source' => 'required|in:desktop',
                 'tool_type' => 'required|in:website',
                 'url' => 'required|string|max:2048|url',
             ])->validate();
@@ -101,7 +131,10 @@ class ActivitySessionController extends Controller
             'display_name' => $validated['display_name'],
             'app_name' => $validated['app_name'] ?? null,
             'window_title' => $validated['window_title'] ?? null,
-            'url' => $validated['url'] ?? null,
+            // Sanitised here as well as on the desktop: an older build or a
+            // replayed offline queue can still post a raw URL, and a query
+            // string reaching this column is a credential in a report.
+            'url' => CapturedUrl::sanitize($validated['url'] ?? null, $urlDetailLevel),
             'started_at' => $startedAt,
             'ended_at' => $endedAt,
             'duration_seconds' => $endedAt ? $this->resolveWholeSeconds($startedAt, $endedAt) : 0,

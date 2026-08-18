@@ -28,11 +28,18 @@ const { NsisUpdater } = require('electron-updater');
 const { createBrowserTrackingBridge } = require('./browser-tracking-bridge.cjs');
 const { setupStrongAutoStart } = require('./auto-start.cjs');
 const {
+  showIdlePopup,
+  hideIdlePopup,
+  destroyIdlePopup,
+  onIdlePopupAction,
+} = require('./idle-popup.cjs');
+const {
   getBrowserTrackingManagerUrl,
   getBrowserTrackingOptionsUrl,
   prepareManagedBrowserTrackingExtensionDir,
 } = require('./browser-tracking-install-guide.cjs');
 const { OfflineDatabase, generateLocalId } = require('./offline/offline-db.cjs');
+const { PendingSessionsStore } = require('./offline/pending-sessions-store.cjs');
 const { LocalShellServer } = require('./offline/local-shell.cjs');
 const { NetworkMonitor } = require('./offline/network-monitor.cjs');
 const { QueueManager } = require('./offline/queue-manager.cjs');
@@ -252,6 +259,7 @@ let updateState = {
 let browserTrackingBridge = null;
 let desktopDeviceIdentity = null;
 let offlineDb = null;
+let pendingSessionsStore = null;
 let networkMonitor = null;
 let queueManager = null;
 let syncEngine = null;
@@ -283,11 +291,17 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on('second-instance', () => {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  revealMainWindow();
+  /*
+   * Reveal the window if one is left, otherwise build one.
+   *
+   * Returning early when `mainWindow` was gone made the app unopenable:
+   * launching it again lost the single-instance lock and quit immediately,
+   * while the instance holding that lock had no window to show. Observed on
+   * 14 Aug 2026 with three electron processes alive and every MainWindowHandle
+   * at 0, and `npm start` exiting 0 with nothing on screen. The tray had the
+   * same hole and is now fixed by sharing this helper.
+   */
+  openOrRevealMainWindow();
 });
 
 if (process.platform === 'win32') {
@@ -684,6 +698,9 @@ const broadcastOfflineStatus = () => {
     online: networkMonitor ? networkMonitor.isOnline : true,
     lastCheckAt: networkMonitor ? networkMonitor.lastCheckAt : null,
     pendingRecords,
+    // Pushed alongside pendingRecords so the indicator can separate work that
+    // is waiting from work that has been given up on.
+    stuckRecords: offlineDb.isReady() ? offlineDb.getFailedRecordCount() : 0,
     lastSyncAt: syncEngine ? syncEngine.lastSyncAt : null,
     isSyncing: syncEngine ? syncEngine.syncing : false,
     queueSize: offlineDb.isReady() ? offlineDb.getQueueSize() : 0,
@@ -857,13 +874,21 @@ const getForegroundWindowPayload = async () => {
   try {
     const context = await getActiveWindow();
     const app = context?.owner?.name || null;
+    const title = context?.title || null;
+
+    // Equally uninformative: a read that names neither an app nor a window
+    // must not be reported as an empty desktop for the same reason.
+    if (!app && !title) {
+      return null;
+    }
+
     // Lookup process description asynchronously (non-blocking)
     const description = app ? await getProcessDescription(app) : null;
     // Never rejects and resolves null off a browser, so it cannot fail a poll.
     const inferred = await getBrowserUrlReader().read();
     return {
       app: app,
-      title: context?.title || null,
+      title: title,
       url: context?.url || null,
       // 'document' is Chrome's real page URL; 'address_bar' is a host-only
       // hint from Edge/Brave that must not be treated as a confirmed visit.
@@ -879,13 +904,21 @@ const getForegroundWindowPayload = async () => {
       captured_at: new Date().toISOString(),
     };
   } catch {
-    return {
-      app: null,
-      title: null,
-      url: null,
-      description: null,
-      captured_at: new Date().toISOString(),
-    };
+    /*
+     * A failed read is not evidence that nothing is in front.
+     *
+     * This used to return an all-null payload, which the renderer reads as
+     * "no foreground window" and responds to by closing the active session.
+     * The next successful poll then reopened it, so one transient failure
+     * produced create -> close -> create for a window the user never left:
+     * a zero-length orphan row plus a duplicate. Measured live as pairs like
+     * ids 134 and 135, identical titles, identical start times, the first at
+     * dur=0.
+     *
+     * Returning null makes emitForegroundWindowChange skip the emit, so the
+     * renderer keeps believing what it last knew, which is still true.
+     */
+    return null;
   }
 };
 
@@ -1493,6 +1526,23 @@ const revealMainWindow = () => {
   return true;
 };
 
+/*
+ * The one way back to the window, whatever closed it.
+ *
+ * revealMainWindow can only act on a window that still exists, and on Windows
+ * closing the window does not quit the app — `window-all-closed` keeps it
+ * alive in the tray. So "reveal" alone is only half an answer: once the window
+ * is genuinely gone the only correct move is to build a new one. Callers that
+ * open the app on the user's behalf want that whole behaviour, not the half.
+ */
+const openOrRevealMainWindow = () => {
+  if (revealMainWindow()) {
+    return;
+  }
+
+  void createWindow();
+};
+
 const createTray = () => {
   if (process.platform !== 'win32') return;
 
@@ -1506,11 +1556,7 @@ const createTray = () => {
     {
       label: 'Open CareVance Tracker',
       click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-          mainWindow.setSkipTaskbar(false);
-          mainWindow.focus();
-        }
+        openOrRevealMainWindow();
       },
     },
     { type: 'separator' },
@@ -1526,11 +1572,7 @@ const createTray = () => {
   tray.setContextMenu(contextMenu);
 
   tray.on('double-click', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.setSkipTaskbar(false);
-      mainWindow.focus();
-    }
+    openOrRevealMainWindow();
   });
 
   console.log('[desktop] System tray created');
@@ -1764,6 +1806,46 @@ ipcMain.handle('desktop:get-system-idle-seconds', async () => {
   return powerMonitor.getSystemIdleTime();
 });
 
+/**
+ * The idle popup, driven entirely by the tracker in the renderer.
+ *
+ * Main owns the window; the renderer owns every decision about time. That split
+ * is the point — the thresholds, the stop call and the keep/discard resolution
+ * already live in useDesktopTracker and IdleResolutionService, and a second
+ * copy here would be free to drift out of step with them while nobody looked.
+ */
+ipcMain.handle('desktop:show-idle-popup', async (_event, state = {}) => {
+  showIdlePopup(state);
+  return true;
+});
+
+ipcMain.handle('desktop:hide-idle-popup', async () => {
+  hideIdlePopup();
+  return true;
+});
+
+/*
+ * A button press in the popup goes straight back to the renderer, which reacts
+ * exactly as it would to an in-app click. Registered once at startup rather
+ * than per-window, because the popup outlives any single renderer load.
+ */
+onIdlePopupAction((payload) => {
+  if (payload?.action === 'still-working' || payload?.action === 'dismiss') {
+    // Nothing to decide: the click itself was real input, so the OS idle clock
+    // has already reset and the tracker's next tick will agree. Hiding here
+    // only spares the person the second of lag before that tick lands.
+    hideIdlePopup();
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.webContents.send('desktop:idle-popup-action', payload);
+    } catch {
+      // Renderer reloading: the tracker re-reads idle state on its next tick.
+    }
+  }
+});
+
 ipcMain.handle('desktop:get-system-lock-state', async () => currentSystemLockState());
 
 ipcMain.handle('desktop:get-active-window-context', async () => {
@@ -1959,14 +2041,39 @@ ipcMain.handle('desktop:offline-is-available', async () => {
   return offlineDb ? offlineDb.available : false;
 });
 
+/*
+ * Disk backing for the renderer's pending activity-session queue.
+ *
+ * Those sessions lived in renderer memory alone, so quitting during an outage
+ * threw away the app/website timeline for that whole stretch. The renderer
+ * hands its queue over here after every change and reloads it on startup.
+ */
+ipcMain.handle('desktop:pending-sessions-load', async () => {
+  if (!pendingSessionsStore) return [];
+  return pendingSessionsStore.load();
+});
+
+ipcMain.handle('desktop:pending-sessions-save', async (_event, sessions) => {
+  if (!pendingSessionsStore) return false;
+  pendingSessionsStore.save(Array.isArray(sessions) ? sessions : []);
+  return true;
+});
+
 ipcMain.handle('desktop:offline-get-status', async () => {
   if (!offlineDb || !offlineDb.isReady()) {
-    return { enabled: false, online: true, pendingRecords: 0, queueSize: 0, lastSyncAt: null, isSyncing: false, mode: 'online-only' };
+    return { enabled: false, online: true, pendingRecords: 0, stuckRecords: 0, queueSize: 0, lastSyncAt: null, isSyncing: false, mode: 'online-only' };
   }
   return {
     enabled: offlineModeEnabled,
     online: networkMonitor ? networkMonitor.isOnline : true,
     pendingRecords: offlineDb.getAllPendingCount(),
+    /*
+     * Records the sync engine has stopped trying to send, counted apart from
+     * the queue. They were folded into pendingRecords, which reported work
+     * that had been given up on as "Pending" — the reassuring word for the one
+     * case that actually needs a person.
+     */
+    stuckRecords: offlineDb.getFailedRecordCount(),
     queueSize: offlineDb.getQueueSize(),
     lastSyncAt: syncEngine ? syncEngine.lastSyncAt : null,
     isSyncing: syncEngine ? syncEngine.syncing : false,
@@ -2195,6 +2302,7 @@ app.whenReady().then(async () => {
 
   // Initialize offline mode infrastructure
   offlineDb = new OfflineDatabase(app.getPath('userData'));
+  pendingSessionsStore = new PendingSessionsStore(app.getPath('userData'));
   if (await offlineDb.open()) {
     // Probe the real CareVance API/app endpoints first so the app is not
     // falsely marked offline just because a hardcoded third-party ping host
@@ -2225,6 +2333,7 @@ app.whenReady().then(async () => {
         online: status.online,
         lastCheckAt: status.lastCheckAt,
         pendingRecords: offlineDb.getAllPendingCount(),
+        stuckRecords: offlineDb.getFailedRecordCount(),
         lastSyncAt: syncEngine ? syncEngine.lastSyncAt : null,
         isSyncing: syncEngine ? syncEngine.syncing : false,
         queueSize: offlineDb.getQueueSize(),
@@ -2311,6 +2420,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (pendingSessionsStore) {
+    pendingSessionsStore.dispose();
+  }
   if (browserUrlReader) {
     browserUrlReader.dispose();
     browserUrlReader = null;
@@ -2332,6 +2444,10 @@ app.on('before-quit', () => {
       // Renderer may not be ready
     }
   }
+
+  // A live always-on-top window counts as an open window, so leaving it would
+  // hold the app up on quit with nothing visible but the popup itself.
+  destroyIdlePopup();
 
   stopForegroundWindowWatcher();
   if (browserTrackingBridge) {

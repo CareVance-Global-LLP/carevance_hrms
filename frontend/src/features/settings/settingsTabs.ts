@@ -98,13 +98,6 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     keywords: 'subscription plan invoice renewal seats payment upgrade',
   },
   {
-    id: 'browser-tracking',
-    name: 'Browser Tracking',
-    group: 'workspace',
-    icon: Link2,
-    keywords: 'browser url capture extension desktop tracker',
-  },
-  {
     id: 'help',
     name: 'Help & Support',
     group: 'support',

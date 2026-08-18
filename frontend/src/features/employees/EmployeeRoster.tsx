@@ -15,9 +15,8 @@ import {
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import useAnchoredMenu from '@/components/ui/useAnchoredMenu';
-import { formatDurationSmart } from '@/lib/formatters';
 
-export type DirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
+export type DirectorySort = 'default' | 'name_asc' | 'working_first';
 export type Segment = 'all' | 'working' | 'incomplete';
 
 export interface RosterUser {
@@ -32,8 +31,12 @@ export interface RosterUser {
 /** Fixed so the menu can be placed on its first paint, before it is measured. */
 const ROW_MENU_WIDTH = 192;
 
-const trackedSeconds = (user: RosterUser): number =>
-  Number(user.total_elapsed_duration || user.total_duration || 0);
+/*
+ * There is no tracked-time column any more. /api/users returns no duration of
+ * any kind, so the column rendered an em dash for all 92 people and the
+ * "Tracked time high to low" sort silently did nothing. Tracked time lives on
+ * the dashboard and in reports, where it comes with the date range it needs.
+ */
 
 const initialsOf = (value: string): string => {
   const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
@@ -210,8 +213,6 @@ interface RowProps {
   timezone: string;
   href: string;
   incomplete: boolean;
-  tracked: number;
-  maxTracked: number;
   selected: boolean;
   canRemove: boolean;
   onToggleSelect: () => void;
@@ -227,8 +228,6 @@ function RosterRowBase({
   timezone,
   href,
   incomplete,
-  tracked,
-  maxTracked,
   selected,
   canRemove,
   onToggleSelect,
@@ -327,23 +326,6 @@ function RosterRowBase({
       <td className="hidden border-b border-slate-100 px-3 py-2.5 xl:table-cell">
         <p className="font-mono text-[11px] text-slate-400">{code}</p>
         <p className="truncate text-[10px] text-slate-400">{timezone}</p>
-      </td>
-
-      <td className="border-b border-slate-100 px-3 py-2.5">
-        <p className="text-xs font-semibold tabular-nums text-slate-700">
-          {tracked > 0 ? formatDurationSmart(tracked) : '—'}
-        </p>
-        {/* Relative bar: a number alone makes you compare rows by reading.
-            Nothing tracked means no bar at all — an empty grey pill on every
-            row reads as a control rather than as "zero". */}
-        {tracked > 0 && maxTracked > 0 ? (
-          <span className="mt-1 block h-1 w-16 overflow-hidden rounded-full bg-slate-100">
-            <span
-              className={`block h-full rounded-full ${working ? 'bg-success-500' : 'bg-blue-600'}`}
-              style={{ width: `${Math.max(4, Math.round((tracked / maxTracked) * 100))}%` }}
-            />
-          </span>
-        ) : null}
       </td>
 
       <td className="border-b border-slate-100 px-3 py-2.5 text-right">
@@ -461,7 +443,6 @@ export interface BulkActions {
 const SORT_LABEL: Record<DirectorySort, string> = {
   default: 'Default order',
   name_asc: 'Name A-Z',
-  tracked_desc: 'Tracked time high to low',
   working_first: 'Working first',
 };
 
@@ -499,10 +480,6 @@ export default function EmployeeRoster({
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
 
-  const maxTracked = useMemo(
-    () => rows.reduce((max, user) => Math.max(max, trackedSeconds(user)), 0),
-    [rows]
-  );
 
   const allSelected = rows.length > 0 && rows.every((user) => selected.has(user.id));
 
@@ -706,7 +683,7 @@ export default function EmployeeRoster({
                     className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600"
                   />
                 </th>
-                {['Employee', 'Role', 'Department', 'Code / timezone', 'Tracked', ''].map((heading, index) => (
+                {['Employee', 'Role', 'Department', 'Code / timezone', ''].map((heading, index) => (
                   <th
                     key={heading || `actions-${index}`}
                     scope="col"
@@ -742,8 +719,6 @@ export default function EmployeeRoster({
                     timezone={resolveTimezone(user)}
                     href={resolveHref(user)}
                     incomplete={isIncomplete(user)}
-                    tracked={trackedSeconds(user)}
-                    maxTracked={maxTracked}
                     selected={selected.has(user.id)}
                     canRemove={canManage}
                     onToggleSelect={() => toggleOne(user.id)}

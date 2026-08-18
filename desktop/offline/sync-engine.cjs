@@ -8,6 +8,52 @@ const SYNC_INTERVAL_MS = 5000;
 const MAX_RETRY_COUNT = 10;
 const RATE_LIMIT_BACKOFF_MS = 60000;
 
+/**
+ * Backoff applied when the API cannot be reached at all, in ascending order.
+ *
+ * The retry budget used to burn at one attempt every 5 seconds against an
+ * unreachable server, so ten attempts were spent in under a minute and the
+ * record was dropped for good. Recorded on this install 14 Aug 2026: a time
+ * entry created at 06:40 reached retry_count = 10, was marked 'failed', left
+ * sync_queue, and was still unsynced hours after the API came back — the
+ * tracked time it represented was simply gone.
+ */
+const TRANSPORT_BACKOFF_MS = [5000, 15000, 30000, 60000, 300000];
+
+/**
+ * Failures that describe reachability rather than the record.
+ *
+ * These must never consume a retry: the payload is fine, the server merely is
+ * not there. That distinction is what separates "we will send this when we
+ * can" from "we gave up on your work". A 5xx counts here too — the server
+ * admitting it is broken says nothing about whether the record is valid.
+ */
+const TRANSPORT_ERROR_PATTERNS = [
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'EAI_AGAIN',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'EPIPE',
+  'socket hang up',
+  'Request timeout',
+  'network',
+];
+
+const isTransportFailure = (error) => {
+  const message = String((error && error.message) || error || '');
+  if (!message) return false;
+
+  if (TRANSPORT_ERROR_PATTERNS.some((pattern) => message.includes(pattern))) {
+    return true;
+  }
+
+  // 5xx: the server is up enough to answer and admitting it cannot serve.
+  return /HTTP 5\d\d/.test(message) || /Server error: 5\d\d/.test(message);
+};
+
 function SyncEngine(options = {}) {
   EventEmitter.call(this);
 
@@ -26,6 +72,10 @@ function SyncEngine(options = {}) {
   this.lastError = null;
   this.syncProgress = { current: 0, total: 0, itemType: '' };
   this.rateLimitedUntil = 0;
+  // Set while the API is unreachable. Holds the queue back without spending
+  // any record's retries, and clears the moment a request succeeds.
+  this.unreachableUntil = 0;
+  this.transportFailureStreak = 0;
   // Maps an offline time-entry local_id -> server time_entry id so dependent
   // screenshots/activities can be rewritten before they sync.
   this.timeEntryMap = {};
@@ -50,6 +100,10 @@ SyncEngine.prototype.start = function () {
   this.networkMonitor.on('online', this._boundHandleOnline);
 
   this._primeTimeEntryMap();
+
+  // A restart is the other moment a stranded record can be rescued: it left
+  // sync_queue when it was dropped, so only an explicit sweep brings it back.
+  this._requeueFailed('startup');
 
   // Periodic sync check (every 5 seconds when online)
   this.timer = setInterval(() => {
@@ -78,7 +132,36 @@ SyncEngine.prototype.stop = function () {
 
 SyncEngine.prototype._handleOnline = function () {
   console.log('[sync-engine] Network reconnected, starting sync...');
+  // Connectivity is back, so anything previously given up on deserves another
+  // go before the queue is walked — otherwise reconnecting fixes nothing for
+  // the records that were stranded by the outage in the first place.
+  this._requeueFailed('reconnect');
+  this._noteReachable();
   this._doSync().catch(() => {});
+};
+
+SyncEngine.prototype._requeueFailed = function (reason) {
+  if (!this.queueManager || typeof this.queueManager.requeueFailed !== 'function') return 0;
+
+  try {
+    /*
+     * On reconnect the process never stopped, so an open timer start is still
+     * the live session and replaying it is right. On startup that same record
+     * belongs to a session this process knows nothing about, and replaying it
+     * would close the timer the user is running now.
+     */
+    const requeued = this.queueManager.requeueFailed({
+      includeOpenTimerStarts: reason === 'reconnect',
+    });
+    if (requeued > 0) {
+      console.log(`[sync-engine] Requeued ${requeued} previously failed record(s) on ${reason}`);
+      this.emit('records-requeued', { count: requeued, reason });
+    }
+    return requeued;
+  } catch (err) {
+    console.warn('[sync-engine] Failed to requeue stranded records:', err.message);
+    return 0;
+  }
 };
 
 SyncEngine.prototype.triggerSync = function () {
@@ -120,6 +203,13 @@ SyncEngine.prototype._doSync = async function () {
   if (!this.authToken) return;
 
   if (this.rateLimitedUntil > Date.now()) {
+    this.syncing = false;
+    return;
+  }
+
+  // Holding back while the API is unreachable. Nothing is discarded here; the
+  // queue simply waits, which is what offline tracking is supposed to mean.
+  if (this.unreachableUntil > Date.now()) {
     this.syncing = false;
     return;
   }
@@ -281,6 +371,10 @@ SyncEngine.prototype._apiRequest = function (method, path, body = null, isFormDa
         let responseData = null;
         try { responseData = JSON.parse(responseStr); } catch { responseData = responseStr; }
 
+        // The server answered, so it is reachable — clear any backoff even if
+        // it answered with a rejection. Only silence means unreachable.
+        this._noteReachable();
+
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve({ status: res.statusCode, data: responseData });
         } else if (res.statusCode === 409) {
@@ -315,11 +409,38 @@ SyncEngine.prototype._handleSoftFailure = function (recordType, record, err) {
     this.rateLimitedUntil = Date.now() + RATE_LIMIT_BACKOFF_MS;
     return true;
   }
+
+  /*
+   * Unreachable is not the record's fault, so it costs the record nothing.
+   *
+   * The whole point of tracking offline is that the work survives until the
+   * server can take it. Counting a refused connection against the retry budget
+   * inverted that: ten refusals at five-second intervals discarded the record
+   * inside a minute, while the laptop sat there perfectly connected and the
+   * API was merely restarting.
+   */
+  if (isTransportFailure(err)) {
+    this.transportFailureStreak += 1;
+    const backoffMs = TRANSPORT_BACKOFF_MS[
+      Math.min(this.transportFailureStreak - 1, TRANSPORT_BACKOFF_MS.length - 1)
+    ];
+    this.unreachableUntil = Date.now() + backoffMs;
+    this.lastError = msg;
+    this.emit('sync-unreachable', { error: msg, retryInMs: backoffMs });
+    return true;
+  }
+
   if (msg.includes('Auth error')) {
     this.emit('auth-error', { error: msg });
   }
   this.queueManager.markFailed(recordType, record.local_id, msg);
   return false;
+};
+
+/** Called after any request the server actually answered. */
+SyncEngine.prototype._noteReachable = function () {
+  this.transportFailureStreak = 0;
+  this.unreachableUntil = 0;
 };
 
 SyncEngine.prototype._syncAttendance = async function (record) {
@@ -572,6 +693,10 @@ SyncEngine.prototype._syncScreenshot = async function (record) {
   };
 
 SyncEngine.prototype.getStatus = function () {
+  const failedCount = this.queueManager && typeof this.queueManager.getFailedCount === 'function'
+    ? this.queueManager.getFailedCount()
+    : 0;
+
   return {
     running: this.running,
     syncing: this.syncing,
@@ -579,6 +704,17 @@ SyncEngine.prototype.getStatus = function () {
     lastError: this.lastError,
     queueSize: this.queueManager ? this.queueManager.getQueueSize() : 0,
     syncProgress: this.syncProgress,
+    /*
+     * Reported so unsent work is never invisible. Records used to be dropped
+     * and marked failed with nothing anywhere saying so — the only way to find
+     * out was to open the SQLite file by hand, which is how the stranded entry
+     * on this install went unnoticed for hours.
+     */
+    failedCount,
+    apiReachable: this.unreachableUntil <= Date.now(),
+    retryingAt: this.unreachableUntil > Date.now()
+      ? new Date(this.unreachableUntil).toISOString()
+      : null,
   };
 };
 

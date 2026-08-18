@@ -21,7 +21,7 @@ import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
-type EmployeeDirectorySort = 'default' | 'name_asc' | 'tracked_desc' | 'working_first';
+type EmployeeDirectorySort = 'default' | 'name_asc' | 'working_first';
 
 type TableColumn<T> = {
   key: string;
@@ -570,10 +570,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       case 'name_asc':
         return incompleteFilteredRows.sort((left: any, right: any) =>
           String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' })
-        );
-      case 'tracked_desc':
-        return incompleteFilteredRows.sort((left: any, right: any) =>
-          Number(right.total_elapsed_duration || right.total_duration || 0) - Number(left.total_elapsed_duration || left.total_duration || 0)
         );
       case 'working_first':
         return incompleteFilteredRows.sort((left: any, right: any) => {
@@ -1331,4 +1327,4 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
     </div>
   );
-}
+}

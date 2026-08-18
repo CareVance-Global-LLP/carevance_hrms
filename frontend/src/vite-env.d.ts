@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { BrowserTrackingEvent, BrowserTrackingPairingCode, BrowserTrackingState, DesktopDeviceIdentity } from '@/types';
+import type { DesktopDeviceIdentity } from '@/types';
 
 declare global {
   interface DesktopUpdateState {
@@ -65,6 +65,8 @@ declare global {
     enabled: boolean;
     online: boolean;
     pendingRecords: number;
+    /** Subset of pendingRecords the sync engine has stopped retrying. */
+    stuckRecords?: number;
     queueSize: number;
     lastSyncAt: string | null;
     isSyncing: boolean;
@@ -122,6 +124,22 @@ declare global {
       route?: string;
       type?: string;
     }) => Promise<boolean>;
+    /**
+     * The native idle popup. Optional because the renderer updates itself while
+     * the installed shell does not — an older build has this bridge without
+     * these methods, and lib/idlePopupBridge.ts checks for them by name.
+     */
+    showIdlePopup?: (state: {
+      mode: 'warning' | 'stopped' | 'return';
+      secondsRemaining?: number;
+      idleSeconds?: number;
+      activityId?: number;
+    }) => Promise<boolean>;
+    hideIdlePopup?: () => Promise<boolean>;
+    onIdlePopupAction?: (
+      callback: (payload: { action: string }) => void
+    ) => (() => void) | void;
+    clearIdlePopupActionListeners?: () => void;
     getUpdateState?: () => Promise<DesktopUpdateState>;
     checkForUpdates?: () => Promise<DesktopUpdateState>;
     downloadUpdate?: () => Promise<DesktopUpdateState>;
@@ -131,11 +149,6 @@ declare global {
       theme: 'light' | 'dark' | 'system';
       dark: boolean;
     }>;
-    getBrowserTrackingState?: () => Promise<BrowserTrackingState | null>;
-    openBrowserTrackingInstall?: (payload: { browser_name: string }) => Promise<boolean>;
-    openBrowserTrackingGuide?: (payload: { browser_name: string }) => Promise<boolean>;
-    openBrowserTrackingOptions?: (payload: { extension_origin: string }) => Promise<boolean>;
-    createBrowserTrackingPairingCode?: (payload: { browser_name: string; user_id: number }) => Promise<BrowserTrackingPairingCode | null>;
     onUpdateState?: (callback: (state: DesktopUpdateState) => void) => (() => void) | void;
     clearUpdateStateListeners?: () => void;
     onNotificationClicked?: (callback: (payload: { id?: number; route?: string; type?: string }) => void) => (() => void) | void;
@@ -144,10 +157,6 @@ declare global {
     clearForegroundWindowChangeListeners?: () => void;
     onSystemLockState?: (callback: (payload: DesktopSystemLockState) => void | Promise<void>) => (() => void) | void;
     clearSystemLockStateListeners?: () => void;
-    onBrowserTrackingState?: (callback: (state: BrowserTrackingState) => void | Promise<void>) => (() => void) | void;
-    clearBrowserTrackingStateListeners?: () => void;
-    onBrowserTrackingEvent?: (callback: (payload: BrowserTrackingEvent) => void | Promise<void>) => (() => void) | void;
-    clearBrowserTrackingEventListeners?: () => void;
     onPrepareForClose?: (callback: () => void | Promise<void>) => void;
     clearPrepareForCloseListeners?: () => void;
     confirmCloseReady?: () => Promise<boolean>;
@@ -155,6 +164,9 @@ declare global {
     // Offline Mode API
     isOfflineAvailable?: () => Promise<boolean>;
     getOfflineStatus?: () => Promise<DesktopOfflineStatus>;
+    /** Disk backing for the pending activity-session queue. */
+    loadPendingSessions?: () => Promise<unknown[]>;
+    savePendingSessions?: (sessions: unknown[]) => Promise<boolean>;
     getOfflineSummary?: () => Promise<Record<string, unknown>>;
     saveAttendanceOffline?: (payload: {
       user_id: number;

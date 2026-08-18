@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\ActivitySessionController;
-use App\Http\Controllers\Api\BrowserTrackingConnectionController;
+use App\Http\Controllers\Api\MonitoringAlertRuleController;
 use App\Http\Controllers\Api\ScreenshotController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,4 +24,13 @@ Route::delete('/screenshots/{screenshot}', [ScreenshotController::class, 'destro
 Route::post('/activities/{activity}/resolve-idle', [ActivityController::class, 'resolveIdle']);
 Route::apiResource('activities', ActivityController::class);
 Route::apiResource('activity-sessions', ActivitySessionController::class)->only(['store', 'update']);
-Route::post('/browser-tracking/connections/sync', [BrowserTrackingConnectionController::class, 'sync']);
+
+/*
+ * Rules that decide when a monitoring figure is worth telling somebody about.
+ * Admin-only, enforced in the controller: a rule chooses who gets told what
+ * about whom.
+ */
+Route::get('/monitoring/alert-rules', [MonitoringAlertRuleController::class, 'index']);
+Route::post('/monitoring/alert-rules', [MonitoringAlertRuleController::class, 'store']);
+Route::put('/monitoring/alert-rules/{monitoringAlertRule}', [MonitoringAlertRuleController::class, 'update']);
+Route::delete('/monitoring/alert-rules/{monitoringAlertRule}', [MonitoringAlertRuleController::class, 'destroy']);

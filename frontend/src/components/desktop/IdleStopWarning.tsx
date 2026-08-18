@@ -4,6 +4,7 @@ import {
   DESKTOP_TIMER_IDLE_WARNING_EVENT,
   type DesktopTimerIdleWarningDetail,
 } from '@/lib/desktopTimerSession';
+import { isNativeIdlePopupAvailable } from '@/lib/idlePopupBridge';
 
 /**
  * "Your timer is about to stop."
@@ -25,6 +26,12 @@ import {
  * a person who is no longer idle, and the warning clears through the same path
  * as any other return. There is no second mechanism to keep in step, and no
  * way for the button to disagree with the tracker.
+ *
+ * On the desktop this is now the FALLBACK. The shell renders the same
+ * countdown as a real always-on-top window, because a notice inside the app
+ * window cannot be seen by somebody who has walked away from it — see
+ * desktop/idle-popup.cjs. This component still carries the web app, and any
+ * installed build too old to have the popup.
  */
 export default function IdleStopWarning() {
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null);
@@ -39,7 +46,16 @@ export default function IdleStopWarning() {
     return () => window.removeEventListener(DESKTOP_TIMER_IDLE_WARNING_EVENT, onWarning);
   }, []);
 
-  if (secondsRemaining === null) return null;
+  /*
+   * Checked at render rather than in the listener, so the bridge is read as
+   * late as possible. The desktop shell injects `desktopTracker` before the
+   * renderer loads, but a mount-time capture would still pin the answer for
+   * the life of a component that never remounts.
+   *
+   * Two countdowns for one idle stretch would disagree by a tick whenever a
+   * render lagged, which is worse than either alone.
+   */
+  if (secondsRemaining === null || isNativeIdlePopupAvailable()) return null;
 
   return (
     <div

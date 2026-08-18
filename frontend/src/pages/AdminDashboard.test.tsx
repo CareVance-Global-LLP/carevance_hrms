@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AdminDashboard from '@/pages/AdminDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -24,6 +24,9 @@ const apiMocks = vi.hoisted(() => ({
   activitiesAllPages: vi.fn(),
   timeEntries: vi.fn(),
   screenshots: vi.fn(),
+  projects: vi.fn(),
+  resignations: vi.fn(),
+  timeEditRequests: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -49,13 +52,43 @@ vi.mock('@/services/api', async () => {
     notificationApi: { list: apiMocks.notifications, markAllRead: apiMocks.markAllRead },
     reportGroupApi: { list: apiMocks.groups },
     auditApi: { list: apiMocks.auditLogs },
+    /*
+     * These three are not decoration. Left unmocked they hit the real axios
+     * client, which retries a failed request three times with backoff — and
+     * the dashboard's own query awaits projectApi.getAll() inside its
+     * Promise.allSettled, so the whole page stayed empty until those retries
+     * gave up, long after the assertions timed out. Nine tests in this file
+     * failed for that reason alone.
+     */
+    projectApi: { ...actual.projectApi, getAll: apiMocks.projects },
+    resignationApi: { ...actual.resignationApi, list: apiMocks.resignations },
+    attendanceTimeEditApi: { ...actual.attendanceTimeEditApi, list: apiMocks.timeEditRequests },
   };
 });
 
 describe('AdminDashboard WorkWise redesign', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+
+    /*
+     * Every fixture below is dated 2026-04-27, and the dashboard defaults its
+     * range to today — so from 1 May 2026 onwards the range excluded all of
+     * them and the page rendered empty. Nine tests in this file failed for
+     * that reason alone and were carried in the vitest baseline as if they
+     * described real defects. Freeze the clock to the day the fixtures
+     * describe. Only Date is faked: waitFor and userEvent need real timers.
+     */
+    vi.useFakeTimers({ toFake: ['Date'], shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-04-27T12:00:00Z'));
+
+    apiMocks.projects.mockResolvedValue({ data: [] });
+    apiMocks.resignations.mockResolvedValue({ data: { data: [], total: 0 } });
+    apiMocks.timeEditRequests.mockResolvedValue({ data: { data: [], total: 0 } });
 
     apiMocks.users.mockResolvedValue({
       data: [
@@ -451,6 +484,9 @@ describe('AdminDashboard WorkWise redesign', () => {
     apiMocks.profile360.mockResolvedValue({ data: null });
     apiMocks.employeeInsights.mockResolvedValue({ data: null });
     apiMocks.screenshots.mockResolvedValue({ data: { data: [], total: 0 } });
+    apiMocks.projects.mockResolvedValue({ data: [] });
+    apiMocks.resignations.mockResolvedValue({ data: { data: [], total: 0 } });
+    apiMocks.timeEditRequests.mockResolvedValue({ data: { data: [], total: 0 } });
 
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
@@ -465,4 +501,23 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.queryByText('Leslie Alexander')).not.toBeInTheDocument();
     expect(screen.queryByText('₹98,750')).not.toBeInTheDocument();
   });
+
+  it('asks for every task, not only the ones a timer can start', async () => {
+    /*
+     * timer_only is defined server-side as status != 'done', so feeding it to a
+     * chart labelled To Do / In Progress / Done pinned the Done bucket at zero
+     * and hid every completed task. Measured 18 Aug 2026: 18 done tasks in the
+     * database, none of them on the chart.
+     */
+    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
+
+    await screen.findByRole('heading', { name: 'Dashboard' });
+
+    expect(apiMocks.tasks).toHaveBeenCalled();
+    for (const call of apiMocks.tasks.mock.calls) {
+      expect(call[0]?.timer_only).not.toBe(true);
+    }
+  });
+
+
 });

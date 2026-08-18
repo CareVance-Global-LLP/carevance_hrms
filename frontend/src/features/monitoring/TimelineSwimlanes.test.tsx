@@ -86,4 +86,68 @@ describe('TimelineSwimlanes', () => {
     render(<TimelineSwimlanes {...baseProps} rows={[]} />);
     expect(screen.getByText('No tracked blocks on this day.')).toBeInTheDocument();
   });
+
+  it('draws break time as its own kind, not as work and not as idle', async () => {
+    /*
+     * The defect this pins. Every row that was not `idle` fell through to the
+     * classified-activity branch, so a break was painted as a coloured block
+     * indistinguishable from real work. Measured on this database: 159 rows of
+     * type `breaks` totalling 157.9 hours, every one carrying a NULL
+     * classification — nearly a full working month of entitled time reading as
+     * productive output.
+     */
+    render(
+      <TimelineSwimlanes
+        {...baseProps}
+        rows={[
+          row({ duration: 1800, end_at: '2026-08-06T05:00:00.000Z' }),
+          row({
+            id: 2,
+            type: 'breaks',
+            name: 'Lunch',
+            classification: null,
+            start_at: '2026-08-06T05:00:00.000Z',
+            end_at: '2026-08-06T05:30:00.000Z',
+            duration: 1800,
+          }),
+        ]}
+      />
+    );
+
+    // The lane summary separates the two: half an hour worked, half on break.
+    // Matched on the exact phrasing rather than /break/i, which the legend
+    // below the chart also satisfies.
+    expect(screen.getByText(/0h 30m break/)).toBeInTheDocument();
+
+    // And the block itself says break rather than a productivity verdict.
+    const breakBlock = document.querySelector('[title*="Break"]');
+    expect(breakBlock).not.toBeNull();
+    expect(breakBlock?.getAttribute('title')).toMatch(/break/i);
+    expect(breakBlock?.getAttribute('title')).not.toMatch(/productive/i);
+  });
+
+  it('keeps break time out of the tracked-work total', () => {
+    // Tracked time is what the lane reports as worked. Counting a break inside
+    // it would inflate the day and, downstream, anything computed from it.
+    render(
+      <TimelineSwimlanes
+        {...baseProps}
+        rows={[
+          row({ duration: 3600 }),
+          row({
+            id: 2,
+            type: 'breaks',
+            classification: null,
+            start_at: '2026-08-06T06:00:00.000Z',
+            end_at: '2026-08-06T07:00:00.000Z',
+            duration: 3600,
+          }),
+        ]}
+      />
+    );
+
+    const summary = screen.getByText(/1h 0m/);
+    expect(summary.textContent).toContain('1h 0m');
+    expect(summary.textContent).not.toMatch(/2h 0m/);
+  });
 });

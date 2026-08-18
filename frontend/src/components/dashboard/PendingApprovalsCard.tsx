@@ -22,10 +22,22 @@ export default function PendingApprovalsCard() {
         resignationApi.list({ status: 'pending' })
       ]);
 
+      /*
+       * Count the whole pending set, not the page that came back. These
+       * endpoints paginate — the time-edit and resignation calls pass no limit
+       * at all and take the default page size — so measuring `data.length`
+       * caps the card at one page and quietly hides the rest. The same bug was
+       * found and fixed in Layout's badge poller; this card kept the original.
+       * `total` falls back to the page length for any endpoint not reporting
+       * it yet.
+       */
+      const countOf = (response: any) =>
+        Number(response?.data?.total ?? response?.data?.data?.length ?? 0);
+
       return {
-        leave: leaveRes.data.data?.length || 0,
-        timeEdit: timeEditRes.data.data?.length || 0,
-        resignation: resignationRes.data.data?.length || 0
+        leave: countOf(leaveRes),
+        timeEdit: countOf(timeEditRes),
+        resignation: countOf(resignationRes)
       };
     },
     refetchInterval: 30000,

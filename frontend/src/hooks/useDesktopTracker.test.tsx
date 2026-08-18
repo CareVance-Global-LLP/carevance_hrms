@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   deleteActivityMock: vi.fn(),
   createActivitySessionMock: vi.fn(),
   updateActivitySessionMock: vi.fn(),
-  syncBrowserTrackingConnectionsMock: vi.fn(),
   uploadScreenshotMock: vi.fn(),
   captureScreenshotMock: vi.fn(),
   getSystemIdleSecondsMock: vi.fn(),
@@ -57,9 +56,6 @@ vi.mock('@/services/api', async () => {
       create: mocks.createActivitySessionMock,
       update: mocks.updateActivitySessionMock,
     },
-    browserTrackingConnectionApi: {
-      sync: mocks.syncBrowserTrackingConnectionsMock,
-    },
     screenshotApi: {
       ...actual.screenshotApi,
       upload: mocks.uploadScreenshotMock,
@@ -79,32 +75,6 @@ let foregroundWindowListeners: Array<(payload: {
   captured_at?: string;
 }) => void> = [];
 let systemLockStateListeners: Array<(payload: DesktopSystemLockState) => void> = [];
-let browserTrackingStateListeners: Array<(payload: {
-  ready: boolean;
-  local_url?: string | null;
-  connections: Array<{
-    browser_name: string;
-    profile_key: string;
-    extension_origin?: string | null;
-    last_seen_at?: string | null;
-    extension_version?: string | null;
-    paired_at?: string | null;
-    user_id?: number | null;
-  }>;
-  pairing_code?: unknown;
-  last_event_at?: string | null;
-  last_error?: string | null;
-}) => void> = [];
-let browserTrackingListeners: Array<(payload: {
-  kind: string;
-  browser_name: string;
-  profile_key: string;
-  tab_id?: number | null;
-  window_id?: number | null;
-  url?: string | null;
-  title?: string | null;
-  recorded_at: string;
-}) => void> = [];
 
 /**
  * Capture cadence is jittered by +/-10% so screenshots are not perfectly
@@ -149,7 +119,6 @@ describe('useDesktopTracker', () => {
     mocks.deleteActivityMock.mockResolvedValue({ data: { message: 'Activity deleted successfully' } });
     mocks.createActivitySessionMock.mockImplementation(async () => ({ data: { id: nextActivitySessionId += 1 } }));
     mocks.updateActivitySessionMock.mockResolvedValue({ data: { id: 801 } });
-    mocks.syncBrowserTrackingConnectionsMock.mockResolvedValue({ data: { data: [] } });
     mocks.uploadScreenshotMock.mockResolvedValue({ data: { id: 1 } });
     mocks.captureScreenshotMock.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,ZmFrZQ==' });
     mocks.getSystemIdleSecondsMock.mockResolvedValue(0);
@@ -165,8 +134,6 @@ describe('useDesktopTracker', () => {
     });
     foregroundWindowListeners = [];
     systemLockStateListeners = [];
-    browserTrackingStateListeners = [];
-    browserTrackingListeners = [];
 
     window.desktopTracker = {
       captureScreenshot: mocks.captureScreenshotMock,
@@ -180,13 +147,6 @@ describe('useDesktopTracker', () => {
       getActiveWindowContext: mocks.getActiveWindowContextMock,
       revealWindow: mocks.revealWindowMock,
       getDesktopDeviceIdentity: mocks.getDesktopDeviceIdentityMock,
-      getBrowserTrackingState: vi.fn().mockResolvedValue({
-        ready: true,
-        local_url: 'http://127.0.0.1:38941',
-        connections: [],
-        pairing_code: null,
-        last_event_at: null,
-      }),
       onForegroundWindowChange: (callback) => {
         foregroundWindowListeners.push(callback);
         return () => {
@@ -197,18 +157,6 @@ describe('useDesktopTracker', () => {
         systemLockStateListeners.push(callback);
         return () => {
           systemLockStateListeners = systemLockStateListeners.filter((listener) => listener !== callback);
-        };
-      },
-      onBrowserTrackingState: (callback) => {
-        browserTrackingStateListeners.push(callback);
-        return () => {
-          browserTrackingStateListeners = browserTrackingStateListeners.filter((listener) => listener !== callback);
-        };
-      },
-      onBrowserTrackingEvent: (callback) => {
-        browserTrackingListeners.push(callback);
-        return () => {
-          browserTrackingListeners = browserTrackingListeners.filter((listener) => listener !== callback);
         };
       },
     };
@@ -628,7 +576,42 @@ describe('useDesktopTracker', () => {
       url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs',
       // Chrome's Document element is the real page URL, so it is exact.
       confidence: 100,
+      /*
+       * Typed as a website, not an app. Reports name the tool from the domain
+       * but take its type from here, so stamping desktop_app/software inverted
+       * the two categories: wikipedia.org was listed as an application and
+       * dropped from the Websites filter, while "google chrome" — the browser
+       * itself — turned up under Websites.
+       */
+      activity_kind: 'website',
+      tool_type: 'website',
     }));
+  });
+
+  it('keeps a browser with no readable URL as an app session', async () => {
+    // The URL is what makes it a website visit. A browser sitting on a blank
+    // tab with nothing readable is a window, and typing it as a website would
+    // put a nameless row in the site reports.
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Google Chrome',
+        title: 'New Tab',
+        url: null,
+        inferred_url: null,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    const chromeCreate = mocks.createActivitySessionMock.mock.calls
+      .map(([payload]: [any]) => payload)
+      .find((payload) => payload?.app_name === 'Google Chrome');
+
+    if (chromeCreate) {
+      expect(chromeCreate.activity_kind).toBe('desktop_app');
+      expect(chromeCreate.tool_type).toBe('software');
+    }
   });
 
   it('records only the host, at lower confidence, when the URL came from an address bar', async () => {
@@ -654,8 +637,46 @@ describe('useDesktopTracker', () => {
     }));
   });
 
-  it('does not record the tracker own page as browsing', async () => {
-    // CareVance viewed in a browser is the tracker looking at itself, not work.
+  it('does not record the tracker own window as activity', async () => {
+    /*
+     * Self-exclusion is about the Electron window the tracker runs in, which
+     * the desktop agent flags with is_self_window. It is NOT about the product
+     * appearing in a page title.
+     */
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Electron',
+        title: 'CareVance HRMS Workspace',
+        url: null,
+        inferred_url: null,
+        is_self_window: true,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    /*
+     * Asserted against the app name rather than "never called": the harness's
+     * own tick creates a Visual Studio Code session from its default
+     * active-window context, so a blanket not.toHaveBeenCalled() would pass or
+     * fail for reasons that have nothing to do with self-exclusion.
+     */
+    const recordedApps = mocks.createActivitySessionMock.mock.calls.map(([payload]: [any]) => payload?.app_name);
+    expect(recordedApps).not.toContain('Electron');
+  });
+
+  it('records the CareVance web app opened in a browser as real browsing', async () => {
+    /*
+     * Previously refused, on the reasoning that CareVance in a browser is the
+     * tracker looking at itself. It is not — the tracker is the Electron
+     * window. A person reading their payslip in Chrome is working, and an HR
+     * user who lives in the HRMS lost nearly all their browser time to this.
+     *
+     * The exclusion was arbitrary as well as costly: it keyed off the window
+     * title, so "Home | Dashboard" was recorded while "CareVance HRMS
+     * Workspace" was not, for the very same application.
+     */
     render(<TrackerHarness />);
 
     await act(async () => {
@@ -666,18 +687,50 @@ describe('useDesktopTracker', () => {
         inferred_url: 'http://localhost:5173/add-user',
         inferred_url_source: 'document',
         inferred_url_confidence: 100,
+        is_self_window: false,
         captured_at: '2026-04-21T09:00:00.000Z',
       });
     });
 
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      app_name: 'Google Chrome',
+      url: 'http://localhost:5173/add-user',
+    }));
+  });
+
+  it('keeps the session running through a shell window that flickers into the foreground', async () => {
     /*
-     * Asserted against the URL rather than "never called": the harness's own
-     * tick creates a Visual Studio Code session from its default active-window
-     * context, so a blanket not.toHaveBeenCalled() would pass or fail for
-     * reasons that have nothing to do with self-exclusion.
+     * Recorded live on 14 Aug 2026, mid-switch between Chrome and VS Code:
+     *   {"app":"Windows Explorer","title":"","record":true}
+     * Windows hands the shell the foreground for a beat during a switch, and
+     * acting on it closed the session for the window the person was actually
+     * using. An untitled shell process is a transient; a TITLED Explorer
+     * window is a real folder and stays trackable.
      */
-    const recordedUrls = mocks.createActivitySessionMock.mock.calls.map(([payload]: [any]) => payload?.url);
-    expect(recordedUrls).not.toContain('http://localhost:5173/add-user');
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Notepad',
+        title: 'notes.txt - Notepad',
+        url: null,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      });
+    });
+
+    mocks.createActivitySessionMock.mockClear();
+
+    await act(async () => {
+      foregroundWindowListeners[0]?.({
+        app: 'Windows Explorer',
+        title: '',
+        url: null,
+        captured_at: '2026-04-21T09:00:05.000Z',
+      });
+    });
+
+    const recordedApps = mocks.createActivitySessionMock.mock.calls.map(([payload]: [any]) => payload?.app_name);
+    expect(recordedApps).not.toContain('Windows Explorer');
   });
 
   it('records an app whose window title merely mentions the product', async () => {
@@ -723,6 +776,38 @@ describe('useDesktopTracker', () => {
 
     const titles = mocks.createActivitySessionMock.mock.calls.map(([p]: [any]) => p?.window_title);
     expect(titles).not.toContain('CareVance HRMS Workspace');
+  });
+
+  it('creates one session when two foreground events for the same window arrive together', async () => {
+    /*
+     * The duplicate-row defect, measured live on 13 Aug 2026: ids 106 and 107
+     * were byte-identical Visual Studio Code sessions written in the same
+     * second, with different local_ids and the first left at zero length.
+     *
+     * ensureDesktopSessionStarted awaits the active time entry before it looks
+     * at activeDesktopSessionRef, so two calls that overlap both see "no
+     * session yet" and both create one. The second then closes the first,
+     * leaving an orphan row and inflating the timeline.
+     */
+    render(<TrackerHarness />);
+    await act(async () => {});
+    mocks.createActivitySessionMock.mockClear();
+
+    const payload = {
+      app: 'Visual Studio Code',
+      title: 'useDesktopTracker.ts - Visual Studio Code',
+      url: null,
+      is_self_window: false,
+      captured_at: '2026-04-21T09:00:00.000Z',
+    };
+
+    await act(async () => {
+      // Fired together, exactly as two polls landing in the same tick do.
+      foregroundWindowListeners[0]?.(payload);
+      foregroundWindowListeners[0]?.({ ...payload });
+    });
+
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledTimes(1);
   });
 
   it('extends an active desktop app session while the same app stays focused', async () => {
@@ -893,6 +978,66 @@ describe('useDesktopTracker', () => {
     }));
   });
 
+  it('credits a browser with the whole time it stayed in front, not zero seconds', async () => {
+    /*
+     * The defect this pins, measured live on 13 Aug 2026.
+     *
+     * The foreground watcher fires only when the foreground CHANGES, so a
+     * browser held in front for half a minute produces exactly one event —
+     * the create. Only the per-second tick can grow that session, and the
+     * tick classified every browser as "not a reliable desktop context",
+     * closing the session the watcher had just opened. The row kept the
+     * placeholder ended_at it was seeded with, so Chrome sat in front for 28
+     * unbroken seconds and the timeline stored dur=0. The time was not
+     * misattributed, it was recorded nowhere at all.
+     *
+     * VS Code never showed the bug because a non-browser takes the tick's
+     * other branch, which extends normally — which is why the timeline
+     * looked plausible while every browser visit on it was empty.
+     */
+    const chromeWindow = {
+      app: 'Google Chrome',
+      title: 'chrome.tabs | API | Chrome for Developers',
+      url: null,
+      inferred_url: 'https://developer.chrome.com/docs/extensions/reference/api/tabs',
+      inferred_url_source: 'document',
+      inferred_url_confidence: 100,
+    };
+    const vsCodeWindow = { app: 'Visual Studio Code', title: 'Tracking Work', url: null };
+
+    mocks.getActiveWindowContextMock.mockResolvedValue(chromeWindow);
+    mocks.createActivitySessionMock.mockResolvedValue({ data: { id: 5101 } });
+
+    render(<TrackerHarness />);
+
+    // Chrome holds the foreground for 30 seconds of ordinary polling.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30 * 1000);
+    });
+
+    mocks.getActiveWindowContextMock.mockResolvedValue(vsCodeWindow);
+
+    // Switching away closes it, which is where the real duration is stamped.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    // The LAST patch, not the first: the session is extended every second, so
+    // the first patch always reads 1 whether or not the bug is present.
+    const patches = mocks.updateActivitySessionMock.mock.calls.filter((call) => call[0] === 5101);
+    const finalPatch = patches.at(-1);
+
+    expect(finalPatch).toBeDefined();
+    // Held ~30s; anything near zero means the tick truncated it again.
+    expect(finalPatch?.[1].duration_seconds).toBeGreaterThanOrEqual(30);
+
+    // Exactly one Chrome session for one unbroken visit — the extends must not
+    // have become a create/close churn of zero-length rows.
+    const chromeCreates = mocks.createActivitySessionMock.mock.calls
+      .filter((call) => call[0].app_name === 'Google Chrome');
+    expect(chromeCreates).toHaveLength(1);
+  });
+
   it('patches the real end time when the user switches away while the drained create is still in flight', async () => {
     const notepadWindow = { app: 'Notepad', title: 'notes.txt - Notepad', url: null };
     const vsCodeWindow = { app: 'Visual Studio Code', title: 'Tracking Work', url: null };
@@ -1024,7 +1169,13 @@ describe('useDesktopTracker', () => {
     }));
   });
 
-  it('does not create a desktop app session when the foreground browser window is the CareVance localhost app', async () => {
+  it('creates a session when a browser window is showing the CareVance app', async () => {
+    /*
+     * The mirror of the Chrome case above, for a second browser. This used to
+     * assert the opposite — that CareVance in a browser is the tracker looking
+     * at itself. The tracker is the Electron window (is_self_window); a person
+     * reading the timeline report in Brave is working.
+     */
     render(<TrackerHarness />);
     await act(async () => {});
     mocks.createActivitySessionMock.mockClear();
@@ -1038,7 +1189,10 @@ describe('useDesktopTracker', () => {
       });
     });
 
-    expect(mocks.createActivitySessionMock).not.toHaveBeenCalled();
+    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
+      app_name: 'Brave',
+      url: 'http://localhost:5173/reports/timeline',
+    }));
   });
 
   it('closes the active desktop activity session when focus switches to a browser window', async () => {
@@ -1070,10 +1224,11 @@ describe('useDesktopTracker', () => {
     }));
   });
 
-  it('flushes active desktop and browser sessions immediately when logout requests a tracker flush', async () => {
-    mocks.createActivitySessionMock
-      .mockResolvedValueOnce({ data: { id: 1501 } })
-      .mockResolvedValueOnce({ data: { id: 1502 } });
+  it('flushes the active session immediately when logout requests a tracker flush', async () => {
+    // Browser time used to arrive through extension events, which this test
+    // also drove. The extension was removed on 14 Aug 2026; a browser is now
+    // just another foreground window, so one session covers both cases.
+    mocks.createActivitySessionMock.mockResolvedValue({ data: { id: 1501 } });
 
     render(<TrackerHarness />);
 
@@ -1086,19 +1241,6 @@ describe('useDesktopTracker', () => {
       });
     });
 
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://example.com',
-        title: 'Example',
-        recorded_at: '2026-04-21T09:00:05.000Z',
-      });
-    });
-
     const flushDetail: { promise?: Promise<void> } = {};
 
     await act(async () => {
@@ -1106,7 +1248,7 @@ describe('useDesktopTracker', () => {
       await flushDetail.promise;
     });
 
-    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1502, expect.objectContaining({
+    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1501, expect.objectContaining({
       ended_at: expect.any(String),
       duration_seconds: expect.any(Number),
     }));
@@ -1283,258 +1425,10 @@ describe('useDesktopTracker', () => {
     }));
   });
 
-  it('opens an exact website session from browser extension events and closes it on url change', async () => {
-    mocks.createActivitySessionMock
-      .mockResolvedValueOnce({ data: { id: 1101 } })
-      .mockResolvedValueOnce({ data: { id: 1102 } });
-
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://gemini.google.com/app',
-        title: 'Gemini',
-        recorded_at: '2026-04-21T11:28:54.000Z',
-      });
-    });
-
-    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
-      source: 'browser_extension',
-      activity_kind: 'website',
-      tool_type: 'website',
-      display_name: 'Gemini',
-      app_name: 'chrome',
-      url: 'https://gemini.google.com/app',
-      started_at: '2026-04-21T11:28:54.000Z',
-      metadata: expect.objectContaining({
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-      }),
-    }));
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-updated',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://chat.openai.com/',
-        title: 'ChatGPT',
-        recorded_at: '2026-04-21T11:29:05.000Z',
-      });
-    });
-
-    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1101, expect.objectContaining({
-      ended_at: '2026-04-21T11:29:05.000Z',
-      duration_seconds: 11,
-    }));
-    expect(mocks.createActivitySessionMock).toHaveBeenLastCalledWith(expect.objectContaining({
-      source: 'browser_extension',
-      activity_kind: 'website',
-      tool_type: 'website',
-      display_name: 'ChatGPT',
-      app_name: 'chrome',
-      url: 'https://chat.openai.com/',
-      started_at: '2026-04-21T11:29:05.000Z',
-    }));
-  });
-
-  it('extends an active exact browser session when the same tab sends a heartbeat', async () => {
-    mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1151 } });
-    mocks.getActiveWindowContextMock.mockResolvedValue(null);
-
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://www.linkedin.com/feed/',
-        title: 'Feed | LinkedIn',
-        recorded_at: '2026-04-21T11:28:54.000Z',
-      });
-    });
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'heartbeat',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://www.linkedin.com/feed/',
-        title: 'Feed | LinkedIn',
-        recorded_at: '2026-04-21T11:29:24.000Z',
-      });
-    });
-
-    expect(mocks.createActivitySessionMock).toHaveBeenCalledTimes(1);
-    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1151, expect.objectContaining({
-      ended_at: '2026-04-21T11:29:24.000Z',
-      duration_seconds: 30,
-    }));
-  });
-
-  it('tracks exact browser events coming from the CareVance localhost app itself', async () => {
-    render(<TrackerHarness />);
-    mocks.createActivitySessionMock.mockClear();
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'http://localhost:5173/reports/timeline',
-        title: 'CareVance HRMS Workspace',
-        recorded_at: '2026-04-22T11:14:28.000Z',
-      });
-    });
-
-    expect(mocks.createActivitySessionMock).toHaveBeenCalledWith(expect.objectContaining({
-      source: 'browser_extension',
-      activity_kind: 'website',
-      tool_type: 'website',
-      display_name: 'CareVance HRMS Workspace',
-      app_name: 'chrome',
-      url: 'http://localhost:5173/reports/timeline',
-    }));
-  });
-
-  it('closes the active exact browser session on browser focus loss', async () => {
-    mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1201 } });
-
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://gemini.google.com/app',
-        title: 'Gemini',
-        recorded_at: '2026-04-21T11:28:54.000Z',
-      });
-    });
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'window-blurred',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        window_id: 5,
-        recorded_at: '2026-04-21T11:29:10.000Z',
-      });
-    });
-
-    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1201, expect.objectContaining({
-      ended_at: '2026-04-21T11:29:10.000Z',
-      duration_seconds: 16,
-    }));
-  });
-
-  it('closes the active exact browser session when the user becomes idle', async () => {
-    mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1301 } });
-    mocks.getActiveWindowContextMock.mockResolvedValue({
-      app: 'Google Chrome',
-      title: 'Gemini - Google Chrome',
-      url: null,
-    });
-
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10 * 1000);
-    });
-
-    const lastSystemActivityAt = Date.now();
-    mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - lastSystemActivityAt) / 1000));
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://gemini.google.com/app',
-        title: 'Gemini',
-        recorded_at: new Date(lastSystemActivityAt).toISOString(),
-      });
-    });
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(idleTrackThresholdSeconds * 1000);
-    });
-
-    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1301, expect.objectContaining({
-      ended_at: new Date(lastSystemActivityAt).toISOString(),
-      duration_seconds: 0,
-    }));
-  });
-
-  it('does not create legacy sampled browser rows while exact browser tracking is healthy', async () => {
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://gemini.google.com/app',
-        title: 'Gemini',
-        recorded_at: '2026-04-21T11:28:54.000Z',
-      });
-    });
-
-    mocks.createActivityMock.mockClear();
-    mocks.updateActivityMock.mockClear();
-    mocks.getActiveWindowContextMock.mockResolvedValue({
-      app: 'Google Chrome',
-      title: 'Gemini - Google Chrome',
-      url: null,
-    });
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 1000);
-    });
-
-    expect(mocks.createActivityMock).not.toHaveBeenCalled();
-    expect(mocks.updateActivityMock).not.toHaveBeenCalled();
-  });
-
   it('keeps legacy sampled browser tracking for unsupported browsers even when Chromium exact tracking is healthy', async () => {
     window.desktopTracker = {
       ...window.desktopTracker,
       getDesktopDeviceIdentity: mocks.getDesktopDeviceIdentityMock,
-      getBrowserTrackingState: vi.fn().mockResolvedValue({
-        ready: true,
-        local_url: 'http://127.0.0.1:38941',
-        connections: [
-          {
-            browser_name: 'chrome',
-            profile_key: 'profile-a',
-            last_seen_at: '2026-03-18T09:00:00.000Z',
-          },
-        ],
-        pairing_code: null,
-        last_event_at: '2026-03-18T09:00:00.000Z',
-      }),
     };
     mocks.getActiveWindowContextMock.mockResolvedValue({
       app: 'Mozilla Firefox',
@@ -1552,84 +1446,6 @@ describe('useDesktopTracker', () => {
       type: 'url',
       name: 'YouTube',
       duration: 1,
-    }));
-  });
-
-  it('syncs browser tracking health to the backend with desktop identity metadata', async () => {
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      browserTrackingStateListeners[0]?.({
-        ready: true,
-        local_url: 'http://127.0.0.1:38941',
-        connections: [
-          {
-            browser_name: 'chrome',
-            profile_key: 'profile-a',
-            extension_origin: 'chrome-extension://tracking',
-            extension_version: '0.1.0',
-            paired_at: '2026-04-21T11:20:00.000Z',
-            last_seen_at: '2026-04-21T11:28:54.000Z',
-          },
-        ],
-        pairing_code: null,
-        last_event_at: '2026-04-21T11:28:54.000Z',
-        last_error: null,
-      });
-      await vi.advanceTimersByTimeAsync(5 * 1000);
-    });
-
-    expect(mocks.syncBrowserTrackingConnectionsMock).toHaveBeenCalledWith({
-      device_id: 'desktop-alpha',
-      device_label: 'DESKTOP-ALPHA',
-      ready: true,
-      last_error: null,
-      last_event_at: '2026-04-21T11:28:54.000Z',
-      connections: [
-        {
-          browser_name: 'chrome',
-          profile_key: 'profile-a',
-          extension_origin: 'chrome-extension://tracking',
-          extension_version: '0.1.0',
-          paired_at: '2026-04-21T11:20:00.000Z',
-          last_seen_at: '2026-04-21T11:28:54.000Z',
-        },
-      ],
-    });
-  });
-
-  it('closes the active exact browser session when browser tracking health degrades', async () => {
-    mocks.createActivitySessionMock.mockResolvedValueOnce({ data: { id: 1401 } });
-
-    render(<TrackerHarness />);
-
-    await act(async () => {
-      browserTrackingListeners[0]?.({
-        kind: 'tab-focused',
-        browser_name: 'chrome',
-        profile_key: 'profile-a',
-        tab_id: 91,
-        window_id: 5,
-        url: 'https://gemini.google.com/app',
-        title: 'Gemini',
-        recorded_at: '2026-04-21T11:28:54.000Z',
-      });
-    });
-
-    await act(async () => {
-      browserTrackingStateListeners[0]?.({
-        ready: true,
-        local_url: 'http://127.0.0.1:38941',
-        connections: [],
-        pairing_code: null,
-        last_event_at: '2026-04-21T11:29:10.000Z',
-        last_error: null,
-      });
-    });
-
-    expect(mocks.updateActivitySessionMock).toHaveBeenCalledWith(1401, expect.objectContaining({
-      ended_at: '2026-04-21T11:29:10.000Z',
-      duration_seconds: 16,
     }));
   });
 

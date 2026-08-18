@@ -25,6 +25,36 @@
 const INTERNAL_SCHEMES = ['chrome:', 'edge:', 'brave:', 'about:', 'vivaldi:', 'opera:', 'devtools:', 'view-source:'];
 
 const DROP = (reason) => ({ url: null, confidence: 0, reason });
+/**
+ * Strip the parts of a URL that carry secrets rather than describe a page.
+ *
+ * A query string is where single-use credentials live. Read out of this
+ * database on 17 Aug 2026, one captured visit held a complete OAuth callback:
+ * `code` (66 chars), `state`, `session_state` and `iss` — a live authorization
+ * code, readable by every admin who opens the timeline and included in CSV
+ * exports. Nothing in a productivity report needs it; the path already says
+ * which page somebody was on.
+ *
+ * The fragment needs a lighter touch. Hash routing puts the real page there
+ * (`#/me/attendance`), so it is kept — unless it carries `key=value` pairs,
+ * which is how the OAuth implicit flow returns `access_token` and `id_token`.
+ *
+ * Userinfo goes too: `https://user:password@host` must never reach a report.
+ */
+const stripUrlSecrets = (value) => {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+
+  // An `=` means parameters, not a route.
+  const fragment = parsed.hash && !parsed.hash.includes('=') ? parsed.hash : '';
+
+  return `${parsed.protocol}//${parsed.host}${parsed.pathname}${fragment}`;
+};
+
 
 const isInternal = (value) => {
   const lower = value.toLowerCase();
@@ -59,9 +89,12 @@ const normalizeCapturedUrl = (capture) => {
   if (isInternal(value)) return DROP('browser-internal');
 
   if (source === 'document') {
-    // Already a real URL from the page itself; the only thing worth removing is
-    // a browser-internal page, handled above.
-    return { url: value, confidence: 100 };
+    // A real URL from the page itself, but it is recorded stripped: see
+    // stripUrlSecrets. The address-bar branch below already reduces to a host,
+    // so this was the only path by which a query string reached storage.
+    const safe = stripUrlSecrets(value);
+    if (!safe) return DROP('not-host-shaped');
+    return { url: safe, confidence: 100 };
   }
 
   if (source !== 'address_bar') {
@@ -103,4 +136,4 @@ const normalizeCapturedUrl = (capture) => {
   return { url: `${parsed.protocol}//${parsed.host}`.toLowerCase(), confidence: 60 };
 };
 
-module.exports = { normalizeCapturedUrl, looksLikeHost, INTERNAL_SCHEMES };
+module.exports = { normalizeCapturedUrl, looksLikeHost, stripUrlSecrets, INTERNAL_SCHEMES };

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const Module = require('node:module');
 
 const AUTO_START_PATH = require.resolve('../auto-start.cjs');
@@ -73,8 +74,26 @@ test('unpackaged auto-start passes the app directory, so boot does not land on E
     assert.equal(settings.path, electronExe);
     assert.deepEqual(
       settings.args,
-      [`"${DESKTOP_DIR}"`],
+      [DESKTOP_DIR],
       'electron.exe with no app directory boots into Electron\'s built-in welcome window instead of CareVance'
+    );
+
+    /*
+     * The assertion that would have caught this. setLoginItemSettings quotes
+     * each argument itself when it builds the registry string, so quoting it
+     * here too wrote an argument Windows could not resolve:
+     *
+     *   "…\electron.exe" "\"D:\CareVance_Hrms_IDE\desktop\""
+     *
+     * Read back off a real machine on 14 Aug 2026 that failed Test-Path and
+     * only resolved once the escaped quotes were stripped — so every boot got
+     * an unusable app directory and Electron's welcome window. Comparing
+     * strings alone let the broken shape look correct; asking the filesystem
+     * does not.
+     */
+    assert.ok(
+      fs.existsSync(settings.args[0]),
+      `the boot argument must be a real directory, got ${JSON.stringify(settings.args[0])}`
     );
   });
 });

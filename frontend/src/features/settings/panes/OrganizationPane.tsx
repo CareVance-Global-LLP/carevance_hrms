@@ -5,6 +5,7 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import SettingsCard from '../components/SettingsCard';
 import SegmentedControl from '../components/SegmentedControl';
+import { URL_DETAIL_LEVEL_OPTIONS } from '@/lib/trackerPolicy';
 import {
   IDLE_AUTO_STOP_OPTIONS,
   IDLE_RESOLUTION_POLICY_OPTIONS,
@@ -171,6 +172,8 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     setOrgLockAutoStopSeconds,
     orgIdleResolutionPolicy,
     setOrgIdleResolutionPolicy,
+    orgUrlDetailLevel,
+    setOrgUrlDetailLevel,
     orgTimezone,
     setOrgTimezone,
     leaveCategories,
@@ -670,6 +673,28 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
                     : orgIdleResolutionPolicy === 'always_keep'
                       ? 'Idle time is counted as work automatically. Nobody is asked, and they are told it was kept.'
                       : 'Idle time is removed from the timesheet automatically. Nobody is asked, and they are told it was removed.'}
+                </p>
+              </div>
+
+              <div>
+                <FieldLabel>How much of a web address to record</FieldLabel>
+                <SegmentedControl
+                  ariaLabel="How much of a web address to record"
+                  disabled={!isOrgEditable}
+                  value={orgUrlDetailLevel}
+                  onChange={(value) => setOrgUrlDetailLevel(value as typeof orgUrlDetailLevel)}
+                  options={URL_DETAIL_LEVEL_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                />
+                <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-600">
+                  {orgUrlDetailLevel === 'full'
+                    ? 'The page someone was on is recorded, for example example.com/docs/page.'
+                    : orgUrlDetailLevel === 'host'
+                      ? 'Only the website is recorded, for example example.com. Which page they were on is not.'
+                      : 'No web addresses are recorded at all. Browser time still counts, listed under the browser itself.'}
+                </p>
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                  Anything after the <code>?</code> in an address is never recorded at any of these settings. That part
+                  carries sign-in codes and search terms, and keeping it is not something an organisation can opt into.
                 </p>
               </div>
 

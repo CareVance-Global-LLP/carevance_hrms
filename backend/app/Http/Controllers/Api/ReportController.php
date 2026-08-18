@@ -8,7 +8,6 @@ use App\Models\ActivitySession;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
-use App\Models\BrowserTrackingConnection;
 use App\Models\BreakTime;
 use App\Models\Group;
 use App\Models\LeaveRequest;
@@ -38,6 +37,9 @@ use Throwable;
 
 class ReportController extends Controller
 {
+    /** Hierarchy level at and below which a user is an ordinary employee. */
+    private const EMPLOYEE_HIERARCHY_LEVEL = 100;
+
     private const CUSTOM_EXPORT_ALLOWED_FIELDS = [
         'start_date',
         'end_date',
@@ -124,6 +126,17 @@ class ReportController extends Controller
 
     private const LIVE_MONITORING_MEANINGFUL_ACTIVITY_WINDOW_SECONDS = 120;
 
+    /**
+     * Ceiling on how many employees the organisation-wide analytics loop covers.
+     *
+     * Generous rather than tight: the set it applies to is already narrowed to
+     * people with something recorded in the range, so on any ordinary day it is
+     * nowhere near reached. When it IS reached the response says so through
+     * `analytics_users_truncated`, because a total quietly computed over part of
+     * the workforce is the defect this constant exists to bound, not create.
+     */
+    private const ANALYTICS_USER_LIMIT = 200;
+
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
         private readonly DashboardSummaryService $dashboardSummaryService,
@@ -185,6 +198,55 @@ class ReportController extends Controller
             ->all();
     }
 
+    /**
+     * The employees organisation-wide analytics should actually aggregate over:
+     * those with tracked time or recorded activity somewhere in the range.
+     *
+     * Both sources are consulted because they can disagree. A time entry with no
+     * activity is someone whose timer ran while the tracker sent nothing, and
+     * activity with no entry in range is a session that began the previous day.
+     * Either way there are figures to account for, so both belong in the total.
+     */
+    private function analyticsUsersForRange(Builder $usersQuery, Carbon $startDate, Carbon $endDate): Collection
+    {
+        $visibleIds = (clone $usersQuery)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values();
+
+        if ($visibleIds->isEmpty()) {
+            return collect();
+        }
+
+        $withTrackedTime = TimeEntry::whereIn('user_id', $visibleIds)
+            ->whereBetween('start_time', [$startDate, $endDate])
+            ->distinct()
+            ->pluck('user_id');
+
+        $withActivity = Activity::whereIn('user_id', $visibleIds)
+            ->whereBetween('recorded_at', [$startDate, $endDate])
+            ->distinct()
+            ->pluck('user_id');
+
+        $activeIds = $withTrackedTime
+            ->merge($withActivity)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($activeIds->isEmpty()) {
+            return collect();
+        }
+
+        return (clone $usersQuery)
+            ->whereIn('id', $activeIds)
+            ->orderBy('name')
+            ->limit(self::ANALYTICS_USER_LIMIT)
+            ->get(['id', 'name', 'email', 'role']);
+    }
+
     private function visibleUsersQuery(User $user, bool $excludeHigherOrEqualRank = false): Builder
     {
         $query = User::query()->where('organization_id', $user->organization_id);
@@ -192,6 +254,23 @@ class ReportController extends Controller
 
         if ($userLevel <= 10) {
             return $query;
+        }
+
+        /*
+         * Employee tier sees only themselves.
+         *
+         * Without this the next branch scopes by shared group membership, which
+         * is a peer relationship rather than a chain of command — so an ordinary
+         * employee in two groups could read the attendance rates, worked hours
+         * and per-day absence dates of everyone in both. Colleagues' presence is
+         * a real need and it is served by /attendance/team-presence, which is
+         * scoped to one department and carries no analytics.
+         *
+         * The 100 boundary is the same one restrictMonitoringToEmployees() uses
+         * to mean "below manager".
+         */
+        if ($userLevel >= self::EMPLOYEE_HIERARCHY_LEVEL) {
+            return $query->where('id', $user->id);
         }
 
         $groupIds = $this->managerGroupIds($user);
@@ -247,67 +326,6 @@ class ReportController extends Controller
             ->get()
             ->mapWithKeys(fn ($row) => [(int) $row->user_id => $row->last_activity_at])
             ->all();
-    }
-
-    private function summarizeBrowserTrackingConnections(Collection $connections): array
-    {
-        if ($connections->isEmpty()) {
-            return [
-                'status' => 'disconnected',
-                'device_label' => null,
-                'connection_count' => 0,
-                'connected_connections' => 0,
-                'browsers' => [],
-                'last_seen_at' => null,
-                'last_sync_at' => null,
-                'disconnect_reason' => 'not_paired',
-                'needs_attention' => true,
-                'is_exact_tracking_active' => false,
-            ];
-        }
-
-        $sortedConnections = $connections
-            ->sortByDesc(function (BrowserTrackingConnection $connection) {
-                $sortTimestamp = $connection->last_seen_at
-                    ?? $connection->last_sync_at
-                    ?? $connection->disconnected_at
-                    ?? $connection->connected_at
-                    ?? $connection->updated_at
-                    ?? $connection->created_at;
-
-                return $sortTimestamp ? Carbon::parse($sortTimestamp)->getTimestamp() : 0;
-            })
-            ->values();
-
-        $latestConnection = $sortedConnections->first();
-        $connectedConnections = $sortedConnections
-            ->filter(fn (BrowserTrackingConnection $connection) => (string) $connection->status === 'connected')
-            ->values();
-        $primaryConnection = $connectedConnections->first() ?: $latestConnection;
-
-        return [
-            'status' => $connectedConnections->isNotEmpty()
-                ? 'connected'
-                : (string) ($latestConnection?->status ?: 'unknown'),
-            'device_label' => $primaryConnection?->device_label,
-            'connection_count' => $sortedConnections->count(),
-            'connected_connections' => $connectedConnections->count(),
-            'browsers' => $sortedConnections
-                ->pluck('browser_name')
-                ->filter()
-                ->map(fn ($browserName) => strtolower((string) $browserName))
-                ->unique()
-                ->values()
-                ->all(),
-            'last_seen_at' => optional($primaryConnection?->last_seen_at)->toIso8601String(),
-            'last_sync_at' => optional($latestConnection?->last_sync_at)->toIso8601String(),
-            'disconnect_reason' => $connectedConnections->isNotEmpty()
-                ? null
-                : $latestConnection?->disconnect_reason,
-            'needs_attention' => $connectedConnections->isEmpty()
-                && in_array((string) ($latestConnection?->status ?: ''), ['disconnected', 'disabled'], true),
-            'is_exact_tracking_active' => $connectedConnections->isNotEmpty(),
-        ];
     }
 
     private function isLiveMonitoringUtilityActivity(?object $activity): bool
@@ -3344,9 +3362,24 @@ class ReportController extends Controller
         }
 
         $matchedUsers = (clone $usersQuery)->orderBy('name')->limit(20)->get(['id', 'name', 'email', 'role']);
+
+        // Resolved once and reused as $analyticsUsers below, because it also
+        // decides who the per-employee panels open on.
+        $activeUsersInRange = $request->filled('user_id')
+            ? collect()
+            : $this->analyticsUsersForRange($usersQuery, $startDate, $endDate);
+
+        /*
+         * With no employee chosen, open on somebody who actually has a day to
+         * show. Several panels — the activity-kind breakdown among them — are
+         * built for the selected employee alone, and defaulting to whoever
+         * sorted first alphabetically meant they read "No recorded activity in
+         * this range yet" beside organisation totals full of data. Falling back
+         * to the alphabetical pick keeps the empty-range case behaving as before.
+         */
         $selectedUserId = $request->filled('user_id')
             ? (int) $request->user_id
-            : (int) ($matchedUsers->first()->id ?? 0);
+            : (int) ($activeUsersInRange->first()->id ?? $matchedUsers->first()->id ?? 0);
 
         if ($selectedUserId <= 0) {
             return response()->json([
@@ -3370,9 +3403,26 @@ class ReportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        /*
+         * Everyone who actually recorded something in the range — not the first
+         * fifty employees by name.
+         *
+         * The alphabetical cap made every "all employees" figure an average over
+         * a slice of the workforce. Measured 14 Aug 2026 on a 92-person
+         * organisation: the only person tracking that day sorted 90th, so the
+         * dashboard read 0.0% productive and 0h 0m tracked while the timeline for
+         * the same day and the same filters listed 19 events. Selecting that
+         * person by name skipped the cap and returned 99.7% and 26 minutes, which
+         * is precisely why the truncation went unnoticed for so long.
+         *
+         * Narrowing by activity keeps the per-user loop below bounded without
+         * lying about the total: an employee with nothing recorded contributes
+         * zero to every figure, so leaving them out moves no number, while the
+         * people who DO have data can no longer be the ones dropped.
+         */
         $analyticsUsers = $request->filled('user_id')
             ? collect([$selectedUser])
-            : (clone $usersQuery)->orderBy('name')->limit(50)->get(['id', 'name', 'email', 'role']);
+            : $activeUsersInRange;
 
         try {
             $entries = TimeEntry::where('user_id', $selectedUser->id)
@@ -3680,17 +3730,7 @@ class ReportController extends Controller
                 ->recentForUsers($analyticsUserIds, now()->subMinutes(5))
                 ->groupBy('user_id');
 
-        $browserTrackingByUser = $analyticsUserIds->isEmpty()
-            ? collect()
-            : BrowserTrackingConnection::query()
-                ->whereIn('user_id', $analyticsUserIds)
-                ->orderByDesc('last_seen_at')
-                ->orderByDesc('last_sync_at')
-                ->get()
-                ->groupBy(fn (BrowserTrackingConnection $connection) => (int) $connection->user_id)
-                ->map(fn (Collection $connections) => $this->summarizeBrowserTrackingConnections($connections));
-
-        $liveMonitoringRows = $analyticsUsers->map(function ($user) use ($recentActivitiesByUser, $activeTimeEntryUserIds, $browserTrackingByUser) {
+        $liveMonitoringRows = $analyticsUsers->map(function ($user) use ($recentActivitiesByUser, $activeTimeEntryUserIds) {
             $userRecentActivities = collect($recentActivitiesByUser->get((int) $user->id, collect()));
             $latest = $this->selectPreferredLiveMonitoringActivity($userRecentActivities);
             $classification = 'neutral';
@@ -3719,7 +3759,6 @@ class ReportController extends Controller
                 'activity_type' => $activityType,
                 'classification' => $classification,
                 'last_activity_at' => $latest ? Carbon::parse($latest->recorded_at)->toIso8601String() : null,
-                'browser_tracking' => $browserTrackingByUser->get((int) $user->id, $this->summarizeBrowserTrackingConnections(collect())),
             ];
         })->values();
 
@@ -3758,6 +3797,10 @@ class ReportController extends Controller
             'end_date' => $endDate->toDateString(),
             'matched_users' => $matchedUsers,
             'analytics_users_count' => $analyticsUsers->count(),
+            // Surfaced so a capped aggregate can never again read as a complete
+            // one. False on any ordinary day; true means figures below cover
+            // ANALYTICS_USER_LIMIT of the people who recorded activity, not all.
+            'analytics_users_truncated' => $analyticsUsers->count() >= self::ANALYTICS_USER_LIMIT,
             'selected_user' => $selectedUser,
             'stats' => [
                 'entries_count' => $entriesCount,
@@ -3984,11 +4027,6 @@ class ReportController extends Controller
             $hasRecentNonIdleActivity = $recentActivity;
         }
 
-        $browserTracking = BrowserTrackingConnection::query()
-            ->where('user_id', $selectedUser->id)
-            ->orderByDesc('last_seen_at')
-            ->orderByDesc('last_sync_at')
-            ->get();
         $selectedUserLive = [
             'user' => [
                 'id' => (int) $selectedUser->id,
@@ -4002,7 +4040,6 @@ class ReportController extends Controller
             'activity_type' => null,
             'classification' => 'neutral',
             'last_activity_at' => null,
-            'browser_tracking' => $this->summarizeBrowserTrackingConnections($browserTracking),
             'is_on_leave' => false,
             'is_on_break' => $isOnBreak,
             'is_idle' => $isWorking && ! $hasRecentNonIdleActivity,

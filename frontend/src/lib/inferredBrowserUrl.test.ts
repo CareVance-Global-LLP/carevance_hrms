@@ -14,27 +14,9 @@ const hostOnly = {
 };
 
 describe('resolveBrowserUrlForContext', () => {
-  it('yields to the extension whenever it is healthy', () => {
-    /*
-     * The extension sees real navigation events and tab lifecycle; UIA sees a
-     * polled snapshot of browser chrome. Both writing the same timeline would
-     * double-source it, and the April rollout made the extension the authority
-     * for website sessions.
-     */
+  it('uses an exact document URL from the desktop agent', () => {
     const result = resolveBrowserUrlForContext({
       context: exact,
-      extensionHealthy: true,
-      isBrowser: true,
-    });
-
-    expect(result.url).toBeNull();
-    expect(result.reason).toBe('extension-owns-browser-sessions');
-  });
-
-  it('uses an exact document URL when the extension is absent', () => {
-    const result = resolveBrowserUrlForContext({
-      context: exact,
-      extensionHealthy: false,
       isBrowser: true,
     });
 
@@ -46,7 +28,6 @@ describe('resolveBrowserUrlForContext', () => {
   it('uses a host-only reading when that is all the browser exposes', () => {
     const result = resolveBrowserUrlForContext({
       context: hostOnly,
-      extensionHealthy: false,
       isBrowser: true,
     });
 
@@ -59,7 +40,6 @@ describe('resolveBrowserUrlForContext', () => {
     // a moment after someone alt-tabbed.
     const result = resolveBrowserUrlForContext({
       context: exact,
-      extensionHealthy: false,
       isBrowser: false,
     });
 
@@ -72,7 +52,6 @@ describe('resolveBrowserUrlForContext', () => {
     // scraped out of the browser's chrome.
     const result = resolveBrowserUrlForContext({
       context: { ...hostOnly, url: 'https://native.example/page' },
-      extensionHealthy: false,
       isBrowser: true,
     });
 
@@ -84,7 +63,6 @@ describe('resolveBrowserUrlForContext', () => {
   it('reports nothing when there is nothing to report', () => {
     const result = resolveBrowserUrlForContext({
       context: { inferred_url: null },
-      extensionHealthy: false,
       isBrowser: true,
     });
 
@@ -93,8 +71,8 @@ describe('resolveBrowserUrlForContext', () => {
   });
 
   it('survives a missing context without throwing', () => {
-    expect(resolveBrowserUrlForContext({ context: null, extensionHealthy: false, isBrowser: true }).url).toBeNull();
-    expect(resolveBrowserUrlForContext({ context: undefined, extensionHealthy: true, isBrowser: false }).url).toBeNull();
+    expect(resolveBrowserUrlForContext({ context: null, isBrowser: true }).url).toBeNull();
+    expect(resolveBrowserUrlForContext({ context: undefined, isBrowser: false }).url).toBeNull();
   });
 
   it('defaults confidence conservatively when the desktop sends none', () => {
@@ -102,7 +80,6 @@ describe('resolveBrowserUrlForContext', () => {
     // exact tier would let a host-only guess be recorded as a confirmed visit.
     const result = resolveBrowserUrlForContext({
       context: { inferred_url: 'https://example.com', inferred_url_source: 'address_bar' },
-      extensionHealthy: false,
       isBrowser: true,
     });
 
@@ -112,7 +89,6 @@ describe('resolveBrowserUrlForContext', () => {
   it('treats an unrecognised source as the low tier', () => {
     const result = resolveBrowserUrlForContext({
       context: { inferred_url: 'https://example.com', inferred_url_source: 'something-new' as never },
-      extensionHealthy: false,
       isBrowser: true,
     });
 

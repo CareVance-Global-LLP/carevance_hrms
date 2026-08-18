@@ -11,6 +11,7 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import FilterPanel from '@/components/dashboard/FilterPanel';
 import AttendanceRoster from '@/features/attendance/AttendanceRoster';
+import TeamPresenceBoard from '@/features/attendance/TeamPresenceBoard';
 import OvertimeWorkspace from '@/features/attendance/OvertimeWorkspace';
 import SlideOver from '@/features/employees/SlideOver';
 import LeaveBalanceCards from '@/features/leave/LeaveBalanceCards';
@@ -371,6 +372,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       return response.data || [];
     },
     enabled: isAdmin,
+  });
+  // Ordinary employees get a presence board of their own department instead of
+  // the HR roster. Only they fetch it, so an admin pays nothing for it.
+  const teamPresenceQuery = useQuery({
+    queryKey: ['attendance-team-presence'],
+    queryFn: async () => (await attendanceApi.teamPresence()).data,
+    enabled: !isAdmin,
   });
   const employeeFilterOptions = useMemo(() => {
     const fetchedUsers = Array.isArray(adminUsersQuery.data) ? adminUsersQuery.data : [];
@@ -1970,18 +1978,26 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       </div>
 
       {attendanceView === 'overview' ? (
-        <AttendanceRoster
-          rows={rows}
-          isLoading={isLoading}
-          selectedUserId={selectedRow?.user?.id ?? null}
-          onOpenPerson={(userId) => {
-            setSelectedUserId(userId);
-            if (isAdmin) {
+        isAdmin ? (
+          <AttendanceRoster
+            rows={rows}
+            isLoading={isLoading}
+            selectedUserId={selectedRow?.user?.id ?? null}
+            onOpenPerson={(userId) => {
+              setSelectedUserId(userId);
               setCalendarScope('selected');
-            }
-            setPersonDrawerOpen(true);
-          }}
-        />
+              setPersonDrawerOpen(true);
+            }}
+          />
+        ) : (
+          <TeamPresenceBoard
+            people={teamPresenceQuery.data?.people ?? []}
+            offSoon={teamPresenceQuery.data?.off_soon ?? []}
+            departmentName={teamPresenceQuery.data?.department ?? null}
+            isLoading={teamPresenceQuery.isLoading}
+            timeZone={displayTimezone}
+          />
+        )
       ) : null}
 
       <div className={`grid grid-cols-1 lg:grid-cols-3 gap-4 ${attendanceView === 'calendar' ? '' : 'hidden'}`}>

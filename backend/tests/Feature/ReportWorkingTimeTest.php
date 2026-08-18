@@ -7,7 +7,6 @@ use App\Models\AttendancePunch;
 use App\Models\BreakTime;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
-use App\Models\BrowserTrackingConnection;
 use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
@@ -594,54 +593,6 @@ class ReportWorkingTimeTest extends TestCase
         }
     }
 
-    public function test_employee_insights_exposes_browser_tracking_health_for_live_monitoring(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-04-21 11:30:00'));
-
-        try {
-            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
-            $entry = $this->createOpenEntryFor($employee, '2026-04-21 11:00:00');
-
-            Activity::create([
-                'user_id' => $employee->id,
-                'time_entry_id' => $entry->id,
-                'type' => 'url',
-                'name' => 'https://instagram.com/reel/1',
-                'duration' => 600,
-                'recorded_at' => '2026-04-21 11:20:00',
-            ]);
-
-            BrowserTrackingConnection::create([
-                'organization_id' => $employee->organization_id,
-                'user_id' => $employee->id,
-                'device_id' => 'desktop-alpha',
-                'device_label' => 'DESKTOP-ALPHA',
-                'browser_name' => 'chrome',
-                'browser_profile_key' => 'profile-a',
-                'extension_version' => '0.1.0',
-                'status' => 'disconnected',
-                'connected_at' => '2026-04-21 11:00:00',
-                'last_seen_at' => '2026-04-21 11:22:00',
-                'last_sync_at' => '2026-04-21 11:29:40',
-                'disconnected_at' => '2026-04-21 11:29:40',
-                'disconnect_reason' => 'extension_missing',
-                'meta' => ['extension_origin' => 'chrome-extension://tracking'],
-            ]);
-
-            $this->getJson("/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}", $headers)
-                ->assertOk()
-                ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.status', 'disconnected')
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.device_label', 'DESKTOP-ALPHA')
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.disconnect_reason', 'extension_missing')
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.needs_attention', true)
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.is_exact_tracking_active', false)
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.browsers.0', 'chrome');
-        } finally {
-            Carbon::setTestNow();
-        }
-    }
-
     public function test_employee_insights_honors_recent_screenshot_limit(): void
     {
         [$admin, $employee, $headers] = $this->createAdminAndEmployee();
@@ -793,35 +744,6 @@ class ReportWorkingTimeTest extends TestCase
             ->assertJsonCount(0, 'selected_user_tools.productive');
     }
 
-    public function test_employee_insights_marks_browser_tracking_as_not_paired_when_no_exact_connection_exists(): void
-    {
-        Carbon::setTestNow(Carbon::parse('2026-04-21 11:30:00'));
-
-        try {
-            [$admin, $employee, $headers] = $this->createAdminAndEmployee();
-            $entry = $this->createOpenEntryFor($employee, '2026-04-21 11:00:00');
-
-            Activity::create([
-                'user_id' => $employee->id,
-                'time_entry_id' => $entry->id,
-                'type' => 'url',
-                'name' => 'Instagram',
-                'duration' => 90,
-                'recorded_at' => '2026-04-21 11:28:30',
-            ]);
-
-            $this->getJson("/api/reports/employee-insights?start_date=2026-04-21&end_date=2026-04-21&user_id={$employee->id}", $headers)
-                ->assertOk()
-                ->assertJsonPath('live_monitoring.selected_user.user.id', $employee->id)
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.status', 'disconnected')
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.disconnect_reason', 'not_paired')
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.needs_attention', true)
-                ->assertJsonPath('live_monitoring.selected_user.browser_tracking.is_exact_tracking_active', false);
-        } finally {
-            Carbon::setTestNow();
-        }
-    }
-
     public function test_employee_insights_prefers_recent_website_activity_over_utility_overlay_for_live_tool(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-04-21 11:48:10'));
@@ -889,7 +811,7 @@ class ReportWorkingTimeTest extends TestCase
 
             $this->postJson('/api/activity-sessions', [
                 'time_entry_id' => $entry->id,
-                'source' => 'browser_extension',
+                'source' => 'desktop',
                 'activity_kind' => 'website',
                 'tool_type' => 'website',
                 'display_name' => 'Time Doctor Help',

@@ -7,6 +7,31 @@ const DEFAULT_PING_URL = 'https://clients3.google.com/generate_204';
 const DEFAULT_PING_INTERVAL_MS = 5000;
 const DEFAULT_PING_TIMEOUT_MS = 3000;
 
+/**
+ * Whether a probe target lives on this machine.
+ *
+ * Loopback answers whether or not the machine has a network, so reaching it
+ * proves the API is up — never that we are connected. The probe list is led by
+ * the configured app URL, which in development IS loopback, so pulling the
+ * cable left every check succeeding and the app cheerfully reporting "Online"
+ * with no network at all.
+ */
+const isLoopbackTarget = (targetUrl) => {
+  let hostname;
+  try {
+    hostname = new URL(targetUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+
+  return hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '::1'
+    || hostname === '[::1]'
+    || hostname.endsWith('.localhost')
+    || hostname.startsWith('127.');
+};
+
 function NetworkMonitor(options = {}) {
   EventEmitter.call(this);
 
@@ -123,8 +148,25 @@ NetworkMonitor.prototype._check = async function () {
     // instantly on a real physical disconnect (good UX), but the actual online
     // state is determined by whether the API is genuinely reachable. A
     // successful ping always overrides a mistaken OS "disconnected" report.
-    const apiReachable = await this._ping();
-    const online = apiReachable;
+    const { reachable, viaRemote } = await this._probe();
+
+    /*
+     * A loopback answer cannot outvote the OS saying there is no network.
+     *
+     * The OS signal already flips us offline the moment the cable is pulled,
+     * but the probe that ran straight afterwards reached the local dev server,
+     * counted as a success twice, and put the app back to "Online" within ten
+     * seconds — with no network at all. Reported from the desktop app on
+     * 14 Aug 2026 and reproduced exactly:
+     *
+     *   after OS disconnect -> online=false
+     *   after probe 1       -> online=true
+     *
+     * A REMOTE answer still overrides the OS, which is the case that matters:
+     * net.isOnline() is unreliable behind VPNs and captive portals, and a
+     * server that genuinely replies proves it wrong.
+     */
+    const online = reachable && (viaRemote || this.osOnline !== false);
     if (online) {
       this.consecutiveSuccesses++;
       this.consecutiveFailures = 0;
@@ -157,13 +199,20 @@ NetworkMonitor.prototype._check = async function () {
   }
 };
 
-NetworkMonitor.prototype._ping = async function () {
+/**
+ * Probe the candidates, reporting not just whether something answered but
+ * whether anything OFF this machine did.
+ *
+ * @returns {Promise<{reachable: boolean, viaRemote: boolean}>}
+ */
+NetworkMonitor.prototype._probe = async function () {
   if (typeof this.customCheck === 'function') {
     try {
       const result = await this.customCheck();
-      if (result !== undefined) return Boolean(result);
+      // A custom check speaks for itself; it is not a loopback shortcut.
+      if (result !== undefined) return { reachable: Boolean(result), viaRemote: Boolean(result) };
     } catch {
-      return false;
+      return { reachable: false, viaRemote: false };
     }
   }
 
@@ -171,13 +220,28 @@ NetworkMonitor.prototype._ping = async function () {
     ? this.pingCandidates
     : [this.pingUrl];
 
+  let reachable = false;
+
   for (const candidate of candidates) {
     // eslint-disable-next-line no-await-in-loop
-    const reachable = await this._pingOne(candidate);
-    if (reachable) return true;
+    const answered = await this._pingOne(candidate);
+    if (!answered) continue;
+
+    reachable = true;
+    // A remote answer settles it; a loopback one keeps looking for a remote,
+    // because only a remote answer can prove the machine is connected.
+    if (!isLoopbackTarget(candidate)) {
+      return { reachable: true, viaRemote: true };
+    }
   }
 
-  return false;
+  return { reachable, viaRemote: false };
+};
+
+/** Back-compat boolean form. */
+NetworkMonitor.prototype._ping = async function () {
+  const { reachable } = await this._probe();
+  return reachable;
 };
 
 NetworkMonitor.prototype._pingOne = async function (targetUrl) {

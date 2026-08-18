@@ -29,6 +29,17 @@ export type PendingSessionDropCounts = Record<PendingSessionDropReason, number>;
 export interface PendingSessionQueue {
   enqueue: (payload: PendingSession) => void;
   /**
+   * Everything still waiting, oldest first — the shape handed to disk so the
+   * timeline survives the app closing mid-outage.
+   */
+  snapshot: () => PendingSession[];
+  /**
+   * Re-seed from disk at startup. Appends rather than replaces, so sessions
+   * recorded before the restore lands are not thrown away, and the same
+   * de-duplication guards as enqueue still apply.
+   */
+  restore: (payloads: PendingSession[]) => void;
+  /**
    * `nowMs` is passed in rather than read off the clock so the retry window
    * below is deterministic in tests and drivable from the caller's own tick.
    */
@@ -51,6 +62,23 @@ export interface PendingSessionQueue {
 // the backlog. "A network blip costs a retry rather than a hole in the
 // timeline" only holds if the window is longer than a plausible blip.
 const MAX_RETRY_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Whether a failed send means "the server never answered" rather than "the
+ * server refused this".
+ *
+ * Axios attaches `response` only when a reply actually arrived, so its absence
+ * is the reliable signal for a connection that never completed — a dropped
+ * network, a stopped API, DNS gone. A 5xx counts too: the server admitting it
+ * cannot serve says nothing about whether the session is valid.
+ */
+const isTransportFailure = (error: unknown): boolean => {
+  const response = (error as { response?: { status?: number } } | null)?.response;
+  if (!response) return true;
+
+  const status = Number(response.status ?? 0);
+  return status >= 500 && status <= 599;
+};
 
 interface QueueEntry {
   payload: PendingSession;
@@ -84,7 +112,7 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
     dropped[reason] += 1;
   };
 
-  return {
+  const queue: PendingSessionQueue = {
     enqueue: (payload) => {
       // A null device_id means the server cannot recognise a replay
       // (ActivitySessionController::store guards its idempotency branch on
@@ -114,11 +142,25 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
           const entry = items[0];
           try {
             await send(entry.payload);
-          } catch {
+          } catch (error) {
             if (items[0] !== entry) {
               // enqueue's overflow eviction removed this entry while its send
               // was in flight; it is already counted. Stop here rather than
               // skipping ahead — the new head is retried on the next drain.
+              return;
+            }
+
+            /*
+             * An unreachable server does not start the give-up clock.
+             *
+             * The window exists to shed a head the server keeps REJECTING — a
+             * 422 for a deleted time entry, a 401 after logout — so it cannot
+             * block everything behind it. Silence is not a rejection: it says
+             * nothing about the payload, and counting it meant a server
+             * outage longer than the window discarded a real timeline instead
+             * of waiting the way offline tracking is supposed to.
+             */
+            if (isTransportFailure(error)) {
               return;
             }
 
@@ -153,8 +195,21 @@ export const createPendingSessionQueue = ({ maxSize }: { maxSize: number }): Pen
       }
     },
 
+    snapshot: () => items.map((entry) => entry.payload),
+
+    restore: (payloads) => {
+      // Oldest first, and through enqueue so the device_id guard and the
+      // overflow accounting apply to restored sessions exactly as they did
+      // when the sessions were first recorded.
+      (Array.isArray(payloads) ? payloads : []).forEach((payload) => {
+        queue.enqueue(payload);
+      });
+    },
+
     size: () => items.length,
     droppedCount: () => dropped.no_device_id + dropped.retry_window_exceeded + dropped.overflow,
     droppedReasons: () => ({ ...dropped }),
   };
+
+  return queue;
 };

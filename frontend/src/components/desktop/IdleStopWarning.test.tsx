@@ -14,8 +14,17 @@ const emit = (detail: DesktopTimerIdleWarningDetail) => {
   });
 };
 
+const setDesktopBridge = (bridge: unknown) => {
+  Object.defineProperty(window, 'desktopTracker', {
+    value: bridge,
+    configurable: true,
+    writable: true,
+  });
+};
+
 afterEach(() => {
   document.body.innerHTML = '';
+  setDesktopBridge(undefined);
 });
 
 describe('IdleStopWarning', () => {
@@ -94,5 +103,33 @@ describe('IdleStopWarning', () => {
     const button = screen.getByRole('button', { name: /still working/i });
     expect(button).toBeInTheDocument();
     expect(button.onclick).toBeNull();
+  });
+
+  it('stands aside when the shell shows the native popup instead', () => {
+    /*
+     * Both at once would be two countdowns for one idle stretch, disagreeing
+     * by a tick whenever a render lagged.
+     */
+    setDesktopBridge({ showIdlePopup: () => Promise.resolve(true), hideIdlePopup: () => Promise.resolve(true) });
+    render(<IdleStopWarning />);
+
+    emit({ secondsRemaining: 30, idleSeconds: 870 });
+
+    expect(document.querySelector('[data-idle-stop-warning]')).toBeNull();
+  });
+
+  it('still renders on a desktop build too old to have the popup', () => {
+    /*
+     * The renderer updates itself and the installed shell does not. Standing
+     * aside for any shell rather than one that can actually show the popup
+     * would leave these people with no idle warning at all — worse than the
+     * in-app one this replaces.
+     */
+    setDesktopBridge({ getSystemIdleSeconds: () => Promise.resolve(0) });
+    render(<IdleStopWarning />);
+
+    emit({ secondsRemaining: 30, idleSeconds: 870 });
+
+    expect(screen.getByText('Your timer stops in 30 seconds')).toBeInTheDocument();
   });
 });

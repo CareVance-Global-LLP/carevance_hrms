@@ -95,6 +95,12 @@ class UpdateOrganizationRequest extends ApiFormRequest
             'employee_activity_visible' => 'nullable|boolean',
             'screenshot_employee_delete' => 'nullable|boolean',
             'screenshot_retention_days' => 'nullable|integer|min:7|max:730',
+            /*
+             * How much of a visited address is kept: the whole path, the domain
+             * only, or nothing. The query string is stripped at every level, so
+             * this chooses detail and never whether to retain credentials.
+             */
+            'url_detail_level' => 'nullable|string|in:full,host,off',
         ];
     }
 }

@@ -15,10 +15,20 @@ const TASK_NAME = 'CareVanceTrackerAutoStart';
  * Unpackaged it is `node_modules/electron/dist/electron.exe`, and Electron
  * launched with no app directory falls back to its own built-in welcome app —
  * which is exactly the "default Electron window instead of our app" symptom on
- * boot. The directory has to be passed explicitly, quoted, because Windows
- * stores the whole thing as one registry string.
+ * boot.
+ *
+ * Passed RAW, without quotes of our own. setLoginItemSettings already quotes
+ * each argument when it builds the registry string, so wrapping it here quoted
+ * it twice and wrote a path that does not exist:
+ *
+ *   "…\electron.exe" "\"D:\CareVance_Hrms_IDE\desktop\""
+ *
+ * Read back off this machine on 14 Aug 2026, that argument failed Test-Path and
+ * only resolved once the escaped quotes were stripped — so every boot launched
+ * Electron with an unusable app directory and showed the welcome window, the
+ * precise failure the paragraph above warns about.
  */
-const resolveLoginItemArgs = () => (app.isPackaged ? [] : [`"${path.resolve(__dirname)}"`]);
+const resolveLoginItemArgs = () => (app.isPackaged ? [] : [path.resolve(__dirname)]);
 
 /**
  * Build the correct command to launch the app from auto-start.
