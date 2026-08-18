@@ -11,12 +11,17 @@ const complete = {
     last_name: 'Shah',
     gender: 'female',
     date_of_birth: '1994-04-02',
+    blood_group: 'O+',
     phone: '9000000000',
     personal_email: 'priya@personal.com',
     address_line: '12 Residency Road',
     city: 'Bengaluru',
     state: 'Karnataka',
     postal_code: '560025',
+    permanent_address_line: '4 Old Village Road',
+    permanent_city: 'Udaipur',
+    permanent_state: 'Rajasthan',
+    permanent_postal_code: '313001',
     emergency_contact_name: 'Anil Shah',
     emergency_contact_number: '9000000001',
     emergency_contact_relationship: 'Father',
@@ -27,7 +32,11 @@ const complete = {
     joining_date: '2026-01-05',
     work_location: 'Bengaluru',
   },
-  government_ids: [{ id_type: 'PAN', id_number: 'ABCDE1234F' }],
+  government_ids: [
+    { id_type: 'PAN', id_number: 'ABCDE1234F' },
+    { id_type: 'AADHAAR', id_number: '234123412346' },
+  ],
+  educations: [{ id: 1, qualification: 'B.Tech' }],
   bank_accounts: [{ id: 1 }],
 };
 
@@ -112,5 +121,55 @@ describe('employee profile registry', () => {
 
     expect(result.total).toBe(4);
     expect(result.isComplete).toBe(true);
+  });
+
+  /*
+   * The fields added when employee details were completed. None of them are
+   * requiredForPayroll — a salary run reads none of them — so they must widen
+   * the completeness picture without widening what blocks a payroll run.
+   */
+  it('reports the new personal details as gaps when they are absent', () => {
+    const missingKeys = profileCompleteness({}).missing.map((field) => field.key);
+
+    expect(missingKeys).toContain('blood_group');
+    expect(missingKeys).toContain('permanent_address_line');
+    expect(missingKeys).toContain('aadhaar');
+    expect(missingKeys).toContain('education');
+  });
+
+  it('does not let the new details block payroll', () => {
+    const payrollKeys = profileCompleteness({}).missingForPayroll.map((field) => field.key);
+
+    expect(payrollKeys).not.toContain('blood_group');
+    expect(payrollKeys).not.toContain('permanent_address_line');
+    expect(payrollKeys).not.toContain('aadhaar');
+    expect(payrollKeys).not.toContain('education');
+  });
+
+  /**
+   * Aadhaar was absent from the registry entirely, so someone with no Aadhaar
+   * on file reported as complete. It reads the same government-ID list PAN
+   * does, and must not be satisfied by a PAN alone.
+   */
+  it('does not accept a PAN in place of an Aadhaar', () => {
+    const result = profileCompleteness({
+      government_ids: [{ id_type: 'PAN', id_number: 'ABCDE1234F' }],
+    });
+
+    expect(result.missing.map((field) => field.key)).toContain('aadhaar');
+    expect(result.missing.map((field) => field.key)).not.toContain('pan');
+  });
+
+  /** One qualification is enough; a school leaver has exactly one. */
+  it('treats a single qualification as complete education', () => {
+    const result = profileCompleteness({ educations: [{ id: 1, qualification: '12th' }] });
+
+    expect(result.missing.map((field) => field.key)).not.toContain('education');
+  });
+
+  it('treats an empty qualification list as missing', () => {
+    const result = profileCompleteness({ educations: [] });
+
+    expect(result.missing.map((field) => field.key)).toContain('education');
   });
 });

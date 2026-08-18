@@ -68,6 +68,36 @@ class PayrollCalculatorService
     ];
 
     /**
+     * The structure percentages a calculation actually runs on.
+     *
+     * Extracted from calculatePayroll() because a caller that needs to apply an
+     * override has to compute the component map itself, and it must do so from
+     * the SAME config the calculation used — including the non-metro HRA rule,
+     * which silently rewrites a caller's 50% to 40%. Rebuilding the config by
+     * hand at the call site meant an overridden non-metro employee had their
+     * HRA re-derived at the wrong rate, so the override cascaded off a structure
+     * the engine never produced.
+     *
+     * @param  array<string, float>  $customConfig
+     * @return array<string, float>
+     */
+    public function resolveStructureConfig(array $customConfig, bool $isMetroCity): array
+    {
+        $config = array_merge([
+            'basic_percentage' => 0.40,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+            'medical_allowance' => 0,
+        ], $customConfig);
+
+        if (!$isMetroCity) {
+            $config['hra_percentage_of_basic'] = 0.40;
+        }
+
+        return $config;
+    }
+
+    /**
      * @param  float|array<string,float>  $annualTaxExemptions
      *         Prefer the per-section map from getApprovedTaxDeductionMap().
      *         A bare float is treated as 80C only and will be capped at 1.5L.
@@ -80,16 +110,7 @@ class PayrollCalculatorService
         array $customConfig = [],
         float|array $annualTaxExemptions = 0
     ): array {
-        $config = array_merge([
-            'basic_percentage' => 0.40,
-            'hra_percentage_of_basic' => 0.50,
-            'conveyance_allowance' => 1600,
-            'medical_allowance' => 0,
-        ], $customConfig);
-
-        if (!$isMetroCity) {
-            $config['hra_percentage_of_basic'] = 0.40;
-        }
+        $config = $this->resolveStructureConfig($customConfig, $isMetroCity);
 
         $monthlyCtc = $annualCtc / 12;
         $salaryComponents = $this->calculateSalaryComponents($monthlyCtc, $config);
@@ -178,7 +199,19 @@ class PayrollCalculatorService
         $gross = $monthlyCtc - $employerPf - $gratuity;
 
         $fixedComponents = $basic + $hra + $conveyance;
-        $specialAllowance = max(0, $gross - $fixedComponents);
+
+        // Deliberately unclamped. This was max(0, $gross - $fixedComponents),
+        // which turned an infeasible structure into a silently broken payslip:
+        // special allowance read 0, $gross was not recomputed, and the
+        // components stopped summing to the gross they are supposed to make up
+        // -- 75,000 + 37,500 + 1,600 + 0 against a gross of 91,600, with
+        // nothing raised, logged or flagged.
+        //
+        // Same rule as net pay (see CLAUDE.md): validation is what should stop
+        // the run, and it can only do that if it can see the real number. The
+        // identity basic + hra + conveyance + special === gross now always
+        // holds, and residual_shortfall states how far the structure misses by.
+        $specialAllowance = $gross - $fixedComponents;
 
         return [
             'basic' => $basic,
@@ -186,7 +219,55 @@ class PayrollCalculatorService
             'conveyance' => $conveyance,
             'special_allowance' => $specialAllowance,
             'gross' => $gross,
+            // 0 when the structure fits. Positive by exactly the amount the
+            // fixed components overrun gross, which is also the amount the
+            // structure must give back to become payable.
+            'residual_shortfall' => max(0, -$specialAllowance),
         ];
+    }
+
+    /**
+     * How fast the residual drains when basic moves.
+     *
+     * Raising basic by ₹1 does not cost the residual ₹1. HRA is derived from
+     * basic, and employer PF and the gratuity provision both sit inside the
+     * CTC envelope, so four quantities move at once:
+     *
+     *     special = ctc − basic − h·basic − conveyance − p·basic − g·basic
+     *     ∂special/∂basic = −(1 + h + p + g)
+     *
+     * At the usual h = 0.50, p = 0.12, g = 0.0481 that is 1.668: an admin who
+     * raises basic by ₹10,000 loses ₹16,681 of special allowance, not ₹10,000.
+     * No product in this market shows that, which is why any override screen
+     * built on this needs a preview rather than a plain input.
+     *
+     * Above the PF wage cap employer PF stops tracking basic, so the marginal
+     * rate drops out and the factor falls to 1.548.
+     */
+    public function residualAbsorptionFactor(float $basic, array $config): float
+    {
+        $hraRate = (float) ($config['hra_percentage_of_basic'] ?? 0);
+        $marginalEmployerPfRate = $basic < self::PF_WAGE_CAP ? self::EMPLOYER_PF_RATE : 0.0;
+
+        return 1 + $hraRate + $marginalEmployerPfRate + self::GRATUITY_RATE;
+    }
+
+    /**
+     * The largest basic this CTC can carry before the residual goes negative.
+     *
+     * The relationship is linear in basic, so the answer is exact rather than
+     * searched for. It is what makes a refusal actionable: "basic can go up to
+     * ₹51,031 while holding CTC at ₹12,00,000" is something an admin can act
+     * on; "invalid structure" is not.
+     */
+    public function maxBasicWithinCtc(float $monthlyCtc, array $config): float
+    {
+        $components = $this->calculateSalaryComponents($monthlyCtc, $config);
+
+        $basic = (float) $components['basic'];
+        $residual = (float) $components['special_allowance'];
+
+        return max(0, $basic + $residual / $this->residualAbsorptionFactor($basic, $config));
     }
 
     /**
@@ -542,6 +623,102 @@ class PayrollCalculatorService
         return [
             'monthly_tds' => round($annualTotal / 12, 2),
             'annual_tax' => $annualTax,
+        ];
+    }
+
+    /**
+     * The month index within the Indian financial year: April is 1, March is 12.
+     */
+    public static function financialYearMonthIndex(int $calendarMonth): int
+    {
+        return $calendarMonth >= 4 ? $calendarMonth - 3 : $calendarMonth + 9;
+    }
+
+    /**
+     * Monthly TDS by cumulative year-to-date true-up.
+     *
+     * Replaces "annualise this month and divide by twelve", which is wrong in
+     * three separate ways: a month with loss of pay annualises the reduced
+     * gross and under-deducts; nothing ever trues up, so the error persists to
+     * March; and a mid-year revision never corrects the months before it.
+     *
+     *     annual_tax = tax(YTD paid + this month + projected remaining + prev employer)
+     *     remaining  = annual_tax − TDS already deducted − prev employer TDS
+     *     this_month = remaining ÷ months left in the FY (this month included)
+     *
+     * Corrections flow forward and are absorbed by the months that remain, so
+     * a finalized month is never restated — which is what makes this compatible
+     * with closed-run immutability rather than in tension with it. It is also
+     * s.192(1)'s own construction: tax on the estimated annual income, spread
+     * over the remainder of the year.
+     *
+     * Two details worth keeping, both of which Keka's documentation is explicit
+     * about and both of which fall out of the arithmetic rather than being
+     * bolted on:
+     *
+     *  - April is the base month. With no YTD and eleven months projected, this
+     *    reduces exactly to the annual tax over twelve, so the first month of
+     *    the year is not a special case in the code.
+     *  - Previous-employer income belongs in the same ledger, not as a separate
+     *    annual lump: its tax is assessed with everything else and its TDS is
+     *    credited against the total.
+     *
+     * @param  float  $ytdGrossPaid           Gross already paid this FY, excluding this month.
+     * @param  float  $thisMonthGross         This month's gross.
+     * @param  float  $projectedRemainingGross Gross expected across the months after this one.
+     * @param  float  $previousEmployerGross  Salary from a previous employer this FY.
+     * @param  float  $tdsAlreadyDeducted     TDS withheld by us so far this FY.
+     * @param  float  $previousEmployerTds    TDS withheld by the previous employer.
+     * @param  int    $monthsRemainingInFy    Months left including this one (1-12).
+     * @return array{annual_tax: float, tax_credited: float, remaining_tax: float, monthly_tds: float, taxable_income: float}
+     */
+    public function calculateCumulativeMonthlyTds(
+        float $ytdGrossPaid,
+        float $thisMonthGross,
+        float $projectedRemainingGross,
+        float $previousEmployerGross,
+        float $tdsAlreadyDeducted,
+        float $previousEmployerTds,
+        int $monthsRemainingInFy,
+        string $taxRegime = 'new',
+        array $exemptions = [],
+        float $annualTaxFreeAllowance = 0
+    ): array {
+        // $annualTaxFreeAllowance is an ANNUAL figure (the FBP exclusion, for
+        // instance) and is netted off the annual estimate rather than off a
+        // single month. Spreading it monthly would understate tax early in the
+        // year and overstate it late.
+        $estimatedAnnualGross = max(0,
+            $ytdGrossPaid + $thisMonthGross + $projectedRemainingGross + $previousEmployerGross
+            - max(0, $annualTaxFreeAllowance)
+        );
+
+        $annual = $taxRegime === 'old'
+            ? $this->calculateOldRegimeTax($estimatedAnnualGross, $exemptions)
+            : $this->calculateNewRegimeTax($estimatedAnnualGross, []);
+
+        $annualTax = (float) (is_array($annual) ? ($annual['total_tax'] ?? 0) : $annual);
+        $taxableIncome = (float) (is_array($annual) ? ($annual['taxable_income'] ?? 0) : 0);
+
+        $taxCredited = $tdsAlreadyDeducted + $previousEmployerTds;
+
+        // Signed deliberately. If we have over-withheld — a mid-year drop in
+        // pay, a late exemption declaration — the remainder is negative and the
+        // months that follow deduct less. Clamping it here would strand the
+        // excess with the employee's refund claim instead of correcting it in
+        // payroll, which is the whole point of a true-up.
+        $remainingTax = $annualTax - $taxCredited;
+
+        // Guard the divisor, not the result: March is month 12 of 12, so one
+        // month always remains.
+        $monthsLeft = max(1, min(12, $monthsRemainingInFy));
+
+        return [
+            'annual_tax' => round($annualTax, 2),
+            'taxable_income' => round($taxableIncome, 2),
+            'tax_credited' => round($taxCredited, 2),
+            'remaining_tax' => round($remainingTax, 2),
+            'monthly_tds' => round($remainingTax / $monthsLeft, 2),
         ];
     }
 

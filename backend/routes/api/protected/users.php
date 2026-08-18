@@ -43,6 +43,11 @@ Route::middleware('role:admin,manager')->group(function () {
     Route::post('/employees/{id}/bank-accounts', [EmployeeWorkspaceController::class, 'storeBankAccount']);
     Route::post('/employees/{id}/documents', [EmployeeWorkspaceController::class, 'storeDocument']);
     Route::get('/employees/{id}/documents/{documentId}/download', [EmployeeWorkspaceController::class, 'downloadDocument']);
+    // Qualifications. HR-owned rather than self-service, because the
+    // certificate is the evidence and the person it describes should not be
+    // the one attesting to it.
+    Route::post('/employees/{id}/educations', [EmployeeWorkspaceController::class, 'storeEducation']);
+    Route::delete('/employees/{id}/educations/{educationId}', [EmployeeWorkspaceController::class, 'destroyEducation'])->whereNumber('educationId');
     Route::post('/groups', [ReportGroupController::class, 'store']);
     Route::match(['put', 'patch'], '/groups/{id}', [ReportGroupController::class, 'update']);
     Route::delete('/groups/{id}', [ReportGroupController::class, 'destroy']);

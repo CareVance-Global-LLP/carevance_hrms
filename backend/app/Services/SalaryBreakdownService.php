@@ -91,6 +91,32 @@ class SalaryBreakdownService
             'medical_allowance' => 0,
         ]);
 
+        /*
+         * Approved overrides apply here too, not only in the payroll engines.
+         *
+         * This screen and the payslip are separate code paths, and an override
+         * honoured by one and ignored by the other is the worst available
+         * outcome: the breakdown an employee is shown would disagree with what
+         * they are paid, and nothing on either screen would say why. The
+         * figures below — gross, PF, ESI, PT, TDS and the residual — all derive
+         * from basic, so the substitution has to happen before any of them.
+         */
+        $overrideResult = app(\App\Services\Payroll\OverrideApplicationService::class)->apply(
+            $components,
+            (int) $employee->id,
+            (int) $employee->organization_id,
+            now()->format('Y-m'),
+            $monthlyCtc,
+            [
+                'basic_percentage' => $basicFraction,
+                'hra_percentage_of_basic' => $hraFractionOfBasic,
+                'conveyance_allowance' => $conveyance,
+                'medical_allowance' => 0,
+            ],
+        );
+
+        $components = $overrideResult['components'];
+
         $basic = $components['basic'];
         $gross = $components['gross'];
 
@@ -101,6 +127,30 @@ class SalaryBreakdownService
          * mode reuses the template math rather than reimplementing it.
          */
         $monthly = $structure ? $structure->calculateBreakdown($annualCtc)['monthly'] : null;
+
+        /*
+         * The named lines come from the structure, not from $components — so
+         * without this an overridden basic would move gross, PF and the
+         * residual while the Basic row itself still showed the structure's
+         * figure. The breakdown would fail to add up on screen.
+         */
+        if ($monthly !== null && $overrideResult['applied'] !== []) {
+            foreach ($overrideResult['applied'] as $applied) {
+                if (array_key_exists($applied['target'], $monthly)) {
+                    $monthly[$applied['target']] = $components[$applied['target']];
+                }
+            }
+
+            // HRA is derived from basic, so it moves even when it was not the
+            // component overridden.
+            if (array_key_exists('hra', $monthly)) {
+                $monthly['hra'] = $components['hra'];
+            }
+        }
+
+        foreach ($this->overrideWarnings($overrideResult['applied']) as $warning) {
+            $warnings[] = $warning;
+        }
 
         $earnings = [];
         $namedTotal = 0.0;
@@ -260,6 +310,49 @@ class SalaryBreakdownService
             ],
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * One sentence per applied override, naming who released it and what the
+     * structure would otherwise have produced.
+     *
+     * Both halves matter. Without the approver the figure looks like a system
+     * glitch; without the structure's own number the reader cannot tell how
+     * large the exception is. Stated annually, because that is the unit a
+     * revision letter and the override register both use.
+     *
+     * @param  list<array<string, mixed>>  $applied
+     * @return list<string>
+     */
+    private function overrideWarnings(array $applied): array
+    {
+        if ($applied === []) {
+            return [];
+        }
+
+        $overrides = \App\Models\PayrollOverride::query()
+            ->with('approvedBy:id,name')
+            ->whereIn('id', array_column($applied, 'override_id'))
+            ->get()
+            ->keyBy('id');
+
+        $labels = self::EARNING_LABELS;
+
+        return array_values(array_map(function (array $entry) use ($overrides, $labels) {
+            $override = $overrides->get($entry['override_id']);
+            $label = $labels[$entry['target']] ?? ucfirst(str_replace('_', ' ', $entry['target']));
+
+            $approver = $override?->approvedBy?->name;
+            $approvedAt = $override?->approved_at?->format('j M Y');
+
+            return sprintf(
+                '%s is overridden to ₹%s for this employee%s. The structure would have produced ₹%s.',
+                $label,
+                number_format((float) $entry['value'] * 12, 0),
+                $approver && $approvedAt ? sprintf(' (approved by %s on %s)', $approver, $approvedAt) : '',
+                number_format((float) $entry['computed_value'] * 12, 0),
+            );
+        }, $applied));
     }
 
     /** @return array<string,mixed> */

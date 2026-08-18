@@ -7,6 +7,7 @@ import {
   FileText,
   BarChart3,
   HelpCircle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasStrictAdminAccess } from '@/lib/permissions';
@@ -17,6 +18,7 @@ export type PayrollTabId =
   | 'overview'
   | 'run'
   | 'employee-pay'
+  | 'operations'
   | 'tax-compliance'
   | 'reports';
 
@@ -32,6 +34,7 @@ export const PAYROLL_TABS: PayrollTabDef[] = [
   { id: 'overview', label: 'Overview', path: '/payroll', icon: LayoutDashboard },
   { id: 'run', label: 'Run Payroll', path: '/payroll/run', icon: PlayCircle, strictAdminOnly: true },
   { id: 'employee-pay', label: 'Employee Pay', path: '/payroll/employee-pay', icon: Wallet },
+  { id: 'operations', label: 'Operations', path: '/payroll/operations', icon: SlidersHorizontal, strictAdminOnly: true },
   { id: 'tax-compliance', label: 'Tax & Compliance', path: '/payroll/tax-compliance', icon: FileText },
   { id: 'reports', label: 'Reports', path: '/payroll/reports', icon: BarChart3, strictAdminOnly: true },
 ];

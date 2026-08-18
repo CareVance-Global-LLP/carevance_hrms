@@ -24,12 +24,17 @@ export type PersonalDetailsForm = {
   last_name: string;
   gender: string;
   date_of_birth: string;
+  blood_group: string;
   phone: string;
   personal_email: string;
   address_line: string;
   city: string;
   state: string;
   postal_code: string;
+  permanent_address_line: string;
+  permanent_city: string;
+  permanent_state: string;
+  permanent_postal_code: string;
   emergency_contact_name: string;
   emergency_contact_number: string;
   emergency_contact_relationship: string;
@@ -40,12 +45,17 @@ export const createEmptyPersonalDetailsForm = (): PersonalDetailsForm => ({
   last_name: '',
   gender: '',
   date_of_birth: '',
+  blood_group: '',
   phone: '',
   personal_email: '',
   address_line: '',
   city: '',
   state: '',
   postal_code: '',
+  permanent_address_line: '',
+  permanent_city: '',
+  permanent_state: '',
+  permanent_postal_code: '',
   emergency_contact_name: '',
   emergency_contact_number: '',
   emergency_contact_relationship: '',

@@ -1,15 +1,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { Search, PieChart, Loader2, AlertTriangle, RotateCcw } from 'lucide-react';
+import { Search, PieChart, Loader2, RotateCcw } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
-import type { SalaryBreakdownLine } from '@/types';
+import { cn } from '@/utils/cn';
 import Button from '@/components/ui/Button';
 import { TextInput, SelectInput, FieldLabel } from '@/components/ui/FormField';
 import { formatPayrollAmount } from '@/components/ui/PayrollAmount';
 import { PageLoadingState, PageErrorState, PageEmptyState } from '@/components/ui/PageState';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import ModuleHeader from '@/components/payroll/ModuleHeader';
+import SalaryBreakdownView from '@/components/payroll/SalaryBreakdownView';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 const INDIAN_STATES = [
@@ -51,18 +52,22 @@ const defaultWhatIf: WhatIfState = {
  * Held as strings so a half-typed "4" on the way to "40" does not snap the
  * field to 0 and redraw the whole breakdown underneath the cursor.
  */
+type CustomUnit = 'pct' | 'amt';
+
 interface CustomState {
   basic_percentage: string;
+  /** Basic and HRA can be stated either way. Everything else is percent-only. */
+  basic_unit: CustomUnit;
   hra_percentage: string;
+  hra_unit: CustomUnit;
   da_percentage: string;
   conveyance_amount: string;
   nps_percentage: string;
   vpf_percentage: string;
 }
 
+/** The four that have no unit choice — they mean one thing each. */
 const CUSTOM_FIELDS: Array<{ key: keyof CustomState; label: string; hint: string }> = [
-  { key: 'basic_percentage', label: 'Basic', hint: '% of CTC' },
-  { key: 'hra_percentage', label: 'HRA', hint: '% of Basic' },
   { key: 'da_percentage', label: 'DA', hint: '% of CTC' },
   { key: 'conveyance_amount', label: 'Conveyance', hint: '₹ / month' },
   { key: 'nps_percentage', label: 'NPS', hint: '% of Basic' },
@@ -71,7 +76,9 @@ const CUSTOM_FIELDS: Array<{ key: keyof CustomState; label: string; hint: string
 
 const emptyCustom: CustomState = {
   basic_percentage: '40',
+  basic_unit: 'pct',
   hra_percentage: '50',
+  hra_unit: 'pct',
   da_percentage: '0',
   conveyance_amount: '1600',
   nps_percentage: '0',
@@ -90,50 +97,6 @@ function getInitials(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 2);
-}
-
-function LineTable({ title, lines, emptyLabel }: { title: string; lines: SalaryBreakdownLine[]; emptyLabel: string }) {
-  const total = lines.reduce((sum, l) => sum + l.monthly, 0);
-
-  return (
-    <div className="rounded-lg border border-slate-200 overflow-hidden">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</span>
-        <span className="text-xs font-semibold text-slate-700">{formatPayrollAmount(total, { compact: true })}/mo</span>
-      </div>
-      {lines.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-slate-400">{emptyLabel}</p>
-      ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100">
-              <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-slate-400">Component</th>
-              <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-400">Monthly</th>
-              <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-400">Annual</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {lines.map((line) => (
-              <tr key={line.key}>
-                <td className="px-3 py-2 text-slate-700">
-                  {line.label}
-                  {line.origin === 'residual' && (
-                    <span className="ml-1.5 text-[10px] text-slate-400">balances to CTC</span>
-                  )}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-slate-900">
-                  {formatPayrollAmount(line.monthly, { compact: true })}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-slate-500">
-                  {formatPayrollAmount(line.annual, { compact: true })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
 }
 
 /**
@@ -294,12 +257,22 @@ export default function SalaryBreakdownCards() {
   const debouncedCtc = useDebouncedValue(whatIf.annual_ctc, 400);
   const debouncedCustom = useDebouncedValue(custom, 400);
 
+  /*
+   * A rupee amount is sent as an amount and converted server-side, rather than
+   * turned into a percentage here. Two reasons: the server already owns that
+   * arithmetic, and a percentage computed from a rounded rupee figure and sent
+   * as the authority would quietly disagree with the amount the admin typed.
+   */
   const customParams = useMemo(
     () =>
       mode === 'custom'
         ? {
-            basic_percentage: toNumber(debouncedCustom.basic_percentage),
-            hra_percentage: toNumber(debouncedCustom.hra_percentage),
+            ...(debouncedCustom.basic_unit === 'amt'
+              ? { basic_amount: toNumber(debouncedCustom.basic_percentage) }
+              : { basic_percentage: toNumber(debouncedCustom.basic_percentage) }),
+            ...(debouncedCustom.hra_unit === 'amt'
+              ? { hra_amount: toNumber(debouncedCustom.hra_percentage) }
+              : { hra_percentage: toNumber(debouncedCustom.hra_percentage) }),
             da_percentage: toNumber(debouncedCustom.da_percentage),
             conveyance_amount: toNumber(debouncedCustom.conveyance_amount),
             nps_percentage: toNumber(debouncedCustom.nps_percentage),
@@ -596,6 +569,97 @@ export default function SalaryBreakdownCards() {
 
                 {mode === 'custom' && (
                   <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-3 lg:grid-cols-6">
+                    {(['basic', 'hra'] as const).map((which) => {
+                      const valueKey = which === 'basic' ? 'basic_percentage' : 'hra_percentage';
+                      const unitKey = which === 'basic' ? 'basic_unit' : 'hra_unit';
+                      const unit = custom[unitKey] as CustomUnit;
+                      const raw = toNumber(custom[valueKey]);
+
+                      // The base this component is a share of. Basic is a share
+                      // of monthly CTC; HRA is a share of monthly basic.
+                      const monthlyCtc = (whatIf.annual_ctc ?? 0) / 12;
+                      const basicMonthly =
+                        custom.basic_unit === 'amt'
+                          ? toNumber(custom.basic_percentage)
+                          : (monthlyCtc * toNumber(custom.basic_percentage)) / 100;
+                      const base = which === 'basic' ? monthlyCtc : basicMonthly;
+
+                      // The same value expressed the other way, shown live so
+                      // the officer always sees both.
+                      const converted =
+                        unit === 'pct'
+                          ? (base * raw) / 100
+                          : base > 0
+                            ? (raw / base) * 100
+                            : 0;
+
+                      return (
+                        <div key={which}>
+                          <div className="flex items-center justify-between gap-1">
+                            <FieldLabel>{which === 'basic' ? 'Basic' : 'HRA'}</FieldLabel>
+                            <div className="flex overflow-hidden rounded border border-slate-200">
+                              {(['pct', 'amt'] as const).map((option) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  aria-pressed={unit === option}
+                                  className={cn(
+                                    'px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                                    unit === option
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-white text-slate-500 hover:bg-slate-50',
+                                  )}
+                                  onClick={() => {
+                                    if (unit === option) return;
+
+                                    /*
+                                     * Convert, never reset. Switching the unit
+                                     * on a field the admin has already filled
+                                     * must preserve what they meant — blanking
+                                     * it would lose the figure they were part
+                                     * way through reasoning about.
+                                     *
+                                     * The base > 0 guard is the crash: a zero
+                                     * basic is reachable simply by clearing the
+                                     * Basic field.
+                                     */
+                                    const next =
+                                      option === 'amt'
+                                        ? (base * raw) / 100
+                                        : base > 0
+                                          ? (raw / base) * 100
+                                          : 0;
+
+                                    setCustom({
+                                      ...custom,
+                                      [unitKey]: option,
+                                      [valueKey]: String(Math.round(next * 100) / 100),
+                                    });
+                                  }}
+                                >
+                                  {option === 'pct' ? '%' : '₹'}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <TextInput
+                            type="text"
+                            inputMode="decimal"
+                            aria-label={which === 'basic' ? 'Basic' : 'HRA'}
+                            value={custom[valueKey]}
+                            onChange={(e) =>
+                              setCustom({ ...custom, [valueKey]: e.target.value.replace(/[^0-9.]/g, '') })
+                            }
+                          />
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            {unit === 'pct'
+                              ? `% of ${which === 'basic' ? 'CTC' : 'Basic'} · ₹${Math.round(converted).toLocaleString('en-IN')}/mo`
+                              : `₹ / month · ${converted.toFixed(2)}% of ${which === 'basic' ? 'CTC' : 'Basic'}`}
+                          </p>
+                        </div>
+                      );
+                    })}
+
                     {CUSTOM_FIELDS.map((field) => (
                       <div key={field.key}>
                         <FieldLabel>{field.label}</FieldLabel>
@@ -640,69 +704,7 @@ export default function SalaryBreakdownCards() {
                       <Loader2 className="h-3.5 w-3.5 animate-spin" /> Recalculating…
                     </div>
                   )}
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {[
-                      { label: 'Monthly CTC', value: breakdown.monthly.ctc },
-                      { label: 'Monthly Gross', value: breakdown.monthly.gross },
-                      { label: 'Deductions', value: breakdown.monthly.total_deductions },
-                      { label: 'Net (take-home)', value: breakdown.monthly.net },
-                    ].map((tile) => (
-                      <div key={tile.label} className="rounded-lg border border-slate-200 p-3">
-                        <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                          {tile.label}
-                        </div>
-                        <div className="mt-1 text-lg font-bold tabular-nums text-slate-900">
-                          {formatPayrollAmount(tile.value, { compact: true })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {breakdown.warnings.length > 0 && (
-                    <div className="space-y-2">
-                      {breakdown.warnings.map((w) => (
-                        <div
-                          key={w}
-                          className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
-                        >
-                          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                          <span>{w}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <LineTable
-                      title={
-                        breakdown.source.salary_template_name
-                          ? `Earnings — ${breakdown.source.salary_template_name}`
-                          : 'Earnings'
-                      }
-                      lines={breakdown.earnings}
-                      emptyLabel="No earning components."
-                    />
-                    <LineTable
-                      title="Deductions"
-                      lines={breakdown.deductions}
-                      emptyLabel="No deductions apply to this employee."
-                    />
-                  </div>
-
-                  <LineTable
-                    title="Employer contributions (not deducted from the employee)"
-                    lines={breakdown.employer_contributions}
-                    emptyLabel="No employer contributions."
-                  />
-
-                  <p className="text-xs text-slate-500">
-                    Gross is CTC less employer PF and the gratuity provision.
-                    {breakdown.notes.pf_cap_applied &&
-                      ` PF is capped at the ₹15,000 wage ceiling (PF wages ${formatPayrollAmount(breakdown.notes.pf_wages, { compact: true })}).`}
-                    {!breakdown.notes.esi_applicable && ' ESI does not apply above the ₹21,000 gross threshold.'}
-                    {breakdown.notes.tds_is_estimate &&
-                      ` TDS is an estimate on the ${breakdown.notes.tax_regime} regime and changes as investment proofs are verified.`}
-                  </p>
+                  <SalaryBreakdownView breakdown={breakdown} />
                 </div>
               ) : null}
             </div>

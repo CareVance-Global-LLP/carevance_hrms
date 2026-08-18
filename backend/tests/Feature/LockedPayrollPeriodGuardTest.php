@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
+use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
@@ -148,5 +149,105 @@ class LockedPayrollPeriodGuardTest extends TestCase
         $this->approve($item)->assertOk();
 
         $this->assertSame('approved', $item->fresh()->status);
+    }
+
+    // ------------------------------------------------------- Leave approval
+    //
+    // PayrollPeriodGuard's docblock names leave approval as a case it exists
+    // for, but it was only ever wired into the time-edit path above. Approving
+    // or revoking a leave writes and deletes AttendanceRecord rows for
+    // arbitrary back-dated ranges, so it rewrote closed periods freely.
+
+    private function pendingLeave(?string $start = null, ?string $end = null): LeaveRequest
+    {
+        $day = $this->workday();
+
+        // A pending leave whose end_date has passed is auto-cancelled on the
+        // way into approve(), which would 422 for a reason that has nothing to
+        // do with the payroll guard under test. Sit inside the fixture month.
+        Carbon::setTestNow($day);
+
+        return LeaveRequest::create([
+            'organization_id' => $this->organization->id,
+            'user_id' => $this->employee->id,
+            'start_date' => $start ?? $day->toDateString(),
+            'end_date' => $end ?? $day->toDateString(),
+            'leave_type' => 'casual',
+            'leave_category' => 'paid',
+            'reason' => 'Family function',
+            'status' => 'pending',
+        ]);
+    }
+
+    private function approveLeave(LeaveRequest $leave)
+    {
+        return $this->patchJson(
+            '/api/leave-requests/'.$leave->id.'/approve',
+            ['review_note' => 'ok'],
+            $this->apiHeadersFor($this->admin)
+        );
+    }
+
+    public function test_leave_approval_is_refused_once_the_run_is_locked(): void
+    {
+        $this->runWithStatus('locked');
+        $leave = $this->pendingLeave();
+
+        $this->approveLeave($leave)->assertStatus(422);
+
+        $this->assertSame('pending', $leave->fresh()->status, 'The leave must stay pending, not silently approve.');
+    }
+
+    public function test_leave_approval_is_refused_once_the_run_is_disbursed(): void
+    {
+        $this->runWithStatus('disbursed');
+        $leave = $this->pendingLeave();
+
+        $this->approveLeave($leave)->assertStatus(422);
+    }
+
+    /**
+     * The reason the guard checks every month the leave spans rather than just
+     * start_date: this request begins in an open month and ends in a closed
+     * one, and would otherwise be approved.
+     */
+    public function test_leave_approval_is_refused_when_the_range_ends_in_a_closed_month(): void
+    {
+        $this->runWithStatus('approved'); // closes 2026-06
+
+        $leave = $this->pendingLeave('2026-05-28', '2026-06-02');
+
+        $this->approveLeave($leave)->assertStatus(422);
+        $this->assertSame('pending', $leave->fresh()->status);
+    }
+
+    public function test_leave_approval_still_works_while_the_run_is_a_draft(): void
+    {
+        $this->runWithStatus('draft');
+        $leave = $this->pendingLeave();
+
+        $this->approveLeave($leave)->assertOk();
+
+        $this->assertSame('approved', $leave->fresh()->status);
+    }
+
+    public function test_revoke_approval_is_refused_once_the_run_is_locked(): void
+    {
+        $this->runWithStatus('locked');
+
+        $leave = $this->pendingLeave();
+        $leave->update([
+            'status' => 'approved',
+            'revoke_status' => 'pending',
+            'revoke_requested_at' => now(),
+        ]);
+
+        $this->patchJson(
+            '/api/leave-requests/'.$leave->id.'/revoke-approve',
+            ['review_note' => 'ok'],
+            $this->apiHeadersFor($this->admin)
+        )->assertStatus(422);
+
+        $this->assertSame('approved', $leave->fresh()->status, 'A closed period must not have its leave rolled back.');
     }
 }

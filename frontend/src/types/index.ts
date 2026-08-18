@@ -836,9 +836,39 @@ export interface EmployeeProfileDetails {
   city?: string | null;
   state?: string | null;
   postal_code?: string | null;
+  /**
+   * A separate fact from the current address, not a longer version of it. With
+   * one address on the record, relocating for work overwrote the address the
+   * employee's PF nomination and bank KYC are registered against.
+   */
+  permanent_address_line?: string | null;
+  permanent_city?: string | null;
+  permanent_state?: string | null;
+  permanent_postal_code?: string | null;
+  /** Duty of care, and the reason an emergency contact number exists. */
+  blood_group?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_number?: string | null;
   emergency_contact_relationship?: string | null;
+}
+
+/**
+ * One qualification. Several per person is the ordinary case, which is why this
+ * is a list rather than a "highest qualification" field.
+ */
+export interface EmployeeEducationRecord {
+  id: number;
+  organization_id: number;
+  user_id: number;
+  qualification: string;
+  institution?: string | null;
+  specialisation?: string | null;
+  year_of_passing?: number | null;
+  /** A percentage on one certificate, a CGPA on the next — kept as written. */
+  grade?: string | null;
+  employee_document_id?: number | null;
+  notes?: string | null;
+  document?: EmployeeDocumentRecord | null;
 }
 
 export interface EmployeeWorkInfo {
@@ -922,6 +952,7 @@ export interface EmployeeWorkspacePayload {
   work_info?: EmployeeWorkInfo | null;
 
   government_ids: EmployeeGovernmentIdRecord[];
+  educations: EmployeeEducationRecord[];
   bank_accounts: EmployeeBankAccountRecord[];
   documents: EmployeeDocumentRecord[];
   attendance: Record<string, any>;

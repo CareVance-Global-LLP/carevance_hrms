@@ -5,6 +5,7 @@ import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import type { PayGroupSettings, CreatePayGroupSettingsPayload, SalaryStructure, PayGroupFilingDetail, UpdateFilingDetailsPayload } from '@/types';
 import Modal from '@/components/ui/dialog/Modal';
+import ComponentOverrideGates from '@/components/payroll/overrides/ComponentOverrideGates';
 
 const INDIAN_STATES = [
   { code: 'andhra_pradesh', name: 'Andhra Pradesh' },
@@ -1135,6 +1136,9 @@ export default function PayGroupSettings({ onBack, payGroupId }: { onBack: (targ
           </div>
         </div>
       )}
+
+      {/* ===== EMPLOYEE-LEVEL OVERRIDE GATES ===== */}
+      <ComponentOverrideGates />
 
       {/* Keka-style State-wise Tax Configuration */}
       <StateWiseTaxConfig

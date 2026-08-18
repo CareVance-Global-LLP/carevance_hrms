@@ -9,9 +9,24 @@ use Illuminate\Support\Collection;
 
 class ApprovalRoutingService
 {
+    /**
+     * Rank a user, tolerating how the role was actually stored.
+     *
+     * The match below used to run on $user->role verbatim, so a role of
+     * ' Manager ' — padded, capitalised, as it arrives from an import or a
+     * hand-edited row — fell through to `default => 999`. That ranks them
+     * BELOW an employee, which is the worst possible way to fail: the requester
+     * has no eligible reviewer, every leave request they submit is refused with
+     * a 422, and nothing in the message mentions their role.
+     *
+     * Normalising here rather than at each call site because this is the one
+     * place the string is turned into a number.
+     */
     private function userHierarchyLevel(User $user): int
     {
-        return $user->customRole?->hierarchy_level ?? match ($user->role) {
+        $role = strtolower(trim((string) $user->role));
+
+        return $user->customRole?->hierarchy_level ?? match ($role) {
             'super_admin' => 0,
             'admin' => 10,
             'manager' => 50,
@@ -51,6 +66,21 @@ class ApprovalRoutingService
         return $directManagerIds
             ->concat($nearestReviewerIds)
             ->concat($adminIds)
+            /*
+             * Nobody reviews their own request.
+             *
+             * A manager sits in their own group and outranks the employees in
+             * it, so the group-based lookups above can return them for their
+             * own submission. That leaked two ways: this collection is used
+             * directly as the notification recipient list, so a manager was
+             * told their own leave had been submitted; and hasEligibleReviewer()
+             * counted them, so a manager with no actual superior looked
+             * reviewable when nothing could approve them.
+             *
+             * Filtered here rather than at the call sites because it is an
+             * invariant of the resolver, not a preference of any one caller.
+             */
+            ->reject(fn ($id) => (int) $id === (int) $requester->id)
             ->unique()
             ->values();
     }
@@ -419,7 +449,15 @@ class ApprovalRoutingService
         $requesterLevel = $this->userHierarchyLevel($requester);
 
         if ($requesterLevel >= 100) {
-            return 'No team lead is assigned to your department yet. Please contact an admin.';
+            /*
+             * "Manager" and "group", because those are the things the routing
+             * above actually resolves — reviewerUserIds() walks $user->groups()
+             * and ranks by manager hierarchy. The message previously said "team
+             * lead" and "department", neither of which is a concept this
+             * routing consults, so an employee who read it went and checked
+             * their department while the missing link was a group manager.
+             */
+            return 'No manager is assigned to your group yet. Please contact an admin.';
         }
 
         if ($requesterLevel > 10) {

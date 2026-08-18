@@ -37,10 +37,14 @@ class EsiContributionPeriodTest extends TestCase
 
     private function contributedIn(string $monthYear, float $esi = 150.0): void
     {
+        // Built the way production builds it: the run holds its contents while
+        // it is still open, and only then advances. Creating items directly on
+        // an 'approved' run is refused by PayrollItemObserver, correctly --
+        // adding money to a closed run is exactly what it exists to stop.
         $run = PayrollMonthlyRun::create([
             'organization_id' => $this->organization->id,
             'month_year' => $monthYear,
-            'status' => 'approved',
+            'status' => 'draft',
         ]);
 
         PayrollItem::create([
@@ -52,6 +56,8 @@ class EsiContributionPeriodTest extends TestCase
             'esi_employee' => $esi,
             'net_pay' => 19850,
         ]);
+
+        $run->update(['status' => 'approved']);
     }
 
     public function test_april_to_september_is_one_period(): void

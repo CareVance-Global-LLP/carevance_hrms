@@ -22,6 +22,12 @@ class AppServiceProvider extends ServiceProvider
         // shared memo a list endpoint would re-read the organization row for
         // every row in the page.
         $this->app->singleton(\App\Services\Monitoring\MonitoringSettingsResolver::class);
+
+        // Singleton so the permission a caller opens with permit() is visible
+        // to the observer resolved from this same container. A fresh instance
+        // per resolution would mean the observer never sees it and every
+        // governed correction would be refused.
+        $this->app->singleton(\App\Services\Payroll\ClosedRunWriteContext::class);
     }
 
     /**
@@ -29,6 +35,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        /*
+         * Closed payroll runs are immutable in the money columns.
+         *
+         * Registered here rather than in each write path because the whole
+         * point is to cover the paths nobody remembers -- see
+         * PayrollItemObserver for what it does and does not guard.
+         */
+        \App\Models\PayrollItem::observe(\App\Observers\PayrollItemObserver::class);
+
         /*
          * The password policy, in one place.
          *

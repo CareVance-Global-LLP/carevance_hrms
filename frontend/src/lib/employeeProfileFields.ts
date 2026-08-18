@@ -54,6 +54,14 @@ const governmentIdsOf = (user: any): any[] =>
   user?.employee_government_ids ?? user?.employeeGovernmentIds ?? user?.government_ids ?? [];
 const bankAccountsOf = (user: any): any[] =>
   user?.employee_bank_accounts ?? user?.employeeBankAccounts ?? user?.bank_accounts ?? [];
+const educationsOf = (user: any): any[] =>
+  user?.employee_educations ?? user?.employeeEducations ?? user?.educations ?? [];
+
+/** A government ID of a given kind, matched the way the backend matches it. */
+const governmentIdOfType = (user: any, type: string) =>
+  governmentIdsOf(user).find((id: any) =>
+    String(id?.id_type ?? '').toLowerCase().includes(type)
+  )?.id_number;
 
 const profileField = (key: string) => (user: any) => profileOf(user)[key];
 const workField = (key: string) => (user: any) => workInfoOf(user)[key];
@@ -64,6 +72,10 @@ export const PROFILE_FIELDS: ReadonlyArray<ProfileField> = [
   { key: 'last_name', label: 'Last name', group: 'identity', owner: 'employee', read: profileField('last_name') },
   { key: 'gender', label: 'Gender', group: 'identity', owner: 'employee', read: profileField('gender') },
   { key: 'date_of_birth', label: 'Date of birth', group: 'identity', owner: 'employee', requiredForPayroll: true, read: profileField('date_of_birth') },
+  // Not required for payroll — nothing about a salary run depends on it. It is
+  // here because an emergency contact number without a blood group means the
+  // call still ends with the hospital asking.
+  { key: 'blood_group', label: 'Blood group', group: 'identity', owner: 'employee', read: profileField('blood_group') },
 
   // ── Contact ─────────────────────────────────────────────────
   { key: 'phone', label: 'Phone', group: 'contact', owner: 'employee', read: profileField('phone') },
@@ -74,6 +86,10 @@ export const PROFILE_FIELDS: ReadonlyArray<ProfileField> = [
   { key: 'city', label: 'City', group: 'address', owner: 'employee', read: profileField('city') },
   { key: 'state', label: 'State', group: 'address', owner: 'employee', read: profileField('state') },
   { key: 'postal_code', label: 'Postal code', group: 'address', owner: 'employee', read: profileField('postal_code') },
+  // Only the address line, not all four parts. The permanent address is one
+  // fact for completeness purposes, and reporting four separate gaps for it
+  // would drown the current address in the missing-fields list.
+  { key: 'permanent_address_line', label: 'Permanent address', group: 'address', owner: 'employee', read: profileField('permanent_address_line') },
 
   // ── Emergency contact ───────────────────────────────────────
   { key: 'emergency_contact_name', label: 'Emergency contact name', group: 'emergency', owner: 'employee', read: profileField('emergency_contact_name') },
@@ -93,10 +109,32 @@ export const PROFILE_FIELDS: ReadonlyArray<ProfileField> = [
     group: 'statutory',
     owner: 'employee',
     requiredForPayroll: true,
-    read: (user: any) =>
-      governmentIdsOf(user).find((id: any) =>
-        String(id?.id_type ?? '').toLowerCase().includes('pan')
-      )?.id_number,
+    read: (user: any) => governmentIdOfType(user, 'pan'),
+  },
+  /*
+   * Aadhaar was absent from this registry even though the record has held it
+   * since the workspace tables were created, so an employee with no Aadhaar on
+   * file reported as complete. It is not requiredForPayroll — a salary run does
+   * not read it — but EPFO seeding and most onboarding verification do.
+   */
+  {
+    key: 'aadhaar',
+    label: 'Aadhaar',
+    group: 'statutory',
+    owner: 'employee',
+    read: (user: any) => governmentIdOfType(user, 'aadhaar'),
+  },
+  /*
+   * Education is complete when at least one qualification is on file. Counting
+   * a specific number would be wrong — a school leaver legitimately has one
+   * record and a doctorate holder four.
+   */
+  {
+    key: 'education',
+    label: 'Education record',
+    group: 'identity',
+    owner: 'hr',
+    read: (user: any) => educationsOf(user),
   },
   {
     key: 'bank_account',

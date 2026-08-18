@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\EmployeeActivityLog;
 use App\Models\EmployeeBankAccount;
 use App\Models\EmployeeDocument;
+use App\Models\EmployeeEducation;
 use App\Models\EmployeeGovernmentId;
 use App\Models\EmployeeProfile;
 use App\Models\EmployeeSalaryAssignment;
@@ -73,6 +74,15 @@ class EmployeeWorkspaceService
             ->where('user_id', $employee->id)
             ->latest()
             ->get();
+        $educations = EmployeeEducation::query()
+            ->with('document')
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            // Most recent qualification first, which is the one anybody asking
+            // about someone's education is asking about.
+            ->orderByDesc('year_of_passing')
+            ->latest()
+            ->get();
         $bankAccounts = EmployeeBankAccount::query()
             ->with('document')
             ->where('organization_id', $employee->organization_id)
@@ -130,6 +140,7 @@ class EmployeeWorkspaceService
                 'recent_adjustments' => $adjustments->values(),
             ],
             'government_ids' => $governmentIds,
+            'educations' => $educations,
             'bank_accounts' => $bankAccounts,
             'documents' => $documents,
             'attendance' => $attendance,
@@ -266,6 +277,41 @@ class EmployeeWorkspaceService
             'notes' => $data['notes'] ?? null,
             'meta' => $data['meta'] ?? null,
         ])->fresh('uploader');
+    }
+
+    /**
+     * Create or replace one qualification.
+     *
+     * Keyed on the explicit id only — unlike a government ID, where one row per
+     * type is the rule, an employee legitimately holds several qualifications
+     * and two of them can share a name. Matching on the qualification string
+     * would make adding a second "B.Sc" silently overwrite the first.
+     */
+    public function upsertEducation(User $employee, array $data): EmployeeEducation
+    {
+        $record = EmployeeEducation::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            ->when(!empty($data['id']), fn ($query) => $query->where('id', (int) $data['id']))
+            ->when(empty($data['id']), fn ($query) => $query->whereRaw('1 = 0'))
+            ->first() ?: new EmployeeEducation([
+                'organization_id' => $employee->organization_id,
+                'user_id' => $employee->id,
+            ]);
+
+        unset($data['id']);
+        // A save that replaces the row's details but supplies no new file must
+        // keep the certificate already attached to it.
+        if (! array_key_exists('employee_document_id', $data)) {
+            unset($data['employee_document_id']);
+        }
+
+        $record->fill($data);
+        $record->organization_id = $employee->organization_id;
+        $record->user_id = $employee->id;
+        $record->save();
+
+        return $record->fresh(['document']);
     }
 
     public function upsertGovernmentId(User $employee, array $data): EmployeeGovernmentId

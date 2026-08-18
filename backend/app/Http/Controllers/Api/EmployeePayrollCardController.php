@@ -187,6 +187,16 @@ class EmployeePayrollCardController extends Controller
             'custom' => 'nullable|array',
             'custom.basic_percentage' => 'nullable|numeric|min:0|max:100',
             'custom.hra_percentage' => 'nullable|numeric|min:0|max:100',
+            /*
+             * A rupee amount is an INPUT FORMAT, not a second engine.
+             *
+             * Both are MONTHLY, matching conveyance_amount, the only other
+             * rupee field here. They are converted to the percentages
+             * SalaryBreakdownService already takes, so there is exactly one
+             * arithmetic path and nothing new can drift from it.
+             */
+            'custom.basic_amount' => 'nullable|numeric|min:0',
+            'custom.hra_amount' => 'nullable|numeric|min:0',
             'custom.da_percentage' => 'nullable|numeric|min:0|max:100',
             'custom.conveyance_amount' => 'nullable|numeric|min:0',
             'custom.nps_percentage' => 'nullable|numeric|min:0|max:100',
@@ -239,6 +249,41 @@ class EmployeePayrollCardController extends Controller
          */
         // '' as well as null: an absent number must not reach a decimal cast.
         $custom = array_filter($validated['custom'] ?? [], fn ($v) => $v !== null && $v !== '');
+
+        /*
+         * Amounts become percentages before anything else looks at them.
+         *
+         * Basic is a share of monthly CTC; HRA is a share of monthly BASIC —
+         * so HRA has to be converted after basic, against the basic that
+         * conversion produced. Doing it the other way round silently rates HRA
+         * against the wrong base.
+         *
+         * The guards are the crash: a zero CTC or a zero basic would divide by
+         * nothing, and a zero basic is entirely reachable — an admin clearing
+         * the Basic field before typing a new one.
+         */
+        $customWarnings = [];
+        $monthlyCtcForCustom = $annualCtc / 12;
+
+        if (isset($custom['basic_amount']) && $monthlyCtcForCustom > 0) {
+            if (isset($custom['basic_percentage'])) {
+                $customWarnings[] = 'Basic was given as both an amount and a percentage; the amount was used.';
+            }
+            $custom['basic_percentage'] = $custom['basic_amount'] / $monthlyCtcForCustom * 100;
+        }
+
+        if (isset($custom['hra_amount'])) {
+            $basicMonthly = $monthlyCtcForCustom * (float) ($custom['basic_percentage'] ?? 40) / 100;
+
+            if ($basicMonthly > 0) {
+                if (isset($custom['hra_percentage'])) {
+                    $customWarnings[] = 'HRA was given as both an amount and a percentage; the amount was used.';
+                }
+                $custom['hra_percentage'] = $custom['hra_amount'] / $basicMonthly * 100;
+            }
+        }
+
+        unset($custom['basic_amount'], $custom['hra_amount']);
 
         if ($custom !== []) {
             $structure = SalaryTemplate::transient([
@@ -293,7 +338,29 @@ class EmployeePayrollCardController extends Controller
                 'is_metro_city' => (bool) ($config->is_metro_city ?? true),
                 'is_preview' => $isPreview,
             ],
-        ] + $breakdowns->forEmployee($employee, $structure, $annualCtc, $config, $ptState));
+        ] + $this->withCustomWarnings(
+            $breakdowns->forEmployee($employee, $structure, $annualCtc, $config, $ptState),
+            $customWarnings,
+        ));
+    }
+
+    /**
+     * Fold the amount-versus-percentage notes into the breakdown's own
+     * warnings, rather than adding a second place a caller has to look.
+     *
+     * @param  array<string, mixed>  $breakdown
+     * @param  list<string>  $warnings
+     * @return array<string, mixed>
+     */
+    private function withCustomWarnings(array $breakdown, array $warnings): array
+    {
+        if ($warnings === []) {
+            return $breakdown;
+        }
+
+        $breakdown['warnings'] = array_merge($breakdown['warnings'] ?? [], $warnings);
+
+        return $breakdown;
     }
 
     public function update(Request $request, int $userId): JsonResponse

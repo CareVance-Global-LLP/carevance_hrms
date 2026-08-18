@@ -63,14 +63,40 @@ class PayrollDisbursementTest extends TestCase
             'is_default' => true,
         ]);
 
-        return PayrollItem::create([
+        return $this->whileRunIsOpen($run, fn () => PayrollItem::create([
             'organization_id' => $org->id,
             'payroll_run_id' => $run->id,
             'user_id' => $user->id,
             'net_pay' => $net,
             'gross_salary' => $net,
             'payment_status' => 'pending',
-        ]);
+        ]));
+    }
+
+    /**
+     * Build a run's contents while the run is still open.
+     *
+     * scenario() starts the run at 'approved' because that is the state
+     * disbursement operates on. Production never writes money into a run in
+     * that state -- processing fills a draft run, and the run advances only
+     * once its items exist -- and PayrollItemObserver now refuses it, which is
+     * exactly what it is for. So the fixture models the real order: open the
+     * run, write the item, close it again.
+     *
+     * @template T
+     * @param  callable():T  $build
+     * @return T
+     */
+    private function whileRunIsOpen(PayrollMonthlyRun $run, callable $build): mixed
+    {
+        $closedStatus = $run->status;
+        $run->update(['status' => 'draft']);
+
+        try {
+            return $build();
+        } finally {
+            $run->update(['status' => $closedStatus]);
+        }
     }
 
     public function test_it_records_a_batch_and_writes_a_bank_file(): void
@@ -131,13 +157,13 @@ class PayrollDisbursementTest extends TestCase
 
         // No bank account at all.
         $noAccount = User::factory()->create(['organization_id' => $org->id, 'role' => 'employee']);
-        PayrollItem::create([
+        $this->whileRunIsOpen($run, fn () => PayrollItem::create([
             'organization_id' => $org->id,
             'payroll_run_id' => $run->id,
             'user_id' => $noAccount->id,
             'net_pay' => 20000.00,
             'payment_status' => 'pending',
-        ]);
+        ]));
 
         // Deductions overran gross.
         $negative = $this->payableEmployee($org, $run, -500.00);

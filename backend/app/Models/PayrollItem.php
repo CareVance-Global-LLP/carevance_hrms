@@ -10,6 +10,83 @@ class PayrollItem extends Model
 {
     use BelongsToOrganization;
 
+    /**
+     * Every column on this table that carries money.
+     *
+     * PayrollItemObserver refuses a write to any of these once the parent run
+     * is closed, and ClosedRunImmutabilityTest enumerates the codebase against
+     * the same list. Keeping one definition means a new money column is
+     * protected the moment it is added here, rather than the moment somebody
+     * remembers to add it to a guard.
+     *
+     * Deliberately excluded: payment_status, payment_method, payment_reference
+     * and paid_at. Disbursement writes those on an approved or released run by
+     * design -- recording that money left the bank is not changing what was
+     * owed. Day counts, seconds and percentages are excluded too; they are
+     * inputs, and PayrollPeriodGuard protects them upstream.
+     *
+     * @var list<string>
+     */
+    public const MONEY_COLUMNS = [
+        // Earnings
+        'overtime_pay',
+        'basic',
+        'hra',
+        'conveyance',
+        'medical',
+        'special_allowance',
+        'da',
+        'cca',
+        'education',
+        'hostel',
+        'internet',
+        'meal',
+        'transport',
+        'uniform',
+        'books_periodicals_amount',
+        'fuel_maintenance',
+        'variable_pay',
+        'performance_bonus',
+        'retention_bonus',
+        'arrears',
+        'arrears_pf',
+        'leave_encashment',
+        'notice_pay_recovery',
+        'notice_pay_addition',
+        'custom_earnings',
+        'shift_differential',
+        'gross_salary',
+        'gross_full_month',
+        // Employee deductions
+        'pf_employee',
+        'esi_employee',
+        'pt',
+        'tds',
+        'nps_employee',
+        'vpf_employee',
+        'lwf',
+        'medical_insurance',
+        'life_insurance',
+        'custom_deductions',
+        'total_deductions',
+        // Employer contributions
+        'pf_employer',
+        'eps',
+        'epf',
+        'esi_employer',
+        'gratuity',
+        'nps_employer',
+        'superannuation',
+        'medical_insurance_employer',
+        'total_employer_contributions',
+        // Net
+        'net_pay',
+        // Not a payable, but it is the base PF and gratuity were computed on.
+        // Rewriting it on a closed run rewrites the answer to "what base did
+        // you use", which is the question an EPFO audit asks.
+        'statutory_wage_base',
+    ];
+
     protected $fillable = [
         'payroll_run_id',
         'month_year',
@@ -103,6 +180,21 @@ class PayrollItem extends Model
         // time so the payslip stays reproducible if the setting later changes.
         'salary_day_basis',
         'salary_divisor_days',
+        // Code on Wages: the base PF, gratuity and bonus were computed on that
+        // month, and which definition produced it. Frozen for the same reason
+        // as the divisor above — an org adopts on its own date, and a
+        // pre-adoption month must not acquire a post-adoption base.
+        'statutory_wage_base',
+        'wage_base_rule',
+        // Which version this row's figures represent. Rises each time a
+        // governed correction supersedes them; a payslip binds to it.
+        'current_version_no',
+        // Tier 3 of the lock model: this employee is settled even if the run
+        // around them is still open. Tier 4, publication, is separate on
+        // purpose — see the migration.
+        'locked_at',
+        'locked_by',
+        'payslip_published_at',
     ];
 
     protected $casts = [

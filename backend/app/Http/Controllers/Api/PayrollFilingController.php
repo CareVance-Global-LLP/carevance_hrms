@@ -21,8 +21,10 @@ use App\Models\SalaryRevisionLetter;
 use App\Models\User;
 use App\Models\VariablePayAssignment;
 use App\Services\Approvals\ApprovalRoutingService;
+use App\Services\PayrollCalculatorService;
 use App\Services\PayrollFilingService;
 use App\Services\PayrollFilingValidatorService;
+use App\Services\PTStateService;
 use App\Services\PortalAdapter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -1292,22 +1294,20 @@ class PayrollFilingController extends Controller
             $pfAnnual = $pfEmployee * 12;
             $esiMonthly = min($gross * 0.0075, 212.50);
             $esiAnnual = $esiMonthly * 12;
-            $ptAnnual = $this->calculateProfessionalTax($grossMonthly);
+            $ptAnnual = $this->calculateProfessionalTax($template?->pt_state, $grossMonthly);
 
-            $standardDeduction = 75000;
-
-            $oldRegimeTaxable = $annualCtc - $standardDeduction - $pfAnnual;
-            if ($oldRegimeTaxable < 0) $oldRegimeTaxable = 0;
-            $oldRegimeTax = $this->calculateOldRegimeTax($oldRegimeTaxable);
-            $oldRegimeCess = $oldRegimeTax * 0.04;
-            $oldRegimeTotalTax = $oldRegimeTax + $oldRegimeCess + $ptAnnual + $esiAnnual;
+            // The standard deduction and cess are the engine's, not ours: it
+            // knows the old regime's is 50,000 and the new regime's is 75,000,
+            // and it returns a cess-inclusive total. Doing either by hand here
+            // is what made this screen disagree with payroll.
+            $oldRegime = $this->annualTaxBreakdown('old', $annualCtc, ['section_80c' => $pfAnnual]);
+            $oldRegimeTaxable = $oldRegime['taxable_income'];
+            $oldRegimeTotalTax = $oldRegime['total_tax'] + $ptAnnual + $esiAnnual;
             $oldRegimeTakeHome = $annualCtc - $oldRegimeTotalTax - $pfAnnual;
 
-            $newRegimeTaxable = $annualCtc - $standardDeduction;
-            if ($newRegimeTaxable < 0) $newRegimeTaxable = 0;
-            $newRegimeTax = $this->calculateNewRegimeTax($newRegimeTaxable);
-            $newRegimeCess = $newRegimeTax * 0.04;
-            $newRegimeTotalTax = $newRegimeTax + $newRegimeCess + $ptAnnual;
+            $newRegime = $this->annualTaxBreakdown('new', $annualCtc);
+            $newRegimeTaxable = $newRegime['taxable_income'];
+            $newRegimeTotalTax = $newRegime['total_tax'] + $ptAnnual;
             $newRegimeTakeHome = $annualCtc - $newRegimeTotalTax - $pfAnnual - $esiAnnual;
 
             $oldEffective = $annualCtc > 0 ? round(($oldRegimeTotalTax / $annualCtc) * 100, 2) : 0;
@@ -1375,25 +1375,29 @@ class PayrollFilingController extends Controller
             $pfEmployee = min($basic / 12, 1800) * 12;
             $grossMonthly = $annualCtc / 12;
             $esiAnnual = min($grossMonthly * 0.0075, 212.50) * 12;
-            $ptAnnual = $this->calculateProfessionalTax($grossMonthly);
+            $ptAnnual = $this->calculateProfessionalTax($template?->pt_state, $grossMonthly);
 
-            $stdDeduction = 75000;
             $section80c = $data['section_80c'] ?? 0;
             $section80d = $data['section_80d'] ?? 0;
             $nps = $data['nps_amount'] ?? 0;
 
-            $oldRegimeTaxable = $annualCtc - $stdDeduction - $pfAnnual - $section80c - $section80d - $nps;
-            if ($oldRegimeTaxable < 0) $oldRegimeTaxable = 0;
-            $oldRegimeTax = $this->calculateOldRegimeTax($oldRegimeTaxable);
-            $oldRegimeCess = $oldRegimeTax * 0.04;
-            $oldRegimeTotalTax = $oldRegimeTax + $oldRegimeCess + $ptAnnual + $esiAnnual;
+            // Declared deductions go to the engine as a section map rather than
+            // being summed into one taxable figure here. The engine caps each
+            // section on its own -- 80C at 1.5L, 80D at its own limit -- which a
+            // single subtraction cannot do, and which is why a what-if with a
+            // 3L 80C declaration used to under-project the tax.
+            $oldRegime = $this->annualTaxBreakdown('old', $annualCtc, [
+                'section_80c' => $pfAnnual + $section80c,
+                'section_80d' => $section80d,
+                'section_80ccd_1b' => $nps,
+            ]);
+            $oldRegimeTaxable = $oldRegime['taxable_income'];
+            $oldRegimeTotalTax = $oldRegime['total_tax'] + $ptAnnual + $esiAnnual;
             $oldRegimeTakeHome = $annualCtc - $oldRegimeTotalTax - $pfAnnual;
 
-            $newRegimeTaxable = $annualCtc - $stdDeduction;
-            if ($newRegimeTaxable < 0) $newRegimeTaxable = 0;
-            $newRegimeTax = $this->calculateNewRegimeTax($newRegimeTaxable);
-            $newRegimeCess = $newRegimeTax * 0.04;
-            $newRegimeTotalTax = $newRegimeTax + $newRegimeCess + $ptAnnual;
+            $newRegime = $this->annualTaxBreakdown('new', $annualCtc);
+            $newRegimeTaxable = $newRegime['taxable_income'];
+            $newRegimeTotalTax = $newRegime['total_tax'] + $ptAnnual;
             $newRegimeTakeHome = $annualCtc - $newRegimeTotalTax - $pfAnnual - $esiAnnual;
 
             $oldEffective = $annualCtc > 0 ? round(($oldRegimeTotalTax / $annualCtc) * 100, 2) : 0;
@@ -1483,18 +1487,16 @@ class PayrollFilingController extends Controller
             $esiEmployeeMonthly = min($monthlyGross * 0.0075, 212.50);
             $esiEmployerMonthly = min($monthlyGross * 0.00375, 106.25);
 
-            $ptMonthly = $this->calculateProfessionalTaxMonthly($monthlyGross);
+            $ptMonthly = $this->calculateProfessionalTaxMonthly($template?->pt_state, $monthlyGross);
 
-            $stdDeduction = 75000;
-            if ($taxRegime === 'old') {
-                $taxableIncome = $annualCtc - $stdDeduction - $pfEmployee;
-                $tax = $this->calculateOldRegimeTax(max(0, $taxableIncome));
-            } else {
-                $taxableIncome = $annualCtc - $stdDeduction;
-                $tax = $this->calculateNewRegimeTax(max(0, $taxableIncome));
-            }
-            $cess = $tax * 0.04;
-            $tdsMonthly = ($tax + $cess) / 12;
+            $breakdown = $taxRegime === 'old'
+                ? $this->annualTaxBreakdown('old', $annualCtc, ['section_80c' => $pfEmployee])
+                : $this->annualTaxBreakdown('new', $annualCtc);
+
+            $taxableIncome = $breakdown['taxable_income'];
+            $cess = $breakdown['cess'];
+            // total_tax already includes cess and surcharge.
+            $tdsMonthly = $breakdown['total_tax'] / 12;
 
             $totalDeductionsMonthly = $pfEmployeeMonthly + $esiEmployeeMonthly + $ptMonthly + $tdsMonthly;
             $netPay = $monthlyGross - $totalDeductionsMonthly;
@@ -1533,59 +1535,94 @@ class PayrollFilingController extends Controller
         }
     }
 
-    private function calculateOldRegimeTax(float $taxableIncome): float
+    /**
+     * Annual income tax for a regime — surcharge, 87A rebate and cess included.
+     *
+     * These endpoints used to carry their own slab tables. They were on
+     * FY 2024-25, had no 87A rebate, no surcharge and no cess; their callers
+     * bolted 4% cess on afterwards and subtracted a standard deduction of
+     * 75,000 for BOTH regimes, where the old regime's is 50,000. So the regime
+     * comparison an employee elects on disagreed with the payroll run that
+     * would actually pay them — on the slabs, on the rebate, and on the
+     * deduction.
+     *
+     * Every product in this market resolves the comparison and the payroll from
+     * one computation, for exactly this reason: Keka's regime comparison and
+     * its monthly TDS both read the same IT statement, as do Zoho's Tax
+     * Computation and greytHR's Income Tax Statement. A simulator that
+     * disagrees with payroll is worse than no simulator, because s.115BAC makes
+     * the election consequential and the employee makes it on this screen.
+     *
+     * Takes annual GROSS, not taxable income. Applying the standard deduction
+     * is the engine's job precisely because it is regime-dependent, and every
+     * caller that did it by hand got the old regime wrong.
+     *
+     * @return array{taxable_income: float, total_tax: float, cess: float, rebate_87a: float, surcharge: float}
+     */
+    private function annualTaxBreakdown(string $regime, float $annualGross, array $exemptions = []): array
     {
-        $tax = 0;
-        if ($taxableIncome <= 250000) {
-            $tax = 0;
-        } elseif ($taxableIncome <= 500000) {
-            $tax = ($taxableIncome - 250000) * 0.05;
-        } elseif ($taxableIncome <= 1000000) {
-            $tax = 12500 + ($taxableIncome - 500000) * 0.20;
-        } else {
-            $tax = 112500 + ($taxableIncome - 1000000) * 0.30;
+        $calculator = app(PayrollCalculatorService::class);
+        $gross = max(0, $annualGross);
+
+        $result = $regime === 'old'
+            ? $calculator->calculateOldRegimeTax($gross, $exemptions)
+            : $calculator->calculateNewRegimeTax($gross, $exemptions);
+
+        if (! is_array($result)) {
+            // Defensive: the old-regime path has historically returned a bare
+            // float in some versions. Report what we can rather than fatal.
+            return [
+                'taxable_income' => $gross,
+                'total_tax' => (float) $result,
+                'cess' => 0.0,
+                'rebate_87a' => 0.0,
+                'surcharge' => 0.0,
+            ];
         }
-        return $tax;
+
+        return [
+            'taxable_income' => (float) ($result['taxable_income'] ?? 0),
+            'total_tax' => (float) ($result['total_tax'] ?? 0),
+            'cess' => (float) ($result['cess'] ?? 0),
+            'rebate_87a' => (float) ($result['rebate_87a'] ?? 0),
+            'surcharge' => (float) ($result['surcharge'] ?? 0),
+        ];
     }
 
-    private function calculateNewRegimeTax(float $taxableIncome): float
+    /**
+     * Annual professional tax, from the employee's own state.
+     *
+     * What was here was a fabricated national slab table that ignored the state
+     * entirely and topped out at 6,000 a year — 2.4x the Article 276(2) ceiling
+     * of 2,500 that binds every state and union territory. Professional tax is
+     * state-levied and roughly half of India's states and UTs levy none at all,
+     * so a nationwide table is wrong for every employee: it invented a tax in
+     * the states that do not levy one and got the amount wrong in the ones that
+     * do.
+     *
+     * Delegates to PTStateService, the same source the payroll run and the
+     * payslip use. An unknown or unset state yields 0 — per the house rule, a
+     * missing state must never fall back to a real one.
+     */
+    private function calculateProfessionalTax(?string $stateCode, float $monthlyGross): float
     {
-        $tax = 0;
-        if ($taxableIncome <= 300000) {
-            $tax = 0;
-        } elseif ($taxableIncome <= 700000) {
-            $tax = ($taxableIncome - 300000) * 0.05;
-        } elseif ($taxableIncome <= 1000000) {
-            $tax = 20000 + ($taxableIncome - 700000) * 0.10;
-        } elseif ($taxableIncome <= 1200000) {
-            $tax = 50000 + ($taxableIncome - 1000000) * 0.15;
-        } elseif ($taxableIncome <= 1500000) {
-            $tax = 80000 + ($taxableIncome - 1200000) * 0.20;
-        } else {
-            $tax = 140000 + ($taxableIncome - 1500000) * 0.30;
+        $annual = 0.0;
+        for ($month = 1; $month <= 12; $month++) {
+            $annual += PTStateService::calculate($stateCode ?: '', $monthlyGross, $month);
         }
-        return $tax;
+
+        return $annual;
     }
 
-    private function calculateProfessionalTax(float $monthlyGross): float
+    /**
+     * Professional tax for one month. $month matters: several states levy a
+     * higher instalment in a single month (Maharashtra's February), so a flat
+     * twelfth of the annual figure is wrong in that month and in the other
+     * eleven.
+     */
+    private function calculateProfessionalTaxMonthly(?string $stateCode, float $monthlyGross, ?int $month = null): float
     {
-        $annual = $monthlyGross * 12;
-        if ($annual <= 300000) return 0;
-        if ($annual <= 400000) return 1200;
-        if ($annual <= 500000) return 1800;
-        if ($annual <= 600000) return 2400;
-        if ($annual <= 700000) return 3000;
-        if ($annual <= 800000) return 3600;
-        if ($annual <= 900000) return 4200;
-        if ($annual <= 1000000) return 4800;
-        return 6000;
-    }
-
-    private function calculateProfessionalTaxMonthly(float $monthlyGross): float
-    {
-        if ($monthlyGross <= 25000) return 0;
-        if ($monthlyGross <= 33333) return 200;
-        return 200;
+        return PTStateService::calculate($stateCode ?: '', $monthlyGross, $month);
     }
 
     public function listDailyWageStructures(Request $request)

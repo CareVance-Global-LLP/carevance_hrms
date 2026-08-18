@@ -22,7 +22,6 @@ const OMITTED_FIELDS = [
   'idProofFile',
   'resumeFile',
   'experienceCertFile',
-  'educationCertFile',
   'bankProofFile',
 ] as const;
 

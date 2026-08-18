@@ -6,6 +6,8 @@ use App\Models\EmployeePayrollTemplate;
 use App\Models\PayslipYtdHistory;
 use App\Models\User;
 use App\Services\Attendance\AttendanceService;
+use App\Services\Payroll\EsiContributionPeriodService;
+use App\Services\PayrollCalculatorService;
 use App\Services\PTStateService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -149,10 +151,24 @@ class SalaryCalculationService
         // LOP-adjusted gross for ESI/PT (these apply to payable wages)
         $lopAdjustedGross = max(0, $totalEarnings - $lopDeduction);
 
-        // ESI (on gross, if ≤ ₹21,000)
+        // ESI: coverage is fixed for the whole contribution period.
+        //
+        // This used to be a bare $totalEarnings <= $threshold test, which drops
+        // an employee the month they cross ₹21,000. ESIC rules keep them
+        // covered to the end of the period they were contributing in
+        // (Apr-Sep / Oct-Mar). EsiContributionPeriodService already encodes
+        // that and the payroll run already uses it; this engine did not, so the
+        // payslip and the run disagreed for anyone who crossed mid-period.
         $esiEnabled = $template->esi_enabled ?? true;
         $esiThreshold = $template->esi_threshold ?? 21000;
-        if ($esiEnabled && $totalEarnings <= $esiThreshold) {
+        $esiCovered = $esiEnabled && app(EsiContributionPeriodService::class)->isCovered(
+            (int) $employee->id,
+            (int) $employee->organization_id,
+            sprintf('%04d-%02d', $payYear, $payMonth),
+            $totalEarnings,
+            (float) $esiThreshold,
+        );
+        if ($esiCovered) {
             $esiEe = $totalEarnings * (($template->esi_employee_percentage ?? 0.75) / 100);
             $esiEr = $totalEarnings * (($template->esi_employer_percentage ?? 3.25) / 100);
         } else {
@@ -172,7 +188,7 @@ class SalaryCalculationService
         $lwfAmount = $this->calculateLwf($stateCode, $payMonth);
 
         // TDS (simplified)
-        $tds = $this->calculateTds($employee, $totalEarnings, $payMonth, $payYear);
+        $tds = $this->calculateTds($employee, $template, $totalEarnings, $payMonth, $payYear);
 
         // Other deductions
         $loanEmi = $this->getLoanEmi($employeeId);
@@ -319,21 +335,68 @@ class SalaryCalculationService
         return 0;
     }
 
+    /**
+     * Overtime at twice the hourly rate.
+     *
+     * The 208 divisor is correct and the comment that used to explain it was
+     * not: it is not "4 weeks", it is the statutory 26-day month x 8 hours,
+     * the same 26 the Minimum Wages Act uses for a daily rate. Leaving the
+     * wrong reason next to the right number is how it gets "corrected" to 240
+     * by the next reader.
+     *
+     * What is genuinely open is the BASE, not the divisor. Factories Act s.59
+     * pays overtime on the "ordinary rate of wages", which it defines to
+     * include allowances and exclude only bonus and overtime itself. Paying on
+     * basic alone therefore understates it for any structure where basic is a
+     * minority of gross -- at a 40% basic, by roughly 60%.
+     *
+     * Not changed here because it is a live money decision rather than a
+     * defect: whether this organisation pays overtime on basic or on ordinary
+     * wages is a policy question with back-pay consequences, and it belongs to
+     * whoever owns the pay policy. Flagged rather than silently corrected.
+     */
     private function calculateOvertime(float $basic, float $hours): float
     {
         if ($hours <= 0) return 0;
-        $hourlyRate = $basic / 208; // 30 days * 8 hours ≈ 240, using 208 for 4-week month
-        return $hourlyRate * $hours * 2; // OT is 2x
+
+        $hourlyRate = $basic / 208; // 26 statutory days x 8 hours
+        return $hourlyRate * $hours * 2;
     }
 
-    private function calculateTds($employee, float $totalEarnings, int $payMonth, int $payYear): float
-    {
-        // Simplified TDS: 5% if annual income > ₹2.5L
-        $annualIncome = $totalEarnings * 12;
-        if ($annualIncome > 250000) {
-            return max(0, ($annualIncome * 0.05) / 12);
-        }
-        return 0;
+    /**
+     * Monthly TDS for the payslip.
+     *
+     * Was a flat 5% of anything above ₹2.5L a year. That is not a simplified
+     * slab calculation, it is a different tax: no regime, no 87A rebate, no
+     * surcharge, no cess, and no standard deduction. The payslip and the
+     * payroll run therefore reported different TDS for the same employee in
+     * the same month.
+     *
+     * Delegates to PayrollCalculatorService -- the one engine that assesses 87A
+     * on taxable income with marginal relief and carries contiguous surcharge
+     * bands. This service keeps its payslip-assembly job; only the statutory
+     * arithmetic moved out.
+     *
+     * Note the annualisation below is still this-month × 12, which is the
+     * projection defect D9 addresses. It is left consistent with the run engine
+     * deliberately: fixing it in one engine and not the other would reintroduce
+     * exactly the disagreement this change removes.
+     */
+    private function calculateTds(
+        $employee,
+        EmployeePayrollTemplate $template,
+        float $totalEarnings,
+        int $payMonth,
+        int $payYear
+    ): float {
+        $annualGross = max(0, $totalEarnings * 12);
+
+        $result = app(PayrollCalculatorService::class)->calculateMonthlyTDS(
+            $annualGross,
+            $template->tax_regime ?? 'new',
+        );
+
+        return (float) $result['monthly_tds'];
     }
 
     private function getLoanEmi(int $employeeId): float

@@ -92,6 +92,7 @@ const OverviewTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/Overvi
 const RunPayrollTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/RunPayrollTab'));
 const UnassignedEmployeesPage = lazyWithChunkRetry(() => import('@/pages/payroll/UnassignedEmployeesPage'));
 const EmployeePayTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/EmployeePayTab'));
+const OperationsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/OperationsTab'));
 const TaxComplianceTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/TaxComplianceTab'));
 const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/ReportsTab'));
 const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollReportsPage'));
@@ -704,11 +705,12 @@ function App() {
             <Route path="settings/billing" element={<StrictAdminRoute><BillingSettingsPage /></StrictAdminRoute>} />
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
-            {/* Payroll module — single shell with 5 deep-linkable tabs */}
+            {/* Payroll module — single shell with 6 deep-linkable tabs */}
             <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PayrollShell /></AdminRoute></PlanFeatureRoute>}>
               <Route index element={<OverviewTab />} />
               <Route path="run" element={<RunPayrollTab />} />
               <Route path="employee-pay" element={<EmployeePayTab />} />
+              <Route path="operations" element={<OperationsTab />} />
               <Route path="tax-compliance" element={<TaxComplianceTab />} />
               <Route path="reports" element={<PayrollReportsPage />} />
             </Route>

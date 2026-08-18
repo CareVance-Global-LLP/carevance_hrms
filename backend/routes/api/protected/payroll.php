@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\PayrollComparisonController;
 use App\Http\Controllers\Api\PayrollController;
 use App\Http\Controllers\Api\PayrollDepartmentController;
+use App\Http\Controllers\Api\PayrollOverrideController;
 use App\Http\Controllers\Api\PayrollDiagnosticController;
 use App\Http\Controllers\Api\PayslipController;
 use App\Http\Controllers\Api\PayrollFilingController;
@@ -407,4 +409,49 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
     // Admin-only endpoints
     Route::post('/tax-proofs/bulk-approve', [TaxProofUploadController::class, 'bulkApprove']);
     Route::post('/tax-proofs/{id}/review', [TaxProofUploadController::class, 'review']);
+
+    /*
+     * Detective controls. All read-only, and deliberately runnable against a
+     * closed run — comparing against a disbursed month is the whole point.
+     */
+    /*
+     * Overrides. preview persists nothing and answers "what would this do",
+     * which is the question RazorpayX defers to finalisation and Keka does not
+     * answer at all.
+     */
+    Route::get('/operations/overrides', [PayrollOverrideController::class, 'index']);
+    Route::post('/operations/overrides/preview', [PayrollOverrideController::class, 'preview']);
+
+    /*
+     * The write path. Raising an override changes nothing on its own — it
+     * applies at the next payroll process — but whether it CAN apply is settled
+     * synchronously at store, while the admin is still on the screen.
+     *
+     * Maker-checker on approve/reject: the group is already role-gated, which
+     * still leaves one person able to raise an exception to pay and release it
+     * in the next request.
+     */
+    /*
+     * The grid and the CSV round trip. Export and grid share one builder, so a
+     * spreadsheet can never disagree with the screen it came from.
+     *
+     * Declared BEFORE the {id} routes: '/operations/overrides/export' would
+     * otherwise be captured by '{id}' and dispatched with id="export".
+     */
+    Route::get('/operations/overrides/grid', [PayrollOverrideController::class, 'grid']);
+    Route::get('/operations/overrides/export', [PayrollOverrideController::class, 'export']);
+    Route::get('/operations/overrides/template', [PayrollOverrideController::class, 'template']);
+    Route::post('/operations/overrides/import/validate', [PayrollOverrideController::class, 'importValidate']);
+    Route::post('/operations/overrides/import/commit', [PayrollOverrideController::class, 'importCommit']);
+    Route::get('/operations/overrides/{id}/audit', [PayrollOverrideController::class, 'audit'])->whereNumber('id');
+
+    Route::post('/operations/overrides', [PayrollOverrideController::class, 'store']);
+    Route::post('/operations/overrides/{id}/approve', [PayrollOverrideController::class, 'approve'])->whereNumber('id');
+    Route::post('/operations/overrides/{id}/reject', [PayrollOverrideController::class, 'reject'])->whereNumber('id');
+    Route::post('/operations/overrides/{id}/cancel', [PayrollOverrideController::class, 'cancel'])->whereNumber('id');
+
+    Route::get('/reports/differences', [PayrollComparisonController::class, 'differences']);
+    Route::get('/reports/negative-cost', [PayrollComparisonController::class, 'negativeCost']);
+    Route::get('/reports/duplicates', [PayrollComparisonController::class, 'duplicates']);
+    Route::get('/reports/reconciliation', [PayrollComparisonController::class, 'reconciliation']);
 });

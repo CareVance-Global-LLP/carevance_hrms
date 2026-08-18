@@ -93,6 +93,16 @@ class SettingsController extends Controller
             'city' => 'required|string|max:120',
             'state' => 'required|string|max:120',
             'postal_code' => 'required|string|max:32',
+            // Nullable, unlike everything above it. These are new fields on an
+            // existing form: requiring them would stop every employee who has
+            // already completed onboarding from saving any later edit until
+            // they supplied a permanent address they were never asked for.
+            // They are reported through the completeness registry instead.
+            'permanent_address_line' => 'nullable|string|max:255',
+            'permanent_city' => 'nullable|string|max:120',
+            'permanent_state' => 'nullable|string|max:120',
+            'permanent_postal_code' => 'nullable|string|max:32',
+            'blood_group' => 'nullable|string|max:8',
             'emergency_contact_name' => 'required|string|max:120',
             'emergency_contact_number' => 'required|string|max:64',
             'emergency_contact_relationship' => 'required|string|max:120',

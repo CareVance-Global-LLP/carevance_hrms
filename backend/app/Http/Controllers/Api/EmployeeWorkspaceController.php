@@ -50,6 +50,11 @@ class EmployeeWorkspaceController extends Controller
             'city' => 'nullable|string|max:120',
             'state' => 'nullable|string|max:120',
             'postal_code' => 'nullable|string|max:32',
+            'permanent_address_line' => 'nullable|string',
+            'permanent_city' => 'nullable|string|max:120',
+            'permanent_state' => 'nullable|string|max:120',
+            'permanent_postal_code' => 'nullable|string|max:32',
+            'blood_group' => 'nullable|string|max:8',
             'emergency_contact_name' => 'nullable|string|max:120',
             'emergency_contact_number' => 'nullable|string|max:64',
             'emergency_contact_relationship' => 'nullable|string|max:120',
@@ -266,6 +271,89 @@ class EmployeeWorkspaceController extends Controller
         ]);
 
         return response()->json($record, isset($data['id']) ? 200 : 201);
+    }
+
+    /**
+     * Record a qualification, with its certificate.
+     *
+     * Shaped exactly like storeGovernmentId: an optional `id` makes it an
+     * upsert, and a file on the request becomes an EmployeeDocument that the
+     * row then references. Reusing that path is what keeps the certificate on
+     * the private employee_documents disk, behind the one authenticated,
+     * org-scoped download route, rather than acquiring storage of its own.
+     */
+    public function storeEducation(Request $request, int|string $id)
+    {
+        $currentUser = $request->user();
+        $employee = $this->employee($currentUser?->organization_id, $id);
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'id' => 'nullable|integer',
+            'qualification' => 'required|string|max:120',
+            'institution' => 'nullable|string|max:255',
+            'specialisation' => 'nullable|string|max:255',
+            // Bounded rather than free: a four-digit typo in a year is silent
+            // and permanent, and nobody passed an exam in the year 200.
+            'year_of_passing' => 'nullable|integer|min:1950|max:'.(int) now()->addYear()->format('Y'),
+            'grade' => 'nullable|string|max:40',
+            'notes' => 'nullable|string',
+            'certificate_file' => 'nullable|file|max:10240',
+        ]);
+
+        if ($request->hasFile('certificate_file')) {
+            $document = $this->employeeWorkspaceService->storeDocument($employee, $currentUser, [
+                'title' => $data['qualification'].' certificate',
+                'category' => 'education_certificate',
+                'review_status' => 'pending',
+                'notes' => $data['notes'] ?? null,
+            ], $request->file('certificate_file'));
+            $data['employee_document_id'] = $document->id;
+        }
+
+        $record = $this->employeeWorkspaceService->upsertEducation($employee, $data);
+        $this->employeeWorkspaceService->recordActivity($employee, $currentUser, 'employee.education_saved', 'Saved an education record.', [
+            'qualification' => $record->qualification,
+            'institution' => $record->institution,
+        ]);
+
+        return response()->json($record, isset($data['id']) ? 200 : 201);
+    }
+
+    /**
+     * Remove a qualification.
+     *
+     * The certificate is left in place. It is an employee document in its own
+     * right, it may already be referenced by an onboarding checklist item, and
+     * deleting a file to undo a data-entry mistake is not recoverable.
+     */
+    public function destroyEducation(Request $request, int|string $id, int $educationId)
+    {
+        $currentUser = $request->user();
+        $employee = $this->employee($currentUser?->organization_id, $id);
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $record = \App\Models\EmployeeEducation::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            ->find($educationId);
+
+        if (!$record) {
+            return response()->json(['message' => 'Education record not found'], 404);
+        }
+
+        $qualification = $record->qualification;
+        $record->delete();
+
+        $this->employeeWorkspaceService->recordActivity($employee, $currentUser, 'employee.education_removed', 'Removed an education record.', [
+            'qualification' => $qualification,
+        ]);
+
+        return response()->json(['message' => 'Education record removed']);
     }
 
     public function storeDocument(Request $request, int|string $id)

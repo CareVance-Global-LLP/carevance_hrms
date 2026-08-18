@@ -27,6 +27,16 @@ class EmployeeProfile extends Model
         'city',
         'state',
         'postal_code',
+        // The permanent address is a separate fact from the current one, not a
+        // longer version of it. With one address on the record, an employee who
+        // relocates for work overwrites the address their PF nomination and
+        // bank KYC are registered against, and nothing remembers the original.
+        'permanent_address_line',
+        'permanent_city',
+        'permanent_state',
+        'permanent_postal_code',
+        // Duty of care, and the reason an emergency contact number exists.
+        'blood_group',
         'emergency_contact_name',
         'emergency_contact_number',
         'emergency_contact_relationship',
