@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AttendanceHoliday;
+use App\Models\Group;
 use App\Models\LeaveRequest;
 use App\Models\Organization;
 use App\Models\User;
@@ -45,9 +46,28 @@ class AttendanceTimeEditRestrictionTest extends TestCase
             ->assertJsonPath('message', 'Time edit request is not allowed on holidays.');
     }
 
-    public function test_employee_cannot_request_time_edit_on_approved_leave_date(): void
+    /**
+     * A time edit on an approved leave day is ALLOWED.
+     *
+     * This asserted the opposite until the guard was deleted in 5cabd0f2
+     * (2026-05-15). The removed block excluded half-days by hand
+     * (`leave_type != 'half_day'`), which is the tell: somebody on half-day
+     * leave who worked the other half has a legitimate correction to file, and
+     * refusing it left them no way to record hours they actually worked.
+     *
+     * Kept as a positive assertion rather than deleted, so the rule that
+     * replaced it is written down somewhere.
+     */
+    public function test_employee_can_request_time_edit_on_an_approved_leave_date(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
+        $manager = User::create([
+            'name' => 'Manager',
+            'email' => 'manager-leave-edit@example.com',
+            'password' => Hash::make('password123'),
+            'role' => 'manager',
+            'organization_id' => $organization->id,
+        ]);
         $employee = User::create([
             'name' => 'Employee',
             'email' => 'employee-leave@example.com',
@@ -55,6 +75,17 @@ class AttendanceTimeEditRestrictionTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // A reviewer has to exist, or the request is refused for that reason
+        // instead and this proves nothing about leave days.
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Operations',
+            'slug' => 'operations-leave-edit',
+            'is_active' => true,
+        ]);
+        $manager->groups()->attach($group->id);
+        $employee->groups()->attach($group->id);
 
         $leaveDate = now()->toDateString();
         LeaveRequest::create([
@@ -71,8 +102,7 @@ class AttendanceTimeEditRestrictionTest extends TestCase
             'extra_minutes' => 20,
             'message' => 'Worked extra',
         ], $this->apiHeadersFor($employee))
-            ->assertStatus(422)
-            ->assertJsonPath('message', 'Time edit request is not allowed on approved leave days.');
+            ->assertCreated();
     }
 
     public function test_employee_cannot_request_time_edit_when_disabled_in_user_settings(): void

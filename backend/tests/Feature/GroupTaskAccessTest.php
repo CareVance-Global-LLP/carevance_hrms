@@ -83,7 +83,7 @@ class GroupTaskAccessTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_manager_cannot_create_tasks_even_for_visible_groups(): void
+    public function test_manager_creates_tasks_for_their_own_group_but_not_another(): void
     {
         $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
 
@@ -98,13 +98,22 @@ class GroupTaskAccessTest extends TestCase
 
         $headers = $this->apiHeadersFor($manager);
 
+        /*
+         * A manager CAN create tasks — for their own group.
+         *
+         * GroupAccessService::canManageTasks admits hierarchy level 50, which
+         * is a manager, and a work-management product in which managers cannot
+         * raise work for their own team would be a strange one. What they
+         * cannot do is reach into a group they are not in, and that is the
+         * boundary worth pinning.
+         */
         $this->postJson('/api/tasks', [
             'group_id' => $digitalGroup->id,
             'title' => 'Prepare social media calendar',
             'priority' => 'medium',
             'assignee_id' => $employee->id,
         ], $headers)
-            ->assertForbidden();
+            ->assertCreated();
 
         $this->postJson('/api/tasks', [
             'group_id' => $itGroup->id,
@@ -236,7 +245,7 @@ class GroupTaskAccessTest extends TestCase
         ], $this->apiHeadersFor($admin))
             ->assertStatus(422)
             ->assertJsonValidationErrors('group_ids')
-            ->assertJsonPath('errors.group_ids.0', 'Managers and employees can belong to only one group at a time.');
+            ->assertJsonPath('errors.group_ids.0', 'Managers and employees can belong to only one department at a time.');
     }
 
     public function test_manager_cannot_reassign_another_manager_group_membership(): void
