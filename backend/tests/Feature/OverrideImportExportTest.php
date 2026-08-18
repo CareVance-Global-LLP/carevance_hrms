@@ -106,12 +106,13 @@ class OverrideImportExportTest extends TestCase
     private function withCell(string $csv, string $employeeNumber, string $header, string $value): string
     {
         $lines = explode("\r\n", trim($csv));
-        $headers = str_getcsv(preg_replace('/^\x{EF}\x{BB}\x{BF}|^\x{FEFF}/u', '', $lines[0]));
+        $headerAt = $this->headerIndex($lines);
+        $headers = str_getcsv(preg_replace('/^\x{EF}\x{BB}\x{BF}|^\x{FEFF}/u', '', $lines[$headerAt]));
         $index = array_search($header, $headers, true);
         $this->assertNotFalse($index, "Header {$header} is missing from the export.");
 
         foreach ($lines as $i => $line) {
-            if ($i === 0) {
+            if ($i <= $headerAt) {
                 continue;
             }
 
@@ -128,16 +129,36 @@ class OverrideImportExportTest extends TestCase
         return implode("\r\n", $lines)."\r\n";
     }
 
+    /**
+     * The header row's index, skipping the Excel preamble.
+     *
+     * The export opens with `sep=,` so Excel splits on commas regardless of
+     * the machine's regional list separator. Line 0 is therefore no longer the
+     * header, and a fixture that assumed it was would edit the directive.
+     */
+    private function headerIndex(array $lines): int
+    {
+        foreach ($lines as $i => $line) {
+            $first = trim(preg_replace('/^\x{EF}\x{BB}\x{BF}|^\x{FEFF}/u', '', $line));
+            if ($first !== '' && ! preg_match('/^sep=.?$/i', $first) && ! str_starts_with($first, '#')) {
+                return $i;
+            }
+        }
+
+        return 0;
+    }
+
     /** withCell, for a file whose separator is not a comma. */
     private function withSeparator(string $csv, string $sep, string $employeeNumber, string $header, string $value): string
     {
         $lines = explode("\r\n", trim($csv));
-        $headers = str_getcsv(preg_replace('/^\x{EF}\x{BB}\x{BF}|^\x{FEFF}/u', '', $lines[0]), $sep);
+        $headerAt = $this->headerIndex($lines);
+        $headers = str_getcsv(preg_replace('/^\x{EF}\x{BB}\x{BF}|^\x{FEFF}/u', '', $lines[$headerAt]), $sep);
         $index = array_search($header, $headers, true);
         $this->assertNotFalse($index, "Header {$header} is missing from the export.");
 
         foreach ($lines as $i => $line) {
-            if ($i === 0) {
+            if ($i <= $headerAt) {
                 continue;
             }
 
@@ -184,14 +205,46 @@ class OverrideImportExportTest extends TestCase
         $this->assertStringContainsString("\r\n", $csv);
     }
 
+    /**
+     * Excel obeys the machine's regional list separator, not the comma.
+     *
+     * Without this directive a valid comma-delimited CSV opens on a
+     * semicolon-configured workstation with all seventeen columns crammed into
+     * column A. The officer edits that, saves, and uploads a file with no
+     * recognisable headers — having done nothing wrong at any point.
+     */
+    #[Test]
+    public function the_export_tells_excel_which_separator_it_uses(): void
+    {
+        $this->employee('100001');
+
+        $csv = $this->exportCsv();
+
+        // After the BOM, before the headers — where Excel looks for it.
+        $this->assertStringStartsWith("\u{FEFF}sep=,\r\n", $csv);
+    }
+
+    /** And our own parser must skip it, or the round trip reads it as a header. */
+    #[Test]
+    public function the_separator_directive_is_not_mistaken_for_a_header_row(): void
+    {
+        $this->employee('100001');
+
+        $this->validateCsv($this->exportCsv())
+            ->assertStatus(200)
+            ->assertJsonPath('summary.rows_read', 1)
+            ->assertJsonPath('summary.no_change', 1);
+    }
+
     #[Test]
     public function the_writable_columns_are_exported_blank(): void
     {
         $this->employee('100001');
 
         $lines = explode("\r\n", trim($this->exportCsv()));
-        $headers = str_getcsv(preg_replace('/^\x{FEFF}/u', '', $lines[0]));
-        $cells = str_getcsv($lines[1]);
+        $headerAt = $this->headerIndex($lines);
+        $headers = str_getcsv(preg_replace('/^\x{FEFF}/u', '', $lines[$headerAt]));
+        $cells = str_getcsv($lines[$headerAt + 1]);
 
         $this->assertSame('', $cells[array_search('basic_annual', $headers, true)]);
         $this->assertSame('', $cells[array_search('hra_annual', $headers, true)]);
@@ -512,8 +565,9 @@ class OverrideImportExportTest extends TestCase
 
         $csv = $this->exportCsv();
         $lines = explode("\r\n", trim($csv));
-        $lines[0] .= ',my_working_note';
-        $lines[1] .= ',check with finance';
+        $headerAt = $this->headerIndex($lines);
+        $lines[$headerAt] .= ',my_working_note';
+        $lines[$headerAt + 1] .= ',check with finance';
 
         $this->validateCsv(implode("\r\n", $lines)."\r\n")
             ->assertStatus(200)

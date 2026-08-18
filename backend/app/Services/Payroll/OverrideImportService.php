@@ -62,6 +62,21 @@ class OverrideImportService
 
     private const NOT_APPLICABLE = 'NOT_APPLICABLE';
 
+    /**
+     * What Excel needs before it will read this correctly.
+     *
+     * The BOM makes it render ₹ and Indian names instead of mojibake. `sep=,`
+     * makes it SPLIT — Excel obeys the machine's regional list separator, not
+     * the comma, so on a workstation configured for semicolons a perfectly
+     * valid CSV opens with all seventeen columns crammed into column A. The
+     * officer then edits that, saves, and uploads a file with no recognisable
+     * headers at all, having done nothing wrong.
+     *
+     * `sep=` is Excel's own convention. Our parser skips the line, so an
+     * untouched round trip still reads clean.
+     */
+    private const EXCEL_PREAMBLE = "\u{FEFF}sep=,\r\n";
+
     private const MAX_ROWS = 5000;
     private const MAX_BYTES = 5 * 1024 * 1024;
     private const TTL_SECONDS = 1800;
@@ -116,13 +131,14 @@ class OverrideImportService
             ]);
         }
 
-        // BOM, then CRLF throughout — both are Excel's requirements, not ours.
-        return "\u{FEFF}".implode("\r\n", $lines)."\r\n";
+        // BOM, sep= and CRLF throughout — all three are Excel's requirements,
+        // none of them ours.
+        return self::EXCEL_PREAMBLE.implode("\r\n", $lines)."\r\n";
     }
 
     public function template(): string
     {
-        return "\u{FEFF}"
+        return self::EXCEL_PREAMBLE
             .$this->csvLine(self::COLUMNS)."\r\n"
             .'# 100004,Example Employee,Care Delivery,Standard,1200000,480000,540000,240000,,416112,877015,2026-09-01,,preserve_ctc,Annual revision,,none'
             ."\r\n";
@@ -667,6 +683,16 @@ class OverrideImportService
             return ',';
         }
 
+        /*
+         * An explicit sep= directive is the file telling us outright, so it
+         * beats counting. Our own export writes one, and Excel preserves it
+         * on a re-save — which means a round trip states its own separator
+         * rather than leaving us to infer it.
+         */
+        if (preg_match('/^sep=(.)\s*$/i', $firstLine, $matches)) {
+            return $matches[1];
+        }
+
         $unquoted = preg_replace('/"[^"]*"/', '', $firstLine) ?? $firstLine;
 
         $counts = [
@@ -743,6 +769,12 @@ class OverrideImportService
             // The template ships a commented example; the parser skips it so
             // the officer can fill the file in underneath without deleting it.
             if (str_starts_with($first, '#')) {
+                continue;
+            }
+
+            // The sep= directive our own export writes for Excel. Skipped
+            // before headers are taken, or it would BE the header row.
+            if ($headers === [] && preg_match('/^sep=.?$/i', $first)) {
                 continue;
             }
 
