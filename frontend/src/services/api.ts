@@ -353,6 +353,26 @@ export function getApiErrorMessage(err: any, fallback = 'Something went wrong. P
     if (err?.message?.includes('Network Error')) return 'Network error. Check your connection.';
     return err?.message || fallback;
   }
+  /*
+   * Laravel's own validation message names nothing — "The given data was
+   * invalid." is literally all of it — while the errors object beside it says
+   * exactly which field and why. Prefer the field when the message is that
+   * generic one.
+   *
+   * Only then, deliberately. Endpoints in this app raise 422s with a real,
+   * written message AND an errors array of their own shape (the override batch
+   * import, for one), and reaching into those would replace a good sentence
+   * with "0: undefined".
+   */
+  const isGenericValidationMessage =
+    typeof data.message === 'string' && /^the given data was invalid\.?$/i.test(data.message.trim());
+
+  if (isGenericValidationMessage && data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors)) {
+    const first = Object.keys(data.errors)[0];
+    const msg = first ? data.errors[first]?.[0] : null;
+    if (msg) return `${first}: ${msg}`;
+  }
+
   if (typeof data.message === 'string' && data.message.trim()) {
     return data.message;
   }
@@ -3535,8 +3555,18 @@ export const payrollApi = {
       api.get('/payroll/operations/overrides/template', {
         responseType: 'blob' as AxiosRequestConfig['responseType'],
       }),
+    /*
+     * The header is not optional. This axios instance defaults to
+     * Content-Type: application/json, so a FormData body posted without
+     * overriding it is never parsed as multipart — the file arrives empty and
+     * the request fails `required` with Laravel's generic "The given data was
+     * invalid", naming nothing. Every other upload in this file overrides it
+     * the same way.
+     */
     validateImport: (form: FormData) =>
-      api.post<ImportValidateResponse>('/payroll/operations/overrides/import/validate', form),
+      api.post<ImportValidateResponse>('/payroll/operations/overrides/import/validate', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }),
     commitImport: (data: { batch_id: string; skip_errors: boolean; supersede?: boolean }) =>
       api.post<ImportCommitResponse>('/payroll/operations/overrides/import/commit', data),
   },

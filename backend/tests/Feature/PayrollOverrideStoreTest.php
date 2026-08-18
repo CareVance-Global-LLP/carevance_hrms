@@ -108,12 +108,17 @@ class PayrollOverrideStoreTest extends TestCase
         ]);
     }
 
+    /**
+     * With one payroll admin, the approval step is ceremony: the same person
+     * would raise it and then release it, and no second pair of eyes was ever
+     * involved. It is released on creation instead, and the trail says so.
+     */
     #[Test]
-    public function an_override_within_the_envelope_is_raised_as_pending(): void
+    public function an_override_is_approved_on_creation_when_there_is_no_second_admin(): void
     {
         $response = $this->raise()->assertStatus(201);
 
-        $response->assertJsonPath('data.status', PayrollOverride::STATUS_PENDING);
+        $response->assertJsonPath('data.status', PayrollOverride::STATUS_APPROVED);
         $response->assertJsonPath('data.target', 'basic');
         $response->assertJsonPath('data.open_ended', true);
         // Nothing has run yet, so there is no engine figure to compare against
@@ -123,7 +128,49 @@ class PayrollOverrideStoreTest extends TestCase
 
         $override = PayrollOverride::firstOrFail();
         $this->assertSame($this->admin->id, $override->created_by);
-        $this->assertNull($override->approved_by);
+        $this->assertSame($this->admin->id, $override->approved_by);
+
+        $audit = PayrollOverrideAudit::where('action', PayrollOverrideAudit::ACTION_APPROVED)->firstOrFail();
+        $this->assertSame('auto-approved on creation: sole payroll admin', $audit->note);
+    }
+
+    /**
+     * Add a second admin and maker-checker comes back. The auto-approval is
+     * not a removal of the control — it only skips a step that was buying
+     * nothing, and the moment somebody else could review, they must.
+     */
+    #[Test]
+    public function a_second_admin_restores_the_approval_step(): void
+    {
+        User::factory()->create(['organization_id' => $this->organization->id, 'role' => 'admin']);
+
+        $this->raise()->assertStatus(201)->assertJsonPath('data.status', PayrollOverride::STATUS_PENDING);
+
+        $this->assertNull(PayrollOverride::firstOrFail()->approved_by);
+    }
+
+    /**
+     * Self-dealing is untouched by any of this. Nobody releases a change to
+     * their own pay, however few admins there are.
+     */
+    #[Test]
+    public function a_change_to_your_own_pay_is_never_auto_approved(): void
+    {
+        EmployeePayrollTemplate::create([
+            'organization_id' => $this->organization->id,
+            'user_id' => $this->admin->id,
+            'annual_ctc' => $this->annualCtc,
+            'basic_percentage' => 40,
+            'hra_percentage' => 50,
+            'conveyance_allowance' => 1600,
+            'is_metro_city' => true,
+        ]);
+
+        // A sole admin cannot even raise one against themselves, because
+        // nobody could ever approve it.
+        $this->raise(['user_id' => $this->admin->id])->assertStatus(422);
+
+        $this->assertSame(0, PayrollOverride::count());
     }
 
     /**
@@ -350,6 +397,46 @@ class PayrollOverrideStoreTest extends TestCase
             'value' => 1800,
             'balance_mode' => null,
         ])->assertStatus(201);
+    }
+
+    /**
+     * A head the engine does not compute is refused at entry.
+     *
+     * The target used to accept any string, so 'PF' or 'provident_fund' stored
+     * cleanly and then did nothing at process time — one log line, and the
+     * employee paid the uncorrected figure. A statutory override exists to fix
+     * a number that matters; silence is the one failure it must not have.
+     */
+    #[Test]
+    public function an_unknown_statutory_head_is_refused_rather_than_ignored_later(): void
+    {
+        foreach (['PF', 'provident_fund', 'gratuity'] as $bogus) {
+            $response = $this->raise([
+                'scope' => 'statutory',
+                'target' => $bogus,
+                'value' => 1800,
+                'balance_mode' => null,
+            ])->assertStatus(422);
+
+            $this->assertStringContainsString('pf, esi, pt, tds', $response->json('message'));
+        }
+
+        $this->assertSame(0, PayrollOverride::count());
+    }
+
+    #[Test]
+    public function every_statutory_head_the_engine_computes_is_accepted(): void
+    {
+        foreach (['pf', 'esi', 'pt', 'tds'] as $index => $head) {
+            $this->raise([
+                'scope' => 'statutory',
+                'target' => $head,
+                'value' => 100 + $index,
+                'balance_mode' => null,
+            ])->assertStatus(201);
+        }
+
+        $this->assertSame(4, PayrollOverride::count());
     }
 
     /**

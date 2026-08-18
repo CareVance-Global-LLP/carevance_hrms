@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, Check, Plus, ShieldCheck, SlidersHorizontal, Table2, X } from 'lucide-react';
+import { Ban, Check, ShieldCheck, SlidersHorizontal, Table2, X } from 'lucide-react';
 import {
   payrollApi,
   getApiErrorMessage,
@@ -14,8 +14,8 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PanelChip from '@/components/payroll/PanelChip';
 import { useToast } from '@/components/ui/Toast';
 import { cn } from '@/utils/cn';
-import OverrideDialog from '@/components/payroll/overrides/OverrideDialog';
 import ComponentOverrideGrid from '@/components/payroll/ComponentOverrideGrid';
+import StatutoryOverrideForm from '@/components/payroll/StatutoryOverrideForm';
 
 /**
  * The override register: what is in force, what is pending, and what each one
@@ -60,7 +60,6 @@ export default function OperationsTab() {
   const [section, setSection] = useState<OperationsSection>('grid');
   const [month, setMonth] = useState('');
   const [search, setSearch] = useState('');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [rejecting, setRejecting] = useState<PayrollOverrideRow | null>(null);
   const [rejectNote, setRejectNote] = useState('');
 
@@ -175,12 +174,23 @@ export default function OperationsTab() {
             Clear month
           </Button>
         )}
-        <div className="ml-auto">
-          <Button onClick={() => setIsDialogOpen(true)} iconLeft={<Plus className="h-4 w-4" />}>
-            New Override
-          </Button>
-        </div>
+        {/*
+          No "New Override" here. Component overrides are raised on the Salary
+          Component Override grid, where the residual, the ceiling and the HRA
+          move are all visible as you type. A second entry point that showed
+          none of that was a worse way to do the same thing.
+
+          Statutory overrides have no such screen — they cascade into nothing,
+          so there is nothing to preview — and get their own form below.
+        */}
       </div>
+
+      {section === 'statutory' && (
+        <StatutoryOverrideForm
+          employees={Array.from(employeeNames, ([id, name]) => ({ id, name }))}
+          defaultMonth={month || undefined}
+        />
+      )}
 
       <SurfaceCard className="overflow-hidden">
         {isLoading ? (
@@ -314,7 +324,6 @@ export default function OperationsTab() {
         )}
       </SurfaceCard>
 
-      <OverrideDialog isOpen={isDialogOpen} onClose={() => setIsDialogOpen(false)} />
       </>
       )}
 

@@ -128,6 +128,29 @@ class OverrideImportExportTest extends TestCase
         return implode("\r\n", $lines)."\r\n";
     }
 
+    /** withCell, for a file whose separator is not a comma. */
+    private function withSeparator(string $csv, string $sep, string $employeeNumber, string $header, string $value): string
+    {
+        $lines = explode("\r\n", trim($csv));
+        $headers = str_getcsv(preg_replace('/^\x{EF}\x{BB}\x{BF}|^\x{FEFF}/u', '', $lines[0]), $sep);
+        $index = array_search($header, $headers, true);
+        $this->assertNotFalse($index, "Header {$header} is missing from the export.");
+
+        foreach ($lines as $i => $line) {
+            if ($i === 0) {
+                continue;
+            }
+
+            $cells = str_getcsv($line, $sep);
+            if (($cells[0] ?? null) === $employeeNumber) {
+                $cells[$index] = $value;
+                $lines[$i] = implode($sep, $cells);
+            }
+        }
+
+        return implode("\r\n", $lines)."\r\n";
+    }
+
     /**
      * §6.5 — the acceptance gate for the whole format.
      *
@@ -403,6 +426,71 @@ class OverrideImportExportTest extends TestCase
             ])
             ->assertStatus(422)
             ->assertJsonPath('code', 'F001');
+    }
+
+    /**
+     * Excel writes the SYSTEM LIST SEPARATOR, not a comma.
+     *
+     * On a machine configured for semicolons, "Save as CSV" turns every row
+     * into a single cell — and the officer is told a column is missing from a
+     * file they exported from this very screen, with the column plainly
+     * visible in front of them.
+     */
+    #[Test]
+    public function a_semicolon_delimited_file_is_read_rather_than_refused(): void
+    {
+        $this->employee('100001');
+
+        $csv = str_replace(',', ';', $this->exportCsv());
+        $csv = $this->withSeparator($csv, ';', '100001', 'basic_annual', '540000');
+        $csv = $this->withSeparator($csv, ';', '100001', 'reason', 'Revision');
+
+        $this->validateCsv($csv, ['default_effective_from' => '2026-09-01'])
+            ->assertStatus(200)
+            ->assertJsonPath('summary.will_change', 1);
+    }
+
+    #[Test]
+    public function a_tab_delimited_file_is_read_rather_than_refused(): void
+    {
+        $this->employee('100001');
+
+        $csv = str_replace(',', "\t", $this->exportCsv());
+
+        $this->validateCsv($csv)
+            ->assertStatus(200)
+            ->assertJsonPath('summary.no_change', 1);
+    }
+
+    /** Excel's "Unicode Text" save is UTF-16, which is not valid UTF-8 at all. */
+    #[Test]
+    public function a_utf16_file_is_converted_rather_than_called_corrupt(): void
+    {
+        $this->employee('100001');
+
+        $utf16 = "\xFF\xFE".mb_convert_encoding($this->exportCsv(), 'UTF-16LE', 'UTF-8');
+
+        $this->validateCsv($utf16)
+            ->assertStatus(200)
+            ->assertJsonPath('summary.no_change', 1);
+    }
+
+    /**
+     * The refusal has to be answerable. Naming only the column it wanted, on a
+     * file that visibly contains that column, leaves nowhere to go.
+     */
+    #[Test]
+    public function a_header_failure_reports_what_it_actually_read(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->post('/api/payroll/operations/overrides/import/validate', [
+                'file' => UploadedFile::fake()->createWithContent('overrides.csv', "surname,department\r\nA,B\r\n"),
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'F003');
+
+        $this->assertStringContainsString('surname', $response->json('message'));
+        $this->assertStringContainsString('department', $response->json('message'));
     }
 
     #[Test]

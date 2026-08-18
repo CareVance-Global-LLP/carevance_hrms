@@ -210,6 +210,16 @@ class PayrollOverrideController extends Controller
             );
         }
 
+        // A statutory head the engine does not produce is refused here rather
+        // than accepted and ignored at process time.
+        if ($scope === 'statutory' && ! in_array($data['target'], OverrideApplicationService::STATUTORY_TARGETS, true)) {
+            return $this->refuse(sprintf(
+                "'%s' is not a statutory head this engine computes. Use one of: %s.",
+                $data['target'],
+                implode(', ', OverrideApplicationService::STATUTORY_TARGETS),
+            ));
+        }
+
         if ($scope === 'component' && ($data['balance_mode'] ?? null) === null) {
             return $this->refuse(
                 'A component override has to say what funds it: hold CTC and let the residual absorb '
@@ -313,11 +323,14 @@ class PayrollOverrideController extends Controller
         ]);
 
         $this->audit->created($override, (int) $request->user()->id);
+        $autoApproved = $this->autoApproveIfUncontested($override, $request->user());
 
         return response()->json([
             'success' => true,
-            'message' => 'Override raised. It applies the next time payroll is processed for an open run.',
-            'data' => $this->rowFor($override),
+            'message' => $autoApproved
+                ? 'Override approved. It applies the next time payroll is processed for an open run.'
+                : 'Override raised. It applies the next time payroll is processed for an open run.',
+            'data' => $this->rowFor($override->fresh()),
         ], 201);
     }
 
@@ -729,10 +742,11 @@ class PayrollOverrideController extends Controller
                 ]);
 
                 $this->audit->created($override, $actorId);
+                $this->autoApproveIfUncontested($override, auth()->user());
 
                 // The consequence travels back with the row, so the grid can
                 // show what the change did without a second round trip.
-                $created[] = $this->rowFor($override) + [
+                $created[] = $this->rowFor($override->fresh()) + [
                     'preview' => [
                         'residual_before' => $entry['assessment']['residual_before'],
                         'residual_after' => $entry['assessment']['residual_after'],
@@ -1093,6 +1107,49 @@ class PayrollOverrideController extends Controller
             'reason' => $override->reason,
             'created_by' => $override->created_by,
         ] + $this->decisionRights($override);
+    }
+
+    /**
+     * Release an override the moment it is raised, where the approval step
+     * would have been a formality.
+     *
+     * The condition is exactly the one approve() would apply a second later:
+     * the raiser must not be the subject, and there must be nobody else who
+     * could have approved it. In a one-admin organisation that makes the
+     * pending state pure friction — the officer raises a change, then approves
+     * their own change, and no second pair of eyes was ever involved. Two
+     * clicks, one judgement.
+     *
+     * It is NOT a removal of maker-checker. Add a second admin and every
+     * override goes back to waiting for them, because at that point the
+     * pending state is buying real review rather than ceremony.
+     *
+     * Self-dealing is untouched: a change to your own pay stays pending
+     * whatever the admin count, because nobody may ever release that.
+     */
+    private function autoApproveIfUncontested(PayrollOverride $override, User $actor): bool
+    {
+        if ((int) $override->user_id === (int) $actor->id) {
+            return false;
+        }
+
+        if (! $this->isSolePayrollAdmin($actor)) {
+            return false;
+        }
+
+        $before = $this->audit->snapshot($override);
+
+        $override->update([
+            'status' => PayrollOverride::STATUS_APPROVED,
+            'approved_by' => $actor->id,
+            'approved_at' => now(),
+        ]);
+
+        // Said in the trail's own words, and distinct from a manual
+        // self-approval so a reader can tell which happened.
+        $this->audit->approved($override, (int) $actor->id, $before, 'auto-approved on creation: sole payroll admin');
+
+        return true;
     }
 
     /**

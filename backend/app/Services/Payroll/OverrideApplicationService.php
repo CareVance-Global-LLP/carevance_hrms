@@ -50,6 +50,17 @@ class OverrideApplicationService
      * the correct answer for a formula-driven custom head: the engine has no
      * slot to pin it to.
      */
+    /**
+     * The statutory heads both engines actually produce.
+     *
+     * Enumerated so a target can be refused at entry. It used to be any string
+     * up to 64 characters, so 'PF' or 'provident_fund' stored cleanly and then
+     * did nothing at all at process time — one Log::warning, and the employee
+     * paid the uncorrected figure. A statutory override exists to fix a number
+     * that matters; failing silently is the one way it must not fail.
+     */
+    public const STATUTORY_TARGETS = ['pf', 'esi', 'pt', 'tds'];
+
     private const ENGINE_KEY_BY_CODE = [
         'BASIC' => 'basic',
         'HRA' => 'hra',

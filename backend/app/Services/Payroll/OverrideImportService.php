@@ -154,16 +154,24 @@ class OverrideImportService
 
         $raw = file_get_contents($file->getRealPath());
 
-        if ($raw === false || ! mb_check_encoding($raw, 'UTF-8')) {
+        if ($raw === false) {
+            return ['ok' => false, 'status' => 422, 'payload' => $this->fileError(
+                'F005',
+                'That file could not be read. Save it as CSV UTF-8 and upload again.',
+            )];
+        }
+
+        // Byte-order mark off, UTF-16 down to UTF-8 — before the encoding check,
+        // because a UTF-16 file is not valid UTF-8 and would otherwise be
+        // rejected as corrupt rather than simply converted.
+        $raw = $this->normaliseEncoding($raw);
+
+        if (! mb_check_encoding($raw, 'UTF-8')) {
             return ['ok' => false, 'status' => 422, 'payload' => $this->fileError(
                 'F005',
                 'Save the file as CSV UTF-8 and upload again.',
             )];
         }
-
-        // Strip the BOM our own export writes, so a round trip does not read
-        // the first header as "\u{FEFF}employee_number" and fail F003.
-        $raw = preg_replace('/^\x{FEFF}/u', '', $raw);
 
         [$headers, $dataRows] = $this->parse($raw);
 
@@ -173,9 +181,25 @@ class OverrideImportService
 
         foreach (self::REQUIRED_HEADERS as $required) {
             if (! in_array($required, $headers, true)) {
+                /*
+                 * Names what it actually read.
+                 *
+                 * "Missing column: employee_number" on a file exported from
+                 * this screen ten minutes earlier is unanswerable — the column
+                 * is plainly there in Excel. Nine times out of ten the row
+                 * arrived as one cell because the separator was a semicolon,
+                 * and showing the parsed headers makes that obvious at a
+                 * glance instead of requiring someone to guess.
+                 */
                 return ['ok' => false, 'status' => 422, 'payload' => $this->fileError(
                     'F003',
-                    sprintf('Missing column: %s. Download the template or re-export.', $required),
+                    sprintf(
+                        'Missing column: %s. The columns read from your file were: %s. '
+                        .'If that looks like one long column, the file was saved with a different separator — '
+                        .'re-save it as "CSV (Comma delimited)", or download the template and paste into that.',
+                        $required,
+                        $headers === [] ? '(none)' : implode(' | ', array_slice($headers, 0, 8)).(count($headers) > 8 ? ' …' : ''),
+                    ),
                 )];
             }
         }
@@ -623,8 +647,84 @@ class OverrideImportService
     /**
      * @return array{0: list<string>, 1: list<array{row: int, cells: list<string>}>}
      */
+    /**
+     * The delimiter this file actually uses.
+     *
+     * Excel writes the SYSTEM LIST SEPARATOR, not a comma — on a machine
+     * configured for it, "Save as CSV" produces semicolons and every row
+     * arrives as a single cell, so the header check fails on a file the
+     * officer exported from this very screen minutes earlier. Tabs turn up
+     * too, from "Unicode Text" and from anything pasted out of Sheets.
+     *
+     * Counted on the header line only, and outside quotes, because a name like
+     * "Rao, Priya" would otherwise cast a vote for the comma.
+     */
+    private function sniffDelimiter(string $raw): string
+    {
+        $firstLine = strtok($raw, "\r\n");
+
+        if ($firstLine === false) {
+            return ',';
+        }
+
+        $unquoted = preg_replace('/"[^"]*"/', '', $firstLine) ?? $firstLine;
+
+        $counts = [
+            ',' => substr_count($unquoted, ','),
+            ';' => substr_count($unquoted, ';'),
+            "\t" => substr_count($unquoted, "\t"),
+            '|' => substr_count($unquoted, '|'),
+        ];
+
+        arsort($counts);
+        $best = array_key_first($counts);
+
+        // No separator at all means a single-column file; comma is the honest
+        // default and the header check will report what it found.
+        return $counts[$best] > 0 ? $best : ',';
+    }
+
+    /**
+     * Strip whatever byte-order mark the spreadsheet left, and normalise
+     * UTF-16 down to UTF-8.
+     *
+     * Our own export writes a UTF-8 BOM deliberately, so Excel renders ₹ and
+     * Indian names correctly — which means the importer must expect one back.
+     * Excel's "Unicode Text" save produces UTF-16 instead, which is not
+     * decodable as UTF-8 at all and would otherwise be rejected as a corrupt
+     * file rather than converted.
+     */
+    private function normaliseEncoding(string $raw): string
+    {
+        // UTF-16, little- and big-endian. Converted first, because everything
+        // below assumes it is looking at UTF-8 bytes.
+        if (str_starts_with($raw, "\xFF\xFE")) {
+            $raw = (string) mb_convert_encoding(substr($raw, 2), 'UTF-8', 'UTF-16LE');
+        } elseif (str_starts_with($raw, "\xFE\xFF")) {
+            $raw = (string) mb_convert_encoding(substr($raw, 2), 'UTF-8', 'UTF-16BE');
+        }
+
+        /*
+         * Then the BOM, unconditionally rather than as an else-branch: a
+         * UTF-16 file usually carries one as its first CHARACTER too, which
+         * survives the conversion above as UTF-8 bytes and would otherwise
+         * make the first header read "\u{FEFF}employee_number".
+         *
+         * Stripped as raw bytes rather than by a /u-modified regex, which
+         * returns null outright on any invalid sequence later in the file and
+         * would blank the whole upload.
+         */
+        if (str_starts_with($raw, "\xEF\xBB\xBF")) {
+            $raw = substr($raw, 3);
+        }
+
+        return $raw;
+    }
+
     private function parse(string $raw): array
     {
+        $delimiter = $this->sniffDelimiter($raw);
+
         $handle = fopen('php://temp', 'r+');
         fwrite($handle, $raw);
         rewind($handle);
@@ -633,7 +733,7 @@ class OverrideImportService
         $rows = [];
         $dataRow = 0;
 
-        while (($cells = fgetcsv($handle)) !== false) {
+        while (($cells = fgetcsv($handle, 0, $delimiter)) !== false) {
             if ($cells === [null] || $cells === []) {
                 continue;
             }
