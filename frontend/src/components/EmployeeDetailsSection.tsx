@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, FileText, CreditCard, Building2, Download, Eye } from 'lucide-react';
+import { Briefcase, Award, FileText, CreditCard, Building2, Download, Eye, GraduationCap, Trash2, UserRound } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,9 +8,102 @@ import { validateGovernmentId } from '@/lib/idValidation';
 import { canAccess } from '@/lib/permissions';
 import { employeeWorkspaceApi } from '@/services/api';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
+import { formatCalendarDate, formatTenure } from '@/lib/employeeDates';
 import { usePlan } from '@/hooks/usePlan';
 
-const labelize = (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+/**
+ * The eight ABO/Rh groups. A free-text field here collects "O positive",
+ * "O +ve" and "o+" for the same person, and the one moment this field matters
+ * is the one where nobody has time to interpret it.
+ */
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+/**
+ * The qualifications on offer, lowest first.
+ *
+ * A dropdown rather than free text because "B.Tech", "BTech", "B Tech" and
+ * "Bachelor of Technology" are the same qualification, and four spellings of it
+ * make the field unreportable — which is the whole reason education became a
+ * record instead of a loose file.
+ */
+const QUALIFICATION_OPTIONS = [
+  '10th',
+  '12th',
+  'Diploma',
+  "Bachelor's Degree",
+  "Master's Degree",
+  'Doctorate (PhD)',
+  'Professional Certification',
+  'Other',
+];
+
+/**
+ * What an employee's previous employment is evidenced by.
+ *
+ * These are documents, not records: with no employer, dates or role captured,
+ * there is no fact here beyond "a relieving letter exists". So they are stored
+ * as employee documents under one category, with the selected type as the
+ * title, rather than in a table of their own.
+ */
+const EXPERIENCE_DOCUMENT_TYPES = [
+  'Offer Letter',
+  'Appointment Letter',
+  'Experience Certificate',
+  'Relieving Letter',
+  'Last Salary Slip',
+  'Form 16 (previous employer)',
+  'Other',
+];
+
+/** What this form writes for a new experience document. */
+const EXPERIENCE_CATEGORY = 'experience_document';
+
+/*
+ * Every category that means "evidence of previous employment".
+ *
+ * The list is long because the stored data and the upload form never agreed.
+ * The category dropdown offered 'education' / 'experience' / 'identity' /
+ * 'address' / 'other', while what is actually on the database is id_proof (99),
+ * education (38), offer_letter (34), address_proof (30), experience_letter
+ * (29), relieving_letter (27) and resume (26) — categories the form could not
+ * produce, written by the seeder and by earlier upload paths.
+ *
+ * Matching only the new value would have left the Experience section reading
+ * "No experience documents on file" for an employee with four of them.
+ */
+const EXPERIENCE_CATEGORIES = [
+  EXPERIENCE_CATEGORY,
+  'offer_letter',
+  'appointment_letter',
+  'experience_letter',
+  'relieving_letter',
+  'resume',
+  'experience',
+];
+
+const EDUCATION_CATEGORY = 'education_certificate';
+const EDUCATION_CATEGORIES = [EDUCATION_CATEGORY, 'education'];
+
+/**
+ * Categories that belong to a section of their own.
+ *
+ * Filtered out of the generic Documents list so a certificate does not appear
+ * twice on the page — once under Education and again under Documents.
+ */
+const OWNED_DOCUMENT_CATEGORIES = [
+  'bank_proof',
+  'government_id_proof',
+  ...EDUCATION_CATEGORIES,
+  ...EXPERIENCE_CATEGORIES,
+];
+
+/** The current-address keys, and their permanent counterparts, in one place. */
+const ADDRESS_PAIRS: Array<{ current: string; permanent: string; label: string }> = [
+  { current: 'address_line', permanent: 'permanent_address_line', label: 'Address' },
+  { current: 'city', permanent: 'permanent_city', label: 'City' },
+  { current: 'state', permanent: 'permanent_state', label: 'State' },
+  { current: 'postal_code', permanent: 'permanent_postal_code', label: 'Postal code' },
+];
 
 interface EmployeeDetailsSectionProps {
   /**
@@ -50,6 +143,14 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   const [aboutForm, setAboutForm] = useState<Record<string, string>>({});
   const [workForm, setWorkForm] = useState<Record<string, any>>({});
   const [govForm, setGovForm] = useState<Record<string, any>>({ id_type: 'aadhaar', id_number: '', status: 'pending' });
+  const [educationForm, setEducationForm] = useState<Record<string, any>>({
+    qualification: '',
+    certificate_file: null,
+  });
+  const [experienceForm, setExperienceForm] = useState<Record<string, any>>({
+    title: '',
+    file: null,
+  });
 
   /*
    * Derived, not state: recomputing on render keeps the message in step with
@@ -84,15 +185,24 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     if (!workspaceQuery.data) return;
     setAboutForm({
       first_name: workspaceQuery.data.about?.first_name || '',
+      // Present on the profile and sent by the Add User wizard, but never
+      // rendered here — so a middle name could be captured at hire and then
+      // silently dropped by the first edit this form saved.
+      middle_name: (workspaceQuery.data.about as any)?.middle_name || '',
       last_name: workspaceQuery.data.about?.last_name || '',
       gender: workspaceQuery.data.about?.gender || '',
       date_of_birth: String(workspaceQuery.data.about?.date_of_birth || '').slice(0, 10),
+      blood_group: (workspaceQuery.data.about as any)?.blood_group || '',
       phone: workspaceQuery.data.about?.phone || '',
       personal_email: workspaceQuery.data.about?.personal_email || '',
       address_line: workspaceQuery.data.about?.address_line || '',
       city: workspaceQuery.data.about?.city || '',
       state: workspaceQuery.data.about?.state || '',
       postal_code: workspaceQuery.data.about?.postal_code || '',
+      permanent_address_line: (workspaceQuery.data.about as any)?.permanent_address_line || '',
+      permanent_city: (workspaceQuery.data.about as any)?.permanent_city || '',
+      permanent_state: (workspaceQuery.data.about as any)?.permanent_state || '',
+      permanent_postal_code: (workspaceQuery.data.about as any)?.permanent_postal_code || '',
       emergency_contact_name: workspaceQuery.data.about?.emergency_contact_name || '',
       emergency_contact_number: workspaceQuery.data.about?.emergency_contact_number || '',
       emergency_contact_relationship: workspaceQuery.data.about?.emergency_contact_relationship || '',
@@ -157,6 +267,58 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save government ID.' });
+    },
+  });
+
+  const saveEducationMutation = useMutation({
+    mutationFn: async () => employeeWorkspaceApi.saveEducation(id, {
+      ...educationForm,
+      certificate_file: educationForm.certificate_file || null,
+    }),
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Education record saved.' });
+      setEducationForm({ qualification: '', certificate_file: null });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save the education record.' });
+    },
+  });
+
+  const removeEducationMutation = useMutation({
+    mutationFn: async (educationId: number) => employeeWorkspaceApi.deleteEducation(id, educationId),
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Education record removed. The certificate stays on file.' });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not remove the education record.' });
+    },
+  });
+
+  /*
+   * Experience reuses the document upload rather than a table of its own: the
+   * selected type IS the whole record, and it is already exactly what
+   * EmployeeDocument's title and category model.
+   */
+  const saveExperienceMutation = useMutation({
+    mutationFn: async () => {
+      const formData = new FormData();
+      formData.append('title', experienceForm.title);
+      formData.append('category', EXPERIENCE_CATEGORY);
+      formData.append('review_status', 'pending');
+      if (experienceForm.file) {
+        formData.append('file', experienceForm.file);
+      }
+      return employeeWorkspaceApi.uploadDocument(id, formData as any);
+    },
+    onSuccess: async () => {
+      setFeedback({ tone: 'success', message: 'Experience document uploaded.' });
+      setExperienceForm({ title: '', file: null });
+      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+    },
+    onError: (error: any) => {
+      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not upload the experience document.' });
     },
   });
 
@@ -256,26 +418,91 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     (user?.role === 'manager' && (data.employee as any)?.reporting_manager_id === user?.id)
   );
 
+  const about = data.about as any;
+
+  const experienceDocuments = (data.documents ?? []).filter(
+    (item: any) => EXPERIENCE_CATEGORIES.includes(item.category),
+  );
+
+  /*
+   * Education certificates uploaded before qualifications became records, and
+   * so attached to no row in the Education list. Shown inside that section
+   * rather than left in the general pile: the file is the evidence for a
+   * qualification nobody has recorded yet, and burying it under Documents is
+   * what made it invisible.
+   */
+  const linkedEducationDocumentIds = new Set(
+    ((data as any).educations ?? [])
+      .map((record: any) => record.employee_document_id)
+      .filter(Boolean),
+  );
+  const looseEducationDocuments = (data.documents ?? []).filter(
+    (item: any) => EDUCATION_CATEGORIES.includes(item.category) && !linkedEducationDocumentIds.has(item.id),
+  );
+
+  /*
+   * Everything that is not already surfaced by a section of its own. Education
+   * certificates and experience documents joined bank and government-ID proofs
+   * on this list, because a certificate showing up both under Education and
+   * again under Documents reads as two uploads of the same thing.
+   */
+  const generalDocuments = (data.documents ?? []).filter(
+    (item: any) => !OWNED_DOCUMENT_CATEGORIES.includes(item.category),
+  );
+
   const aboutSummaryFields = [
-    { label: 'First Name', value: data.about?.first_name },
-    { label: 'Last Name', value: data.about?.last_name },
-    { label: 'Gender', value: data.about?.gender },
-    { label: 'Date of Birth', value: data.about?.date_of_birth },
-    { label: 'Phone', value: data.about?.phone },
-    { label: 'Personal Email', value: data.about?.personal_email },
-    { label: 'Address Line', value: data.about?.address_line },
-    { label: 'City', value: data.about?.city },
-    { label: 'State', value: data.about?.state },
-    { label: 'Postal Code', value: data.about?.postal_code },
-    { label: 'Emergency Contact', value: data.about?.emergency_contact_name },
-    { label: 'Emergency Number', value: data.about?.emergency_contact_number },
-    { label: 'Relationship', value: data.about?.emergency_contact_relationship },
+    { label: 'Full Name (as per Aadhaar)', value: [about?.first_name, about?.middle_name, about?.last_name].filter(Boolean).join(' ') },
+    { label: 'Gender', value: about?.gender },
+    { label: 'Date of Birth', value: formatCalendarDate(about?.date_of_birth) },
+    { label: 'Blood Group', value: about?.blood_group },
+    { label: 'Phone', value: about?.phone },
+    { label: 'Personal Email', value: about?.personal_email },
+    { label: 'Current Address', value: [about?.address_line, about?.city, about?.state, about?.postal_code].filter(Boolean).join(', ') },
+    { label: 'Permanent Address', value: [about?.permanent_address_line, about?.permanent_city, about?.permanent_state, about?.permanent_postal_code].filter(Boolean).join(', ') },
+    { label: 'Emergency Contact', value: about?.emergency_contact_name },
+    { label: 'Emergency Number', value: about?.emergency_contact_number },
+    { label: 'Relationship', value: about?.emergency_contact_relationship },
   ];
+
+  /**
+   * Copy on tick, rather than storing a "same as current" flag.
+   *
+   * A stored flag would keep rewriting the permanent address every time the
+   * current one changed — so an employee who relocates for work would silently
+   * lose the permanent address their PF nomination is registered against, which
+   * is the exact failure this field was added to prevent.
+   */
+  const copyCurrentAddressToPermanent = () => {
+    setAboutForm((current) => {
+      const next = { ...current };
+      ADDRESS_PAIRS.forEach(({ current: from, permanent: to }) => {
+        next[to] = current[from] || '';
+      });
+      return next;
+    });
+  };
+
+  const textField = (key: string, label: string, type = 'text') => (
+    <div key={key}>
+      <FieldLabel>{label}</FieldLabel>
+      <TextInput
+        type={type}
+        value={aboutForm[key] || ''}
+        onChange={(event) => setAboutForm((currentForm) => ({ ...currentForm, [key]: event.target.value }))}
+      />
+    </div>
+  );
 
   const workSummaryFields = [
     { label: 'Employee Code', value: data.work_info?.employee_code },
     { label: 'Designation', value: data.work_info?.designation },
     { label: 'Department', value: data.work_info?.department?.name },
+    // Joining date anchors the onboarding checklist, the 30/60/90 probation
+    // reviews, mid-month payroll proration and the five-year gratuity floor.
+    // formatCalendarDate, not the raw value: rendered raw it prints the
+    // serialised "…T18:30:00.000000Z" form.
+    { label: 'Joining Date', value: formatCalendarDate(data.work_info?.joining_date) },
+    { label: 'Tenure', value: formatTenure(data.work_info?.joining_date) },
     { label: 'Employment Type', value: data.work_info?.employment_type },
     { label: 'Work Location', value: data.work_info?.work_location },
     { label: 'Expected Start Time', value: data.work_info?.expected_start_time ? `${data.work_info.expected_start_time} (${data.work_info?.expected_timezone || 'Org timezone'})` : 'Not set (using org default)' },
@@ -283,57 +510,161 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
 
   return (
     <div className="space-y-5">
+      {/*
+        Every mutation in this component has always called setFeedback, and
+        nothing ever rendered it — so a save that 422'd on the server looked
+        exactly like one that worked, and the six forms below reported failure
+        into nowhere. It is rendered now.
+      */}
+      {feedback && (
+        <div
+          role="status"
+          className={
+            feedback.tone === 'success'
+              ? 'rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800'
+              : 'rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800'
+          }
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span>{feedback.message}</span>
+            <button
+              type="button"
+              onClick={() => setFeedback(null)}
+              className="shrink-0 text-xs font-medium underline underline-offset-2"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {showHeader && (
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Employee Details</p>
           <h1 className="mt-2 text-2xl font-semibold text-slate-950">{data.employee?.name || 'Employee'}</h1>
           <p className="mt-1 text-sm text-slate-500">{data.employee?.email || ''}</p>
-
-          {canEditOwnProfile ? (
-            <>
-              <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
-                {Object.keys(aboutForm).map((key) => (
-                  <div key={key}>
-                    <FieldLabel>{labelize(key)}</FieldLabel>
-                    {key === 'gender' ? (
-                      <SelectInput
-                        value={aboutForm[key] || ''}
-                        onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
-                      >
-                        <option value="">Select gender</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
-                        <option value="prefer_not_to_say">Prefer not to say</option>
-                      </SelectInput>
-                    ) : (
-                      <TextInput
-                        type={key.includes('date') ? 'date' : key.includes('email') ? 'email' : 'text'}
-                        value={aboutForm[key] || ''}
-                        onChange={(event) => setAboutForm((current) => ({ ...current, [key]: event.target.value }))}
-                      />
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-6">
-                <Button onClick={() => saveAboutMutation.mutate()} disabled={saveAboutMutation.isPending}>
-                  {saveAboutMutation.isPending ? 'Saving...' : 'Save Personal Info'}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
-              {aboutSummaryFields.map((field) => (
-                <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
-                  <p className="mt-2 text-sm font-medium text-slate-950">{field.value || 'Not added yet'}</p>
-                </div>
-              ))}
-            </div>
-          )}
         </section>
       )}
+
+      {/*
+        Personal details are their own section rather than part of the header
+        block. They used to render only when showHeader was set, and the Add
+        User wizard mounts this component without it — so the one screen whose
+        entire purpose is capturing a new joiner's details showed every section
+        except that one.
+      */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <UserRound className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Personal Details</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Identity, contact, addresses and who to call in an emergency.</p>
+
+        {canEditOwnProfile ? (
+          <>
+            <div className="mt-6 space-y-6">
+              <div>
+                {/*
+                  Named for the document it has to match. The three parts already
+                  compose the legal name — the middle-name migration says so — and
+                  a filing is rejected when the spelling differs from the Aadhaar
+                  and PAN records, so the label is where that gets enforced.
+                */}
+                <p className="text-sm font-medium text-slate-900">Full name (as per Aadhaar)</p>
+                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {textField('first_name', 'First name')}
+                  {textField('middle_name', 'Middle name')}
+                  {textField('last_name', 'Last name')}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
+                <div>
+                  <FieldLabel>Gender</FieldLabel>
+                  <SelectInput
+                    value={aboutForm.gender || ''}
+                    onChange={(event) => setAboutForm((current) => ({ ...current, gender: event.target.value }))}
+                  >
+                    <option value="">Select gender</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                    <option value="prefer_not_to_say">Prefer not to say</option>
+                  </SelectInput>
+                </div>
+                {textField('date_of_birth', 'Date of birth', 'date')}
+                <div>
+                  <FieldLabel>Blood group</FieldLabel>
+                  <SelectInput
+                    value={aboutForm.blood_group || ''}
+                    onChange={(event) => setAboutForm((current) => ({ ...current, blood_group: event.target.value }))}
+                  >
+                    <option value="">Select blood group</option>
+                    {BLOOD_GROUPS.map((group) => (
+                      <option key={group} value={group}>{group}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+                {textField('phone', 'Phone')}
+                {textField('personal_email', 'Personal email', 'email')}
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-slate-900">Current address</p>
+                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
+                  {ADDRESS_PAIRS.map(({ current, label }) => textField(current, label))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-900">Permanent address</p>
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                      onChange={(event) => {
+                        if (event.target.checked) copyCurrentAddressToPermanent();
+                      }}
+                    />
+                    Same as current address
+                  </label>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Kept separately from the current address: this is the one PF nomination and bank KYC are registered against.
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
+                  {ADDRESS_PAIRS.map(({ permanent, label }) => textField(permanent, label))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-slate-900">Emergency contact</p>
+                <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {textField('emergency_contact_name', 'Name')}
+                  {textField('emergency_contact_number', 'Phone number')}
+                  {textField('emergency_contact_relationship', 'Relationship')}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <Button onClick={() => saveAboutMutation.mutate()} disabled={saveAboutMutation.isPending}>
+                {saveAboutMutation.isPending ? 'Saving...' : 'Save Personal Info'}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
+            {aboutSummaryFields.map((field) => (
+              <div key={field.label} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{field.label}</p>
+                <p className="mt-2 text-sm font-medium text-slate-950">{field.value || 'Not added yet'}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
@@ -524,6 +855,250 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         )}
       </section>
 
+      {/*
+        Education as records rather than as loose files. A certificate could
+        already be uploaded as a document with category 'education', which kept
+        the scan and lost the facts — "who holds a B.Tech" meant opening every
+        PDF one at a time.
+      */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <GraduationCap className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Education</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Qualifications held, with the certificate for each.</p>
+
+        {(data as any).educations?.length > 0 ? (
+          <div className="mt-5 space-y-3">
+            {(data as any).educations.map((item: any) => (
+              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-slate-950">
+                      {item.qualification}
+                      {item.specialisation ? <span className="font-normal text-slate-500"> · {item.specialisation}</span> : null}
+                    </p>
+                    {/*
+                      institution, year and grade are only ever present on rows
+                      created before the form was reduced to a qualification and
+                      a certificate. Shown when they exist rather than dropped,
+                      so nothing already recorded disappears from the page.
+                    */}
+                    <p className="text-sm text-slate-500">
+                      {[item.institution, item.year_of_passing, item.grade, item.document?.file_name]
+                        .filter(Boolean)
+                        .join(' · ') || 'No certificate attached'}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {item.document?.id && (
+                      <>
+                        {isPreviewable(item.document.mime_type, item.document.file_name) && (
+                          <button
+                            type="button"
+                            title={`View ${item.qualification} certificate`}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                            onClick={() => handleFilePreview(item.document.id, item.document.mime_type, item.document.file_name)}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          title={`Download ${item.qualification} certificate`}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                          onClick={() => handleFileDownload(item.document.id, buildDocFilename(`${item.qualification}_Certificate`), item.document.mime_type, item.document.file_name)}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                    {(canEditOwnProfile || canEditWorkInfo) && (
+                      <button
+                        type="button"
+                        title={`Remove ${item.qualification}`}
+                        disabled={removeEducationMutation.isPending}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors disabled:opacity-50"
+                        onClick={() => removeEducationMutation.mutate(item.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            No qualifications recorded yet.
+          </p>
+        )}
+
+        {looseEducationDocuments.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-slate-500">
+              Certificates on file with no qualification recorded against them
+            </p>
+            <div className="mt-2 space-y-2">
+              {looseEducationDocuments.map((item: any) => (
+                <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-dashed border-slate-200 bg-white px-4 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{item.title}</p>
+                    <p className="text-xs text-slate-500">{item.file_name}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isPreviewable(item.mime_type, item.file_name) && (
+                      <button
+                        type="button"
+                        title={`View ${item.title}`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                        onClick={() => handleFilePreview(item.id, item.mime_type, item.file_name)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title={`Download ${item.title}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                      onClick={() => handleFileDownload(item.id, buildDocFilename(String(item.title || 'Certificate').replace(/\s+/g, '_')), item.mime_type, item.file_name)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(canEditOwnProfile || canEditWorkInfo) && (
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <p className="text-sm font-medium text-slate-900">Add a qualification</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <FieldLabel>Qualification</FieldLabel>
+                <SelectInput
+                  value={educationForm.qualification || ''}
+                  onChange={(event) => setEducationForm((current) => ({ ...current, qualification: event.target.value }))}
+                >
+                  <option value="">Select qualification</option>
+                  {QUALIFICATION_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </SelectInput>
+              </div>
+              <div>
+                <FieldLabel>Certificate</FieldLabel>
+                <input
+                  type="file"
+                  className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setEducationForm((current) => ({ ...current, certificate_file: event.target.files?.[0] || null }))}
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <Button
+                onClick={() => saveEducationMutation.mutate()}
+                disabled={saveEducationMutation.isPending || !educationForm.qualification}
+              >
+                {saveEducationMutation.isPending ? 'Saving...' : 'Add Qualification'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/*
+        Experience, shaped like Education so the page reads consistently. The
+        records themselves are employee documents under one category — with no
+        employer, dates or role captured there is no fact to hold beyond the
+        document type, and a table for that would be an empty ceremony.
+      */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <Award className="h-5 w-5 text-blue-600" />
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Experience</p>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Documents evidencing previous employment.</p>
+
+        {experienceDocuments.length > 0 ? (
+          <div className="mt-5 space-y-3">
+            {experienceDocuments.map((item: any) => (
+              <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-slate-950">{item.title}</p>
+                    <p className="text-sm text-slate-500">{item.file_name}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isPreviewable(item.mime_type, item.file_name) && (
+                      <button
+                        type="button"
+                        title={`View ${item.title}`}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                        onClick={() => handleFilePreview(item.id, item.mime_type, item.file_name)}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title={`Download ${item.title}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                      onClick={() => handleFileDownload(item.id, buildDocFilename(String(item.title || 'Experience').replace(/\s+/g, '_')), item.mime_type, item.file_name)}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            No experience documents on file.
+          </p>
+        )}
+
+        {(canEditOwnProfile || canEditWorkInfo) && (
+          <div className="mt-6 border-t border-slate-200 pt-6">
+            <p className="text-sm font-medium text-slate-900">Add an experience document</p>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <FieldLabel>Document type</FieldLabel>
+                <SelectInput
+                  value={experienceForm.title || ''}
+                  onChange={(event) => setExperienceForm((current) => ({ ...current, title: event.target.value }))}
+                >
+                  <option value="">Select document type</option>
+                  {EXPERIENCE_DOCUMENT_TYPES.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </SelectInput>
+              </div>
+              <div>
+                <FieldLabel>Document</FieldLabel>
+                <input
+                  type="file"
+                  className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(event) => setExperienceForm((current) => ({ ...current, file: event.target.files?.[0] || null }))}
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <Button
+                onClick={() => saveExperienceMutation.mutate()}
+                disabled={saveExperienceMutation.isPending || !experienceForm.title || !experienceForm.file}
+              >
+                {saveExperienceMutation.isPending ? 'Uploading...' : 'Add Experience Document'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {hasPayrollFeature && (
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2">
@@ -664,9 +1239,9 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
           <p className="mt-1 text-sm text-slate-500">Upload and manage employee documents.</p>
 
-          {data.documents?.filter((item: any) => !['bank_proof', 'government_id_proof'].includes(item.category)).length > 0 && (
+          {generalDocuments.length > 0 && (
             <div className="mt-5 space-y-3">
-              {data.documents.filter((item: any) => !['bank_proof', 'government_id_proof'].includes(item.category)).map((item: any) => (
+              {generalDocuments.map((item: any) => (
                 <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -713,14 +1288,26 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
                 </div>
                 <div>
                   <FieldLabel>Category</FieldLabel>
+                  {/*
+                    Education and Experience were removed from this list. Both
+                    now have a section of their own, and leaving them here gave
+                    an admin two different places to upload a degree
+                    certificate — one that recorded the qualification and one
+                    that filed the scan under a free-text title.
+
+                    The two remaining values are id_proof and address_proof,
+                    not 'identity' and 'address'. Those were what this dropdown
+                    wrote, and they match nothing already stored: the database
+                    holds 99 id_proof and 30 address_proof rows, so every
+                    upload through this form landed in a category of its own
+                    and grouped with none of them.
+                  */}
                   <SelectInput
                     value={docForm.category || 'other'}
                     onChange={(event) => setDocForm((current) => ({ ...current, category: event.target.value }))}
                   >
-                    <option value="education">Education</option>
-                    <option value="experience">Experience</option>
-                    <option value="identity">Identity</option>
-                    <option value="address">Address Proof</option>
+                    <option value="id_proof">Identity</option>
+                    <option value="address_proof">Address Proof</option>
                     <option value="other">Other</option>
                   </SelectInput>
                 </div>

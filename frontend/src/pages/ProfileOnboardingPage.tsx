@@ -25,7 +25,30 @@ type ProfileForm = {
   emergency_contact_name: string;
   emergency_contact_number: string;
   emergency_contact_relationship: string;
+  // Optional, unlike everything above. See OPTIONAL_FIELDS below.
+  blood_group: string;
+  permanent_address_line: string;
+  permanent_city: string;
+  permanent_state: string;
+  permanent_postal_code: string;
 };
+
+/**
+ * The fields a joiner may leave blank and still finish onboarding.
+ *
+ * Everything else on this form is required, and `isValid` used to be a blanket
+ * "every value is non-empty" over the whole shape — so adding a field here
+ * would silently have made it mandatory and blocked first login until the new
+ * joiner produced a blood group and a permanent address. These are reported by
+ * the completeness ring instead.
+ */
+const OPTIONAL_FIELDS: ReadonlyArray<keyof ProfileForm> = [
+  'blood_group',
+  'permanent_address_line',
+  'permanent_city',
+  'permanent_state',
+  'permanent_postal_code',
+];
 
 const createEmptyForm = (): ProfileForm => ({
   first_name: '',
@@ -41,6 +64,11 @@ const createEmptyForm = (): ProfileForm => ({
   emergency_contact_name: '',
   emergency_contact_number: '',
   emergency_contact_relationship: '',
+  blood_group: '',
+  permanent_address_line: '',
+  permanent_city: '',
+  permanent_state: '',
+  permanent_postal_code: '',
 });
 
 const normalizeProfile = (profile?: EmployeeProfileDetails | null): ProfileForm => ({
@@ -57,6 +85,11 @@ const normalizeProfile = (profile?: EmployeeProfileDetails | null): ProfileForm 
   emergency_contact_name: String(profile?.emergency_contact_name || ''),
   emergency_contact_number: String(profile?.emergency_contact_number || ''),
   emergency_contact_relationship: String(profile?.emergency_contact_relationship || ''),
+  blood_group: String((profile as any)?.blood_group || ''),
+  permanent_address_line: String((profile as any)?.permanent_address_line || ''),
+  permanent_city: String((profile as any)?.permanent_city || ''),
+  permanent_state: String((profile as any)?.permanent_state || ''),
+  permanent_postal_code: String((profile as any)?.permanent_postal_code || ''),
 });
 
 export default function ProfileOnboardingPage() {
@@ -99,7 +132,10 @@ export default function ProfileOnboardingPage() {
   }, [meQuery.data?.employee_profile, user?.email, user?.employee_profile, user?.name, user?.settings]);
 
   const isValid = useMemo(
-    () => Object.values(form).every((value) => String(value).trim() !== ''),
+    () =>
+      (Object.keys(form) as Array<keyof ProfileForm>)
+        .filter((key) => !OPTIONAL_FIELDS.includes(key))
+        .every((key) => String(form[key]).trim() !== ''),
     [form]
   );
 
@@ -202,6 +238,15 @@ export default function ProfileOnboardingPage() {
                 </div>
                 <div><FieldLabel>Date of Birth</FieldLabel><TextInput type="date" value={form.date_of_birth} onChange={(event) => setForm((current) => ({ ...current, date_of_birth: event.target.value }))} required /></div>
                 <div><FieldLabel>Phone</FieldLabel><TextInput value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} required /></div>
+                <div>
+                  <FieldLabel>Blood Group (optional)</FieldLabel>
+                  <SelectInput value={form.blood_group} onChange={(event) => setForm((current) => ({ ...current, blood_group: event.target.value }))}>
+                    <option value="">Select blood group</option>
+                    {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((group) => (
+                      <option key={group} value={group}>{group}</option>
+                    ))}
+                  </SelectInput>
+                </div>
                 <div className="md:col-span-2"><FieldLabel>Personal Email</FieldLabel><TextInput type="email" value={form.personal_email} onChange={(event) => setForm((current) => ({ ...current, personal_email: event.target.value }))} required /></div>
               </div>
           </div>
@@ -216,6 +261,17 @@ export default function ProfileOnboardingPage() {
                 <div className="md:col-span-2"><FieldLabel>Emergency Contact Name</FieldLabel><TextInput value={form.emergency_contact_name} onChange={(event) => setForm((current) => ({ ...current, emergency_contact_name: event.target.value }))} required /></div>
                 <div><FieldLabel>Emergency Contact Number</FieldLabel><TextInput value={form.emergency_contact_number} onChange={(event) => setForm((current) => ({ ...current, emergency_contact_number: event.target.value }))} required /></div>
                 <div><FieldLabel>Emergency Contact Relationship</FieldLabel><TextInput value={form.emergency_contact_relationship} onChange={(event) => setForm((current) => ({ ...current, emergency_contact_relationship: event.target.value }))} required /></div>
+
+                {/* Optional, and kept apart from the current address: this is
+                    the one a PF nomination and bank KYC are registered
+                    against, so it must not be overwritten by a move. */}
+                <div className="md:col-span-2 border-t border-slate-200 pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Permanent Address (optional)</p>
+                </div>
+                <div className="md:col-span-2"><FieldLabel>Address Line</FieldLabel><TextInput value={form.permanent_address_line} onChange={(event) => setForm((current) => ({ ...current, permanent_address_line: event.target.value }))} /></div>
+                <div><FieldLabel>City</FieldLabel><TextInput value={form.permanent_city} onChange={(event) => setForm((current) => ({ ...current, permanent_city: event.target.value }))} /></div>
+                <div><FieldLabel>State</FieldLabel><TextInput value={form.permanent_state} onChange={(event) => setForm((current) => ({ ...current, permanent_state: event.target.value }))} /></div>
+                <div><FieldLabel>Postal Code</FieldLabel><TextInput value={form.permanent_postal_code} onChange={(event) => setForm((current) => ({ ...current, permanent_postal_code: event.target.value }))} /></div>
               </div>
           </div>
         </div>

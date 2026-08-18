@@ -11,7 +11,14 @@ import ImageDropzone from '../components/ImageDropzone';
 import type { PersonalDetailsForm } from '../types';
 import type { SettingsController } from '../useSettingsController';
 
-/** The thirteen personal fields, grouped by what a person is actually telling us. */
+/**
+ * The eight ABO/Rh groups. Free text here collects "O positive", "O +ve" and
+ * "o+" for the same person, and the one moment this field matters is the one
+ * where nobody has time to interpret it.
+ */
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+/** The personal fields, grouped by what a person is actually telling us. */
 const GROUPS: Array<{
   id: string;
   title: string;
@@ -23,7 +30,7 @@ const GROUPS: Array<{
     id: 'identity',
     title: 'Identity',
     description: 'Matches what payroll and statutory filings use.',
-    fields: ['first_name', 'last_name', 'gender', 'date_of_birth'],
+    fields: ['first_name', 'last_name', 'gender', 'date_of_birth', 'blood_group'],
     columns: 'sm:grid-cols-2 xl:grid-cols-4',
   },
   {
@@ -35,9 +42,16 @@ const GROUPS: Array<{
   },
   {
     id: 'address',
-    title: 'Address',
+    title: 'Current address',
     description: 'Your state decides professional tax, so keep it current.',
     fields: ['address_line', 'city', 'state', 'postal_code'],
+    columns: 'sm:grid-cols-2 xl:grid-cols-4',
+  },
+  {
+    id: 'permanent_address',
+    title: 'Permanent address',
+    description: 'Kept separately from where you live now — this is the one your PF nomination and bank KYC are registered against.',
+    fields: ['permanent_address_line', 'permanent_city', 'permanent_state', 'permanent_postal_code'],
     columns: 'sm:grid-cols-2 xl:grid-cols-4',
   },
   {
@@ -54,12 +68,17 @@ const FIELD_LABELS: Record<keyof PersonalDetailsForm, string> = {
   last_name: 'Last name',
   gender: 'Gender',
   date_of_birth: 'Date of birth',
+  blood_group: 'Blood group',
   phone: 'Phone',
   personal_email: 'Personal email',
   address_line: 'Address line',
   city: 'City',
   state: 'State',
   postal_code: 'PIN code',
+  permanent_address_line: 'Address line',
+  permanent_city: 'City',
+  permanent_state: 'State',
+  permanent_postal_code: 'PIN code',
   emergency_contact_name: 'Name',
   emergency_contact_number: 'Phone',
   emergency_contact_relationship: 'Relationship',
@@ -145,6 +164,13 @@ export default function ProfilePane({ controller }: { controller: SettingsContro
             <option value="other">Other</option>
             <option value="prefer_not_to_say">Prefer not to say</option>
           </SelectInput>
+        ) : key === 'blood_group' ? (
+          <SelectInput value={value} onChange={(event) => setField(key, event.target.value)}>
+            <option value="">Select blood group</option>
+            {BLOOD_GROUPS.map((group) => (
+              <option key={group} value={group}>{group}</option>
+            ))}
+          </SelectInput>
         ) : key === 'date_of_birth' ? (
           <TextInput type="date" value={value} onChange={(event) => setField(key, event.target.value)} />
         ) : key.includes('phone') || key.includes('number') ? (
@@ -184,7 +210,10 @@ export default function ProfilePane({ controller }: { controller: SettingsContro
     );
   };
 
-  const emergencyIsEmpty = GROUPS[3].fields.every((key) => !String(personalDetailsForm[key] || '').trim());
+  // Looked up by id rather than by position. This was GROUPS[3], which silently
+  // became the wrong group the moment another one was inserted above it.
+  const emergencyFields = GROUPS.find((group) => group.id === 'emergency')?.fields ?? [];
+  const emergencyIsEmpty = emergencyFields.every((key) => !String(personalDetailsForm[key] || '').trim());
 
   return (
     <div className="space-y-4">

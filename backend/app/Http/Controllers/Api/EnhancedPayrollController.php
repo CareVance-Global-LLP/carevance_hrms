@@ -476,7 +476,12 @@ class EnhancedPayrollController extends Controller
                 'message' => "Payroll run for calculation_month {$arrear->calculation_month} does not exist. Create it first, then approve the arrear.",
             ], 422);
         }
-        if (in_array($run->status, ['paid', 'released'], true)) {
+        // Was in_array($run->status, ['paid', 'released']). Nothing ever writes
+        // 'paid' to a run -- the statuses are draft, processing, locked,
+        // approved, released, disbursed -- so this guard passed for 'approved'
+        // and 'disbursed' and money could be written onto a disbursed run.
+        // CLOSED_STATUSES is what the comment above already describes.
+        if (in_array($run->status, PayrollMonthlyRun::CLOSED_STATUSES, true)) {
             return response()->json([
                 'success' => false,
                 'message' => "Cannot approve arrear — run {$arrear->calculation_month} is already {$run->status} and immutable.",
@@ -553,7 +558,30 @@ class EnhancedPayrollController extends Controller
      * Recompute PayrollMonthlyRun aggregate columns from its items.
      * Safe to call after any payroll_item mutation (arrears, encashment, etc).
      */
-    private function recomputePayrollRunTotals(PayrollMonthlyRun $run): void
+    /**
+     * Rewrite the run header from its items.
+     *
+     * Tier-aware, and the awareness is subtler than filtering. The header must
+     * equal the sum of the rows it summarises — that identity is what makes the
+     * run reconcile against the bank file and the ECR — so this deliberately
+     * sums EVERY item, locked or not. Summing only the settled ones would
+     * understate a run by however many employees were still under review, and
+     * hand the payroll officer a total that reconciles against nothing.
+     *
+     * The risk the lock tiers introduce is therefore not that the total is
+     * wrong, but that it is read as final while three of two hundred are still
+     * moving. That is answered by reporting settlement alongside the total
+     * rather than by distorting it: a caller that needs to know whether the
+     * figure can still change asks how many are unsettled.
+     *
+     * Restating a closed month's totals is safe for the same reason: money on a
+     * closed run can only move through ClosedRunWriteContext::permit(), and
+     * after such a correction the header MUST be restated or it stops matching
+     * its own items.
+     *
+     * @return array{settled: int, unsettled: int, published: int}
+     */
+    private function recomputePayrollRunTotals(PayrollMonthlyRun $run): array
     {
         $items = PayrollItem::where('payroll_run_id', $run->id)->get();
         $run->update([
@@ -570,6 +598,16 @@ class EnhancedPayrollController extends Controller
             'total_tds' => $items->sum('tds'),
             'total_arrears' => $items->sum('arrears'),
         ]);
+
+        $settled = $items->whereNotNull('locked_at')->count();
+
+        return [
+            'settled' => $settled,
+            // Greater than zero means the totals above are provisional: they
+            // are the true sum today and can still move tomorrow.
+            'unsettled' => $items->count() - $settled,
+            'published' => $items->whereNotNull('payslip_published_at')->count(),
+        ];
     }
 
     public function rejectArrear(Request $request, int $id): JsonResponse

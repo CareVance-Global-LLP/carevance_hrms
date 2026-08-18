@@ -216,4 +216,41 @@ class PayrollLopSingleApplicationTest extends TestCase
             'PF applies to wages actually earned, so a LOP day must reduce it.'
         );
     }
+
+    /**
+     * The run records the wage base PF and gratuity were computed on, and the
+     * rule that produced it.
+     *
+     * Storing it is the point: the Code on Wages commenced 21 Nov 2025 but
+     * organisations adopt as their state's rules land, so recomputing a
+     * pre-adoption month has to reproduce the base that month actually used.
+     * Deriving it at render time would answer an EPFO audit with today's rule
+     * instead of the period's.
+     *
+     * This organisation has set no adoption date, so it is on the pre-Code
+     * rule and the base is the structure's own basic — which is exactly the
+     * default that must not silently change under everyone.
+     */
+    public function test_the_run_records_the_statutory_wage_base_and_its_rule(): void
+    {
+        $employee = $this->employeeWithCtc('wagebase@example.test');
+
+        $this->runAutoProcess();
+
+        $item = PayrollItem::where('user_id', $employee->id)->firstOrFail();
+
+        $this->assertSame(
+            'pre_code',
+            $item->wage_base_rule,
+            'An organisation that has not adopted must stay on the old definition.'
+        );
+
+        $this->assertNotNull($item->statutory_wage_base, 'The base must be frozen onto the row, not re-derived.');
+        $this->assertEqualsWithDelta(
+            (float) $item->basic,
+            (float) $item->statutory_wage_base,
+            0.01,
+            'Pre-adoption, the statutory base is the structure’s own basic.'
+        );
+    }
 }

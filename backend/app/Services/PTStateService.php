@@ -151,37 +151,41 @@ class PTStateService
                 ['min' => 83334, 'max' => null, 'amount' => 208],
             ],
         ],
-        // --- Newly added states (FY 2024-25) ---
+        // --- Jurisdictions that levy NO professional tax ---
+        //
+        // Professional tax is state-levied and many states/UTs do not levy it
+        // at all. The entries below previously carried invented slabs and were
+        // deducting a tax that does not exist, from real employees, on every
+        // run. They are zeroed rather than removed so that:
+        //   - orgs that already selected the state keep a valid state code,
+        //   - getStatesWithoutPT() reports them without a second code path,
+        //   - "no PT" has exactly one representation in this file.
+        //
+        // Do not re-add a slab here without a citation to that state's
+        // Professional Tax Act. An unset or zero state must yield 0.
+        'arunachal_pradesh' => [
+            'monthly' => [
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Arunachal Pradesh
+            ],
+        ],
         'chhattisgarh' => [
             'monthly' => [
-                ['min' => 0, 'max' => 12500, 'amount' => 0],
-                ['min' => 12501, 'max' => 17000, 'amount' => 150],
-                ['min' => 17001, 'max' => 25000, 'amount' => 180],
-                ['min' => 25001, 'max' => null, 'amount' => 208],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Chhattisgarh
             ],
         ],
         'goa' => [
             'monthly' => [
-                ['min' => 0, 'max' => 15000, 'amount' => 0],
-                ['min' => 15001, 'max' => 25000, 'amount' => 150],
-                ['min' => 25001, 'max' => null, 'amount' => 200],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Goa
             ],
         ],
         'himachal_pradesh' => [
             'monthly' => [
-                ['min' => 0, 'max' => 7500, 'amount' => 0],
-                ['min' => 7501, 'max' => 10000, 'amount' => 100],
-                ['min' => 10001, 'max' => 15000, 'amount' => 150],
-                ['min' => 15001, 'max' => 20000, 'amount' => 200],
-                ['min' => 20001, 'max' => null, 'amount' => 200],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Himachal Pradesh
             ],
         ],
         'jammu_and_kashmir' => [
             'monthly' => [
-                ['min' => 0, 'max' => 15000, 'amount' => 0],
-                ['min' => 15001, 'max' => 20000, 'amount' => 100],
-                ['min' => 20001, 'max' => 30000, 'amount' => 150],
-                ['min' => 30001, 'max' => null, 'amount' => 200],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Jammu & Kashmir
             ],
         ],
         'ladakh' => [
@@ -239,11 +243,7 @@ class PTStateService
         ],
         'uttarakhand' => [
             'monthly' => [
-                ['min' => 0, 'max' => 10000, 'amount' => 0],
-                ['min' => 10001, 'max' => 15000, 'amount' => 100],
-                ['min' => 15001, 'max' => 20000, 'amount' => 150],
-                ['min' => 20001, 'max' => 25000, 'amount' => 175],
-                ['min' => 25001, 'max' => null, 'amount' => 200],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Uttarakhand
             ],
         ],
         // --- Union Territories ---
@@ -256,13 +256,13 @@ class PTStateService
                 ['min' => 25000, 'max' => null, 'amount' => 208],
             ],
         ],
+        // Chandigarh levies no PT. Its previous top band of 250/month also
+        // totalled 3,000 a year, breaching the Article 276(2) ceiling of
+        // 2,500 that binds every state and UT -- so it was both an invented
+        // tax and an unconstitutional one.
         'chandigarh' => [
             'monthly' => [
-                ['min' => 0, 'max' => 12000, 'amount' => 0],
-                ['min' => 12001, 'max' => 15000, 'amount' => 100],
-                ['min' => 15001, 'max' => 20000, 'amount' => 150],
-                ['min' => 20001, 'max' => 25000, 'amount' => 200],
-                ['min' => 25001, 'max' => null, 'amount' => 250],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Chandigarh
             ],
         ],
         'andaman_and_nicobar' => [
@@ -272,18 +272,12 @@ class PTStateService
         ],
         'dadra_and_nagar_haveli' => [
             'monthly' => [
-                ['min' => 0, 'max' => 10000, 'amount' => 0],
-                ['min' => 10001, 'max' => 15000, 'amount' => 100],
-                ['min' => 15001, 'max' => 25000, 'amount' => 150],
-                ['min' => 25001, 'max' => null, 'amount' => 200],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Dadra & Nagar Haveli
             ],
         ],
         'daman_and_diu' => [
             'monthly' => [
-                ['min' => 0, 'max' => 10000, 'amount' => 0],
-                ['min' => 10001, 'max' => 15000, 'amount' => 100],
-                ['min' => 15001, 'max' => 25000, 'amount' => 150],
-                ['min' => 25001, 'max' => null, 'amount' => 200],
+                ['min' => 0, 'max' => null, 'amount' => 0], // No PT in Daman & Diu
             ],
         ],
         'lakshadweep' => [
@@ -299,8 +293,9 @@ class PTStateService
     public static function getStates(): array
     {
         return [
-            // States (28)
+            // States
             ['code' => 'andhra_pradesh', 'name' => 'Andhra Pradesh', 'type' => 'state'],
+            ['code' => 'arunachal_pradesh', 'name' => 'Arunachal Pradesh', 'type' => 'state'],
             ['code' => 'assam', 'name' => 'Assam', 'type' => 'state'],
             ['code' => 'bihar', 'name' => 'Bihar', 'type' => 'state'],
             ['code' => 'chhattisgarh', 'name' => 'Chhattisgarh', 'type' => 'state'],
@@ -308,7 +303,6 @@ class PTStateService
             ['code' => 'gujarat', 'name' => 'Gujarat', 'type' => 'state'],
             ['code' => 'haryana', 'name' => 'Haryana', 'type' => 'state'],
             ['code' => 'himachal_pradesh', 'name' => 'Himachal Pradesh', 'type' => 'state'],
-            ['code' => 'jammu_and_kashmir', 'name' => 'Jammu & Kashmir', 'type' => 'state'],
             ['code' => 'jharkhand', 'name' => 'Jharkhand', 'type' => 'state'],
             ['code' => 'karnataka', 'name' => 'Karnataka', 'type' => 'state'],
             ['code' => 'kerala', 'name' => 'Kerala', 'type' => 'state'],
@@ -328,9 +322,11 @@ class PTStateService
             ['code' => 'uttar_pradesh', 'name' => 'Uttar Pradesh', 'type' => 'state'],
             ['code' => 'uttarakhand', 'name' => 'Uttarakhand', 'type' => 'state'],
             ['code' => 'west_bengal', 'name' => 'West Bengal', 'type' => 'state'],
-            // Union Territories (8)
+            // Union Territories. Jammu & Kashmir has been a UT since the
+            // reorganisation of Oct 2019; it was previously typed 'state'.
             ['code' => 'andaman_and_nicobar', 'name' => 'Andaman & Nicobar Islands', 'type' => 'ut'],
             ['code' => 'chandigarh', 'name' => 'Chandigarh', 'type' => 'ut'],
+            ['code' => 'jammu_and_kashmir', 'name' => 'Jammu & Kashmir', 'type' => 'ut'],
             ['code' => 'dadra_and_nagar_haveli', 'name' => 'Dadra & Nagar Haveli', 'type' => 'ut'],
             ['code' => 'daman_and_diu', 'name' => 'Daman & Diu', 'type' => 'ut'],
             ['code' => 'delhi', 'name' => 'Delhi', 'type' => 'ut'],
@@ -507,35 +503,36 @@ class PTStateService
     }
 
     /**
-     * Get annual PT limit for a state.
-     * 
+     * Maximum professional tax an employee can pay across a full year in this
+     * jurisdiction -- the top band, summed over all twelve months.
+     *
+     * Derived by running calculate() for each month rather than by multiplying
+     * a maximum monthly rate by 12. The previous form folded Maharashtra's
+     * February instalment of 300 into the monthly maximum and then multiplied,
+     * returning 3,600 against a real annual of (11 x 200) + 300 = 2,500. A
+     * figure reported here has to agree with what an employee is actually
+     * charged, so it is now computed the same way they are charged -- the two
+     * cannot drift apart again.
+     *
+     * Article 276(2) caps this at 2,500 for every state and union territory.
+     *
      * @param string $stateCode State code
      * @return float Maximum annual PT
      */
     public static function getAnnualLimit(string $stateCode): float
     {
-        $config = self::getConfiguration($stateCode);
-        
-        if (!$config) {
+        if (!self::getConfiguration($stateCode)) {
             return 0;
         }
 
-        $maxMonthly = 0;
-        foreach ($config['monthly'] as $slab) {
-            if ($slab['amount'] > $maxMonthly) {
-                $maxMonthly = $slab['amount'];
-            }
+        // High enough to land in the top band of every configured jurisdiction.
+        $topBandGross = 1_000_000_000.0;
+
+        $annual = 0.0;
+        for ($month = 1; $month <= 12; $month++) {
+            $annual += self::calculate($stateCode, $topBandGross, $month);
         }
 
-        // Check for special months
-        if (isset($config['special'])) {
-            foreach ($config['special'] as $amount) {
-                if ($amount > $maxMonthly) {
-                    $maxMonthly = $amount;
-                }
-            }
-        }
-
-        return $maxMonthly * 12;
+        return $annual;
     }
 }

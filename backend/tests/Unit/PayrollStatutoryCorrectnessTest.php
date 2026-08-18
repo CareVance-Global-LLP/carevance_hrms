@@ -94,12 +94,401 @@ class PayrollStatutoryCorrectnessTest extends TestCase
         $this->assertSame(2500.0, $annual, 'Annual PT for the top band must reach 2,500');
     }
 
+    /**
+     * The bug: eight jurisdictions that levy no professional tax at all
+     * carried invented slabs and were deducting from real employees on every
+     * run. Chandigarh's was also 3,000 a year, over the constitutional cap.
+     *
+     * This sweeps every configured jurisdiction rather than pinning the eight,
+     * so re-adding a slab to a non-levying state fails here rather than
+     * reaching payroll.
+     */
+    #[Test]
+    #[DataProvider('ptStateProvider')]
+    public function no_jurisdiction_exceeds_the_constitutional_annual_cap(string $state): void
+    {
+        // Article 276(2) binds every state and UT to 2,500 a year.
+        $this->assertLessThanOrEqual(
+            2500.0,
+            PTStateService::getAnnualLimit($state),
+            "Annual PT for {$state} breaches the Article 276(2) ceiling of 2,500"
+        );
+    }
+
+    /**
+     * Professional tax is state-levied and these jurisdictions do not levy it.
+     * A high gross in any month must still deduct nothing.
+     */
+    #[Test]
+    #[DataProvider('nonLevyingJurisdictionProvider')]
+    public function jurisdictions_that_levy_no_pt_deduct_nothing(string $state): void
+    {
+        for ($month = 1; $month <= 12; $month++) {
+            $this->assertSame(
+                0.0,
+                PTStateService::calculate($state, 500000, $month),
+                "{$state} levies no professional tax but deducted in month {$month}"
+            );
+        }
+
+        $this->assertSame(0.0, PTStateService::getAnnualLimit($state));
+    }
+
+    /**
+     * getAnnualLimit() used to compute max-monthly x 12, which folded
+     * Maharashtra's February instalment into the monthly maximum and returned
+     * 3,600 against a real 2,500. It is now derived from calculate() itself;
+     * this pins that derivation so the two cannot drift apart again.
+     */
+    #[Test]
+    #[DataProvider('ptStateProvider')]
+    public function annual_limit_agrees_with_twelve_months_of_calculate(string $state): void
+    {
+        $summed = 0.0;
+        for ($month = 1; $month <= 12; $month++) {
+            $summed += PTStateService::calculate($state, 1000000000.0, $month);
+        }
+
+        $this->assertSame(
+            $summed,
+            PTStateService::getAnnualLimit($state),
+            "getAnnualLimit({$state}) disagrees with twelve months of calculate()"
+        );
+    }
+
     public static function ptStateProvider(): array
     {
         $cases = [];
         foreach (PTStateService::getStates() as $state) {
             $code = $state['code'];
             $cases[$code] = [$code];
+        }
+
+        return $cases;
+    }
+
+    public static function nonLevyingJurisdictionProvider(): array
+    {
+        $cases = [];
+
+        foreach ([
+            'andaman_and_nicobar',
+            'arunachal_pradesh',
+            'chandigarh',
+            'chhattisgarh',
+            'dadra_and_nagar_haveli',
+            'daman_and_diu',
+            'delhi',
+            'goa',
+            'haryana',
+            'himachal_pradesh',
+            'jammu_and_kashmir',
+            'ladakh',
+            'lakshadweep',
+            'punjab',
+            'rajasthan',
+            'uttar_pradesh',
+            'uttarakhand',
+        ] as $code) {
+            $cases[$code] = [$code];
+        }
+
+        return $cases;
+    }
+
+    // ------------------------------------------------------ Monthly TDS
+
+    /**
+     * April is the base month and must not be a special case in the code.
+     * With no YTD and eleven months projected, the cumulative true-up has to
+     * reduce exactly to annual tax over twelve.
+     */
+    #[Test]
+    public function april_reduces_to_annual_tax_over_twelve(): void
+    {
+        $monthly = 100000.0;
+
+        $trueUp = $this->calculator->calculateCumulativeMonthlyTds(
+            ytdGrossPaid: 0,
+            thisMonthGross: $monthly,
+            projectedRemainingGross: $monthly * 11,
+            previousEmployerGross: 0,
+            tdsAlreadyDeducted: 0,
+            previousEmployerTds: 0,
+            monthsRemainingInFy: 12,
+        );
+
+        $flat = $this->calculator->calculateMonthlyTDS($monthly * 12);
+
+        $this->assertEqualsWithDelta($flat['monthly_tds'], $trueUp['monthly_tds'], 0.02);
+    }
+
+    /**
+     * The defect this replaces, and it is worse than a rounding error.
+     *
+     * The old form annualised whatever this month happened to be. A single
+     * month with heavy loss of pay therefore restated the employee's whole
+     * projected year downwards -- and for a high earner it can drop the
+     * estimate below the new regime's ₹12,00,000 rebate limit, at which point
+     * s.87A wipes the liability out and the month deducts **nothing at all**.
+     * On a ₹24L salary. In March, with no month left to correct it in.
+     *
+     * The true-up counts the eleven months already paid, so the annual estimate
+     * barely moves and the remaining liability is still collected.
+     */
+    #[Test]
+    public function a_lop_month_does_not_collapse_the_year_and_zero_the_deduction(): void
+    {
+        $monthly = 200000.0;   // ₹24L a year
+        $lopMonth = 80000.0;
+
+        // March: eleven months paid, this month short, nothing left to project.
+        $trueUp = $this->calculator->calculateCumulativeMonthlyTds(
+            ytdGrossPaid: $monthly * 11,
+            thisMonthGross: $lopMonth,
+            projectedRemainingGross: 0,
+            previousEmployerGross: 0,
+            tdsAlreadyDeducted: 0,
+            previousEmployerTds: 0,
+            monthsRemainingInFy: 1,
+        );
+
+        // What the old form did: annualise this month and divide by twelve.
+        $oldForm = $this->calculator->calculateMonthlyTDS($lopMonth * 12);
+
+        $this->assertSame(
+            0.0,
+            $oldForm['monthly_tds'],
+            'Annualising ₹80,000 lands under the ₹12L rebate limit and 87A zeroes it — the defect.'
+        );
+
+        // Nothing was withheld all year in this fixture, so March carries the
+        // entire liability on ₹22.8L of earnings — roughly ₹2.6L.
+        $this->assertGreaterThan(
+            200000.0,
+            $trueUp['monthly_tds'],
+            'The true-up still collects the year’s outstanding liability in the final month.'
+        );
+
+        // And the annual estimate reflects the year actually earned, not the
+        // ₹9.6L the old form imagined from one short month.
+        $this->assertGreaterThan(2000000.0, $trueUp['taxable_income']);
+    }
+
+    /**
+     * Tax already withheld is credited, so the year's deductions sum to the
+     * year's liability rather than overshooting it.
+     */
+    #[Test]
+    public function tax_already_deducted_is_credited_against_the_annual_liability(): void
+    {
+        $result = $this->calculator->calculateCumulativeMonthlyTds(
+            ytdGrossPaid: 600000,
+            thisMonthGross: 100000,
+            projectedRemainingGross: 500000,
+            previousEmployerGross: 0,
+            tdsAlreadyDeducted: 40000,
+            previousEmployerTds: 0,
+            monthsRemainingInFy: 6,
+        );
+
+        $this->assertSame(40000.0, $result['tax_credited']);
+        $this->assertEqualsWithDelta(
+            $result['annual_tax'] - 40000,
+            $result['remaining_tax'],
+            0.01
+        );
+        $this->assertEqualsWithDelta(
+            $result['remaining_tax'] / 6,
+            $result['monthly_tds'],
+            0.01
+        );
+    }
+
+    /**
+     * Previous-employer salary is taxed in the same ledger and its TDS is
+     * credited, rather than being assessed as a separate annual lump.
+     */
+    #[Test]
+    public function previous_employer_income_and_its_tds_both_land_in_the_ledger(): void
+    {
+        $withPrevious = $this->calculator->calculateCumulativeMonthlyTds(
+            ytdGrossPaid: 300000,
+            thisMonthGross: 100000,
+            projectedRemainingGross: 500000,
+            previousEmployerGross: 400000,
+            tdsAlreadyDeducted: 0,
+            previousEmployerTds: 15000,
+            monthsRemainingInFy: 6,
+        );
+
+        $withoutPrevious = $this->calculator->calculateCumulativeMonthlyTds(
+            ytdGrossPaid: 300000,
+            thisMonthGross: 100000,
+            projectedRemainingGross: 500000,
+            previousEmployerGross: 0,
+            tdsAlreadyDeducted: 0,
+            previousEmployerTds: 0,
+            monthsRemainingInFy: 6,
+        );
+
+        $this->assertGreaterThan($withoutPrevious['annual_tax'], $withPrevious['annual_tax']);
+        $this->assertSame(15000.0, $withPrevious['tax_credited']);
+    }
+
+    /**
+     * Over-withholding must stay signed. Clamping it to zero would strand the
+     * excess with the employee's refund claim instead of correcting it in the
+     * months that remain, which is the whole point of a true-up -- and it is
+     * the same rule the codebase already applies to net pay.
+     */
+    #[Test]
+    public function over_withholding_produces_a_negative_remainder(): void
+    {
+        $result = $this->calculator->calculateCumulativeMonthlyTds(
+            ytdGrossPaid: 500000,
+            thisMonthGross: 50000,
+            projectedRemainingGross: 100000,
+            previousEmployerGross: 0,
+            tdsAlreadyDeducted: 200000, // far more than the year can owe
+            previousEmployerTds: 0,
+            monthsRemainingInFy: 3,
+        );
+
+        $this->assertLessThan(0, $result['remaining_tax']);
+        $this->assertLessThan(0, $result['monthly_tds']);
+    }
+
+    #[Test]
+    public function the_financial_year_runs_april_to_march(): void
+    {
+        $this->assertSame(1, PayrollCalculatorService::financialYearMonthIndex(4));
+        $this->assertSame(9, PayrollCalculatorService::financialYearMonthIndex(12));
+        $this->assertSame(10, PayrollCalculatorService::financialYearMonthIndex(1));
+        $this->assertSame(12, PayrollCalculatorService::financialYearMonthIndex(3));
+    }
+
+    // ------------------------------------------------- CTC decomposition
+
+    /**
+     * The bug: special allowance was max(0, gross - fixedComponents). When a
+     * structure could not fit, the residual read 0, gross was left untouched,
+     * and the components stopped summing to it -- a payslip that does not foot,
+     * with nothing raised or logged. The clamp is gone; the identity holds
+     * whether the structure fits or not.
+     */
+    #[Test]
+    #[DataProvider('salaryStructureProvider')]
+    public function components_always_sum_to_gross(float $monthlyCtc, array $config): void
+    {
+        $c = $this->calculator->calculateSalaryComponents($monthlyCtc, $config);
+
+        $this->assertEqualsWithDelta(
+            $c['gross'],
+            $c['basic'] + $c['hra'] + $c['conveyance'] + $c['special_allowance'],
+            0.01,
+            'The earnings lines must add up to the gross they decompose.'
+        );
+    }
+
+    /**
+     * A structure that cannot fit reports how far it misses by, rather than
+     * quietly reading zero. 60% basic on a low CTC keeps basic under the PF
+     * cap, so employer PF still tracks it and the envelope runs out.
+     */
+    #[Test]
+    public function an_infeasible_structure_reports_its_shortfall(): void
+    {
+        $config = [
+            'basic_percentage' => 0.60,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+        ];
+
+        $c = $this->calculator->calculateSalaryComponents(25000, $config);
+
+        $this->assertLessThan(0, $c['special_allowance'], 'The real number must be visible to validation.');
+        $this->assertEqualsWithDelta(-$c['special_allowance'], $c['residual_shortfall'], 0.01);
+        $this->assertGreaterThan(0, $c['residual_shortfall']);
+    }
+
+    #[Test]
+    public function a_structure_that_fits_reports_no_shortfall(): void
+    {
+        $c = $this->calculator->calculateSalaryComponents(100000, [
+            'basic_percentage' => 0.40,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+        ]);
+
+        $this->assertGreaterThan(0, $c['special_allowance']);
+        $this->assertSame(0.0, (float) $c['residual_shortfall']);
+    }
+
+    /**
+     * Raising basic by ₹1 costs the residual ₹1.668, not ₹1 -- HRA is derived
+     * from basic, and employer PF and the gratuity provision are inside the
+     * CTC envelope. This pins the factor against the decomposition itself, so
+     * the two cannot drift.
+     */
+    #[Test]
+    public function the_residual_absorbs_more_than_one_rupee_per_rupee_of_basic(): void
+    {
+        $config = [
+            'basic_percentage' => 0.40,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+        ];
+
+        // Below the PF wage cap: 1 + 0.50 + 0.12 + 0.0481.
+        $this->assertEqualsWithDelta(1.6681, $this->calculator->residualAbsorptionFactor(10000, $config), 0.0001);
+
+        // Above it, employer PF stops tracking basic and drops out.
+        $this->assertEqualsWithDelta(1.5481, $this->calculator->residualAbsorptionFactor(60000, $config), 0.0001);
+    }
+
+    /**
+     * maxBasicWithinCtc() is only useful if it is exact: a basic set to it must
+     * leave the residual at zero, not merely near it.
+     */
+    #[Test]
+    public function the_maximum_feasible_basic_lands_the_residual_on_zero(): void
+    {
+        $config = [
+            'basic_percentage' => 0.40,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+        ];
+        $monthlyCtc = 100000.0;
+
+        $maxBasic = $this->calculator->maxBasicWithinCtc($monthlyCtc, $config);
+
+        // Re-express that basic as the percentage the structure would need.
+        $atMax = $this->calculator->calculateSalaryComponents($monthlyCtc, [
+            'basic_percentage' => $maxBasic / $monthlyCtc,
+            'hra_percentage_of_basic' => 0.50,
+            'conveyance_allowance' => 1600,
+        ]);
+
+        $this->assertEqualsWithDelta(0.0, $atMax['special_allowance'], 0.01);
+        $this->assertSame(0.0, (float) $atMax['residual_shortfall']);
+    }
+
+    public static function salaryStructureProvider(): array
+    {
+        $cases = [];
+
+        foreach ([25000.0, 50000.0, 100000.0, 250000.0] as $ctc) {
+            foreach ([0.35, 0.40, 0.50, 0.60] as $basicPct) {
+                $cases["ctc {$ctc} basic {$basicPct}"] = [
+                    $ctc,
+                    [
+                        'basic_percentage' => $basicPct,
+                        'hra_percentage_of_basic' => 0.50,
+                        'conveyance_allowance' => 1600,
+                    ],
+                ];
+            }
         }
 
         return $cases;

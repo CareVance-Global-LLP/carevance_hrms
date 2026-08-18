@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\LeaveRequest;
+use App\Models\PayrollMonthlyRun;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Leave\LeavePolicyService;
+use App\Services\Payroll\PayrollPeriodGuard;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
@@ -21,7 +23,41 @@ class LeaveRequestController extends Controller
         private readonly ApprovalRoutingService $approvalRoutingService,
         private readonly AuditLogService $auditLogService,
         private readonly LeavePolicyService $leavePolicyService,
+        private readonly PayrollPeriodGuard $payrollPeriodGuard,
     ) {
+    }
+
+    /**
+     * The first closed payroll period this leave touches, if any.
+     *
+     * Approving or revoking a leave writes AttendanceRecord rows through
+     * applyApprovedLeaveToAttendance() / rollbackApprovedLeaveFromAttendance().
+     * For a closed month that rewrites inputs a run has already consumed, and
+     * nothing downstream recomputes — the money paid and the attendance
+     * backing it would silently disagree. PayrollPeriodGuard's own docblock
+     * names leave approval as a case it exists for; it was simply never
+     * wired in here.
+     *
+     * A leave can span a month boundary, so start_date alone is not enough:
+     * a request beginning in an open month and ending in a closed one would
+     * otherwise pass.
+     */
+    private function closedRunForLeave(LeaveRequest $leave): ?PayrollMonthlyRun
+    {
+        $organizationId = (int) $leave->organization_id;
+        $cursor = Carbon::parse($leave->start_date)->startOfMonth();
+        $lastMonth = Carbon::parse($leave->end_date)->startOfMonth();
+
+        while ($cursor->lessThanOrEqualTo($lastMonth)) {
+            $closedRun = $this->payrollPeriodGuard->closedRunFor($organizationId, $cursor);
+            if ($closedRun) {
+                return $closedRun;
+            }
+
+            $cursor->addMonth();
+        }
+
+        return null;
     }
 
     public function index(Request $request)
@@ -352,6 +388,13 @@ class LeaveRequestController extends Controller
 
         if ($leave->status !== 'pending') {
             return response()->json(['message' => 'Only pending requests can be approved.'], 422);
+        }
+
+        $closedRun = $this->closedRunForLeave($leave);
+        if ($closedRun) {
+            return response()->json([
+                'message' => $this->payrollPeriodGuard->refusalMessage($closedRun),
+            ], 422);
         }
 
         $currentUser->loadMissing('organization');
@@ -715,6 +758,15 @@ class LeaveRequestController extends Controller
         }
         if ($leave->status !== 'approved' || $leave->revoke_status !== 'pending') {
             return response()->json(['message' => 'Only pending revoke requests can be approved.'], 422);
+        }
+
+        // Revoking deletes the AttendanceRecord rows the approval created, so
+        // it rewrites a closed period's inputs just as surely as approving does.
+        $closedRun = $this->closedRunForLeave($leave);
+        if ($closedRun) {
+            return response()->json([
+                'message' => $this->payrollPeriodGuard->refusalMessage($closedRun),
+            ], 422);
         }
 
         $leave->update([

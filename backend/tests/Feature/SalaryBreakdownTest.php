@@ -233,6 +233,74 @@ class SalaryBreakdownTest extends TestCase
         $this->assertEqualsWithDelta($basic['monthly'] * 0.40, $hra['monthly'], 0.02);
     }
 
+    /**
+     * A rupee amount is an input format, not a second engine. Both are
+     * MONTHLY, matching the conveyance field beside them.
+     */
+    public function test_a_custom_basic_amount_is_converted_to_a_percentage(): void
+    {
+        $this->config(['annual_ctc' => 600000]);
+
+        $response = $this->getJson(
+            "/api/payroll/employee-cards/{$this->employee->id}/breakdown?custom[basic_amount]=25000",
+            $this->apiHeadersFor($this->admin),
+        )->assertOk();
+
+        $basic = collect($response->json('earnings'))->firstWhere('key', 'basic');
+
+        // 25,000 of a 50,000 monthly CTC is 50%.
+        $this->assertEqualsWithDelta(25000, $basic['monthly'], 0.02);
+    }
+
+    /**
+     * HRA is a share of BASIC, so it has to be rated against the basic the
+     * conversion produced — not against CTC, and not against the structure's
+     * original basic.
+     */
+    public function test_a_custom_hra_amount_is_rated_against_the_converted_basic(): void
+    {
+        $this->config(['annual_ctc' => 600000]);
+
+        $response = $this->getJson(
+            "/api/payroll/employee-cards/{$this->employee->id}/breakdown?custom[basic_amount]=25000&custom[hra_amount]=10000",
+            $this->apiHeadersFor($this->admin),
+        )->assertOk();
+
+        $earnings = collect($response->json('earnings'));
+
+        $this->assertEqualsWithDelta(25000, $earnings->firstWhere('key', 'basic')['monthly'], 0.02);
+        $this->assertEqualsWithDelta(10000, $earnings->firstWhere('key', 'hra')['monthly'], 0.02);
+    }
+
+    /** The amount wins, and the response says so rather than choosing silently. */
+    public function test_an_amount_beats_a_percentage_and_warns(): void
+    {
+        $this->config(['annual_ctc' => 600000]);
+
+        $response = $this->getJson(
+            "/api/payroll/employee-cards/{$this->employee->id}/breakdown?custom[basic_percentage]=40&custom[basic_amount]=25000",
+            $this->apiHeadersFor($this->admin),
+        )->assertOk();
+
+        $basic = collect($response->json('earnings'))->firstWhere('key', 'basic');
+        $this->assertEqualsWithDelta(25000, $basic['monthly'], 0.02);
+
+        $this->assertNotEmpty(
+            collect($response->json('warnings'))->filter(fn ($w) => str_contains($w, 'amount was used')),
+        );
+    }
+
+    /** A zero basic is entirely reachable — an admin clearing the field. */
+    public function test_an_hra_amount_against_a_zero_basic_does_not_divide_by_zero(): void
+    {
+        $this->config(['annual_ctc' => 600000]);
+
+        $this->getJson(
+            "/api/payroll/employee-cards/{$this->employee->id}/breakdown?custom[basic_amount]=0&custom[hra_amount]=10000",
+            $this->apiHeadersFor($this->admin),
+        )->assertOk();
+    }
+
     public function test_a_custom_breakdown_still_balances_to_gross(): void
     {
         $this->config(['annual_ctc' => 600000]);

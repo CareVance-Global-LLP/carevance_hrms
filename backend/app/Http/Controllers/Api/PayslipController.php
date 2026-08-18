@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PayrollItem;
 use App\Models\Payslip;
 use App\Models\PayslipYtdHistory;
 use App\Models\User;
 use App\Services\Payroll\SalaryCalculationService;
+use App\Services\PayrollPdfService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -277,7 +279,33 @@ class PayslipController extends Controller
             return $this->forbidden();
         }
 
-        $path = sprintf('payslips/%d/%s.pdf', $payslip->user_id, $payslip->period_month);
+        /*
+         * Serve the payslip for the version this month is currently on.
+         *
+         * This path returns a pre-generated file rather than rendering, so
+         * without the version it would keep serving the pre-correction PDF
+         * indefinitely — the figure would be corrected, the versions retained,
+         * and the document the employee downloads still wrong.
+         *
+         * Falls back to version 1's path, which is the legacy unversioned name,
+         * so every file written before versioning existed still resolves.
+         */
+        $currentVersion = (int) (PayrollItem::where('user_id', $payslip->user_id)
+            ->where('month_year', $payslip->period_month)
+            ->value('current_version_no') ?? 1);
+
+        $path = PayrollPdfService::storagePathFor($payslip->user_id, $payslip->period_month, $currentVersion);
+
+        if (!Storage::exists($path) && $currentVersion > 1) {
+            // The correction has not been re-rendered yet. Serving the
+            // superseded PDF silently would hand the employee a figure we know
+            // to be replaced; say so instead.
+            return response()->json([
+                'success' => false,
+                'message' => 'This payslip was corrected and the updated PDF has not been generated yet.',
+                'version_no' => $currentVersion,
+            ], 409);
+        }
 
         if (!Storage::exists($path)) {
             return response()->json([
@@ -289,6 +317,7 @@ class PayslipController extends Controller
         return response()->json([
             'success' => true,
             'url' => Storage::url($path),
+            'version_no' => $currentVersion,
         ]);
     }
 

@@ -38,6 +38,7 @@ import type {
   EmployeeProfileDetails,
   EmployeeWorkInfo,
   EmployeeGovernmentIdRecord,
+  EmployeeEducationRecord,
   EmployeeBankAccountRecord,
   EmployeeDocumentRecord,
   PaginatedResponse,
@@ -600,6 +601,29 @@ export const employeeWorkspaceApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+
+  /**
+   * Create or replace one qualification. Multipart for the same reason the
+   * government-ID save is: the certificate rides along with the facts, so a
+   * saved row and its evidence never diverge.
+   */
+  saveEducation: (id: number | string, data: Record<string, any> & { certificate_file?: File | null }) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (key === 'certificate_file' && value instanceof File) {
+        formData.append('certificate_file', value);
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return api.post<EmployeeEducationRecord>(`/employees/${id}/educations`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  deleteEducation: (id: number | string, educationId: number) =>
+    api.delete<{ message: string }>(`/employees/${id}/educations/${educationId}`),
 
   saveBankAccount: (id: number | string, data: Record<string, any> & { proof_file?: File | null }) => {
     const formData = new FormData();
@@ -2123,6 +2147,189 @@ export const searchApi = {
   ) => api.get<{ data: GlobalSearchHit[] }>('/search', { params, signal }),
 };
 
+export interface SalaryComponentRow {
+  id: number;
+  name: string;
+  code: string;
+  category: string;
+  is_active: boolean;
+  is_taxable: boolean;
+  is_residual?: boolean;
+  /** Keka's per-component gate. An ungated component is never offered for override. */
+  allow_employee_override?: boolean;
+}
+
+export type PayrollOverrideStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type PayrollOverrideBalanceMode = 'preserve_ctc' | 'increase_gross';
+
+export interface PayrollOverrideRow {
+  id: number;
+  user_id: number;
+  scope: string;
+  target: string;
+  value: number;
+  /**
+   * What the engine would have produced. Null until the override has actually
+   * been applied by a payroll process — which is why the register shows a dash
+   * rather than a zero: nothing has run yet, and 0 would read as "this changed
+   * nothing".
+   */
+  computed_value: number | null;
+  delta: number | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  open_ended: boolean;
+  status: PayrollOverrideStatus;
+  reason: string;
+  created_by: number | null;
+  /**
+   * Decided server-side, because the rules changed once and the client's copy
+   * of them silently disagreed. `decision_blocked_reason` is populated when a
+   * decision is refused AND, for a sole-admin self-approval, when it is
+   * allowed but worth saying out loud.
+   */
+  can_approve?: boolean;
+  can_reject?: boolean;
+  decision_blocked_reason?: string | null;
+}
+
+/**
+ * The balancer's assessment, verbatim.
+ *
+ * `amplification` is the number no product in this market surfaces: raising
+ * basic by ₹1 costs the residual ₹1.67 at typical rates, because HRA is derived
+ * from basic and employer PF and gratuity sit inside the CTC envelope. It is
+ * displayed exactly as returned.
+ */
+export interface PayrollOverridePreview {
+  permitted: boolean;
+  mode: PayrollOverrideBalanceMode;
+  requested: number;
+  current: number;
+  amplification: number;
+  residual_before: number;
+  residual_after: number;
+  max_permitted: number;
+  message: string;
+  balancing_target: string | null;
+  balancing_target_id: number | null;
+}
+
+export interface PayrollOverridePreviewResponse {
+  success: boolean;
+  preview: PayrollOverridePreview;
+  employee_explanation: string;
+}
+
+/** One component cell on a grid row. `annual: null` means "not in this structure". */
+export interface OverrideGridCell {
+  annual: number | null;
+  computed_annual?: number | null;
+  overridable?: boolean;
+  override_id?: number | null;
+  status?: PayrollOverrideStatus | null;
+  /**
+   * Requested but not yet approved. Deliberately not folded into `annual`,
+   * which is what will actually be paid — but shown, so a saved request is
+   * distinguishable from a failed save.
+   */
+  pending_annual?: number | null;
+  role?: string;
+}
+
+export interface OverrideGridRow {
+  user_id: number;
+  employee_number: string | null;
+  employee_name: string | null;
+  department: string | null;
+  salary_structure: string | null;
+  annual_ctc: number | null;
+  components: Record<string, OverrideGridCell>;
+  max_basic_annual: number | null;
+  locked: boolean;
+  lock_reason: string | null;
+}
+
+export interface OverrideGridResponse {
+  success: boolean;
+  meta: {
+    month: string;
+    total: number;
+    page: number;
+    per_page: number;
+    last_page: number;
+    earliest_open_month: string;
+    residual_component: { id: number; name: string } | null;
+    ambiguous_residual: boolean;
+  };
+  data: OverrideGridRow[];
+}
+
+export interface OverrideGridParams {
+  page?: number;
+  per_page?: number;
+  q?: string;
+  salary_template_id?: number;
+  month?: string;
+}
+
+/** A row the importer would write, with the consequence it computed. */
+export interface ImportValidRow {
+  row: number;
+  spreadsheet_row: number;
+  employee_number: string;
+  employee_name: string;
+  changes: Array<{ target: string; from: number; to: number }>;
+  residual_before: number;
+  residual_after: number;
+  amplification: number;
+  hra_moves_to: number;
+  effective_from: string;
+  effective_to: string | null;
+  balance_mode: PayrollOverrideBalanceMode;
+}
+
+/** Error Name / Details / Ways to Fix — the three things an officer needs. */
+export interface ImportErrorRow {
+  row: number;
+  spreadsheet_row: number;
+  employee_number: string;
+  code: string;
+  name: string;
+  details: string;
+  fix: string;
+  column?: string;
+  suggested_value?: number;
+}
+
+export interface ImportValidateResponse {
+  success: boolean;
+  batch_id: string;
+  expires_at: string;
+  summary: { rows_read: number; will_change: number; no_change: number; errors: number };
+  valid: ImportValidRow[];
+  errors: ImportErrorRow[];
+}
+
+export interface ImportCommitResponse {
+  success: boolean;
+  batch_id: string;
+  created: number;
+  skipped: number;
+  superseded: number;
+  overrides: PayrollOverrideRow[];
+}
+
+export interface OverrideAuditEntry {
+  id: number;
+  action: string;
+  actor: string | null;
+  note: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
 // Payroll API - Comprehensive
 export const payrollApi = {
   // Dashboard & Stats
@@ -2769,8 +2976,6 @@ export const payrollApi = {
     }),
   getPortalInfo: (id: number) =>
     api.get<any>(`/payroll/filings/${id}/portal`),
-  getReviewQueue: () =>
-    api.get<any>('/payroll/filings/review/queue'),
 
   // ===== FBP =====
   getFbpComponents: () =>
@@ -3242,6 +3447,99 @@ export const payrollApi = {
     api.put<{ success: boolean; message: string; pay_group: PayGroupSettings }>(`/payroll/pay-group-settings/${id}/filing-details`, data),
   getPayGroups: (params?: { is_active?: boolean }) =>
     api.get<{ success: boolean; pay_groups: PayGroup[] }>('/payroll/pay-groups', { params }),
+
+  // Salary components (the organisation's earning/deduction heads)
+  getSalaryComponents: () =>
+    api.get<{ success: boolean; components: SalaryComponentRow[] }>('/payroll/salary-components'),
+  updateSalaryComponent: (id: number, data: Partial<Pick<SalaryComponentRow, 'name' | 'is_taxable' | 'is_active' | 'allow_employee_override'>>) =>
+    api.put<{ success: boolean; message: string; component: SalaryComponentRow }>(`/payroll/salary-components/${id}`, data),
+
+  /*
+   * Governed overrides. Every number the register and the dialog display comes
+   * out of these responses — the amplification factor, the residual either side
+   * of the change and the permitted maximum are all the balancer's, and
+   * re-deriving any of them client-side would eventually disagree with the
+   * figure the engine enforces.
+   */
+  overrides: {
+    list: (params?: { month?: string; user_id?: number }) =>
+      api.get<{ success: boolean; data: PayrollOverrideRow[] }>('/payroll/operations/overrides', { params }),
+    // Answers "what would this do" and persists nothing, so a refusal comes
+    // back as a 200 with permitted: false rather than as an error.
+    preview: (body: {
+      user_id: number;
+      target: string;
+      value: number;
+      balance_mode?: PayrollOverrideBalanceMode;
+    }) =>
+      api.post<PayrollOverridePreviewResponse>('/payroll/operations/overrides/preview', body),
+    create: (body: {
+      user_id: number;
+      scope: 'component' | 'statutory';
+      target: string;
+      value: number;
+      balance_mode?: PayrollOverrideBalanceMode;
+      effective_from: string;
+      effective_to?: string | null;
+      reason: string;
+    }) =>
+      api.post<{ success: boolean; message: string; data: PayrollOverrideRow }>('/payroll/operations/overrides', body),
+    /**
+     * Many overrides as one act — the grid's Update button.
+     *
+     * All or nothing: the server judges every item before writing any, and a
+     * single impossible value fails the request with a per-item error array.
+     * Same route as `create`; the presence of `items` is what selects it.
+     */
+    createBatch: (body: {
+      month?: string;
+      reason: string;
+      balance_mode?: PayrollOverrideBalanceMode;
+      effective_from: string;
+      effective_to?: string | null;
+      items: Array<{ user_id: number; target: 'basic' | 'hra'; value_annual: number }>;
+    }) =>
+      api.post<{
+        success: boolean;
+        message: string;
+        data: Array<PayrollOverrideRow & {
+          preview: {
+            residual_before: number;
+            residual_after: number;
+            amplification: number;
+            hra_moves_to: number;
+            computed_annual: number;
+          };
+        }>;
+      }>('/payroll/operations/overrides', body),
+
+    approve: (id: number) =>
+      api.post<{ success: boolean; message: string; data: PayrollOverrideRow }>(`/payroll/operations/overrides/${id}/approve`),
+    reject: (id: number, note: string) =>
+      api.post<{ success: boolean; message: string; data: PayrollOverrideRow }>(`/payroll/operations/overrides/${id}/reject`, { note }),
+    cancel: (id: number) =>
+      api.post<{ success: boolean; message: string; data: PayrollOverrideRow }>(`/payroll/operations/overrides/${id}/cancel`),
+
+    // The grid and the export share one server-side builder, so the spreadsheet
+    // can never disagree with the screen it was taken from.
+    grid: (params: OverrideGridParams) =>
+      api.get<OverrideGridResponse>('/payroll/operations/overrides/grid', { params }),
+    auditTrail: (id: number) =>
+      api.get<{ success: boolean; data: OverrideAuditEntry[] }>(`/payroll/operations/overrides/${id}/audit`),
+    exportCsv: (params: OverrideGridParams) =>
+      api.get('/payroll/operations/overrides/export', {
+        params,
+        responseType: 'blob' as AxiosRequestConfig['responseType'],
+      }),
+    downloadTemplate: () =>
+      api.get('/payroll/operations/overrides/template', {
+        responseType: 'blob' as AxiosRequestConfig['responseType'],
+      }),
+    validateImport: (form: FormData) =>
+      api.post<ImportValidateResponse>('/payroll/operations/overrides/import/validate', form),
+    commitImport: (data: { batch_id: string; skip_errors: boolean; supersede?: boolean }) =>
+      api.post<ImportCommitResponse>('/payroll/operations/overrides/import/commit', data),
+  },
 };
 
 export default api;

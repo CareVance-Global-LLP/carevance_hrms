@@ -1,7 +1,11 @@
 import { ArrowLeft, IndianRupee } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import EmployeeDetailsSection from '../../../components/EmployeeDetailsSection';
 import Button from '@/components/ui/Button';
+import SalaryBreakdownView from '@/components/payroll/SalaryBreakdownView';
+import { PageLoadingState, PageEmptyState } from '@/components/ui/PageState';
+import { payrollApi, getApiErrorMessage } from '@/services/api';
 import type { AddUserWizardForm } from './types';
 
 interface Step3Props {
@@ -13,6 +17,24 @@ interface Step3Props {
 
 export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: Step3Props) {
   const navigate = useNavigate();
+
+  /*
+   * Declared above the early returns below — a hook cannot be called
+   * conditionally. `enabled` keeps it from firing until the account exists.
+   *
+   * No overrides are passed, so this is the employee's stored configuration:
+   * the CTC and salary structure the wizard just posted on create.
+   */
+  const {
+    data: breakdown,
+    isLoading: breakdownLoading,
+    error: breakdownError,
+  } = useQuery({
+    queryKey: ['employee-salary-breakdown', form.userId],
+    queryFn: () => payrollApi.getEmployeeSalaryBreakdown(form.userId!).then((r) => r.data),
+    enabled: !!form.userId,
+    retry: false,
+  });
 
   if (isCreatingUser) {
     return (
@@ -74,35 +96,56 @@ export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: 
         />
 
         {/*
-          The breakup used to be rendered inline here, by a component that
-          recomputed the whole split in TypeScript.
+          Review only.
 
-          Payroll ▸ Employee Pay ▸ Salary Breakdown now answers the same
-          question from the server, using PayrollCalculatorService itself, and
-          lets you try other structures against the same person. Two engines
-          for one number is how they drift, so this links there instead.
+          The figures come from the server — the same
+          /employee-cards/{id}/breakdown the payroll panel uses, computed by
+          PayrollCalculatorService. This step deliberately offers no controls:
+          the account has just been created and this is a check, not a place to
+          reconfigure pay. To try a different structure, open the full panel.
+
+          It used to render CtcBreakupPanel, which recomputed the whole split in
+          TypeScript. Two engines for one number is how they drift apart.
         */}
         <section className="rounded-lg border border-border-strong bg-surface-card p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
-                Salary breakdown
-              </h3>
+              <div className="flex items-center gap-2">
+                <IndianRupee className="h-4 w-4 text-slate-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
+                  Salary breakdown
+                </h3>
+              </div>
               <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                See what this employee's CTC pays them month to month — component by
-                component, with PF, ESI, professional tax and the TDS estimate.
+                What the annual CTC entered in step 1 pays this employee month to month.
+                For review — change it on the payroll card, not here.
               </p>
             </div>
             <Button
               variant="secondary"
               size="sm"
-              iconLeft={<IndianRupee className="h-4 w-4" />}
               onClick={() =>
                 navigate(`/payroll/employee-pay?type=salary-breakdown&employee=${form.userId}`)
               }
             >
-              View salary breakdown
+              Open full breakdown
             </Button>
+          </div>
+
+          <div className="mt-4">
+            {breakdownLoading ? (
+              <PageLoadingState label="Calculating breakdown…" />
+            ) : breakdownError ? (
+              <PageEmptyState
+                title="No salary breakdown yet"
+                description={getApiErrorMessage(
+                  breakdownError,
+                  'This employee has no annual CTC set, so there is nothing to break down.',
+                )}
+              />
+            ) : breakdown ? (
+              <SalaryBreakdownView breakdown={breakdown} />
+            ) : null}
           </div>
         </section>
       </div>

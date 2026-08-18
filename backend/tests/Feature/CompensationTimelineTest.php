@@ -163,4 +163,101 @@ class CompensationTimelineTest extends TestCase
         $this->assertCount(1, $segments, 'A revision on the 1st is a whole-month rate, not a zero-day segment.');
         $this->assertSame(720000.0, $segments[0]['annual_ctc']);
     }
+
+    // ------------------------------------------------- Blending for the run
+
+    public function test_a_month_with_no_revision_blends_to_the_flat_rate(): void
+    {
+        $this->assertSame(
+            720000.0,
+            $this->timeline->blendedAnnualCtcForMonth($this->employee->id, $this->organization->id, '2026-06'),
+            'The ordinary case must cost nothing and change nothing.'
+        );
+    }
+
+    /**
+     * The mechanical detail worth pinning: every segment is divided by the
+     * PERIOD's day count, not by its own length. That shared denominator is
+     * what makes the segments sum to exactly one month's pay.
+     *
+     * June has 30 days; a revision effective the 16th gives 15 days at the old
+     * rate and 15 at the new:
+     *
+     *     (600,000 x 15 + 720,000 x 15) / 30 = 660,000
+     */
+    public function test_a_mid_month_revision_blends_over_the_period_day_count(): void
+    {
+        $this->acceptedRevision('2026-06-16', 600000, 720000);
+
+        $this->assertEqualsWithDelta(
+            660000.0,
+            $this->timeline->blendedAnnualCtcForMonth($this->employee->id, $this->organization->id, '2026-06'),
+            0.01
+        );
+    }
+
+    /**
+     * Keka's own worked example, reproduced exactly. A revision effective
+     * 1 April, June standing in for their 31-day pay period:
+     *
+     *     12 days at 30,000/month  =  (360,000 x 12) / 31
+     *     19 days at 35,000/month  =  (420,000 x 19) / 31
+     *                       total  =  33,064.52 for the month
+     *
+     * Get the denominator wrong -- 30 and 31 instead of 31 and 31 -- and the
+     * month is out by a few hundred rupees in a way nobody can explain from
+     * the payslip.
+     */
+    public function test_the_blend_reproduces_the_published_worked_example(): void
+    {
+        // A 31-day month split 12 / 19 by a revision on the 13th.
+        //
+        // The template holds the CURRENT rate and annualCtcOn() walks back from
+        // it, so it has to be the post-revision figure for the segments to come
+        // out at 360,000 then 420,000.
+        \App\Models\EmployeePayrollTemplate::where('user_id', $this->employee->id)
+            ->where('organization_id', $this->organization->id)
+            ->update(['annual_ctc' => 420000]);
+
+        $this->acceptedRevision('2026-07-13', 360000, 420000);
+
+        $blendedAnnual = $this->timeline->blendedAnnualCtcForMonth(
+            $this->employee->id,
+            $this->organization->id,
+            '2026-07'
+        );
+
+        $this->assertEqualsWithDelta(33064.52, $blendedAnnual / 12, 0.02);
+    }
+
+    /**
+     * A blended month must never exceed the higher rate or fall below the
+     * lower one — the property that catches a denominator error whichever
+     * direction it goes in.
+     */
+    public function test_the_blend_stays_between_the_two_rates(): void
+    {
+        $this->acceptedRevision('2026-06-16', 600000, 720000);
+
+        $blended = $this->timeline->blendedAnnualCtcForMonth($this->employee->id, $this->organization->id, '2026-06');
+
+        $this->assertGreaterThanOrEqual(600000.0, $blended);
+        $this->assertLessThanOrEqual(720000.0, $blended);
+    }
+
+    /**
+     * Accepting a revision overwrites annual_ctc immediately, so a raise agreed
+     * in June and effective in August used to be paid from June. The timeline
+     * undoes any revision not yet in force on the month being run.
+     */
+    public function test_a_future_dated_revision_is_not_paid_early(): void
+    {
+        $this->acceptedRevision('2026-08-01', 600000, 720000);
+
+        $this->assertSame(
+            600000.0,
+            $this->timeline->blendedAnnualCtcForMonth($this->employee->id, $this->organization->id, '2026-06'),
+            'June must pay the June rate, whatever the template already says.'
+        );
+    }
 }

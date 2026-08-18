@@ -60,7 +60,15 @@ export interface AddUserWizardForm {
   idProofFile: File | null;
   resumeFile: File | null;
   experienceCertFile: File | null;
-  educationCertFile: File | null;
+  /*
+   * educationCertFile was removed. It was declared here and never read by any
+   * component, so an education certificate had nowhere to go — that is now the
+   * Education section on EmployeeDetailsSection, which records the
+   * qualification alongside the file rather than storing a loose scan.
+   *
+   * resumeFile and experienceCertFile above are dead in the same way, and are
+   * left alone only because nothing has replaced them yet.
+   */
   accountHolderName: string;
   bankName: string;
   accountNumber: string;
@@ -115,7 +123,6 @@ export const defaultForm: AddUserWizardForm = {
   idProofFile: null,
   resumeFile: null,
   experienceCertFile: null,
-  educationCertFile: null,
   accountHolderName: '',
   bankName: '',
   accountNumber: '',

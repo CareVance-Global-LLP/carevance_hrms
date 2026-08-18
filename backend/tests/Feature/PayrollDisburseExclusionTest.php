@@ -65,7 +65,7 @@ class PayrollDisburseExclusionTest extends TestCase
             ]);
         }
 
-        return PayrollItem::create([
+        return $this->whileRunIsOpen(fn () => PayrollItem::create([
             'payroll_run_id' => $this->run->id,
             'organization_id' => $this->organization->id,
             'user_id' => $user->id,
@@ -74,7 +74,33 @@ class PayrollDisburseExclusionTest extends TestCase
             'total_deductions' => 50000 - $netPay,
             'net_pay' => $netPay,
             'payment_status' => 'pending',
-        ]);
+        ]));
+    }
+
+    /**
+     * Build a run's contents while the run is still open.
+     *
+     * This suite starts its run at 'released' because that is the state
+     * disbursement operates on. Production never writes money into a run in
+     * that state -- processing fills a draft run, and the run advances only
+     * once its items exist -- and PayrollItemObserver now refuses it, which is
+     * exactly what it is for. So the fixture models the real order: open the
+     * run, write the item, close it again.
+     *
+     * @template T
+     * @param  callable():T  $build
+     * @return T
+     */
+    private function whileRunIsOpen(callable $build): mixed
+    {
+        $closedStatus = $this->run->status;
+        $this->run->update(['status' => 'draft']);
+
+        try {
+            return $build();
+        } finally {
+            $this->run->update(['status' => $closedStatus]);
+        }
     }
 
     private function disburse()

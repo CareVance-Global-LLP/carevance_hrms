@@ -50,6 +50,31 @@ class PayrollPdfService
         'notice_pay_recovery'=> 'Notice Pay Recovery',
     ];
 
+    /**
+     * Where a generated payslip PDF lives on disk, for a given version.
+     *
+     * Defined once and shared by the writer and the reader, because the one way
+     * this goes wrong is the two disagreeing and a corrected month serving the
+     * pre-correction file forever.
+     *
+     * Version 1 deliberately keeps the legacy unversioned name. Every file
+     * already on disk was written before versioning existed and is by
+     * definition version 1, so they all resolve without a rename — and a
+     * migration that moves thousands of PDFs is a migration that can half-fail.
+     *
+     * A superseded payslip is NOT deleted when a correction supersedes it. That
+     * is the whole divergence from Keka, whose rollback "clears and
+     * regenerates" the documents: the PDF that was actually issued has to stay
+     * retrievable, or the audit trail stops at the figure and never reaches the
+     * document the employee was given.
+     */
+    public static function storagePathFor(int $userId, string $periodMonth, int $versionNo = 1): string
+    {
+        return $versionNo <= 1
+            ? sprintf('payslips/%d/%s.pdf', $userId, $periodMonth)
+            : sprintf('payslips/%d/%s-v%d.pdf', $userId, $periodMonth, $versionNo);
+    }
+
     public function generatePayslip(PayrollItem $item): Dompdf
     {
         $user = $item->user()->with([
@@ -120,6 +145,18 @@ class PayrollPdfService
             'totalDeductions'       => (float) ($item->total_deductions ?? 0),
             'netPay'                => (float) ($item->net_pay ?? 0),
             'netPayWords'           => $this->numberToWords($item->net_pay ?? 0),
+            /*
+             * Which version of this item the figures below represent.
+             *
+             * A payslip is a statement of fact on a date. Once a correction can
+             * supersede a figure, an uncounted payslip is ambiguous — two PDFs
+             * showing different net pay for the same month, both apparently
+             * authoritative. Version 1 is the figure first paid; anything above
+             * it means this month was corrected, and the superseded figure is
+             * still retrievable from payroll_item_versions.
+             */
+            'versionNo'             => (int) ($item->current_version_no ?? 1),
+            'isCorrected'           => (int) ($item->current_version_no ?? 1) > 1,
             'earningsComponents'    => $earningsComponents,
             'deductionsComponents'  => $deductionsComponents,
             'generatedAt'           => now()->format('d M Y, h:i A'),

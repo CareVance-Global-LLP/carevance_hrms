@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CareVance — Phase Decisions (ADR)</title>
+<style>
+  :root{
+    color-scheme: light;
+    --surface-1:#fcfcfb; --surface-2:#f4f4f1; --page:#f9f9f7;
+    --ink-1:#0b0b0b; --ink-2:#52514e; --ink-3:#898781;
+    --rule:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --s1:#2a78d6; --s3:#1baf7a; --s7:#4a3aa7;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --surface-1:#1a1a19; --surface-2:#232322; --page:#0d0d0d;
+      --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-3:#898781;
+      --rule:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+      --s1:#3987e5; --s3:#199e70; --s7:#9085e9;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --surface-1:#1a1a19; --surface-2:#232322; --page:#0d0d0d;
+    --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-3:#898781;
+    --rule:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --s1:#3987e5; --s3:#199e70; --s7:#9085e9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink-1);
+    font:15px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1100px;margin:0 auto;padding:48px 28px 96px}
+  header.masthead{border-bottom:2px solid var(--ink-1);padding-bottom:20px;margin-bottom:32px}
+  .eyebrow{font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  h1{font-size:30px;line-height:1.2;margin:10px 0 8px;letter-spacing:-.018em;font-weight:680}
+  .sub{color:var(--ink-2);font-size:15px;max-width:78ch;margin:0}
+  .meta{margin-top:14px;font-size:12.5px;color:var(--ink-3);font-family:var(--mono)}
+  h2{font-size:20px;margin:48px 0 6px;letter-spacing:-.012em;font-weight:660;padding-top:18px;border-top:1px solid var(--rule)}
+  h2 .num{color:var(--ink-3);font-family:var(--mono);font-size:14px;margin-right:10px;font-weight:500}
+  p{margin:8px 0;max-width:84ch}
+  .lede{font-size:16px;color:var(--ink-2);max-width:82ch}
+  code{font-family:var(--mono);font-size:12.3px;background:var(--surface-1);border:1px solid var(--border);
+       border-radius:4px;padding:1px 5px;white-space:nowrap}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.2px;background:var(--surface-1);
+        border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  th{text-align:left;font-weight:640;font-size:11px;letter-spacing:.055em;text-transform:uppercase;
+     color:var(--ink-3);padding:10px 12px;border-bottom:1px solid var(--axis);vertical-align:bottom}
+  td{padding:10px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:640;padding:2px 7px;
+         border-radius:20px;border:1px solid var(--border);white-space:nowrap;letter-spacing:.02em;line-height:1.5}
+  .b-crit{color:var(--critical);border-color:var(--critical)}
+  .b-ser{color:var(--serious);border-color:var(--serious)}
+  .b-warn{color:var(--ink-2);border-color:var(--warning)}
+  .b-ok{color:var(--good);border-color:var(--good)}
+  ul,ol{margin:8px 0;padding-left:22px;max-width:84ch} li{margin:4px 0}
+  .pill{font-family:var(--mono);font-size:11px;color:var(--ink-3);border:1px solid var(--border);
+        border-radius:4px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+  pre{background:var(--surface-1);border:1px solid var(--border);border-radius:8px;padding:13px 15px;
+      overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--ink-2);margin:12px 0}
+  pre .c{color:var(--ink-3)} pre .k{color:var(--s7);font-weight:600}
+  pre .g{color:var(--good)} pre .r{color:var(--critical)} pre .b{color:var(--s1)}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--rule);font-size:12.4px;color:var(--ink-3);max-width:84ch}
+  .scroll{overflow-x:auto}
+
+  /* decision card */
+  .d{background:var(--surface-1);border:1px solid var(--border);border-radius:12px;
+     padding:20px 22px;margin:22px 0}
+  .d > .hd{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .d .id{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--s1);letter-spacing:.04em}
+  .d .ti{font-size:17px;font-weight:660;letter-spacing:-.008em}
+  .d .ctx{color:var(--ink-2);font-size:14px;margin:6px 0 14px;max-width:84ch}
+  .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:10px 0 4px}
+  .o{border:1px solid var(--border);border-radius:9px;padding:13px 14px;background:var(--page)}
+  .o.pick{border-color:var(--good);border-width:2px;padding:12px 13px}
+  .o .oh{font-size:11px;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-3);margin-bottom:5px}
+  .o.pick .oh{color:var(--good)}
+  .o .ot{font-size:14px;font-weight:640;margin-bottom:6px;line-height:1.4}
+  .o p{font-size:13px;margin:5px 0;color:var(--ink-2)}
+  .o .cons{font-size:12.5px;color:var(--ink-3);margin-top:7px}
+  .keka{border-left:3px solid var(--s7);background:var(--surface-2);border-radius:0 8px 8px 0;
+        padding:11px 15px;margin:14px 0;font-size:13.4px;color:var(--ink-2)}
+  .keka b{color:var(--ink-1)}
+  .why{border-left:3px solid var(--good);padding-left:14px;margin:14px 0 4px}
+  .why .lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--good)}
+  .why p{font-size:14px;margin:5px 0}
+  .ver{border-left:3px solid var(--s1);background:var(--surface-2);border-radius:0 8px 8px 0;
+       padding:11px 15px;margin:14px 0;font-size:13.2px;color:var(--ink-2)}
+  .ver b{color:var(--ink-1)}
+  .ver .lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;color:var(--s1);display:block;margin-bottom:4px}
+  .corr{border-left:3px solid var(--critical)}
+  .corr .lbl{color:var(--critical)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">CareVance HRMS · Architecture decision record · revision 2</div>
+  <h1>Phase by phase — three approaches each, and the one to take</h1>
+  <p class="sub">Thirteen decisions across the remediation phases. Each carries three real options,
+  what Keka actually does (verified from their help documentation, not inferred), and a pick with the
+  reasoning that would survive a design review.</p>
+  <p class="sub" style="margin-top:10px">Revision 2 re-grounds every claim about our own codebase against
+  the code at <code>fix/payroll-remediation-stage0</code>. Blue <b>Verified against code</b> blocks carry the
+  evidence; red ones mark where revision 1 was wrong. Two decisions changed as a result, and two items
+  moved into Phase 0.</p>
+  <div class="meta">14 Aug 2026 · 13 decisions · Keka mechanics verified Aug 2026 · code claims verified Aug 2026</div>
+</header>
+
+<h2><span class="num">00</span>The decisions at a glance</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th style="width:6%">#</th><th style="width:9%">Phase</th><th style="width:27%">Decision</th><th style="width:26%">Chosen</th><th style="width:32%">Relative to Keka</th></tr></thead>
+<tbody>
+<tr><td><strong>D1</strong></td><td>P0</td><td>Enforce closed-run immutability</td><td>Model observer + reflection test + close the mass-delete hole</td><td><span class="badge b-ok">Same outcome, cheaper</span></td></tr>
+<tr><td><strong>D2</strong></td><td>P1</td><td>Build the detective reports</td><td>In-app, on one shared diff primitive</td><td><span class="badge b-warn">Hybrid — Keka has no equivalent</span></td></tr>
+<tr><td><strong>D3</strong></td><td>P2</td><td>Collapse four tax engines</td><td>Retire B/C/D, repoint everything at A</td><td>n/a — self-inflicted</td></tr>
+<tr><td><strong>D4</strong></td><td>P2</td><td>Recompute after an input changes</td><td>Versioned supersede</td><td><span class="badge b-ser">Diverge — theirs is destructive</span></td></tr>
+<tr><td><strong>D5</strong></td><td>P2</td><td>Locking granularity</td><td>greytHR's 4 tiers + Keka's cut-off dates</td><td><span class="badge b-warn">Hybrid</span></td></tr>
+<tr><td><strong>D6</strong></td><td>P3</td><td>Override storage model</td><td>Applied-layer with computed_value kept</td><td><span class="badge b-warn">Diverge — theirs can't report</span></td></tr>
+<tr><td><strong>D7</strong></td><td>P3</td><td>Override lifetime</td><td>One date-ranged model, open-ended allowed</td><td><span class="badge b-ser">Diverge — theirs has 3</span></td></tr>
+<tr><td><strong>D8</strong></td><td>P3</td><td>Component override → CTC balance</td><td>Residual as a role + fallback chain, reject on negative</td><td><span class="badge b-ok">Copy + decide their gap</span></td></tr>
+<tr><td><strong>D9</strong></td><td>P4</td><td>Monthly TDS method</td><td>Cumulative YTD true-up</td><td><span class="badge b-ok">Copy exactly</span></td></tr>
+<tr><td><strong>D10</strong></td><td>P5 → <b>P0 in part</b></td><td>Statutory slab storage</td><td>greytHR's schema, Keka's permissions</td><td><span class="badge b-ok">Hybrid</span></td></tr>
+<tr><td><strong>D11</strong></td><td>P6</td><td>Mid-month revision</td><td>Segmented split-rate</td><td><span class="badge b-ok">Copy, incl. the denominator</span></td></tr>
+<tr><td><strong>D12</strong></td><td>P6</td><td>Compensation history</td><td>Wire the existing timeline first</td><td><span class="badge b-warn">Cheaper route to parity</span></td></tr>
+<tr><td><strong>D13</strong></td><td>P7</td><td>Labour Codes 50% wage rule</td><td>Stored parallel wage base, date-gated</td><td><span class="badge b-ok">Neither has this</span></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2><span class="num">01</span>Phase 0 — safety</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D0</span><span class="ti">Two things that ship before anything else</span></div>
+<p class="ctx">Both surfaced while verifying the claims in this document. Both are losing money or
+leaving a closed run editable <em>today</em>, both are cheaper than the observer work below, and neither
+depends on any other decision here landing first.</p>
+
+<div class="opts">
+<div class="o pick"><div class="oh">Ship first</div><div class="ot">Eight professional-tax jurisdictions that do not levy PT</div>
+<p><code>PTStateService::STATE_CONFIGS</code> deducts professional tax in eight places where none exists in
+law: Chhattisgarh <code>:155</code>, Goa <code>:163</code>, Himachal Pradesh <code>:170</code>,
+Jammu &amp; Kashmir <code>:179</code>, Uttarakhand <code>:240</code>, Chandigarh <code>:259</code>,
+Dadra &amp; Nagar Haveli <code>:273</code>, Daman &amp; Diu <code>:281</code>.</p>
+<p class="cons">Money leaving real employees' pay on every run. The fix is per-state data, not
+architecture — it does not wait for the <code>statutory_slabs</code> migration.</p></div>
+
+<div class="o pick"><div class="oh">Ship first</div><div class="ot">Two guards that are already dead</div>
+<p><code>in_array($run-&gt;status, ['paid','released'])</code> at
+<code>EnhancedPayrollController:479</code> and <code>PayrollDepartmentController:1593</code>. Nothing in the
+system ever writes status <code>'paid'</code>, so both guards are no-ops for <code>approved</code> and
+<code>disbursed</code>.</p>
+<p class="cons">Consequence: <code>quickSaveCtc</code> and <code>approveArrear</code> both succeed against a
+<b>disbursed</b> run right now. Replace both literals with <code>PayrollMonthlyRun::CLOSED_STATUSES</code>,
+which already exists at <code>PayrollMonthlyRun:45</code>. Two lines.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code</span>
+Chandigarh's top band is <code>['min' =&gt; 25001, 'max' =&gt; null, 'amount' =&gt; 250]</code> — ₹250 flat every
+month, ₹3,000 a year, ₹500 over the Article 276(2) constitutional cap. That is the one revision 1 named. It
+is also the least of it: the other seven charge a tax that does not exist. Nothing in <code>calculate()</code>
+distinguishes a researched slab from an invented one, and CLAUDE.md's standing rule already says it —
+<em>"several states levy none. Never default a missing state to a real one."</em><br><br>
+Two smaller defects in the same file: <code>getAnnualLimit()</code> (<code>:515-540</code>) folds
+Maharashtra's February special of ₹300 into <code>maxMonthly</code> and multiplies by 12, returning ₹3,600
+against a real collection of ₹2,500 — so the cap check is itself broken. And Arunachal Pradesh is absent
+entirely, which fails safe to ₹0 but should be explicit.
+</div>
+</div>
+
+<div class="d">
+<div class="hd"><span class="id">D1</span><span class="ti">How to make a closed run actually immutable</span></div>
+<p class="ctx">Roughly twenty-five ad-hoc status guards exist today, two of them dead (above). Seven distinct
+code paths write money onto <code>payroll_items</code> across ten statements. The eighth path someone adds
+next quarter will have no guard at all.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Model observer</div>
+<p><code>PayrollItem::saving</code> throws when the parent run is closed, unless a governed-override
+context is bound in the container.</p>
+<p class="cons">+ catches every Eloquent write, present and future · + one file · − blind to
+query-builder mass operations</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Database trigger / CHECK</div>
+<p>Postgres trigger refusing UPDATE on <code>payroll_items</code> when the parent run status is closed.</p>
+<p class="cons">+ absolute, survives raw SQL · − tests run on SQLite and the app on Postgres, so it must be
+written twice and can drift — and <code>CLAUDE.md</code> already flags schema drift as a live hazard</p></div>
+
+<div class="o"><div class="oh">Option C</div><div class="ot">Service-layer gateway</div>
+<p>Every money write routes through one <code>PayrollItemWriter</code> that owns the status check.</p>
+<p class="cons">+ cleanest architecture · − requires editing seven call sites and protects you from none of
+the eighth; a new controller can still reach the model directly</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — A, in three parts</div><div class="ot">Observer + mass-delete guard + enumerate-and-assert</div>
+<p><b>1.</b> The <code>saving</code> observer. <b>2.</b> A <code>deleting</code> guard plus removal of the
+relation mass-delete at <code>PayrollAutoProcessService:137</code>. <b>3.</b> A test that reflects over every
+controller method writing a money column and asserts each throws on a closed run.</p>
+<p class="cons">Part 3 is what makes it durable: a new endpoint fails CI until someone deliberately
+handles the closed case.</p></div>
+</div>
+
+<div class="ver corr"><span class="lbl">Correction to revision 1</span>
+Revision 1 listed <em>"PHP-level only, raw SQL bypasses it"</em> as a live caveat and implied the observer
+would miss the <code>COALESCE</code> increments in <code>PayrollAutoProcessService</code>
+(<code>:270</code>, <code>:309</code>, <code>:336</code>, <code>:393</code>).
+<b>That is wrong.</b> Those are <code>$item-&gt;update([...])</code> on a model instance — the
+<code>DB::raw()</code> is the <em>value</em>, not the query mechanism — so Eloquent events fire normally and
+the observer catches all of them. Option A is stronger than revision 1 claimed, not weaker.
+</div>
+
+<div class="ver"><span class="lbl">Verified against code — what the observer genuinely cannot see</span>
+<b>One true bypass.</b> <code>PayrollAutoProcessService:137</code> is
+<code>$run-&gt;items()-&gt;delete()</code> — a HasMany mass delete, which fires no model events at all. An
+observer guarding <code>saving</code> will not see it, and neither will one guarding <code>deleting</code>.
+It is currently fenced by an ad-hoc <code>in_array($run-&gt;status, ['draft','processing'])</code> at
+<code>:136</code>, which is correct today and invisible to the enumerate-and-assert test. This is the hole to
+close, and it matters beyond D1: it is a hard delete on a model with no <code>SoftDeletes</code>, so it
+destroys exactly the history D2's differences report and D4's versioning depend on.<br><br>
+<b>One constraint on D4 and D6.</b> Four of those writes — <code>:270</code>, <code>:309</code>,
+<code>:336</code>, <code>:393</code>, all incrementing <code>custom_earnings</code> — pass an
+<code>Illuminate\Database\Query\Expression</code> as the attribute value. The observer fires, but it cannot
+read the resulting number, and the in-memory model afterwards holds an Expression rather than a decimal. A
+guard that only asks <em>"is the parent run closed?"</em> works fine. A version-writer that wants to record
+old → new — which is precisely what D4's supersede and D6's <code>computed_value</code> need — gets nothing
+usable from those four sites. Convert them to read-modify-write before building the version table, or accept
+four blind spots in the audit trail. (The fifth increment, <code>overtime_pay</code> at <code>:371</code>,
+computes its value in PHP and is readable — it needs no change.)<br><br>
+<b>Guard count.</b> Thirteen <code>in_array</code> guards on run status gate a write, not nine; a further
+twelve use <code>===</code>/<code>!==</code>, so the real ad-hoc surface is about twenty-five. There is no
+DB enum backing any of it — the migration column is
+<code>string('status', 30)-&gt;default('draft')</code> with a stale comment that still lists <code>paid</code>
+and omits <code>approved</code>, <code>released</code> and <code>disbursed</code>.<br><br>
+<b>Write paths.</b> Six sites across ten statements, plus a seventh the earlier count missed:
+<code>PayrollFilingController:2126</code> writes <code>variable_pay</code> with <b>no run-status guard of any
+kind</b>.<br><br>
+<b>Confirmed absent.</b> No <code>app/Observers/</code> directory, zero <code>::observe(</code> calls, zero
+<code>CREATE TRIGGER</code>, no <code>booted()</code> hook on <code>PayrollItem</code>.
+</div>
+
+<div class="keka"><b>Keka's approach:</b> they don't block writes — they make a finalized month
+structurally unreachable, and require an explicit <b>Rollback</b> (typed <code>CONFIRM</code> + a reason)
+to reopen it. Same outcome by a different route. Option A reproduces it at a fraction of the cost.</div>
+
+<div class="why"><div class="lbl">Why not B or C</div>
+<p>The DB trigger is genuinely stronger, and I'd take it if our test and production databases matched —
+they don't, and a guard that exists in production but not in tests is a guard you will eventually break
+without noticing. The service gateway is the cleanest architecture and the weakest protection: it secures
+the seven paths that exist and none of the eighth.</p>
+</div>
+</div>
+
+<h2><span class="num">02</span>Phase 1 — detective controls</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D2</span><span class="ti">How to build the four comparison reports</span></div>
+<p class="ctx">Payroll Differences, Negative Cost, Duplicate, Reconciliation. These are what make greytHR
+accurate in practice — the payroll officer sees the anomaly before payday rather than after the EPFO
+rejection.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Four independent endpoints</div>
+<p>Write each report as its own controller method and query.</p>
+<p class="cons">+ fastest to first report · − four query shapes to maintain, and the diff logic gets
+copy-pasted three times</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">SQL views + generic runner</div>
+<p>Define each as a database view, expose through one generic report endpoint.</p>
+<p class="cons">+ least PHP · − views can't take runtime parameters cleanly (which two months?), and we have
+no existing report infrastructure to hang them on</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">One diff primitive, four presentations</div>
+<p>A single <code>PayrollComparisonService</code> that returns component-level deltas between two runs.
+Payroll Differences is its three presentations (item-wise / employee-wise / consolidated); Negative Cost
+and Duplicate are filters over one run; Reconciliation is a headcount assertion.</p>
+<p class="cons">One place where "what changed" is defined — which is also what the override register and
+the payslip explainer will need later.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code — check the baseline survives before promising the ranking</span>
+The sequencing argument below depends on there being three months of history to diff. Confirm there is.
+<code>PayrollAutoProcessService:137</code> hard-deletes every item on the run when a rebuild happens, and
+<code>PayrollItem</code> has no <code>SoftDeletes</code>, so any month that was reprocessed has lost its
+prior state. Run a count against the real tenant before committing to "this report ranks the backlog" —
+if the baseline is already gone for the months that matter, D2 still earns its place, but as a
+<em>forward-looking</em> control rather than a diagnostic one.
+</div>
+
+<div class="keka"><b>Keka's approach:</b> none of this. Keka ships a payroll-components comparison report,
+but report customisation is its single most-cited complaint on G2. greytHR's <b>Payroll Differences</b>
+(three modes) and <b>Negative Cost Report</b> have no Keka equivalent. <b>This is a place to beat both.</b></div>
+
+<div class="why"><div class="lbl">Why this is Phase 1 and not Phase 6</div>
+<p>Run Payroll Differences over the real tenant's last three months <em>before</em> fixing anything.
+It converts the rest of the remediation from a flat list into a ranked one — you'll see which of the twenty
+money defects are actually costing rupees in our data, and in what order. Cheapest group on the roadmap,
+highest information yield.</p>
+</div>
+</div>
+
+<h2><span class="num">03</span>Phase 2 — one engine, and what happens when inputs move</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D3</span><span class="ti">How to collapse four tax engines into one</span></div>
+<p class="ctx">Engine A (payroll run) is correct. B (payslip) is a flat 5%. C (the <code>/compare</code> and
+<code>/what-if</code> endpoints) is on FY 2024-25 slabs with no 87A. D is an orphan that double-counts cess.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Extract a shared library</div>
+<p>Pull the maths into a new package and refactor all four callers onto it.</p>
+<p class="cons">− keeps four call sites alive, and therefore four future opportunities to diverge again</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Rewrite clean, migrate all</div>
+<p>New engine built to spec, migrate every caller, delete all four.</p>
+<p class="cons">− a rewrite of the highest-risk code in the system, and engine A already encodes two
+non-obvious correct behaviours you would have to rediscover</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Delete D, repoint B and C at A</div>
+<p>Engine A's 87A is assessed on taxable income (not gross) with marginal relief, and its surcharge bands
+are contiguous. Both are subtle, both are right, and the code carries comments explaining the bug each one
+fixed. Keep it; retire the rest.</p>
+<p class="cons">Only D is a true deletion. B and C are live and must be repointed under test.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code</span>
+<b>Engine A is as described.</b> <code>PayrollCalculatorService:945</code> assesses 87A on
+<code>max(0, $annualIncome - STANDARD_DEDUCTION_NEW)</code> with marginal relief at <code>:958-963</code>;
+surcharge bands at <code>:63-68</code> are contiguous half-open with their own marginal relief at
+<code>:599-607</code>. Old-regime 87A has no marginal relief, which is correct — none exists in law.<br><br>
+<b>Engine B is the flat 5%</b> — <code>Payroll/SalaryCalculationService:331-335</code>, reached from
+<code>PayslipController:33</code>.<br><br>
+<b>Engine C is not a service.</b> It is inline in <code>PayrollFilingController</code>
+(<code>calculateOldRegimeTax:1536</code>, <code>calculateNewRegimeTax:1551</code>) serving the live
+<code>/compare</code> and <code>/what-if</code> routes. FY 2024-25 slabs confirmed at <code>:1554-1565</code>;
+no 87A anywhere in either method. Its PF is <code>min($annualCtc × 0.40 / 12, 1800)</code>
+(<code>:1291</code>, <code>:1375</code>, <code>:1479</code>) — revision 1 wrote this as
+<code>min(basic, 1800)</code>, which understates how synthetic the basic is.<br><br>
+<b>Engine D is genuinely orphaned.</b> <code>TaxSimulatorService</code> has zero references outside its own
+declaration — no route, no DI, no test. It takes a <code>total_tax</code> that already includes cess and
+re-applies 4% at <code>:45-46</code>. The identical bug was already fixed in
+<code>EnhancedPayrollController:860-864</code>; the orphan copy was left behind.<br><br>
+<b>Scope correction.</b> Revision 1's line <em>"deletion is the only refactor that cannot introduce an
+arithmetic bug"</em> does not survive this: only D is deleted. B and C are live paths whose outputs will
+change when they move to A — which is the point, but it needs regression tests against known payslips
+before the switch, not after.
+</div>
+
+<div class="why"><div class="lbl">What this one change fixes</div>
+<p><code>SalaryCalculationService</code> keeps its payslip-assembly job — only the statutory block moves.
+Removing it fixes six defects at once: the flat-5% TDS, the FY24-25 slabs, PF-as-a-fraction-of-CTC, the
+double cess, the ESI ceiling test that ignores the contribution period, and the <code>basic / 208</code>
+overtime divisor (<code>:325-326</code>).</p>
+<p><b>On ESI specifically:</b> a period-aware service already exists —
+<code>Payroll/EsiContributionPeriodService::isCovered</code> — and is already used by the run path
+(<code>PayrollAutoProcessService:576</code>) and one controller. The two period-blind tests are
+<code>PayrollCalculatorService:279</code> and <code>SalaryCalculationService:155</code>. This is a
+repointing job, not new logic.</p>
+</div>
+</div>
+
+<div class="d">
+<div class="hd"><span class="id">D4</span><span class="ti">What happens when an input changes after processing</span></div>
+<p class="ctx">Today a correction overwrites the payroll item in place, and there is no record that the
+earlier figure ever existed. This is the decision that everything in the position document rests on.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Keka's model — freeze and roll back</div>
+<p>Finalize freezes the month. Correcting it requires an explicit, irreversible Rollback that clears
+payslips and bank statements, then re-finalize.</p>
+<p class="cons">+ proven, simple, cheap · − destructive; Keka's own docs say <em>"cannot be undone"</em> and
+that documents are <em>"cleared and regenerated"</em></p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Always recompute on read</div>
+<p>The item is a view over current inputs.</p>
+<p class="cons">− a payslip stops being a statement of fact on a date</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Versioned supersede</div>
+<p>A correction writes a <em>new immutable version</em> of the payroll item; the old one is retained and
+marked superseded, with a reason and an actor. Payslips bind to a version, not to the item.</p>
+<p class="cons">+ correct and auditable · − a <code>payroll_item_versions</code> table and a
+<code>current_version_id</code>; moderate work</p></div>
+</div>
+
+<div class="ver corr"><span class="lbl">Correction to revision 1 — the mechanism, not the conclusion</span>
+Revision 1 said <em>"payslips re-render live at download, so reprocessing silently changes a PDF that was
+already emailed."</em> The conclusion holds; the mechanism is wrong, and the difference changes what D4 has
+to build.<br><br>
+Money is read from <b>stored columns</b>, not recomputed: <code>PayrollPdfService:115-121</code> reads
+<code>$item-&gt;basic</code>, <code>gross_salary</code>, <code>total_deductions</code>, <code>net_pay</code>
+directly. <code>PayrollDayBasisResolver::forStoredItem</code> (<code>:102-113</code>) deliberately prefers
+the frozen <code>salary_divisor_days</code>, with a comment saying a locked or disbursed item must never
+re-derive against live config. Someone already thought about this. The payslip changes because the
+<em>item</em> is overwritten in place — which is still exactly D4's problem, by a different route.
+</div>
+
+<div class="ver"><span class="lbl">Verified against code — three things D4 must decide that revision 1 didn't know about</span>
+<b>1. There are two payslip paths with different semantics.</b>
+<code>PayrollController:501/:536</code> renders fresh through Dompdf on every request;
+<code>PayslipController::downloadPdf:268-293</code> serves a <b>pre-generated file</b> from
+<code>payslips/{user_id}/{period_month}.pdf</code>. D4 binds payslips to a version — it must say which path
+wins, or versioning ships while a stale file is still served off disk.<br><br>
+<b>2. Identity fields genuinely do read live.</b> <code>PayrollPdfService:92-103</code> pulls employee and
+org identity — bank account, PAN, UAN, designation, org logo — at render time. Change a bank account today
+and an already-issued payslip restates. The version snapshot needs to cover identity, not just money.<br><br>
+<b>3. The attendance guard already half exists.</b>
+<code>Payroll/PayrollPeriodGuard</code> is built and wired into two paths —
+<code>AttendanceTimeEditRequestController:240-248</code> and
+<code>PayrollAutoProcessController:262-267</code>, both returning 422. The hole is one file:
+<code>LeaveRequestController:327</code> (<code>approve</code>) and <code>:697</code>
+(<code>approveRevoke</code>) call through to <code>applyApprovedLeaveToAttendance()</code>, which saves and
+deletes <code>AttendanceRecord</code> rows for arbitrary back-dated ranges with no run check — the exact
+scenario <code>PayrollPeriodGuard</code>'s own docblock names and never got hooked into. Nothing recomputes
+the money afterwards. <code>LockedPayrollPeriodGuardTest</code> covers only the time-edit path.<br><br>
+<b>Confirmed absent:</b> no <code>payroll_item_versions</code>, no <code>superseded</code> column, no
+<code>SoftDeletes</code>. The only versioning artefact is <code>engine_version</code>, a scalar stamp whose
+own migration docblock states the policy — <em>"Nothing is recomputed — the policy is fix-forward"</em>. It
+records which engine wrote the current row; it does not retain the prior one.
+</div>
+
+<div class="keka"><b>Keka's approach:</b> option A, and it is harsher than it first sounds. Rollback pulls in
+everything changed since finalization — <em>"salary revisions made after payroll finalization will take
+effect and may generate arrears"</em> — so a rollback intended to fix one LOP day can silently restate the
+whole month. They compensate with <b>input cut-off dates</b> (attendance and IT-declaration), making late
+inputs structurally impossible rather than merely detectable. <b>Copy the cut-off dates. Don't copy the
+destructive rollback.</b></div>
+
+<div class="why"><div class="lbl">Why diverge here of all places</div>
+<p>We already store <code>template_snapshot</code> on every item — <code>PayrollItem:91</code>, cast to
+array at <code>:167</code> — so we are halfway to versioning without having planned it. A later migration
+even names it as the precedent for freezing. And this is the decision that makes the strategic claim true:
+"every figure traceable back to the work that earned it, and every hand that touched it" is <em>only</em>
+true if a superseded figure still exists to be traced.</p>
+<p><strong>Sequencing that de-risks it:</strong> ship freeze-plus-explicit-reopen semantics first (Keka
+parity, days of work) but build it on the version table from the start. You get the parity behaviour
+immediately and the audit trail without a rewrite.</p>
+<p><strong>Prerequisite from D1:</strong> convert the four <code>COALESCE</code> increments to
+read-modify-write before the version writer exists, or those four paths write versions with an unreadable
+old value.</p>
+</div>
+</div>
+
+<div class="d">
+<div class="hd"><span class="id">D5</span><span class="ti">Locking granularity</span></div>
+<p class="ctx">A 200-person run always has three exceptions. The question is whether those three block the
+other 197.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Two-state: open / closed</div>
+<p>One boolean per run.</p>
+<p class="cons">− all-or-nothing; the three exceptions hold everyone</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Keka's — one lock + maker-checker</div>
+<p>Lock the month, gated by an approval workflow.</p>
+<p class="cons">− their own docs show per-employee rollback as the workaround, which tells you the single
+lock isn't enough in practice</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">greytHR's four tiers + Keka's cut-offs</div>
+<p><strong>Inputs lock</strong> (attendance, LOP, claims — with a configurable auto-cutoff date) →
+<strong>month lock</strong> → <strong>per-employee lock</strong> → <strong>payslip publish</strong>,
+decoupled from lock.</p>
+<p class="cons">Lock 197, keep working on 3, publish payslips only for the clean set.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code — one tier is cheaper than budgeted, one gap is unbudgeted</span>
+<b>Cheaper:</b> the inputs-lock tier is mostly built. <code>PayrollPeriodGuard</code> exists and works; it
+needs hooking into two more call sites in <code>LeaveRequestController</code> (see D4). Budget call sites,
+not a subsystem.<br><br>
+<b>Unbudgeted:</b> nothing decides what happens to run-level aggregates when 3 of 200 employees are
+unlocked. <code>recomputePayrollRunTotals</code> (<code>EnhancedPayrollController:556-573</code>) sums every
+item on the run and rewrites the run header. Under per-employee locking it will happily restate the totals
+of a locked month while three items are being edited. It has to become tier-aware, or the month lock means
+nothing at the aggregate level.
+</div>
+
+<div class="keka"><b>The hybrid is the point.</b> greytHR has the better tier model; Keka has the better
+input discipline. An auto-cutoff date on attendance means a late regularisation cannot silently invalidate
+a verified figure — it is the elegant half of Keka's design, and it is independent of their rollback model.</div>
+</div>
+
+<h2><span class="num">04</span>Phase 3 — overrides</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D6</span><span class="ti">How an override is stored and applied</span></div>
+<p class="ctx">Override capability already exists, ungoverned — through <code>annual_ctc</code>,
+<code>custom_deductions[]</code> and the arrear endpoints. The question is what shape to give it, not
+whether to have it.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Keka's — fallback resolution</div>
+<p>The override is a standing per-employee property that shadows the structure value.
+<em>"If no override is set, Keka uses the value from the employee's salary structure."</em></p>
+<p class="cons">+ elegant, survives reprocess by construction · − cannot express "this month only", carries
+no per-occurrence reason, and gives you nothing to report on per run</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Adjustment lines</div>
+<p>The override is a delta line added to the item, like a journal entry.</p>
+<p class="cons">+ naturally auditable · − you lose "what would it have been", which is exactly what makes
+a differences report explainable</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Applied layer, both values kept</div>
+<p>Override rows evaluated at compute time and snapshotted onto the item, storing <strong>both</strong>
+<code>value</code> (what was applied) and <code>computed_value</code> (what the engine would have produced).</p>
+<p class="cons">The pair is what makes the override register meaningful, the differences report
+self-explaining, and a reversal trivially computable.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code — all three ungoverned paths confirmed, and worse than described</span>
+<b>(a) <code>annual_ctc</code>.</b> <code>PayrollDepartmentController::updateEmployeeTemplate:833-908</code>
+validates and writes it with no run-status guard, no reason field and no audit write — only
+<code>'updated_by' =&gt; auth()-&gt;id()</code>. <code>quickSaveCtc:1568-1615</code> is guarded only by the
+dead <code>['paid','released']</code> check.<br><br>
+<b>A live bug inside that path.</b> <code>processEmployeePayroll</code> writes
+<code>$template-&gt;update(['annual_ctc' =&gt; $request-&gt;annual_ctc])</code> at <code>:1015</code>, and only
+then checks for a disbursed run at <code>:1025</code>. <b>A request that is rejected has already mutated the
+employee's CTC.</b> Fix this alongside the D0 guard work — it is two lines of reordering.<br><br>
+<b>(b) <code>custom_deductions[]</code>.</b> Accepted per-request at <code>:995-998</code>, summed at
+<code>:1249-1256</code>, persisted at <code>:1479</code>. No cap, no approver, no reason, no audit record.<br><br>
+<b>(c) Arrears.</b> <code>createArrear:334-346</code> has <code>'reason' =&gt; 'nullable|string'</code> —
+optional — and the <code>original_*</code>/<code>revised_*</code> figures are caller-supplied and validated
+against no salary record. <code>approveArrear:452-550</code> writes no audit log and works on an approved or
+disbursed run. Notably <code>rejectArrear</code> is the only one of the three that <em>requires</em> a
+reason: today it is easier to grant money than to refuse it.<br><br>
+<b>The permission flag has nothing to hang on.</b> Copying Keka's per-component <em>"allow this component to
+be overridden"</em> flag assumes an authorization layer. CLAUDE.md is explicit: <b>0 policies</b>, and
+authorization is inline in controllers. Either budget a policy layer as part of D6, or state plainly that
+the flag is enforced inline like everything else — but don't cost it as free.
+</div>
+
+<div class="keka"><b>Keka's approach:</b> option A for components, entered as an <b>annual</b> figure in a
+grid at Payroll Admin → Operations, gated by a per-component flag <em>"Allow this component to be
+customized and overridden at the employee level."</em> Overrides are not live on entry — <em>"Perform
+Process Payroll to update the override information in the system."</em> <b>Copy the permission flag and the
+apply-on-process timing. Diverge on storage.</b></div>
+</div>
+
+<div class="d">
+<div class="hd"><span class="id">D7</span><span class="ti">How long an override lives</span></div>
+<p class="ctx">This looks like a detail and is not. It determines whether a payroll officer can predict
+what next month will do.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Copy Keka exactly</div>
+<p>Three different lifetimes: components permanent, PT/ESI/LWF/TDS date-ranged, PF a boolean that carries
+forward until switched off.</p>
+<p class="cons">− <em>"If you don't want this overridden PF amount to be reflected in the next month, you
+have to select No."</em> Three lifetimes for one concept is a support-ticket generator.</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Run-scoped only</div>
+<p>An override applies to exactly one run and must be re-entered each month.</p>
+<p class="cons">+ safest, nothing carries forward by surprise · − makes a recurring override (a
+court-ordered garnishment, a long-running TDS instruction) unusable</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">One model: date-ranged, open-ended permitted</div>
+<p><code>effective_from</code> + nullable <code>effective_to</code>. Every Keka behaviour becomes a special
+case: permanent = open-ended; PF-until-cancelled = open-ended, then closed; range-bound = as-is.</p>
+<p class="cons">One rule to explain, one to test, one to display in the register. Show the end date on the
+override row so nothing is a surprise.</p></div>
+</div>
+
+<div class="why"><div class="lbl">The argument, on its own terms</div>
+<p>Three lifetimes for one concept means a payroll officer cannot answer "will this still be here next
+month?" without knowing which <em>kind</em> of override they are looking at. That is the whole case, and it
+stands without appeal to a second reader having reached the same view — revision 1 offered that as
+corroboration, which it isn't: a second reader of the same documentation, framed the same way, is agreement
+rather than evidence.</p>
+</div>
+</div>
+
+<div class="d">
+<div class="hd"><span class="id">D8</span><span class="ti">What absorbs the delta when a component is overridden</span></div>
+<p class="ctx">Our structure is entirely residual — Special Allowance is whatever remains after Basic, HRA
+and Conveyance come out of CTC. So "set Basic to ₹6,00,000" has two possible arithmetic meanings and the
+engine cannot guess.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Always CTC-preserving</div>
+<p>The residual absorbs every delta; gross never moves.</p>
+<p class="cons">− cannot express a genuine correction to an understated component</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Always CTC-additive</div>
+<p>Overriding a component raises gross.</p>
+<p class="cons">− silently breaks the employee's stated CTC, which is the number in their offer letter</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Explicit mode, residual as a <em>role</em>, reject on negative</div>
+<pre>balance_mode      <span class="c">'preserve_ctc' (default) | 'increase_gross'</span>
+balancing_target  <span class="c">component that absorbs; default = the designated residual</span>
+</pre>
+<p>Make "residual" a role with an ordered fallback chain of taxable components behind it — not a hardcoded
+Special Allowance. If a CTC-preserving override would drive the residual negative, <strong>reject it</strong>
+with an error naming the maximum permitted value.</p></div>
+</div>
+
+<div class="keka"><b>Keka's approach — worth copying precisely.</b> Special Allowance is their universal
+sink: it absorbs LOP pro-rating (<em>"Adjust the difference amount against Special Allowance"</em>), PF
+proration, unclaimed reimbursements and lapsed FBP. Critically, their PF article states the fallback:
+<em>"If there is no Special Allowance component, the PF proration adjustment will be applied to <b>the next
+available taxable component</b>."</em> That single sentence proves it is a <b>role with a fallback chain</b>,
+not a named component. Copy that design.<br><br>
+<b>What Keka does not document — and we must decide:</b> what happens when the residual would go negative.
+No article addresses clamping, cascading or allowing a negative. That silence is why their support
+knowledge base carries articles about unexplained payslip figures.</div>
+
+<div class="why"><div class="lbl">Also worth stealing: the LOP threshold</div>
+<p>Keka's LOP flag is three-state, not two — exempt / exempt up to N LOP days then applies / fully applied,
+via a <em>Set Threshold</em> control. That is a genuinely good piece of design and it is cheap to copy when
+we build the per-component flags.</p>
+<p><b>Note the house rule this interacts with:</b> CLAUDE.md says net pay is stored <em>signed</em> and a
+negative must not be clamped to zero, because payroll validation is what should stop the run. "Reject on
+negative residual" is a validation refusal at override-entry time, which is consistent — it stops the
+override, not the number.</p>
+</div>
+</div>
+
+<h2><span class="num">05</span>Phase 4 — income tax</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D9</span><span class="ti">How monthly TDS is computed</span></div>
+<p class="ctx">Today the annual projection is this month's gross times twelve, and the month's TDS is a
+twelfth of the resulting tax — so a month with LOP annualises the reduced gross and under-deducts, no
+true-up ever happens, and a mid-year revision never corrects earlier months.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Keep projected ÷ 12</div>
+<p>Recompute the projection each month.</p>
+<p class="cons">− the current defect; there is no reading under which this is correct</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Full-FY restatement each month</div>
+<p>Recompute the whole year and restate prior months' TDS.</p>
+<p class="cons">+ arithmetically purest · − restating a finalized month is precisely what we must never do,
+and it would contradict D4</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Cumulative YTD true-up over remaining months</div>
+<pre>annual_tax  = tax(YTD paid + this month + projected remaining + prev employer)
+remaining   = annual_tax − TDS already deducted − prev employer TDS
+this_month  = remaining ÷ months left in FY
+</pre>
+<p>Corrections flow forward and absorb into the months that remain. Finalized months stay immutable.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code</span>
+The defect is real and sits in <code>PayrollAutoProcessService</code>:
+<code>$annualProjected = $payableGross * 12;</code> at <code>:593</code>, then
+<code>$tds = round(($taxCalc['total_tax'] ?? 0) / 12, 2);</code> at <code>:607</code>. Revision 1 quoted the
+second line as a bare <code>$totalTax / 12</code> — the defect is identical, but quote it accurately in any
+document an auditor might read. Note also that <code>:598</code> subtracts the FBP exclusion from the
+annualised base before slabbing, so the replacement must preserve that step.<br><br>
+<code>PayrollCalculatorService:543</code> carries the same <code>÷ 12</code> shape in
+<code>calculateMonthlyTDS</code> and needs the same treatment.
+</div>
+
+<div class="keka"><b>Keka's approach — this is option C, and their refinements are worth taking too.</b>
+Their IT computation page exposes exactly the three fields a true-up needs: <em>Net Income Tax Payable /
+Tax paid till now / Remaining tax to be paid.</em> The bonus setting says it outright — <em>"Select No to
+distribute TDS over the <b>remaining months</b>"</em>. Three details to copy:
+<ul style="margin:6px 0">
+<li><b>April is the base month</b> — <em>"no change logs are shown for April, as it is the base month for
+the financial year's tax projections."</em></li>
+<li><b>Declared until February, approved thereafter</b> — projections run on declared amounts, switching to
+approved once proofs are reviewed. Warn the employee, as Keka does.</li>
+<li><b>Previous-employer income is entered per month, not as an annual lump</b> — which is what lets it fold
+into the same YTD ledger.</li>
+</ul></div>
+</div>
+
+<h2><span class="num">06</span>Phase 5 — statutory data</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D10</span><span class="ti">Where PT, LWF and tax slabs live, and who may edit them</span></div>
+<p class="ctx">36 PT jurisdictions and 15 LWF states live as PHP constants with no effective dates.
+Recomputing March uses today's slab. Eight of the PT jurisdictions levy no professional tax at all — see
+Phase 0, which does not wait for this decision.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Constants + effective dates</div>
+<p>Keep them in PHP, add a date dimension.</p>
+<p class="cons">− a slab correction becomes a deploy; no history query; no audit of what changed when</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">greytHR's — tenant-editable grid</div>
+<p>Admins edit Salary From / Till / Amount / Deduction Month per state.</p>
+<p class="cons">− a tenant editing a statutory slab is a compliance liability wearing a feature's clothes</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">greytHR's schema, Keka's permissions</div>
+<pre>statutory_slabs
+  kind, state_code, jurisdiction_code, gender, effective_from, effective_to
+  frequency, deduction_months json, slabs json
+  employer_amount, annual_cap, source_note
+</pre>
+<p>Vendor-maintained, shipped as migrations, <strong>read-only to tenants</strong>. Tenants pick a
+jurisdiction; we own the rates. Per-employee override is the escape hatch.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code</span>
+<b>Counts confirmed:</b> exactly 36 keys in <code>PTStateService::STATE_CONFIGS</code>
+(<code>:17-294</code>), exactly 15 in <code>PayrollFilingService::LWF_STATE_CONFIG</code>
+(<code>:904-928</code>). No <code>statutory_slabs</code> table exists; no migration filename matches
+<code>slab</code> or <code>statutor</code>.<br><br>
+<b>The precedent already exists in this codebase.</b> Income-tax slabs <em>are</em> FY-keyed —
+<code>PayrollCalculatorService::TAX_SLABS_BY_FY</code> at <code>:664</code>. PT and LWF simply never got the
+same treatment; <code>calculate()</code> takes <code>(stateCode, monthlyGross, ?month)</code> where
+<code>$month</code> is 1-12 for the February band only, with no year or FY parameter. Cite this precedent
+when arguing the migration — it is a consistency fix, not a novelty.<br><br>
+<b>The LWF constant is in the wrong service.</b> It lives in <code>PayrollFilingService</code> and is merely
+read by <code>Payroll/LwfCalculator:37</code> — so a <em>deduction</em> depends on a <em>filing</em> service's
+constant. Its own comment concedes the amounts <em>"must be re-verified against each state's LWF Rules
+before being relied on."</em> Move it as part of this migration.<br><br>
+<b>Where "read-only to tenants" will bite:</b> the eight invented PT jurisdictions in Phase 0 are our data
+error, not a tenant's. Locking the table without a correction path means the next such error needs a deploy.
+Ship the migration with a documented vendor-correction procedure, not just a read-only grant.
+</div>
+
+<div class="keka"><b>Keka's approach:</b> read-only, and the verb gives it away — the UI offers a
+<b>"View Slab"</b> button, never an edit. The tenant configures registration details only: State, Location
+Name, Establishment ID, Registration Date, Signatory. New statutory variants ship as <b>product releases</b>
+— their Tamil Nadu article reads <em>"Keka now supports PT calculation based on the specific Corporation or
+Panchayat"</em>, with the tenant picking from a supplied enum of nine local bodies.<br><br>
+<b>Neither vendor documents slab effective-dating.</b> Resolve it explicitly: <b>resolve by the period being
+computed</b>, so recomputing March uses March's slab. This matters the moment D4's versioned recompute
+exists.</div>
+
+<div class="why"><div class="lbl">Take Tamil Nadu seriously</div>
+<p>PT there is set by Corporation or Panchayat, not by state — nine distinct local bodies with different
+slabs. Our model has one row per state. A <code>jurisdiction_code</code> below <code>state_code</code>
+costs nothing now and is a schema migration later. It is in the schema above for that reason.</p>
+</div>
+</div>
+
+<h2><span class="num">07</span>Phase 6 — effective dating</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D11</span><span class="ti">A revision effective mid-month</span></div>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">New rate for the whole month</div>
+<p class="cons">− overpays; and it is what we do today, since <code>effective_from</code> is ignored entirely</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Old rate, arrear next month</div>
+<p class="cons">+ simple · − the payslip for the month is knowingly wrong, and the employee sees it</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Segmented split-rate</div>
+<p>Split the pay period at the revision date and rate each segment separately.
+<code>CompensationTimeline::segmentsForMonth()</code> already implements this correctly and has
+<strong>zero production callers</strong>. This is a wiring job.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code</span>
+<code>segmentsForMonth()</code> is at <code>Payroll/CompensationTimeline:69</code>; its only callers are four
+assertions in <code>CompensationTimelineTest</code>. The class docblock says so itself — <em>"this resolves
+the timeline and splits a month into rate segments. It does NOT yet feed the payroll engines."</em><br><br>
+Every live engine reads the mutable scalar and divides by twelve with no date awareness:
+<code>PayrollAutoProcessService:438,463</code>, <code>Payroll/SalaryCalculationService:41,70</code>,
+<code>ProcessPayrollRunEmployees:133,148</code>. None of the three references
+<code>SalaryRevisionLetter</code>, <code>effective_from</code>, or <code>CompensationTimeline</code>.<br><br>
+The paths that <em>do</em> read <code>effective_from</code> are all after-the-fact and all whole-month:
+<code>PayrollFilingController:2011-2027</code> computes arrears as
+<code>(new_ctc − old_ctc)/12 × monthsElapsed</code> using <code>diffInMonths</code>, so a mid-month effective
+date is truncated to whole months and the partial month is silently dropped.
+</div>
+
+<div class="keka"><b>Keka's approach — option C, with one mechanical detail worth copying exactly.</b> Their
+worked example, for a 20th-to-19th cycle with a revision effective 1 April:
+<pre>Mar 20–31 = (30,000 × 12) / <b>31</b> = ₹11,612.9
+Apr 1–19  = (35,000 × 19) / <b>31</b> = ₹21,451.6
+                              total = ₹33,064.5</pre>
+<b>Both segments are divided by the pay-period day count — not by each segment's own calendar month.</b>
+That shared denominator is what makes the segments sum to exactly one month's pay. Get it wrong and every
+mid-month revision is off by a few hundred rupees in a way nobody can explain.</div>
+
+<div class="why"><div class="lbl">One place to diverge</div>
+<p>Keka refuses negative arrears — <em>"Employee's previous salary must be lower than the current salary
+for arrears to be calculated."</em> So a back-dated <em>downward</em> revision silently produces nothing.
+Don't copy that. Allow a negative arrear and route it through override approval, where a human sees it.
+A recovery that silently doesn't happen is still a wrong payslip.</p>
+</div>
+</div>
+
+<div class="d">
+<div class="hd"><span class="id">D12</span><span class="ti">Where compensation history lives</span></div>
+<p class="ctx">Accepting a revision overwrites <code>annual_ctc</code> — the previous rate is destroyed.
+Four abandoned or partial attempts at effective dating already exist in the schema, none wired.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">New <code>compensation_records</code> table</div>
+<p>Purpose-built dated series, migrate everything onto it.</p>
+<p class="cons">+ cleanest long term · − a fifth attempt at the same idea, and a data migration before you
+get any benefit</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Event-sourced compensation</div>
+<p>Every change an immutable event; current state a projection.</p>
+<p class="cons">− over-engineered for a domain with a handful of events per employee per year</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Wire what's already there</div>
+<p><code>salary_revision_letters</code> already carries <code>old_ctc</code>, <code>new_ctc</code>,
+<code>effective_from</code> and <code>status</code> — it <em>is</em> a dated series in all but name, and
+<code>CompensationTimeline</code> already walks it correctly. Stop writing <code>annual_ctc</code> on
+accept; resolve the rate through the timeline instead.</p>
+<p class="cons">Days, not weeks. Promote to a purpose-built table later if the letter model strains.</p></div>
+</div>
+
+<div class="ver"><span class="lbl">Verified against code — the count was three, it is four, and one of them is failing closed</span>
+<b>Schema confirmed:</b> <code>salary_revision_letters</code> has <code>old_ctc</code>/<code>new_ctc</code>
+decimals at <code>:32-33</code>, <code>date('effective_from')</code> at <code>:36</code>, status at
+<code>:41</code>. The model casts <code>'effective_from' =&gt; 'date:Y-m-d'</code> — which is the house rule
+from CLAUDE.md, correctly applied.<br><br>
+<b>The overwrite happens in two places:</b> <code>SalaryRevisionService:144-146</code> and
+<code>PayrollFilingController:2251</code>. Neither reads <code>effective_from</code> before writing, so a
+future-dated revision takes effect the moment it is accepted.<br><br>
+<b>There is a fourth revision history, not three.</b> <code>CtcPlannerService:51-54</code> overwrites
+<code>employees.current_ctc</code> and writes to a separate <code>salary_revisions</code> table — disjoint
+from <code>salary_revision_letters</code>. Wiring the timeline onto the letters leaves this second history
+diverging silently. Decide its fate as part of D12, not after.<br><br>
+<b>And one of the "unwired" tables is not inert — it is failing closed.</b>
+<code>employee_salary_assignments</code> has <b>zero writers anywhere</b> in <code>app/</code>,
+<code>database/</code> or <code>routes/</code>, so it is permanently empty. But
+<code>Lifecycle/PayrollReadinessService:157-170</code> reads it and returns
+<code>fail('salary', …, SEVERITY_BLOCKER, 'No salary structure — payroll has no gross to calculate.')</code>
+whenever the table exists. That is a readiness blocker that can never pass, for every employee, in every org
+where the migration has run. Revision 1 filed this table under "abandoned"; it is actively breaking
+readiness. Fix or remove the check.<br><br>
+<code>payroll_structures</code> genuinely is inert: zero production usages, an effective-dated scope at
+<code>PayrollStructure:53</code> that nothing invokes, and a model docblock admitting it exists only because
+<em>"every consumer referencing App\Models\PayrollStructure fataled."</em>
+</div>
+
+<div class="keka"><b>Keka's approach:</b> Pay Revisions with an effective date, plus an employee-facing
+<b>Salary Timeline</b> showing full compensation history. Their constraint is worth noting —
+<em>"you cannot raise a second salary revision while one is already pending"</em> — which is a reasonable
+simplification to copy while the model is young.</div>
+</div>
+
+<h2><span class="num">08</span>Phase 7 — Labour Codes</h2>
+
+<div class="d">
+<div class="hd"><span class="id">D13</span><span class="ti">Implementing the 50% wage rule</span></div>
+<p class="ctx">In force since 21 Nov 2025. Wages must be at least 50% of total remuneration; the excess in
+allowances is reclassified <em>into</em> wages. PF, gratuity, bonus and leave encashment all key off that
+definition. Central and state implementing rules are still landing, so orgs will adopt on different dates.</p>
+
+<div class="opts">
+<div class="o"><div class="oh">Option A</div><div class="ot">Compute at runtime from components</div>
+<p>Derive the wage base whenever payroll runs.</p>
+<p class="cons">− recomputing a pre-adoption month would apply today's rule to it, which is wrong and
+unprovable to an auditor</p></div>
+
+<div class="o"><div class="oh">Option B</div><div class="ot">Restructure templates at adoption</div>
+<p>One-time migration raising Basic to 50% across the board.</p>
+<p class="cons">− destroys the original structure; you can never recompute a pre-adoption month, and the
+employee's offer letter no longer matches their template</p></div>
+
+<div class="o pick"><div class="oh">✓ Chosen — C</div><div class="ot">Stored parallel wage base, date-gated</div>
+<pre><span class="c">// on payroll_items — what was actually used, that month</span>
+statutory_wage_base   decimal(14,2)
+wage_base_rule        <span class="c">'pre_code' | 'code_on_wages_50pct'</span>
+
+<span class="c">// on organizations</span>
+code_on_wages_effective_from  date <span class="c">nullable</span>
+</pre>
+<p>The structure stays as agreed with the employee; the statutory base is computed, stored per month, and
+gated on the org's adoption date. An EPFO audit asks exactly this question: what base did you use, and why.</p></div>
+</div>
+
+<div class="ver corr"><span class="lbl">Correction to revision 1 — the gratuity claim was overstated</span>
+Revision 1 said the fixed-term gratuity change is <em>"one year, not five — so
+<code>GRATUITY_MIN_YEARS = 5</code> is now wrong as a constant."</em> The one-year rule applies to
+<b>fixed-term employees</b>; the five-year qualifying period still stands for regular employees. The constant
+at <code>PayrollCalculatorService:36</code> (used at <code>:312</code>) is not wrong — it is
+<em>unconditioned</em>. It needs an employment-type dimension, not a new value.<br><br>
+Tie this to the house rule already in CLAUDE.md: gratuity must route through
+<code>calculateGratuityForSettlement()</code>, which applies the five-year floor and the statutory ceiling,
+while the raw <code>calculateGratuityOnExit()</code> applies neither. The employment-type condition belongs
+in the settlement path, so both callers inherit it.
+</div>
+
+<div class="keka"><b>Neither Keka nor greytHR handles this without vendor engineering</b> — third-party
+analysis of both is explicit that wage-definition reconfiguration for the labour codes requires an
+implementation ticket. This is the one area on the whole roadmap where we can be <b>ahead</b> rather than
+catching up.</div>
+</div>
+
+<h2><span class="num">09</span>What this adds up to</h2>
+
+<p class="lede">Of thirteen decisions, four copy Keka closely, four deliberately diverge, three are hybrids
+taking greytHR's structure with Keka's discipline, one is territory neither occupies, and one has no
+competitor dimension at all.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th style="width:20%">Stance</th><th style="width:26%">Decisions</th><th style="width:54%">Reasoning pattern</th></tr></thead>
+<tbody>
+<tr><td><span class="badge b-ok">Copy Keka</span></td><td>D1 outcome · D8 residual role · D9 YTD TDS · D12 timeline</td>
+<td>Where Keka has solved a genuinely hard problem well and documented the mechanics, copying is faster and safer than inventing. The residual fallback chain is something you would get subtly wrong from first principles.</td></tr>
+
+<tr><td><span class="badge b-ser">Diverge</span></td><td>D4 recompute · D6 override storage · D7 override lifetime</td>
+<td>Each is a place where Keka's documented behaviour is either destructive (irreversible rollback) or inconsistent (three override lifetimes). Their own help articles are the evidence.</td></tr>
+
+<tr><td><span class="badge b-warn">Hybrid</span></td><td>D2 reports · D5 locking · D10 slabs</td>
+<td>greytHR has the better structure — four lock tiers, effective-dated slab schema, comparison reports. Keka has the better discipline — input cut-offs, read-only statutory data. Take both halves.</td></tr>
+
+<tr><td><span class="badge b-ok">Ahead</span></td><td>D13 Labour Codes</td>
+<td>Live law since Nov 2025 that neither competitor handles without engineering support.</td></tr>
+
+<tr><td><span class="badge b-crit">Split</span></td><td>D11 mid-month revision</td>
+<td>Copy the split-rate mechanism and its shared denominator exactly; refuse to copy their silent no-op on negative arrears. One decision, two stances — which is why it appears twice and the four rows above sum to twelve, not thirteen.</td></tr>
+
+<tr><td>n/a</td><td>D3 tax engines</td>
+<td>Self-inflicted. Four engines is not a competitive position either way; no vendor comparison applies.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="keka" style="border-left-color:var(--good)">
+<b>The two questions neither vendor answers, which we now own:</b><br>
+1. <b>Slab effective-dating</b> — when you recompute a past month, whose slab applies? Decided in D10:
+the period's own.<br>
+2. <b>A negative residual</b> — when a CTC-preserving override or LOP pro-rating would drive Special
+Allowance below zero. Decided in D8: reject with the maximum named, never clamp silently.<br><br>
+Both are undocumented in Keka's knowledge base, and both are the kind of thing that generates support
+tickets nobody can diagnose. Writing them down is itself a small advantage.
+</div>
+
+<h2><span class="num">10</span>Implementation status</h2>
+
+<p class="lede">Phase 0 is built and verified: 931 passing against a committed baseline of 36 known
+failures, with no new failures. D3 is two-thirds done. Everything below is in the working tree,
+uncommitted.</p>
+
+<div class="scroll">
+<table>
+<thead><tr><th style="width:14%">Item</th><th style="width:12%">Status</th><th style="width:74%">What was done, and what it cost</th></tr></thead>
+<tbody>
+<tr><td><b>D0</b> PT jurisdictions</td><td><span class="badge b-ok">Done</span></td>
+<td>Eight non-levying jurisdictions zeroed, Chandigarh's over-cap slab removed, Arunachal Pradesh added,
+J&amp;K retyped as a UT. <code>getAnnualLimit()</code> now derives from <code>calculate()</code> so the two
+cannot disagree again. Protected by a sweep over every jurisdiction rather than the eight, so re-adding an
+invented slab fails CI.</td></tr>
+
+<tr><td><b>D0</b> Dead guards</td><td><span class="badge b-ok">Done</span></td>
+<td>Both <code>['paid','released']</code> literals replaced with <code>CLOSED_STATUSES</code>. The CTC
+write in <code>processEmployeePayroll</code> moved above its own rejection check.</td></tr>
+
+<tr><td><b>D1</b> Immutability</td><td><span class="badge b-ok">Done</span></td>
+<td><code>PayrollItemObserver</code> + <code>ClosedRunWriteContext::permit()</code> +
+<code>ClosedPayrollRunException</code>. Guarded on <code>PayrollItem::MONEY_COLUMNS</code>, not every
+attribute -- a blanket guard breaks disbursement, which writes payment_status onto approved runs by design.
+The enumerate-and-assert test found a <b>second</b> mass delete on its first run
+(<code>autoApplyHolds:415</code>) that neither revision of this document had identified.</td></tr>
+
+<tr><td><b>D4/D5</b> Input lock</td><td><span class="badge b-ok">Partial</span></td>
+<td><code>PayrollPeriodGuard</code> wired into <code>LeaveRequestController::approve</code> and
+<code>approveRevoke</code>, checking every month a leave spans. The versioned supersede and the four lock
+tiers are not built.</td></tr>
+
+<tr><td><b>Residual clamp</b></td><td><span class="badge b-ok">Done</span></td>
+<td><code>max(0, ...)</code> removed from <code>calculateSalaryComponents()</code>. The identity
+<code>basic + hra + conveyance + special === gross</code> now holds whether the structure fits or not, and
+<code>residual_shortfall</code> states the miss. Added <code>residualAbsorptionFactor()</code> and
+<code>maxBasicWithinCtc()</code>.</td></tr>
+
+<tr><td><b>D3</b> Tax engines</td><td><span class="badge b-ok">Done</span></td>
+<td>All four collapsed to one. Engine D (<code>TaxSimulatorService</code>, orphaned, double cess) deleted.
+Engine B's flat-5% TDS and period-blind ESI repointed at engine A. Engine C retired: its callers now pass
+annual <em>gross</em> and let the engine own the standard deduction and cess. Its fabricated national PT
+table -- which topped out at ₹6,000 a year, <b>2.4x the constitutional ceiling</b>, and ignored the state
+entirely -- now resolves through <code>PTStateService</code>. <code>SingleTaxEngineTest</code> asserts no
+second slab table can reappear.</td></tr>
+
+<tr><td><b>D11/D12</b> Mid-month revision</td><td><span class="badge b-ok">Done</span></td>
+<td><code>CompensationTimeline::blendedAnnualCtcForMonth()</code> added and wired into the run. Segments are
+blended over the <b>pay period's</b> day count, not each segment's own month — Keka's published worked
+example (₹33,064.52) is reproduced to the paisa as a test. Fixes a second bug in passing: accepting a
+future-dated revision overwrites <code>annual_ctc</code> immediately, so a raise agreed in June and
+effective in August was paid from June. The timeline undoes any revision not yet in force.</td></tr>
+
+<tr><td><b>D13</b> Labour Codes</td><td><span class="badge b-ok">Done</span></td>
+<td><code>CodeOnWagesService</code>: the s.2(y) proviso, the deemed addition, and an advisory assessment
+that names the amount to move. <code>statutory_wage_base</code> and <code>wage_base_rule</code> are now
+stored per item and <code>organizations.code_on_wages_effective_from</code> gates adoption, so an EPFO audit
+can be answered with the base that month actually used. The rule resolves against the <em>period</em>, not
+today. Computed on <b>earned</b> wages, matching the existing rule that PF applies to payable basic rather
+than full basic — a base derived from the full month would not be the base the contributions were taken
+on.</td></tr>
+
+<tr><td><b>D2</b> Detective reports</td><td><span class="badge b-ok">Done</span></td>
+<td><code>PayrollComparisonService</code> + four endpoints under <code>/payroll/reports/*</code>. Deltas
+measured over <code>PayrollItem::MONEY_COLUMNS</code>, so a new money column appears in the report the
+moment it is added rather than when someone remembers. Joiners and leavers are classified rather than shown
+as ±100% deltas. Duplicates covers <b>shared bank accounts</b>, not just repeated rows — the case that pays
+one human twice and looks normal on a headcount. Every report is tested against a disbursed run.</td></tr>
+
+<tr><td><b>D10</b> Statutory slabs</td><td><span class="badge b-ok">Done</span></td>
+<td><code>statutory_slabs</code> shipped as a migration and seeded from the constants, so the move restates
+nothing. <code>StatutorySlabResolver</code> resolves by the period being computed and is wired into the run.
+<code>jurisdiction_code</code> present from the start for Tamil Nadu. <code>PTStateService</code> stays
+DB-free on purpose — its 179 slab assertions run on plain PHPUnit, and a statutory calculator that needs a
+database to be exercised is one nobody tests.</td></tr>
+
+<tr><td><b>D4</b> Versioned supersede</td><td><span class="badge b-ok">Core done</span></td>
+<td><code>payroll_item_versions</code> + <code>current_version_no</code>. A governed correction retains the
+figure it replaced, with the reason and the actor, captured by the observer on the one sanctioned path
+(<code>ClosedRunWriteContext::permit()</code>). Ordinary draft edits are deliberately not versioned.
+The whole money picture is snapshotted, not just the changed column. <b>Remaining:</b> binding payslip
+rendering to a version.</td></tr>
+
+<tr><td><b>D9</b> Monthly TDS</td><td><span class="badge b-ok">Done</span></td>
+<td>Cumulative YTD true-up built and wired into the run, replacing
+<code>$payableGross * 12</code> then <code>/ 12</code>. Credits tax already withheld, spreads the balance
+over the months that remain, and never restates a finalized month -- so it composes with Phase 0's
+immutability rather than fighting it. April needs no special case: with no YTD it reduces exactly to annual
+tax over twelve, which is asserted.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="ver corr"><span class="lbl">Correction — the residual breakeven is not one number</span>
+Revision 2 and the override design study both put the breakeven at basic ≈ 59%. That holds only
+<b>below the ₹15,000 PF wage cap</b>. <code>pfWages()</code> caps employer PF, so above it PF is a flat
+₹1,800 and stops draining the residual:
+<pre>Monthly CTC     Basic at breakeven     Why
+₹25,000         56.1%                  basic ₹14,027 -- under the cap, PF drains at 12%
+₹1,00,000       62.4%                  basic ₹62,399 -- over the cap, PF is flat ₹1,800
+very high       → 64.6%                conveyance and the flat ₹1,800 become negligible</pre>
+<b>The consequence inverts the priority.</b> At ₹1L/month a 60% basic leaves a healthy +₹3,714 residual and
+never clamps. At ₹25k/month it clamps at −₹1,621. This is a <b>low-wage</b> defect, not a high-earner one --
+which makes the Code on Wages collision worse rather than better, because the 50% floor pushes basic up
+hardest for exactly the people already nearest the danger band.<br><br>
+The absorption factor itself (1.6681 below the cap, 1.5481 above) is confirmed exactly and is now pinned to
+the decomposition by test.
+</div>
+
+<div class="ver"><span class="lbl">New finding — the LOP month that deducts nothing</span>
+D9 was filed as an under-deduction. It is worse than that, and the test that pins it found the sharper
+version: <b>annualising a loss-of-pay month can zero the deduction outright.</b><br><br>
+An employee on ₹24,00,000 takes a month at ₹80,000. The old form annualises that to ₹9,60,000, which lands
+under the new regime's ₹12,00,000 rebate limit — so s.87A wipes the liability out and the month withholds
+<b>nothing</b>. If it happens in March there is no later month to correct it in, because nothing ever trued
+up. The employee meets the shortfall at assessment, with interest under s.234B/C, on a salary where TDS was
+supposed to be complete.<br><br>
+Under the true-up the eleven months already earned still count, the annual estimate stays at ₹22,80,000, and
+March collects the balance. Both halves are asserted:
+<code>a_lop_month_does_not_collapse_the_year_and_zero_the_deduction</code>.
+</div>
+
+<div class="ver"><span class="lbl">What retiring engine C actually cost — three defects deeper than the two methods</span>
+Swapping the two method bodies for a delegation would have been wrong. Engine C's callers subtract the
+standard deduction <em>themselves</em> before calling, while <code>PayrollCalculatorService</code> applies
+it internally -- so a naive delegation double-deducts. Three further defects sit in the callers, not in the
+two methods this document named:
+<ul style="margin:6px 0">
+<li><b>The standard deduction is hardcoded at ₹75,000 for both regimes</b> (<code>:1297</code>). The old
+regime's is ₹50,000, so every old-regime comparison is already wrong before the slabs are reached.</li>
+<li><b>Cess is applied by the caller</b> (<code>:1302</code>, <code>:1309</code>) on top of a slab result,
+whereas engine A returns a cess-inclusive total. Delegating without removing the caller's cess reproduces
+the exact bug that got engine D deleted.</li>
+<li><b><code>calculateProfessionalTax()</code> (<code>:1570</code>) is a fabricated PT table that ignores
+the state entirely</b> -- the same class of defect as the eight invented jurisdictions in D0, on a live
+endpoint, and not previously identified.</li>
+</ul>
+So retiring engine C was a rewrite of the <code>/compare</code> and <code>/what-if</code> handlers, not a
+body swap. <b>Done:</b> callers now pass annual gross and read <code>taxable_income</code> and
+<code>total_tax</code> back, so the standard deduction is regime-correct for free and cess is applied once,
+where it is computed. Declared deductions go to the engine as a section map rather than being summed into a
+single subtraction — the engine caps 80C at ₹1.5L and 80D on its own limit, which one subtraction cannot,
+and which is why a what-if with a ₹3L 80C declaration used to under-project.<br><br>
+<b>The vendor argument for doing it at all:</b> Keka's regime comparison and its monthly TDS both read the
+same IT statement; so do Zoho's Tax Computation and greytHR's Income Tax Statement. Nobody in this market
+runs a second engine behind the comparison screen, because the employee <em>elects</em> on that screen and
+s.115BAC makes the election consequential. A simulator that disagrees with payroll is worse than no
+simulator.
+</div>
+
+<div class="ver"><span class="lbl">Correction — the overtime divisor is not the defect</span>
+Both revisions listed <code>basic / 208</code> among the defects D3 fixes by removal. <b>208 is correct</b>:
+it is the statutory 26-day month × 8 hours, the same 26 the Minimum Wages Act uses for a daily rate. The
+code's own comment gave a wrong reason for a right number ("4-week month"), which is how it would eventually
+get "corrected" to 240.<br><br>
+The real exposure is the <b>base</b>. Factories Act s.59 pays overtime on the "ordinary rate of wages",
+defined to include allowances and exclude only bonus and overtime itself. Paying on basic alone understates
+it by roughly 60% at a 40% basic. <b>Left unchanged deliberately</b> -- whether this organisation pays
+overtime on basic or on ordinary wages is a pay-policy decision with back-pay consequences, not a defect to
+silently correct.
+</div>
+
+<h2><span class="num">11</span>What changed in revision 2</h2>
+
+<div class="scroll">
+<table>
+<thead><tr><th style="width:12%">Where</th><th style="width:44%">Revision 1 said</th><th style="width:44%">The code says</th></tr></thead>
+<tbody>
+<tr><td><b>D1</b></td><td>Raw SQL bypasses the observer, so several money writes escape it</td><td><b>Wrong.</b> Those are <code>$item-&gt;update()</code> on model instances; events fire. The one real bypass is the relation mass-delete at <code>PayrollAutoProcessService:137</code></td></tr>
+<tr><td><b>D1</b></td><td>Nine <code>in_array()</code> guards, six write paths</td><td>13 <code>in_array</code> guards plus ~12 using <code>===</code> (~25 total); 7 write sites across 10 statements</td></tr>
+<tr><td><b>D1</b></td><td>Two guards test a status never written</td><td>Confirmed — and the consequence is that <code>quickSaveCtc</code> and <code>approveArrear</code> work on a <b>disbursed</b> run today. Promoted to Phase 0</td></tr>
+<tr><td><b>D3</b></td><td>Delete B, C and D</td><td>Only D is deletable. C is inline in <code>PayrollFilingController</code> on live routes; B is the payslip path. Both are repointing jobs needing regression tests</td></tr>
+<tr><td><b>D4</b></td><td>Payslips re-render live, so money changes at download</td><td><b>Wrong mechanism.</b> Money reads from stored columns; the divisor is deliberately frozen. Identity fields <em>do</em> read live. And there are two payslip paths, one serving a pre-generated file</td></tr>
+<tr><td><b>D4/D5</b></td><td>Attendance can be rewritten on a disbursed run</td><td><code>PayrollPeriodGuard</code> exists and covers two paths. The hole is <code>LeaveRequestController:327</code> and <code>:697</code> — two call sites, not a subsystem</td></tr>
+<tr><td><b>D10</b></td><td>Chandigarh breaches the ₹2,500 cap</td><td>True — and <b>eight</b> jurisdictions levy PT that does not exist in law. Promoted to Phase 0</td></tr>
+<tr><td><b>D12</b></td><td>Three abandoned attempts at effective dating</td><td>Four. And <code>employee_salary_assignments</code> is not inert — it makes <code>PayrollReadinessService</code> a blocker that can never pass</td></tr>
+<tr><td><b>D13</b></td><td>Gratuity is one year, not five, so the constant is wrong</td><td>Overstated. One year is the <b>fixed-term</b> rule; five stands otherwise. The constant is unconditioned, not wrong</td></tr>
+<tr><td><b>§09</b></td><td>"Five copy, four diverge, three hybrid, one ahead" = 13</td><td>Summed to 13 only by counting D11 twice and omitting D3 entirely. Restated above with both made explicit</td></tr>
+</tbody>
+</table>
+</div>
+
+<footer>
+  <p>CareVance HRMS · architecture decision record · revision 2, 14 August 2026. Keka mechanics verified
+  against help.keka.com in Aug 2026; two behaviours (slab effective-dating, negative residual) are
+  undocumented by Keka and are decided here on first principles. Every claim about our own codebase was
+  re-verified against <code>backend/</code> at <code>fix/payroll-remediation-stage0</code> and carries a
+  <code>file:line</code> reference — where revision 1 was wrong, the correction is shown rather than removed.</p>
+  <p>Revisit D4 and D6 together — they share the version primitive, and deciding them apart will cost a
+  rewrite. Both now also depend on converting the four <code>COALESCE</code> increments in
+  <code>PayrollAutoProcessService</code> to read-modify-write, without which the audit trail has four blind
+  spots.</p>
+</footer>
+
+</div>
+</body>
+</html>

@@ -18,10 +18,21 @@ use Carbon\Carbon;
  * Accepted revision letters already record old_ctc, new_ctc and effective_from,
  * which is a dated series in all but name. This reads it as one.
  *
- * Scope: this resolves the timeline and splits a month into rate segments. It
- * does NOT yet feed the payroll engines — wiring segmentation into the run has
- * to reconcile with loss-of-pay day attribution, and a half-correct split is
- * worse than an honest whole-month rate.
+ * Scope: this resolves the timeline, splits a month into rate segments, and
+ * blends those segments into the single monthly rate the payroll run uses —
+ * see blendedAnnualCtcForMonth(), which PayrollAutoProcessService now calls.
+ *
+ * Loss of pay is applied after blending, not per segment. LOP is a deduction
+ * against the month's earned gross, and the month has one gross once the
+ * segments are blended; attributing LOP days to particular segments would
+ * require knowing which side of the revision each absence fell on, which the
+ * attendance data does not distinguish and the employee would not expect.
+ *
+ * Note this class needs employee_payroll_templates.annual_ctc to keep holding
+ * the CURRENT rate: annualCtcOn() starts there and walks backwards through
+ * later revisions. Do not stop writing it on accept — the history lives in the
+ * letters, the pointer lives on the template, and removing the pointer breaks
+ * the walk.
  */
 class CompensationTimeline
 {
@@ -90,6 +101,57 @@ class CompensationTimeline
         $segments[] = $this->segment($userId, $organizationId, $cursor, $end);
 
         return $segments;
+    }
+
+    /**
+     * One annual CTC for the month that pays each segment at its own rate.
+     *
+     * The mechanical detail that makes this correct, and which is easy to get
+     * subtly wrong: <b>every segment is divided by the pay period's day count,
+     * not by its own length.</b> That shared denominator is what makes the
+     * segments sum to exactly one month's pay. Keka's worked example for a
+     * revision effective 1 April on a 20th-to-19th cycle:
+     *
+     *     Mar 20-31 = (30,000 x 12) / 31 = 11,612.90
+     *     Apr 1-19  = (35,000 x 19) / 31 = 21,451.61
+     *                              total = 33,064.51
+     *
+     * Both denominators are 31 -- the period's length -- not 31 and 30. Divide
+     * each segment by its own month and every mid-month revision is out by a
+     * few hundred rupees in a way nobody can explain from the payslip.
+     *
+     * Returned as an ANNUAL figure so callers divide by 12 exactly as they
+     * already do for a flat rate. A month with no revision returns the flat
+     * rate unchanged, so wiring this in costs nothing for the 99% case.
+     *
+     * Blending to one rate, rather than running payroll per segment, is
+     * deliberate: PF's wage cap, the ESI ceiling and PT slabs are all monthly
+     * tests. Evaluating them once per segment would apply each cap twice.
+     */
+    public function blendedAnnualCtcForMonth(int $userId, int $organizationId, string $monthYear): float
+    {
+        $segments = $this->segmentsForMonth($userId, $organizationId, $monthYear);
+
+        if ($segments === []) {
+            return 0.0;
+        }
+
+        if (count($segments) === 1) {
+            return (float) $segments[0]['annual_ctc'];
+        }
+
+        $periodDays = array_sum(array_column($segments, 'days'));
+
+        if ($periodDays <= 0) {
+            return (float) $segments[0]['annual_ctc'];
+        }
+
+        $blended = 0.0;
+        foreach ($segments as $segment) {
+            $blended += (float) $segment['annual_ctc'] * ((int) $segment['days'] / $periodDays);
+        }
+
+        return $blended;
     }
 
     /**

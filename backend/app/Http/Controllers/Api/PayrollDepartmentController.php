@@ -1009,16 +1009,16 @@ class PayrollDepartmentController extends Controller
         // to the requested month so historical data is never touched.
         $autoClosedTimers = $this->closeStaleRunningTimers($userId, $request->month_year);
 
-        $template = EmployeePayrollTemplate::getOrCreateForUser($userId, $organizationId);
-
-        // Save annual_ctc to template for future use
-        $template->update(['annual_ctc' => $request->annual_ctc]);
-
         // Immutability: a 'disbursed' run is locked for compliance.
         // 'paid' and 'released' were historically block-lists but those
         // are mid-lifecycle states and may still receive edits via the
         // unlock path or partial corrections. Only the terminal
         // 'disbursed' state is truly immutable.
+        //
+        // This check runs BEFORE the template is touched. It used to sit after
+        // the annual_ctc write below, so a request rejected here had already
+        // mutated the employee's CTC on its way to a 422 -- the caller saw a
+        // refusal and the template changed anyway.
         $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('month_year', $request->month_year)
             ->first();
@@ -1028,6 +1028,11 @@ class PayrollDepartmentController extends Controller
                 'message' => "Cannot process payroll — run for {$request->month_year} is already disbursed and immutable for compliance.",
             ], 422);
         }
+
+        $template = EmployeePayrollTemplate::getOrCreateForUser($userId, $organizationId);
+
+        // Save annual_ctc to template for future use
+        $template->update(['annual_ctc' => $request->annual_ctc]);
 
         // Get or create payroll run
         $payrollRun = PayrollMonthlyRun::firstOrCreate(
@@ -1093,6 +1098,84 @@ class PayrollDepartmentController extends Controller
             ],
             annualTaxExemptions: $taxExemptions
         );
+
+        /*
+         * Approved overrides apply HERE: after the structure is resolved, and
+         * before anything statutory is computed from it.
+         *
+         * The order is the whole point. An override on basic is not a
+         * substitution — HRA is derived from basic, employer PF and the
+         * gratuity provision sit inside the CTC envelope, and the residual
+         * absorbs what is left. PF, ESI, PT and TDS all then have to be
+         * computed from the moved bases rather than from the ones the structure
+         * originally produced, or the payslip states one basic and contributes
+         * on another.
+         *
+         * This path — the one the queued run drives — never consulted the
+         * override service at all, so an approved override moved the auto-
+         * process engine's figures and left this one paying the structure. Two
+         * engines disagreeing about the same employee's pay is worse than
+         * either being wrong on its own, because the difference only shows up
+         * in whichever report happens to read the other's row.
+         */
+        $monthlyCtc = (float) $request->annual_ctc / 12;
+        // Resolved through the calculator so this is the same config the
+        // calculation above ran on, non-metro HRA rule included.
+        $structureConfig = $this->calculator->resolveStructureConfig([
+            'basic_percentage' => $template->basic_percentage / 100,
+            'hra_percentage_of_basic' => $template->hra_percentage / 100,
+            'conveyance_allowance' => $template->conveyance_allowance,
+        ], (bool) $template->is_metro_city);
+
+        $overrides = app(\App\Services\Payroll\OverrideApplicationService::class);
+
+        $overrideResult = $overrides->apply(
+            $this->calculator->calculateSalaryComponents($monthlyCtc, $structureConfig),
+            $userId,
+            $organizationId,
+            (string) $request->month_year,
+            $monthlyCtc,
+            $structureConfig,
+        );
+
+        if ($overrideResult['applied'] !== []) {
+            $overridden = $overrideResult['components'];
+
+            $calculation['components']['earnings']['basic'] = round((float) $overridden['basic'], 2);
+            $calculation['components']['earnings']['hra'] = round((float) $overridden['hra'], 2);
+            $calculation['components']['earnings']['conveyance'] = round((float) $overridden['conveyance'], 2);
+            $calculation['components']['earnings']['special_allowance'] = round((float) $overridden['special_allowance'], 2);
+            $calculation['monthly']['gross'] = round((float) $overridden['gross'], 2);
+            $calculation['annual']['gross'] = round((float) $overridden['gross'] * 12, 2);
+
+            // Employer PF, EPS/EPF and the gratuity provision are all functions
+            // of basic. Leaving them at the pre-override figures would report a
+            // cost to company that does not match the components it is made of.
+            // Renamed on the way in: the calculator returns pf/esi, the payload
+            // this method writes says pf_employer/esi_employer. Keeping the
+            // calculator's own keys here would leave the employer block at its
+            // pre-override figures while looking like it had been updated.
+            $employerContributions = $this->calculator->calculateEmployerContributions(
+                (float) $overridden['basic'],
+                (float) $overridden['gross'],
+            );
+
+            $calculation['components']['employer_contributions'] = [
+                'pf_employer' => round($employerContributions['pf'], 2),
+                'eps' => round($employerContributions['eps'], 2),
+                'epf' => round($employerContributions['epf'], 2),
+                'esi_employer' => round($employerContributions['esi'], 2),
+                'gratuity' => round($employerContributions['gratuity'], 2),
+            ];
+
+            // TDS is computed on gross, and gross moved. Exemptions apply to
+            // the old regime only, mirroring the calculator's own rule.
+            $calculation['components']['deductions']['tds'] = $this->calculator->calculateMonthlyTDS(
+                max(0, (float) $overridden['gross'] * 12),
+                (string) $template->tax_regime,
+                $template->tax_regime === 'old' ? $taxExemptions : [],
+            )['monthly_tds'];
+        }
 
         // Calculate LOP deduction first — PF/ESI/PT apply to actual
         // payable wages, not the full month's gross. Otherwise an
@@ -1165,6 +1248,33 @@ class PayrollDepartmentController extends Controller
         $tdsAmount = $template->tds_enabled
             ? $calculation['components']['deductions']['tds']
             : 0;
+
+        /*
+         * Statutory overrides are TERMINAL: the stated figure wins and nothing
+         * downstream is re-derived from it.
+         *
+         * That is the opposite of a component override and deliberately so.
+         * When an officer states the PF for a month — a transfer-in correction,
+         * an inspector's direction, a arrear settled outside the run — the
+         * whole point is that the engine's own calculation was wrong for this
+         * month. Recomputing the wage base from the stated amount, or the
+         * amount from the base, would re-derive exactly the number being
+         * corrected.
+         *
+         * Applied after LOP-adjusted wages, because that is where these figures
+         * exist; a stated figure replaces the result, not the input.
+         */
+        $statutory = app(\App\Services\Payroll\OverrideApplicationService::class)->applyStatutory([
+            'pf' => (float) $pfAmount,
+            'esi' => (float) $esiAmount,
+            'pt' => (float) $ptAmount,
+            'tds' => (float) $tdsAmount,
+        ], $userId, (string) $request->month_year);
+
+        $pfAmount = $statutory['pf'];
+        $esiAmount = $statutory['esi'];
+        $ptAmount = $statutory['pt'];
+        $tdsAmount = $statutory['tds'];
 
         // Calculate overtime pay (assuming 2x rate)
         $hourlyRate = $workingDays > 0
@@ -1586,11 +1696,15 @@ class PayrollDepartmentController extends Controller
 
         $userId = $user->id;
 
-        // Immutability: reject if the run is already paid or released.
+        // Immutability: reject once the run is closed.
+        //
+        // Was in_array($existingRun->status, ['paid', 'released']). Nothing
+        // ever writes 'paid' to a run, so this guard passed for 'approved' and
+        // 'disbursed' and a disbursed employee's CTC could still be rewritten.
         $existingRun = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('month_year', $data['month_year'])
             ->first();
-        if ($existingRun && in_array($existingRun->status, ['paid', 'released'], true)) {
+        if ($existingRun && in_array($existingRun->status, PayrollMonthlyRun::CLOSED_STATUSES, true)) {
             return response()->json([
                 'success' => false,
                 'message' => "Cannot update CTC — run for {$data['month_year']} is already {$existingRun->status} and immutable.",

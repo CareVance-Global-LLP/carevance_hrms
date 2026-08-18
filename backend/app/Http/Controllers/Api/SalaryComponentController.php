@@ -111,6 +111,11 @@ class SalaryComponentController extends Controller
             'default_value' => 'sometimes|numeric|min:0',
             'is_taxable'    => 'sometimes|boolean',
             'is_active'     => 'sometimes|boolean',
+            // The per-component override gate. Keka's wording is "Allow this
+            // component to be customized and overridden at the employee level",
+            // and the point of it is that an ungated component is never offered
+            // in the override UI rather than offered and then refused.
+            'allow_employee_override' => 'sometimes|boolean',
         ]);
 
         $orgId = $request->user()->organization_id;
@@ -122,6 +127,7 @@ class SalaryComponentController extends Controller
         $component->update($request->only([
             'name', 'category', 'value_type', 'calculation_basis',
             'default_value', 'is_taxable', 'is_compliance_component', 'is_active',
+            'allow_employee_override',
         ]));
 
         return response()->json([

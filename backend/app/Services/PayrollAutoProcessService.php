@@ -134,7 +134,14 @@ class PayrollAutoProcessService
             // Terminal states (locked/paid/released/disbursed) must keep
             // their items and status intact.
             if (in_array($run->status, ['draft', 'processing'], true)) {
-                $run->items()->delete();
+                // Iterated rather than $run->items()->delete(). A query-builder
+                // mass delete fires no model events, so PayrollItemObserver --
+                // the thing that makes a closed run immutable -- would never
+                // see the one operation that destroys a whole run's money.
+                // The status check above already makes this safe today; going
+                // through the model is what keeps it safe if that check is
+                // ever moved, weakened or forgotten.
+                $run->items()->cursor()->each(fn (PayrollItem $item) => $item->delete());
                 $run->update(['status' => 'processing']);
             }
         }
@@ -395,6 +402,37 @@ class PayrollAutoProcessService
         }
     }
 
+    /**
+     * Gross paid and TDS withheld for this employee earlier in the same
+     * financial year, which is what the cumulative true-up credits against.
+     *
+     * The Indian FY runs April to March. month_year is stored as 'YYYY-MM',
+     * which sorts lexicographically in calendar order, so a string range is a
+     * correct range here and not a coincidence worth relying on silently.
+     *
+     * Deliberately excludes the month being processed: it is passed separately,
+     * and including it would double-count on a re-process.
+     *
+     * @return array{gross: float, tds: float}
+     */
+    private function financialYearToDate(int $userId, int $organizationId, string $monthYear): array
+    {
+        [$year, $month] = array_map('intval', explode('-', $monthYear));
+        $financialYearStart = sprintf('%04d-04', $month >= 4 ? $year : $year - 1);
+
+        $totals = PayrollItem::where('user_id', $userId)
+            ->where('organization_id', $organizationId)
+            ->where('month_year', '>=', $financialYearStart)
+            ->where('month_year', '<', $monthYear)
+            ->selectRaw('COALESCE(SUM(gross_salary), 0) as gross_total, COALESCE(SUM(tds), 0) as tds_total')
+            ->first();
+
+        return [
+            'gross' => (float) ($totals->gross_total ?? 0),
+            'tds' => (float) ($totals->tds_total ?? 0),
+        ];
+    }
+
     private function autoApplyHolds(PayrollMonthlyRun $run): void
     {
         // Org scope is mandatory — a hold flagged in another tenant must not
@@ -405,9 +443,13 @@ class PayrollAutoProcessService
             ->where('hold_type', 'processing')
             ->pluck('user_id');
 
+        // Iterated rather than a mass delete so PayrollItemObserver sees it.
+        // A stop-payment hold reaching a closed run would otherwise erase that
+        // employee's money with no event fired and nothing to refuse it.
         PayrollItem::where('payroll_run_id', $run->id)
             ->whereIn('user_id', $processingHolds)
-            ->delete();
+            ->cursor()
+            ->each(fn (PayrollItem $item) => $item->delete());
     }
 
     private function calculateAllItems(PayrollMonthlyRun $run): void
@@ -416,6 +458,18 @@ class PayrollAutoProcessService
 
         // Calendar month of the run, used for special-month PT instalments.
         $ptMonth = (int) (explode('-', $run->month_year)[1] ?? 0) ?: null;
+
+        // Loaded once, outside the loop: the Code on Wages adoption date is a
+        // per-organisation setting and re-reading it per employee would be a
+        // query per row for a value that cannot change mid-run.
+        // Organization is deliberately outside BelongsToOrganization — it IS
+        // the tenant — so there is no scope to bypass here.
+        $codeOnWagesAdoptedFrom = \App\Models\Organization::query()
+            ->whereKey($run->organization_id)
+            ->value('code_on_wages_effective_from');
+        $codeOnWagesAdoptedFrom = $codeOnWagesAdoptedFrom
+            ? \Carbon\Carbon::parse($codeOnWagesAdoptedFrom)->toDateString()
+            : null;
 
         $totals = [
             'total_gross' => 0, 'total_deductions' => 0, 'total_net_pay' => 0,
@@ -435,7 +489,33 @@ class PayrollAutoProcessService
                 continue;
             }
 
-            $annualCtc = (float) ($template->annual_ctc ?? 0);
+            /*
+             * Resolved through the compensation timeline rather than read
+             * straight off the template, which fixes two things at once.
+             *
+             * A revision effective mid-month used to pay the new rate for the
+             * whole month, because effective_from was ignored entirely. And a
+             * future-dated revision took effect the moment it was accepted,
+             * because accepting overwrites annual_ctc immediately -- so a raise
+             * agreed in June and effective in August was paid in June.
+             *
+             * The timeline splits the month at the revision date, rates each
+             * segment, and blends them over the pay period's day count. A month
+             * with no revision returns the template's rate unchanged, so this
+             * costs nothing for the ordinary case.
+             */
+            $annualCtc = app(\App\Services\Payroll\CompensationTimeline::class)
+                ->blendedAnnualCtcForMonth(
+                    (int) $item->user_id,
+                    (int) $run->organization_id,
+                    (string) $run->month_year
+                );
+
+            // The timeline reads the template as its starting point, so a zero
+            // here means the same thing it always did: no CTC configured.
+            if ($annualCtc <= 0) {
+                $annualCtc = (float) ($template->annual_ctc ?? 0);
+            }
 
             /*
              * An employee with no annual CTC is not configured, and there is
@@ -512,11 +592,38 @@ class PayrollAutoProcessService
              * gratuity on top — ₹2,762 a month per head over the agreed cost.
              * Code on Wages s.2(y) excludes both from "wages".
              */
-            $components = $this->calculator->calculateSalaryComponents($monthlyCtc, [
+            $structureConfig = [
                 'basic_percentage' => $basicPct,
                 'hra_percentage_of_basic' => $hraPct,
                 'conveyance_allowance' => (float) ($template->conveyance_allowance ?? 1600),
-            ]);
+            ];
+
+            $components = $this->calculator->calculateSalaryComponents($monthlyCtc, $structureConfig);
+
+            /*
+             * Approved overrides apply here, at process time — not when they
+             * were saved.
+             *
+             * That timing is deliberate and follows Keka: "Perform Process
+             * Payroll to update the override information in the system." An
+             * override that moved a payslip the moment it was entered would
+             * restate months that are already closed, defeating the
+             * immutability this whole engine now rests on.
+             *
+             * Returns with computed_value and cascade_snapshot written back to
+             * the override rows, so the register can say what the engine would
+             * have produced and which derived components moved as a result.
+             */
+            $overrideResult = app(\App\Services\Payroll\OverrideApplicationService::class)->apply(
+                $components,
+                (int) $item->user_id,
+                (int) $run->organization_id,
+                (string) $run->month_year,
+                $monthlyCtc,
+                $structureConfig,
+            );
+
+            $components = $overrideResult['components'];
 
             $monthlyGross = (float) $components['gross'];
             $basic = round((float) $components['basic'], 2);
@@ -586,26 +693,91 @@ class PayrollAutoProcessService
             // PT on payable gross — applied to actual earned wages (after LOP).
             // The month drives special-month instalments (e.g. Maharashtra
             // February); omitting it under-collects PT for the year.
-            $pt = $this->calculator->calculatePT($payableGross, $state, $ptMonth);
+            // Resolved against the month being computed, not against today.
+            // The slab table carries a date range precisely so that recomputing
+            // March uses March's rate; a "current rate" lookup would hand a
+            // corrected month a rate it never paid, and no report could then
+            // explain the difference.
+            $pt = app(\App\Services\Payroll\StatutorySlabResolver::class)
+                ->professionalTax((string) $state, $payableGross, (string) $run->month_year);
 
             $tds = 0;
             if ($template->tds_enabled) {
-                $annualProjected = $payableGross * 12;
-                // Net the FBP exemption out of the tax base so only the
-                // portion of a taxable FBP component above its exemption
-                // limit is taxed. Non-taxable FBP (e.g. food coupons) is
-                // excluded entirely. Earnings (gross/net pay) are untouched.
-                $annualProjected = max(0, $annualProjected - $this->fbp->getFbpTaxExclusion($item->user_id, $run->organization_id));
+                /*
+                 * Cumulative year-to-date true-up, replacing
+                 * "this month x 12, then divide by 12".
+                 *
+                 * The old form annualised whatever this month happened to be,
+                 * so a month with loss of pay restated the employee's whole
+                 * projected year downwards. For a high earner that can drop the
+                 * estimate under the new regime's ₹12,00,000 rebate limit, at
+                 * which point s.87A zeroes the liability and the month deducts
+                 * nothing at all — with no later month to correct it in,
+                 * because nothing ever trued up.
+                 *
+                 * Now: tax the year actually earned so far plus what remains,
+                 * credit what has already been withheld, and spread the balance
+                 * over the months that are left. Corrections flow forward, so a
+                 * finalized month is never restated — which is what keeps this
+                 * compatible with closed-run immutability instead of fighting it.
+                 */
+                $ytd = $this->financialYearToDate(
+                    (int) $item->user_id,
+                    (int) $run->organization_id,
+                    (string) $run->month_year
+                );
+
+                $calendarMonth = (int) explode('-', (string) $run->month_year)[1];
+                $monthsRemaining = 13 - PayrollCalculatorService::financialYearMonthIndex($calendarMonth);
+                $monthsAfterThis = max(0, $monthsRemaining - 1);
+
                 // getApprovedTaxDeductions returns a flat float total; the
                 // tax calculator wants a per-section array. Pass the full
                 // declaration map (or empty for "no exemptions") — the
                 // calculator handles both.
                 $exemptionMap = $this->calculator->getApprovedTaxDeductionMap($item->user_id);
-                $taxCalc = $template->tax_regime === 'new'
-                    ? $this->calculator->calculateNewRegimeTax($annualProjected, $exemptionMap)
-                    : $this->calculator->calculateOldRegimeTax($annualProjected, $exemptionMap);
-                $tds = round(($taxCalc['total_tax'] ?? 0) / 12, 2);
+
+                $trueUp = $this->calculator->calculateCumulativeMonthlyTds(
+                    ytdGrossPaid: $ytd['gross'],
+                    thisMonthGross: $payableGross,
+                    // The best available estimate of the rest of the year is
+                    // this month repeated. It is only an estimate, and that is
+                    // fine: next month's true-up corrects it.
+                    projectedRemainingGross: $payableGross * $monthsAfterThis,
+                    previousEmployerGross: 0,
+                    tdsAlreadyDeducted: $ytd['tds'],
+                    previousEmployerTds: 0,
+                    monthsRemainingInFy: $monthsRemaining,
+                    taxRegime: $template->tax_regime === 'new' ? 'new' : 'old',
+                    exemptions: $exemptionMap,
+                    // Net the FBP exemption out of the tax base so only the
+                    // portion of a taxable FBP component above its exemption
+                    // limit is taxed. Non-taxable FBP (e.g. food coupons) is
+                    // excluded entirely. Earnings are untouched.
+                    annualTaxFreeAllowance: $this->fbp->getFbpTaxExclusion($item->user_id, $run->organization_id),
+                );
+
+                $tds = $trueUp['monthly_tds'];
             }
+
+            /*
+             * Statutory overrides are TERMINAL: the stated figure wins and
+             * nothing downstream recomputes from it. Same rule, same point in
+             * the calculation, as the departmental engine — both substitute
+             * after wages are LOP-adjusted, because a stated figure replaces
+             * the result rather than the input.
+             */
+            $statutory = app(\App\Services\Payroll\OverrideApplicationService::class)->applyStatutory([
+                'pf' => (float) $pfEmployee,
+                'esi' => (float) $esiEmployee,
+                'pt' => (float) $pt,
+                'tds' => (float) $tds,
+            ], (int) $item->user_id, (string) $run->month_year);
+
+            $pfEmployee = $statutory['pf'];
+            $esiEmployee = $statutory['esi'];
+            $pt = $statutory['pt'];
+            $tds = $statutory['tds'];
 
             /*
              * Labour Welfare Fund. This run generates an LWF return further
@@ -657,7 +829,36 @@ class PayrollAutoProcessService
             $gratuity = round($basic * 0.0481, 2);
             $totalEmployerContributions = $pfEmployer + $esiEmployer + $gratuity;
 
+            /*
+             * Code on Wages: record the base PF and gratuity were computed on,
+             * and the rule that produced it.
+             *
+             * Resolved against the month being processed rather than against
+             * today, so recomputing a pre-adoption month reproduces the figure
+             * that month actually paid. An organisation that has not set an
+             * adoption date stays on the old rule — defaulting it to the
+             * commencement date would silently restate every structure in every
+             * tenant on the next run.
+             *
+             * Measured against gross, not CTC: employer PF and the gratuity
+             * provision are the employer's cost and are not remuneration
+             * "payable to" the employee, so including them would inflate the
+             * floor and over-deduct.
+             *
+             * Computed on EARNED wages, not the contracted full month. PF here
+             * already applies to payable basic rather than full basic — a loss
+             * of pay day reduces the contribution — so a wage base derived from
+             * the full month would not be the base the contributions were
+             * actually taken on, which is the one thing this column exists to
+             * record.
+             */
+            $codeOnWages = app(\App\Services\Payroll\CodeOnWagesService::class);
+            $wageBaseRule = $codeOnWages->ruleFor($codeOnWagesAdoptedFrom, (string) $run->month_year);
+            $statutoryWageBase = $codeOnWages->statutoryWageBase($earnedBasic, $payableGross, $wageBaseRule);
+
             $item->update([
+                'statutory_wage_base' => round($statutoryWageBase, 2),
+                'wage_base_rule' => $wageBaseRule,
                 'basic' => $earnedBasic,
                 'hra' => $earnedHra,
                 'conveyance' => $earnedConveyance,

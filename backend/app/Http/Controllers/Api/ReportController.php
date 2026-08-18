@@ -206,8 +206,22 @@ class ReportController extends Controller
                         $q2->whereNull('role_id')
                             ->whereRaw("CASE role WHEN 'admin' THEN 10 WHEN 'manager' THEN 50 WHEN 'employee' THEN 100 ELSE 999 END > ?", [$userLevel]);
                     })
-                    // Always include the current user so they can see themselves in reports
-                    ->orWhere('id', $user->id);
+                    /*
+                     * The caller is NOT added back in here.
+                     *
+                     * This branch runs only when the caller asked to exclude
+                     * everyone at or above their own rank — it is reached as
+                     * restrictMonitoringToEmployees(). A manager is at their own
+                     * rank by definition, so re-adding them with an orWhere
+                     * contradicted the flag and put the manager's own
+                     * monitoring data into a report the organisation had
+                     * restricted to employees.
+                     *
+                     * Seeing yourself in a report is a real need, but it belongs
+                     * to the reports that do not pass this flag: those return
+                     * the whole group, the caller included.
+                     */
+                    ;
             });
         }
 
