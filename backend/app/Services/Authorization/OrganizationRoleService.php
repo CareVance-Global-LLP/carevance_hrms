@@ -28,11 +28,26 @@ class OrganizationRoleService
             return [];
         }
 
-        if ($this->isOwner($user) || $user->hasPermission('employees.manage')) {
+        /*
+         * Nobody hands out a role at or above their own.
+         *
+         * This gated the full list on `employees.manage` alone — a permission
+         * PERMISSIONS_MANAGER grants to every manager — so a manager could
+         * invite an ADMIN, and the `employees.edit` branch below was
+         * unreachable for them. Escalation by invitation, and it made the
+         * narrower branch dead code.
+         *
+         * Hierarchy is the check that actually expresses the rule; the
+         * permission still has to be present as well.
+         */
+        if ($this->isOwner($user) || ($user->hasPermission('employees.manage') && $user->getHierarchyLevel() <= 10)) {
             return ['admin', 'manager', 'employee', 'client'];
         }
 
-        if ($user->hasPermission('employees.edit') && config('carevance.manager_can_invite_employees', true)) {
+        if (
+            ($user->hasPermission('employees.edit') || $user->hasPermission('employees.manage'))
+            && config('carevance.manager_can_invite_employees', true)
+        ) {
             return ['employee'];
         }
 
@@ -41,7 +56,8 @@ class OrganizationRoleService
 
     public function allowedAssignableRoleIds(User $user): Collection
     {
-        if ($this->isOwner($user) || $user->hasPermission('employees.manage')) {
+        // Mirrors allowedAssignableRoles above; see the reasoning there.
+        if ($this->isOwner($user) || ($user->hasPermission('employees.manage') && $user->getHierarchyLevel() <= 10)) {
             return Role::where('organization_id', $user->organization_id)
                 ->where('is_active', true)
                 ->whereIn('slug', ['admin', 'manager', 'employee', 'client'])
@@ -49,7 +65,10 @@ class OrganizationRoleService
                 ->get();
         }
 
-        if ($user->hasPermission('employees.edit') && config('carevance.manager_can_invite_employees', true)) {
+        if (
+            ($user->hasPermission('employees.edit') || $user->hasPermission('employees.manage'))
+            && config('carevance.manager_can_invite_employees', true)
+        ) {
             return Role::where('organization_id', $user->organization_id)
                 ->where('is_active', true)
                 ->where('slug', 'employee')
