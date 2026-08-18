@@ -6,7 +6,7 @@ import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, canAccess } from 
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { validateIdleThresholds } from './idlePolicy';
-import { readIdleResolutionPolicy } from '@/lib/trackerPolicy';
+import { readIdleResolutionPolicy, readUrlDetailLevel, type UrlDetailLevel } from '@/lib/trackerPolicy';
 import { employeeWorkspaceApi, settingsApi, supportApi, organizationApi } from '@/services/api';
 import type { BillingSnapshot } from '@/types';
 import {
@@ -109,6 +109,7 @@ type OrganizationSnapshot = {
   idleAutoStopSeconds: string;
   lockAutoStopSeconds: string;
   idleResolutionPolicy: string;
+  urlDetailLevel: UrlDetailLevel;
   timezone: string;
   leaveCategories: LeaveCategorySetting[];
   companyProfile: CompanyProfileForm;
@@ -147,6 +148,7 @@ const countOrganizationChanges = (
   if (base.idleAutoStopSeconds !== current.idleAutoStopSeconds) count += 1;
   if (base.lockAutoStopSeconds !== current.lockAutoStopSeconds) count += 1;
   if (base.idleResolutionPolicy !== current.idleResolutionPolicy) count += 1;
+  if (base.urlDetailLevel !== current.urlDetailLevel) count += 1;
   if (base.timezone !== current.timezone) count += 1;
   if (JSON.stringify(base.leaveCategories) !== JSON.stringify(current.leaveCategories)) count += 1;
   // Each company-profile input counts on its own, the same as the personal
@@ -236,6 +238,7 @@ export function useSettingsController() {
   // No '' state: prompting is the default rather than an absence, so this
   // always holds one of the three real values.
   const [orgIdleResolutionPolicy, setOrgIdleResolutionPolicy] = useState('prompt');
+  const [orgUrlDetailLevel, setOrgUrlDetailLevel] = useState<UrlDetailLevel>('full');
   const [orgTimezone, setOrgTimezone] = useState(DEFAULT_APP_TIMEZONE);
   const [leaveCategories, setLeaveCategories] = useState<LeaveCategorySetting[]>(() => readLeaveCategories(organization));
   const [companyProfile, setCompanyProfile] = useState<CompanyProfileForm>(() => readCompanyProfile(organization));
@@ -250,6 +253,7 @@ export function useSettingsController() {
     idleAutoStopSeconds: '',
     lockAutoStopSeconds: '',
     idleResolutionPolicy: 'prompt',
+    urlDetailLevel: 'full',
     timezone: DEFAULT_APP_TIMEZONE,
     leaveCategories: readLeaveCategories(organization),
     companyProfile: readCompanyProfile(organization),
@@ -292,7 +296,6 @@ export function useSettingsController() {
   const canEditTimezone = canManageOrg && (hasAdminAccess(user) || canManageSettings || hasStrictAdminAccess(user));
   const isStrictAdminUser = hasStrictAdminAccess(user);
   const canEditEmail = hasStrictAdminAccess(user);
-  const hasDesktopBrowserTracking = Boolean(window.desktopTracker);
 
   const visibleTabs = useMemo(() => {
     const allowed = new Set<SettingsTabId>(['profile', 'notifications', 'appearance', 'security', 'help']);
@@ -307,14 +310,11 @@ export function useSettingsController() {
       allowed.add('integrations');
       allowed.add('custom-fields');
     }
-    if (hasDesktopBrowserTracking) {
-      allowed.add('browser-tracking');
-    }
     if (canManageProductivity) {
       allowed.add('productivity');
     }
     return SETTINGS_TABS.filter((tab) => allowed.has(tab.id));
-  }, [canManageProductivity, canManageSettings, hasDesktopBrowserTracking, isStrictAdminUser]);
+  }, [canManageProductivity, canManageSettings, isStrictAdminUser]);
 
   const allowedTabIds = useMemo(() => new Set(visibleTabs.map((tab) => tab.id)), [visibleTabs]);
 
@@ -343,13 +343,14 @@ export function useSettingsController() {
           idleAutoStopSeconds: orgIdleAutoStopSeconds,
           lockAutoStopSeconds: orgLockAutoStopSeconds,
           idleResolutionPolicy: orgIdleResolutionPolicy,
+          urlDetailLevel: orgUrlDetailLevel,
           timezone: orgTimezone,
           leaveCategories,
           companyProfile,
         },
         Boolean(orgLogoFile)
       ),
-    [orgBaseline, orgName, orgSlug, officeStartTime, lateAfterTime, orgMonitoringInterval, orgIdleTrackSeconds, orgIdleAutoStopSeconds, orgLockAutoStopSeconds, orgIdleResolutionPolicy, orgTimezone, leaveCategories, companyProfile, orgLogoFile]
+    [orgBaseline, orgName, orgSlug, officeStartTime, lateAfterTime, orgMonitoringInterval, orgIdleTrackSeconds, orgIdleAutoStopSeconds, orgLockAutoStopSeconds, orgIdleResolutionPolicy, orgUrlDetailLevel, orgTimezone, leaveCategories, companyProfile, orgLogoFile]
   );
 
   const dirtyCount = activeTab === 'profile'
@@ -407,6 +408,7 @@ export function useSettingsController() {
     const nextIdleAutoStop = readIdleSeconds(orgSettings, 'idle_auto_stop_threshold_seconds');
     const nextLockAutoStop = readIdleSeconds(orgSettings, 'lock_auto_stop_threshold_seconds');
     const nextIdlePolicy = readIdleResolutionPolicy(orgSettings?.idle_resolution_policy);
+    setOrgUrlDetailLevel(readUrlDetailLevel(orgSettings?.url_detail_level));
     const nextTimezone = resolveTimeZone((organization?.settings as any)?.timezone);
     const nextLeave = readLeaveCategories(organization);
     const nextCompanyProfile = readCompanyProfile(organization);
@@ -430,6 +432,7 @@ export function useSettingsController() {
       idleAutoStopSeconds: nextIdleAutoStop,
       lockAutoStopSeconds: nextLockAutoStop,
       idleResolutionPolicy: nextIdlePolicy,
+      urlDetailLevel: readUrlDetailLevel(orgSettings?.url_detail_level),
       timezone: nextTimezone,
       leaveCategories: nextLeave,
       companyProfile: nextCompanyProfile,
@@ -478,6 +481,7 @@ export function useSettingsController() {
           const nextIdleAutoStop = readIdleSeconds(fetchedOrgSettings, 'idle_auto_stop_threshold_seconds');
           const nextLockAutoStop = readIdleSeconds(fetchedOrgSettings, 'lock_auto_stop_threshold_seconds');
           const nextIdlePolicy = readIdleResolutionPolicy(fetchedOrgSettings?.idle_resolution_policy);
+          setOrgUrlDetailLevel(readUrlDetailLevel(fetchedOrgSettings?.url_detail_level));
           const nextOrgTimezone = resolveTimeZone((fetchedOrg?.settings as any)?.timezone);
           const nextLeave = readLeaveCategories(fetchedOrg);
           const nextCompanyProfile = readCompanyProfile(fetchedOrg);
@@ -505,6 +509,7 @@ export function useSettingsController() {
             idleAutoStopSeconds: nextIdleAutoStop,
             lockAutoStopSeconds: nextLockAutoStop,
             idleResolutionPolicy: nextIdlePolicy,
+            urlDetailLevel: readUrlDetailLevel(fetchedOrgSettings?.url_detail_level),
             timezone: nextOrgTimezone,
             leaveCategories: nextLeave,
             companyProfile: nextCompanyProfile,
@@ -891,6 +896,7 @@ export function useSettingsController() {
               formData.append('idle_auto_stop_threshold_seconds', orgIdleAutoStopSeconds);
               formData.append('lock_auto_stop_threshold_seconds', orgLockAutoStopSeconds);
               formData.append('idle_resolution_policy', orgIdleResolutionPolicy);
+              formData.append('url_detail_level', orgUrlDetailLevel);
             }
             formData.append('logo_file', orgLogoFile);
             return formData;
@@ -910,6 +916,7 @@ export function useSettingsController() {
                   idle_auto_stop_threshold_seconds: orgIdleAutoStopSeconds === '' ? null : Number(orgIdleAutoStopSeconds),
                   lock_auto_stop_threshold_seconds: orgLockAutoStopSeconds === '' ? null : Number(orgLockAutoStopSeconds),
                   idle_resolution_policy: orgIdleResolutionPolicy,
+                  url_detail_level: orgUrlDetailLevel,
                 }
               : {}),
           };
@@ -936,6 +943,7 @@ export function useSettingsController() {
         idleAutoStopSeconds: orgIdleAutoStopSeconds,
         lockAutoStopSeconds: orgLockAutoStopSeconds,
         idleResolutionPolicy: orgIdleResolutionPolicy,
+        urlDetailLevel: orgUrlDetailLevel,
         timezone: orgTimezone,
         leaveCategories,
         companyProfile: savedCompanyProfile,
@@ -1223,7 +1231,6 @@ export function useSettingsController() {
     canEditTimezone,
     isOrgEditable,
     isStrictAdminUser,
-    hasDesktopBrowserTracking,
 
     // shell
     activeTab,
@@ -1281,6 +1288,8 @@ export function useSettingsController() {
     setOrgLockAutoStopSeconds,
     orgIdleResolutionPolicy,
     setOrgIdleResolutionPolicy,
+    orgUrlDetailLevel,
+    setOrgUrlDetailLevel,
     orgTimezone,
     setOrgTimezone,
     leaveCategories,

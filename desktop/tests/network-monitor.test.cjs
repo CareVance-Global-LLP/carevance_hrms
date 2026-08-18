@@ -123,3 +123,102 @@ test('getStatus exposes the OS connectivity signal', async () => {
   setOs(false);
   assert.equal(monitor.getStatus().osOnline, false);
 });
+
+/**
+ * Builds a monitor over real candidate URLs with the HTTP probe stubbed, so
+ * loopback-vs-remote classification is exercised for real without a network.
+ */
+function makeProbeMonitor({ candidates, reachable, osOnline = true }) {
+  const monitor = new NetworkMonitor({
+    pingCandidates: candidates,
+    osOnlineCheck: () => osOnline,
+    offlineThreshold: 2,
+    onlineThreshold: 2,
+  });
+  monitor._pingOne = async (url) => Boolean(reachable[url]);
+  return monitor;
+}
+
+/** setOsOnline() starts a probe it does not await; drain it before asserting. */
+const settle = async () => { for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r)); };
+
+test('a reachable localhost cannot report "online" while the OS says there is no network', async () => {
+  /*
+   * The defect this pins, reported from the desktop app on 14 Aug 2026: with
+   * the network physically cut the app still displayed "Online". The probe list
+   * is led by the configured app URL, which in development is loopback, so
+   * every check succeeded. Traced exactly:
+   *
+   *   after OS disconnect -> online=false
+   *   after probe 1       -> online=true
+   *
+   * Loopback answers whether or not the machine is connected, so reaching it
+   * proves the API is up — never that there is a network.
+   */
+  const monitor = makeProbeMonitor({
+    candidates: ['http://localhost:5173/api', 'https://example.com/ping'],
+    reachable: { 'http://localhost:5173/api': true, 'https://example.com/ping': false },
+    osOnline: true,
+  });
+
+  monitor.setOsOnline(false);
+  await settle();
+  for (let i = 0; i < 4; i += 1) {
+    await monitor._check();
+  }
+
+  assert.equal(monitor.isOnline, false, 'loopback must not drag the app back online with no network');
+});
+
+test('a remote server answering still overrides a mistaken OS "disconnected"', async () => {
+  // net.isOnline() is unreliable behind VPNs, proxies and captive portals. A
+  // server that genuinely replies proves it wrong, and that must keep working.
+  const monitor = makeProbeMonitor({
+    candidates: ['http://localhost:5173/api', 'https://example.com/ping'],
+    reachable: { 'http://localhost:5173/api': true, 'https://example.com/ping': true },
+    osOnline: true,
+  });
+
+  monitor.setOsOnline(false);
+  await settle();
+  for (let i = 0; i < 3; i += 1) {
+    await monitor._check();
+  }
+
+  assert.equal(monitor.isOnline, true, 'a real remote answer is authoritative over the OS hint');
+});
+
+test('loopback alone is enough while the OS reports a working network', async () => {
+  // Nothing changes for the ordinary case: the OS says we are connected and our
+  // API answers, so we are online whether or not it happens to be local.
+  const monitor = makeProbeMonitor({
+    candidates: ['http://localhost:5173/api'],
+    reachable: { 'http://localhost:5173/api': true },
+    osOnline: true,
+  });
+
+  await monitor._check();
+  await monitor._check();
+
+  assert.equal(monitor.isOnline, true);
+});
+
+test('coming back online is reported once the network returns', async () => {
+  const monitor = makeProbeMonitor({
+    candidates: ['http://localhost:5173/api', 'https://example.com/ping'],
+    reachable: { 'http://localhost:5173/api': true, 'https://example.com/ping': false },
+    osOnline: true,
+  });
+
+  monitor.setOsOnline(false);
+  await settle();
+  await monitor._check();
+  await monitor._check();
+  assert.equal(monitor.isOnline, false);
+
+  monitor.setOsOnline(true);
+  await settle();
+  await monitor._check();
+  await monitor._check();
+  assert.equal(monitor.isOnline, true, 'reconnecting must restore online');
+});

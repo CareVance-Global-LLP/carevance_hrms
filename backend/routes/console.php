@@ -11,7 +11,6 @@ use App\Models\Activity;
 use App\Models\ActivitySession;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
-use App\Models\BrowserTrackingConnection;
 use App\Models\TimeEntry;
 use App\Services\Monitoring\ProductivityClassifier;
 
@@ -179,12 +178,6 @@ Artisan::command('timestamps:repair-local
             'date_field' => 'started_at',
             'columns' => ['started_at', 'ended_at'],
         ],
-        [
-            'label' => 'browser_tracking_connections',
-            'model' => BrowserTrackingConnection::class,
-            'date_field' => 'last_seen_at',
-            'columns' => ['connected_at', 'last_seen_at', 'last_sync_at', 'disconnected_at'],
-        ],
     ];
 
     if ($this->option('include-time-entries')) {
@@ -285,6 +278,16 @@ Artisan::command('schedule:tasks-recurrences', function () {
 Artisan::command('schedule:timers-close-stale', function () {
     $this->call('timers:close-stale');
 })->everyFifteenMinutes();
+
+/*
+ * Monitoring alerts, once a day, for the day that just finished.
+ *
+ * Deliberately after the working day rather than at midnight sharp: a timer
+ * stopped at 23:55 should be counted before the day it belongs to is judged.
+ */
+Artisan::command('schedule:monitoring-alerts', function () {
+    $this->call('monitoring:evaluate-alerts');
+})->dailyAt('07:00');
 
 // Schedule: auto-stop idle timers every minute (server-side fallback for desktop idle detection)
 Artisan::command('schedule:timers-close-idle', function () {

@@ -14,9 +14,24 @@ const UNPRODUCTIVE_KEYWORDS = [
   'telegram', 'whatsapp', 'web.whatsapp', 'wa.me', 'fb.com', 'reels', 'shorts', 'cricbuzz', 'espncricinfo',
 ];
 
+/*
+ * Furniture Chromium appends to the window title, stripped from the end inward.
+ *
+ * Cleaning only the browser name left the rest of it in reports. Recorded
+ * 14 Aug 2026, the label on a real timeline row:
+ *   "Fetch API - Web APIs | MDN and 1 more page - Profile 1 - Microsoft Edge"
+ * Tab count and profile are about the window, never the page, so they are noise
+ * in a column that is supposed to name what somebody was reading. Each pattern
+ * is anchored to the end so it cannot eat a page title that merely contains
+ * these words, and the caller re-runs the set so they strip in any order.
+ */
 const BROWSER_TITLE_PATTERNS = [
   /^(google chrome|chrome|microsoft edge|edge|mozilla firefox|firefox|brave|opera|vivaldi)\s*-\s*/i,
   /\s*-\s*(google chrome|chrome|microsoft edge|edge|mozilla firefox|firefox|brave|opera|vivaldi)$/i,
+  // "… and 1 more page" / "… and 12 more pages"
+  /\s+and\s+\d+\s+more\s+pages?$/i,
+  // "… - Profile 1", "… — Default". Bounded to one trailing segment.
+  /\s*[-–—]\s*Profile\s+[^-–—]{1,40}$/i,
 ];
 
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];

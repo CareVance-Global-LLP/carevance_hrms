@@ -8,7 +8,6 @@ export type SettingsTabId =
   | 'integrations'
   | 'custom-fields'
   | 'billing'
-  | 'browser-tracking'
   | 'help'
   | 'development';
 

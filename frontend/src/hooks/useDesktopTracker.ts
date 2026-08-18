@@ -1,14 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { buildTrackedContextName, resolveExeDisplayName } from '@/lib/activityProductivity';
-import {
-  buildBrowserTrackingEventSignature,
-  buildExactWebsiteDisplayName,
-  isBrowserTrackingConnectionHealthy,
-  isSupportedBrowserTrackingApp,
-} from '@/lib/browserTracking';
 import { idleGuardIntervalMs } from '@/lib/runtimeConfig';
 import { idleStopWarningSecondsRemaining } from '@/lib/idleStopWarning';
+import { pushIdlePopupState } from '@/lib/idlePopupBridge';
 import { resolveBrowserUrlForContext } from '@/lib/inferredBrowserUrl';
 import { isCaptureBlockedContext, resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isTrackedTimerUser } from '@/lib/permissions';
@@ -23,11 +18,8 @@ import {
   suppressAutoStart,
   suppressAutoStartGlobally,
 } from '@/lib/desktopTimerSession';
-import { activityApi, activitySessionApi, browserTrackingConnectionApi, screenshotApi, timeEntryApi } from '@/services/api';
+import { activityApi, activitySessionApi, screenshotApi, timeEntryApi } from '@/services/api';
 import type {
-  BrowserTrackingConnectionSyncRequest,
-  BrowserTrackingEvent,
-  BrowserTrackingState,
   DesktopDeviceIdentity,
   ScreenshotCaptureHealth,
   TimeEntry,
@@ -84,6 +76,42 @@ const BROWSER_TRACKING_HEALTH_SYNC_DEBOUNCE_MS = 5 * 1000;
 const GENERIC_BROWSER_ACTIVITY_LABEL = 'browser activity';
 const BROWSER_APP_KEYWORDS = ['chrome', 'edge', 'firefox', 'brave', 'opera', 'safari', 'vivaldi'];
 const SELF_TRACKER_KEYWORDS = ['carevance', 'carevance hrms', 'timetrackpro'];
+/*
+ * Shell surfaces that own the foreground for a moment during a window switch:
+ * the desktop itself, the Alt-Tab overlay, the taskbar's search popup. Windows
+ * hands them the foreground between the outgoing and incoming window, and
+ * `get-windows` reports them with a real process name and an EMPTY title.
+ *
+ * They are only ever transients — a titled Explorer window is a real folder the
+ * person opened, and stays trackable. Recorded live on 14 Aug 2026, mid-switch:
+ *   {"app":"Windows Explorer","title":"","record":true}
+ * arriving between Chrome and VS Code, which closed the genuine session that
+ * had just opened.
+ */
+const TRANSIENT_SHELL_APP_KEYWORDS = [
+  'windows explorer',
+  'explorer',
+  'task switching',
+  'shell infrastructure host',
+  'windows shell experience host',
+  'searchhost',
+  'search application',
+];
+
+const isTransientShellForegroundContext = (payload: { app?: string | null; title?: string | null }) => {
+  // A title means a real window. Only the untitled case is the shell transient.
+  if (String(payload.title || '').trim()) {
+    return false;
+  }
+
+  const appName = String(payload.app || '').trim().toLowerCase();
+  if (!appName) {
+    return false;
+  }
+
+  return TRANSIENT_SHELL_APP_KEYWORDS.some((keyword) => appName.includes(keyword));
+};
+
 const GENERIC_BROWSER_CONTEXT_PATTERNS = [
   /^new tab$/i,
   /^about:blank$/i,
@@ -227,13 +255,83 @@ type ActiveBrowserSession = {
   lastSeenAtMs: number;
 };
 
-const isSelfTrackerContext = (context: { app?: string | null; title?: string | null; url?: string | null }) => {
-  const haystack = [context.app, context.title, context.url]
-    .map((value) => String(value || '').trim().toLowerCase())
-    .filter(Boolean)
-    .join(' ');
+/**
+ * Is this the tracker looking at itself?
+ *
+ * Two genuinely self cases, and both are identified by WHAT the window is
+ * rather than by what its title says:
+ *
+ *   - the Electron tracker window, which the desktop reports as
+ *     `is_self_window` by asking Electron whether it holds focus;
+ *   - the CareVance web app open in a browser, matched on this page's own
+ *     origin.
+ *
+ * It used to match the product name against the window title, which dropped
+ * any window that merely MENTIONED CareVance. Measured on 13 Aug 2026: Visual
+ * Studio Code never once appeared in the timeline on this machine, because the
+ * project folder is called CareVance_Hrms_IDE and every VS Code title carried
+ * it. The same silence would swallow an email about CareVance, a support
+ * ticket, a spreadsheet named CareVance_Report.xlsx, or a tab on the company's
+ * own marketing site — a customer's real work, invisible.
+ *
+ * The app NAME is still matched, because the tracker's own process is
+ * legitimately identified that way when the focus flag is unavailable.
+ */
+const isSelfTrackerContext = (context: {
+  app?: string | null;
+  title?: string | null;
+  url?: string | null;
+  inferred_url?: string | null;
+  is_self_window?: boolean | null;
+}) => {
+  if (context.is_self_window) {
+    return true;
+  }
 
-  return SELF_TRACKER_KEYWORDS.some((keyword) => haystack.includes(keyword));
+  const appName = String(context.app || '').trim().toLowerCase();
+  if (appName && SELF_TRACKER_KEYWORDS.some((keyword) => appName.includes(keyword))) {
+    return true;
+  }
+
+  /*
+   * Nothing below this line applies to a browser.
+   *
+   * In a browser the title and the URL describe the PAGE, not the program.
+   * An employee reading the CareVance web app in Chrome is doing real work —
+   * checking a payslip, filing leave — and it belongs on their timeline. The
+   * tracker looking at itself is the Electron window, which `is_self_window`
+   * and the app-name check above already identify exactly.
+   *
+   * Treating page content as app identity also made the exclusion arbitrary:
+   * a tab titled "Home | Dashboard" was recorded while "CareVance HRMS
+   * Workspace" was not, for the very same page. Worse, it dropped time
+   * mid-visit — the session opened, the SPA navigated, and the next poll read
+   * the new title as the tracker itself and closed it.
+   */
+  if (isBrowserAppName(context.app)) {
+    return false;
+  }
+
+  const url = String(context.inferred_url || context.url || '').trim().toLowerCase();
+  const selfOrigin = typeof window !== 'undefined'
+    ? String(window.location?.origin || '').trim().toLowerCase()
+    : '';
+  if (url && selfOrigin && url.startsWith(selfOrigin)) {
+    return true;
+  }
+
+  /*
+   * Title matched at the START only, never anywhere inside it.
+   *
+   * The app's own page announces itself as "CareVance HRMS Workspace", so a
+   * prefix is enough to recognise it in a browser. A substring match is what
+   * caused the damage: "useDesktopTracker.ts - CareVance_Hrms_IDE - Visual
+   * Studio Code" contains the product name two thirds of the way through and
+   * was being discarded as though the tracker were looking at itself.
+   */
+  const title = String(context.title || '').trim().toLowerCase();
+
+  return SELF_TRACKER_KEYWORDS.some((keyword) => title.startsWith(keyword));
 };
 
 const isGenericBrowserContext = (contextName: string, activityType: 'app' | 'url') => {
@@ -277,7 +375,11 @@ const isBrowserForegroundContext = (payload: DesktopForegroundWindowPayload) => 
 };
 
 const isReliableDesktopAppForegroundContext = (payload: DesktopForegroundWindowPayload) => {
-  if (isBrowserForegroundContext(payload) || isSelfTrackerContext(payload)) {
+  if (
+    isBrowserForegroundContext(payload)
+    || isSelfTrackerContext(payload)
+    || isTransientShellForegroundContext(payload)
+  ) {
     return false;
   }
 
@@ -339,64 +441,6 @@ const resolveDesktopSessionDisplayName = (payload: DesktopForegroundWindowPayloa
   return resolvedDisplayName || appName || windowTitle || 'Unknown App';
 };
 
-const resolveLatestBrowserTrackingSignalAt = (state?: BrowserTrackingState | null) => {
-  const signalCandidates = [
-    String(state?.last_event_at || '').trim(),
-    ...(Array.isArray(state?.connections)
-      ? state.connections.flatMap((connection) => [
-          String(connection.last_seen_at || '').trim(),
-          String(connection.paired_at || '').trim(),
-        ])
-      : []),
-  ]
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  if (!signalCandidates.length) {
-    return null;
-  }
-
-  return signalCandidates
-    .sort((left, right) => Date.parse(right) - Date.parse(left))[0] || null;
-};
-
-const buildBrowserTrackingHealthSyncPayload = (
-  state: BrowserTrackingState,
-  deviceIdentity: DesktopDeviceIdentity,
-  screenshotCaptureHealth?: ScreenshotCaptureHealth | null,
-): BrowserTrackingConnectionSyncRequest => {
-  const payload: BrowserTrackingConnectionSyncRequest = {
-    device_id: String(deviceIdentity.device_id || '').trim(),
-    device_label: String(deviceIdentity.device_label || '').trim() || null,
-    ready: Boolean(state.ready),
-    last_error: String(state.last_error || '').trim() || null,
-    last_event_at: resolveLatestBrowserTrackingSignalAt(state),
-    connections: Array.isArray(state.connections)
-      ? state.connections.map((connection) => ({
-        browser_name: String(connection.browser_name || '').trim().toLowerCase(),
-        profile_key: String(connection.profile_key || '').trim(),
-        extension_origin: String(connection.extension_origin || '').trim() || null,
-        extension_version: String(connection.extension_version || '').trim() || null,
-        paired_at: String(connection.paired_at || '').trim() || null,
-        last_seen_at: String(connection.last_seen_at || '').trim() || null,
-      }))
-        .filter((connection) => connection.browser_name && connection.profile_key)
-        .sort((left, right) => (
-          `${left.browser_name}|${left.profile_key}`.localeCompare(`${right.browser_name}|${right.profile_key}`)
-        ))
-      : [],
-  };
-
-  // Only attach screenshot capture health when there is something to report,
-  // so the heartbeat payload is unchanged for the common healthy case.
-  if (screenshotCaptureHealth) {
-    payload.screenshot_capture = screenshotCaptureHealth;
-  }
-
-  return payload;
-};
-
-const buildBrowserTrackingHealthSyncSignature = (payload: BrowserTrackingConnectionSyncRequest) => JSON.stringify(payload);
 
 export const useDesktopTracker = () => {
   const { user, isAuthenticated } = useAuth();
@@ -448,17 +492,28 @@ export const useDesktopTracker = () => {
   const activeDesktopSessionRef = useRef<ActiveDesktopSession | null>(null);
   // ~8 hours of switching at one session per 10s, then oldest-first drop.
   const pendingSessionQueueRef = useRef(createPendingSessionQueue({ maxSize: 3000 }));
+  /*
+   * Mirrors the queue to disk after every change.
+   *
+   * Unsent sessions used to live in renderer memory alone, so quitting during
+   * an outage lost the app/website timeline for that whole stretch. The main
+   * process debounces the write, so a burst of application switches costs one
+   * flush rather than one per switch.
+   */
+  const persistPendingSessions = useCallback(() => {
+    const save = window.desktopTracker?.savePendingSessions;
+    if (typeof save !== 'function') return;
+
+    try {
+      void save(pendingSessionQueueRef.current.snapshot());
+    } catch (error) {
+      reportSilentError('desktop-tracker', error);
+    }
+  }, []);
   // Last dropped total already reported, so the tick reports a loss once
   // instead of every second for as long as the count stays above zero.
   const reportedDroppedSessionCountRef = useRef(0);
-  const activeBrowserSessionRef = useRef<ActiveBrowserSession | null>(null);
-  const browserTrackingStateRef = useRef<BrowserTrackingState | null>(null);
-  const exactBrowserHealthyUntilMsRef = useRef(0);
   const desktopDeviceIdentityRef = useRef<DesktopDeviceIdentity | null>(null);
-  const pendingBrowserTrackingSyncStateRef = useRef<BrowserTrackingState | null>(null);
-  const browserTrackingSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const browserTrackingSyncSignatureRef = useRef<string | null>(null);
-  const browserTrackingRealtimeSeenRef = useRef(false);
   const systemLockedAtMsRef = useRef<number | null>(null);
   const lockScreenAutoStopRevealPendingRef = useRef(false);
   const lockAutoStopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -483,13 +538,6 @@ export const useDesktopTracker = () => {
       dedicatedIdleStopIntervalRef.current = null;
     }
 
-  };
-
-  const clearBrowserTrackingSyncTimeout = () => {
-    if (browserTrackingSyncTimeoutRef.current !== null) {
-      clearTimeout(browserTrackingSyncTimeoutRef.current);
-      browserTrackingSyncTimeoutRef.current = null;
-    }
   };
 
   const clearLockAutoStopTimeout = () => {
@@ -539,14 +587,7 @@ export const useDesktopTracker = () => {
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       activeDesktopSessionRef.current = null;
-      activeBrowserSessionRef.current = null;
-      browserTrackingStateRef.current = null;
-      exactBrowserHealthyUntilMsRef.current = 0;
       desktopDeviceIdentityRef.current = null;
-      pendingBrowserTrackingSyncStateRef.current = null;
-      browserTrackingSyncSignatureRef.current = null;
-      browserTrackingRealtimeSeenRef.current = false;
-      clearBrowserTrackingSyncTimeout();
       clearLockAutoStopTimeout();
       pendingIdleRewindRef.current.clear();
       lastAutoStoppedEntryIdRef.current = null;
@@ -609,14 +650,7 @@ export const useDesktopTracker = () => {
     activeSegmentRef.current = null;
     activeEntryRef.current = null;
     activeDesktopSessionRef.current = null;
-    activeBrowserSessionRef.current = null;
-    browserTrackingStateRef.current = null;
-    exactBrowserHealthyUntilMsRef.current = 0;
     desktopDeviceIdentityRef.current = null;
-    pendingBrowserTrackingSyncStateRef.current = null;
-    browserTrackingSyncSignatureRef.current = null;
-    browserTrackingRealtimeSeenRef.current = false;
-    clearBrowserTrackingSyncTimeout();
     pendingIdleRewindRef.current.clear();
     lastAutoStoppedEntryIdRef.current = null;
     activeScreenshotEntryIdRef.current = null;
@@ -734,7 +768,6 @@ export const useDesktopTracker = () => {
     const flushTrackerState = async (endedAt?: string) => {
       const resolvedEndedAt = endedAt || new Date().toISOString();
       await closeActiveDesktopSession(resolvedEndedAt);
-      await closeActiveBrowserSession(resolvedEndedAt);
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       pendingIdleRewindRef.current.clear();
@@ -778,7 +811,29 @@ export const useDesktopTracker = () => {
       return activeEntry;
     };
 
-    const closeActiveDesktopSession = async (endedAt?: string) => {
+    /*
+     * Every desktop-session mutation runs through one queue.
+     *
+     * Serialising only creation was not enough: a close from any of the other
+     * call sites could land between a create and the next create, null the
+     * ref, and leave the just-created row closed at its own start time. That
+     * is the zero-length duplicate seen live — ids 125 and 126, identical
+     * titles, identical start times, the first at dur=0.
+     */
+    let desktopSessionQueue: Promise<unknown> = Promise.resolve();
+
+    const queueDesktopSessionOp = <T,>(op: () => Promise<T>): Promise<T> => {
+      const next = desktopSessionQueue.catch(() => {}).then(op);
+      // Swallowed on the stored handle only; the returned promise still
+      // rejects so callers keep their own error handling.
+      desktopSessionQueue = next.catch(() => {});
+      return next;
+    };
+
+    const closeActiveDesktopSession = (endedAt?: string) =>
+      queueDesktopSessionOp(() => closeActiveDesktopSessionExclusive(endedAt));
+
+    const closeActiveDesktopSessionExclusive = async (endedAt?: string) => {
       const activeDesktopSession = activeDesktopSessionRef.current;
       if (!activeDesktopSession) {
         return;
@@ -851,47 +906,33 @@ export const useDesktopTracker = () => {
       }
     };
 
-    const markExactBrowserTrackingHealthy = (recordedAt?: string) => {
-      const parsedRecordedAtMs = Date.parse(String(recordedAt || ''));
-      const baseMs = Number.isFinite(parsedRecordedAtMs) ? parsedRecordedAtMs : Date.now();
-      exactBrowserHealthyUntilMsRef.current = Math.max(
-        exactBrowserHealthyUntilMsRef.current,
-        baseMs + EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS
-      );
+    /**
+     * Whether the desktop agent — rather than the extension — owns the browser
+     * currently in front.
+     *
+     * The same precedence the foreground watcher applies, named once so the
+     * per-second tick cannot drift from it. It did drift: the watcher was
+     * taught to open a session for a browser with no extension connected, but
+     * the tick still read every browser as "not a reliable desktop context"
+     * and closed that session again. A browser session is therefore opened by
+     * the watcher and extended by nothing, so it keeps the placeholder
+     * ended_at it was seeded with. Measured 13 Aug 2026: Chrome held the
+     * foreground for 28 unbroken seconds and was stored as dur=0.
+     */
+    const desktopAgentOwnsBrowserForeground = (payload: DesktopForegroundWindowPayload) =>
+      !isSelfTrackerContext(payload)
+      && isBrowserForegroundContext(payload);
 
-      const currentState = browserTrackingStateRef.current;
-      browserTrackingStateRef.current = {
-        ready: currentState?.ready ?? true,
-        local_url: currentState?.local_url ?? null,
-        connections: currentState?.connections ?? [],
-        pairing_code: currentState?.pairing_code ?? null,
-        last_event_at: new Date(baseMs).toISOString(),
-        last_error: currentState?.last_error ?? null,
-      };
-    };
+    const ensureDesktopSessionStarted = (payload: DesktopForegroundWindowPayload) =>
+      queueDesktopSessionOp(() => startDesktopSessionExclusive(payload));
 
-    const hasHealthyExactBrowserTracking = (appName?: string | null, now = Date.now()) => {
-      if (!isSupportedBrowserTrackingApp(appName)) {
-        return false;
-      }
-
-      if (exactBrowserHealthyUntilMsRef.current > now) {
-        return true;
-      }
-
-      return isBrowserTrackingConnectionHealthy(
-        browserTrackingStateRef.current,
-        now,
-        EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS
-      );
-    };
-
-    const ensureDesktopSessionStarted = async (payload: DesktopForegroundWindowPayload) => {
+    const startDesktopSessionExclusive = async (payload: DesktopForegroundWindowPayload) => {
       const activeEntry = await getOrLoadActiveEntry();
       const capturedAt = resolveForegroundCapturedAt(payload);
 
       if (!activeEntry?.id) {
-        await closeActiveDesktopSession(capturedAt);
+        // Raw, not queued: this already holds the queue slot.
+        await closeActiveDesktopSessionExclusive(capturedAt);
         return;
       }
 
@@ -905,7 +946,7 @@ export const useDesktopTracker = () => {
         return;
       }
 
-      await closeActiveDesktopSession(capturedAt);
+      await closeActiveDesktopSessionExclusive(capturedAt);
 
       /*
        * Same precedence as the tick. A desktop_app session for a browser can
@@ -918,18 +959,33 @@ export const useDesktopTracker = () => {
       );
       const sessionUrl = resolveBrowserUrlForContext({
         context: payload,
-        extensionHealthy: hasHealthyExactBrowserTracking(payload.app),
         isBrowser: payloadIsBrowser,
       });
 
       const displayName = resolveDesktopSessionDisplayName(payload);
       const appName = String(payload.app || '').trim() || displayName;
       const windowTitle = String(payload.title || '').trim() || displayName;
+
+      /*
+       * A browser we resolved a URL for is a WEBSITE visit, not an app session.
+       *
+       * This path opens sessions for browsers now that the desktop agent reads
+       * URLs itself, and it was stamping them desktop_app/software like any
+       * other window. Reports name the tool from the domain but take its type
+       * from here, so the two categories came out inverted: wikipedia.org was
+       * listed as an application and excluded from the Websites filter, while
+       * "google chrome" — the browser — appeared under Websites.
+       *
+       * The URL is the test, not the app name. A browser sitting on a blank tab
+       * with nothing readable stays an app session, which is what it is.
+       */
+      const isWebsiteVisit = payloadIsBrowser && Boolean(sessionUrl.url);
+
       const pending: PendingSession = {
         time_entry_id: activeEntry.id,
         source: 'desktop',
-        activity_kind: 'desktop_app',
-        tool_type: 'software',
+        activity_kind: isWebsiteVisit ? 'website' : 'desktop_app',
+        tool_type: isWebsiteVisit ? 'website' : 'software',
         display_name: displayName,
         app_name: appName,
         window_title: windowTitle,
@@ -962,6 +1018,7 @@ export const useDesktopTracker = () => {
         // object reference so closeActiveDesktopSession can stamp ended_at
         // onto the item actually sitting in the queue.
         pendingSessionQueueRef.current.enqueue(pending);
+        persistPendingSessions();
         pendingPayload = pending;
         reportSilentError('desktop-tracker', error);
       }
@@ -975,89 +1032,6 @@ export const useDesktopTracker = () => {
         startedAtMs: resolvedStartedAtMs,
         lastSeenAtMs: resolvedStartedAtMs,
       };
-    };
-
-    const closeActiveBrowserSession = async (endedAt?: string) => {
-      const activeBrowserSession = activeBrowserSessionRef.current;
-      if (!activeBrowserSession) {
-        return;
-      }
-
-      activeBrowserSessionRef.current = null;
-
-      const parsedEndedAtMs = Date.parse(String(endedAt || ''));
-      const endedAtMs = Number.isFinite(parsedEndedAtMs)
-        ? Math.max(activeBrowserSession.startedAtMs, parsedEndedAtMs)
-        : Date.now();
-      const resolvedEndedAt = new Date(endedAtMs).toISOString();
-      // max(0), not max(1): a session closed at its own start instant genuinely
-      // lasted zero seconds. Flooring at 1 fabricated a second of browser
-      // activity every time a session was closed because the user went idle.
-      const durationSeconds = Math.max(0, Math.round((endedAtMs - activeBrowserSession.startedAtMs) / 1000));
-
-      try {
-        await activitySessionApi.update(activeBrowserSession.sessionId, {
-          ended_at: resolvedEndedAt,
-          duration_seconds: durationSeconds,
-        });
-      } catch (error) {
-        console.error('Desktop tracker failed to close browser activity session:', error);
-      }
-    };
-
-    const extendActiveBrowserSession = async (event: BrowserTrackingEvent) => {
-      const activeBrowserSession = activeBrowserSessionRef.current;
-      if (!activeBrowserSession) {
-        return;
-      }
-
-      const parsedSeenAtMs = Date.parse(String(event.recorded_at || ''));
-      if (!Number.isFinite(parsedSeenAtMs)) {
-        return;
-      }
-
-      const seenAtMs = Math.max(activeBrowserSession.startedAtMs, parsedSeenAtMs);
-      if (seenAtMs <= activeBrowserSession.lastSeenAtMs) {
-        return;
-      }
-
-      activeBrowserSession.lastSeenAtMs = seenAtMs;
-      const durationSeconds = Math.max(0, Math.round((seenAtMs - activeBrowserSession.startedAtMs) / 1000));
-
-      try {
-        await activitySessionApi.update(activeBrowserSession.sessionId, {
-          ended_at: new Date(seenAtMs).toISOString(),
-          duration_seconds: durationSeconds,
-        });
-      } catch (error) {
-        console.error('Desktop tracker failed to extend browser activity session:', error);
-      }
-    };
-
-    const syncBrowserTrackingHealth = async (state: BrowserTrackingState) => {
-      const deviceIdentity = desktopDeviceIdentityRef.current;
-      if (!userId || !deviceIdentity?.device_id) {
-        return;
-      }
-
-      const payload = buildBrowserTrackingHealthSyncPayload(
-        state,
-        deviceIdentity,
-        getScreenshotCaptureHealth(),
-      );
-      const nextSignature = buildBrowserTrackingHealthSyncSignature(payload);
-      if (nextSignature === browserTrackingSyncSignatureRef.current) {
-        return;
-      }
-
-      browserTrackingSyncSignatureRef.current = nextSignature;
-
-      try {
-        await browserTrackingConnectionApi.sync(payload);
-      } catch (error) {
-        browserTrackingSyncSignatureRef.current = null;
-        console.warn('Desktop tracker browser tracking health sync failed:', error);
-      }
     };
 
     // Builds the device-level screenshot capture health block that gets
@@ -1126,12 +1100,14 @@ export const useDesktopTracker = () => {
           }
         }
 
-        // On macOS, also guide the user to the exact setting once.
+        // On macOS, also guide the user to the exact setting once. Bringing the
+        // window forward is the whole action, so it is guarded on revealWindow
+        // itself — it used to be gated behind the browser extension's guide
+        // helper existing, which had nothing to do with it and silently skipped
+        // the reveal once that helper was gone.
         if (reason === 'screen_permission_denied' && !screenshotPermissionNotifiedRef.current) {
           screenshotPermissionNotifiedRef.current = true;
-          if (typeof desktopApi?.openBrowserTrackingGuide === 'function') {
-            // Reuse the existing desktop "open guide" pattern to bring the
-            // relevant settings/help forward for the user.
+          if (typeof desktopApi?.revealWindow === 'function') {
             try {
               void desktopApi.revealWindow();
             } catch (error) { reportSilentError('desktop-tracker', error); }
@@ -1139,25 +1115,6 @@ export const useDesktopTracker = () => {
         }
       }
 
-      // Report to the admin/Monitoring side via the heartbeat, throttled so we
-      // don't spam the endpoint on every interval.
-      if (
-        screenshotFailureCountRef.current >= SCREENSHOT_FAILURE_REPORT_AFTER
-        && now - lastScreenshotFailureReportMsRef.current >= SCREENSHOT_FAILURE_REPORT_DEBOUNCE_MS
-        && desktopDeviceIdentityRef.current?.device_id
-      ) {
-        lastScreenshotFailureReportMsRef.current = now;
-        // Force a heartbeat sync carrying the screenshot capture health.
-        browserTrackingSyncSignatureRef.current = null;
-        void syncBrowserTrackingHealth(browserTrackingStateRef.current ?? {
-          ready: true,
-          connections: [],
-          local_url: null,
-          pairing_code: null,
-          last_event_at: null,
-          last_error: null,
-        });
-      }
     };
 
     const reportScreenshotCaptureSuccess = () => {
@@ -1175,127 +1132,6 @@ export const useDesktopTracker = () => {
       lastScreenshotFailureSinceRef.current = null;
       screenshotPermissionNotifiedRef.current = false;
 
-      // Clear the admin-side signal by pushing an "ok" heartbeat once.
-      if (desktopDeviceIdentityRef.current?.device_id) {
-        browserTrackingSyncSignatureRef.current = null;
-        void syncBrowserTrackingHealth(browserTrackingStateRef.current ?? {
-          ready: true,
-          connections: [],
-          local_url: null,
-          pairing_code: null,
-          last_event_at: null,
-          last_error: null,
-        });
-      }
-    };
-
-    const scheduleBrowserTrackingHealthSync = (
-      state: BrowserTrackingState | null,
-      options?: { immediate?: boolean },
-    ) => {
-      pendingBrowserTrackingSyncStateRef.current = state;
-      clearBrowserTrackingSyncTimeout();
-
-      if (!state) {
-        return;
-      }
-
-      const delayMs = options?.immediate ? 0 : BROWSER_TRACKING_HEALTH_SYNC_DEBOUNCE_MS;
-      browserTrackingSyncTimeoutRef.current = setTimeout(() => {
-        browserTrackingSyncTimeoutRef.current = null;
-
-        if (!isCurrentRun()) {
-          return;
-        }
-
-        const latestState = pendingBrowserTrackingSyncStateRef.current;
-        if (!latestState) {
-          return;
-        }
-
-        void syncBrowserTrackingHealth(latestState);
-      }, delayMs);
-    };
-
-    const applyBrowserTrackingState = async (
-      state: BrowserTrackingState | null,
-      options?: { immediateSync?: boolean },
-    ) => {
-      browserTrackingStateRef.current = state;
-      pendingBrowserTrackingSyncStateRef.current = state;
-
-      if (!state) {
-        exactBrowserHealthyUntilMsRef.current = 0;
-        return;
-      }
-
-      const nowMs = Date.now();
-      const hasExactConnections = Array.isArray(state.connections) && state.connections.length > 0;
-      const exactTrackingHealthy = hasExactConnections
-        && isBrowserTrackingConnectionHealthy(state, nowMs, EXACT_BROWSER_TRACKING_HEALTH_WINDOW_MS);
-      const latestSignalAt = resolveLatestBrowserTrackingSignalAt(state);
-
-      if (exactTrackingHealthy && latestSignalAt) {
-        markExactBrowserTrackingHealthy(latestSignalAt);
-      } else if (!exactTrackingHealthy) {
-        exactBrowserHealthyUntilMsRef.current = 0;
-        await closeActiveBrowserSession(latestSignalAt || new Date(nowMs).toISOString());
-      }
-
-      scheduleBrowserTrackingHealthSync(state, {
-        immediate: Boolean(options?.immediateSync || !exactTrackingHealthy || !state.ready || !hasExactConnections),
-      });
-    };
-
-    const ensureBrowserSessionStarted = async (event: BrowserTrackingEvent) => {
-      markExactBrowserTrackingHealthy(event.recorded_at);
-      const activeEntry = await getOrLoadActiveEntry();
-
-      if (!activeEntry?.id || !String(event.url || '').trim()) {
-        await closeActiveBrowserSession(event.recorded_at);
-        return;
-      }
-
-      const signature = buildBrowserTrackingEventSignature(event);
-      if (
-        activeBrowserSessionRef.current
-        && activeBrowserSessionRef.current.signature === signature
-        && activeBrowserSessionRef.current.timeEntryId === activeEntry.id
-      ) {
-        await extendActiveBrowserSession(event);
-        return;
-      }
-
-      await closeActiveDesktopSession(event.recorded_at);
-      await closeActiveBrowserSession(event.recorded_at);
-
-      const response = await activitySessionApi.create({
-        time_entry_id: activeEntry.id,
-        source: 'browser_extension',
-        activity_kind: 'website',
-        tool_type: 'website',
-        display_name: buildExactWebsiteDisplayName(event.url, event.title),
-        app_name: String(event.browser_name || '').trim().toLowerCase() || null,
-        window_title: String(event.title || '').trim() || null,
-        url: String(event.url || '').trim(),
-        started_at: event.recorded_at,
-        confidence: 100,
-        metadata: {
-          profile_key: event.profile_key,
-          tab_id: event.tab_id ?? null,
-          window_id: event.window_id ?? null,
-        },
-      });
-
-      const startedAtMs = Date.parse(String(event.recorded_at || ''));
-      activeBrowserSessionRef.current = {
-        sessionId: response.data.id,
-        timeEntryId: activeEntry.id,
-        signature,
-        startedAt: event.recorded_at,
-        startedAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-        lastSeenAtMs: Number.isFinite(startedAtMs) ? startedAtMs : Date.now(),
-      };
     };
 
     const handleForegroundWindowChange = async (payload: DesktopForegroundWindowPayload) => {
@@ -1306,8 +1142,43 @@ export const useDesktopTracker = () => {
       pendingTrackedSecondsRef.current = 0;
       clearTrackedActivitySegment();
 
-      if (isReliableDesktopAppForegroundContext(payload)) {
-        await closeActiveBrowserSession(resolveForegroundCapturedAt(payload));
+      /*
+       * Browsers used to be refused here outright, on the basis that the
+       * extension owns website sessions. The extension is optional, so when it
+       * is not connected that left browser time recorded as NOTHING — not a
+       * fallback row, not an app row. Measured on 13 Aug 2026: every
+       * activity_session ever written on this install was a transient system
+       * window (Explorer, the Alt-Tab overlay, Snipping Tool), because those
+       * were the only foreground windows that were not a browser.
+       *
+       * The desktop agent can now read the URL itself, so a browser without a
+       * healthy extension is recorded here instead of discarded.
+       * resolveBrowserUrlForContext still yields to the extension whenever it
+       * IS healthy, so the two can never both write the same timeline.
+       */
+      /*
+       * Ignored outright, rather than recorded or treated as "nothing is in
+       * front". Windows gives the shell the foreground for a beat during a
+       * switch, and acting on that closed the session belonging to the window
+       * the person was actually using. Returning leaves the current session
+       * running, which is what was true the moment before and the moment
+       * after.
+       */
+      if (isTransientShellForegroundContext(payload)) {
+        return;
+      }
+
+      const foregroundIsBrowser = isBrowserForegroundContext(payload);
+
+      const shouldRecordHere = isSelfTrackerContext(payload)
+        ? false
+        : foregroundIsBrowser
+          ? true
+          : isReliableDesktopAppForegroundContext(payload);
+
+      if (shouldRecordHere) {
+        if (!foregroundIsBrowser) {
+        }
         try {
           await ensureDesktopSessionStarted(payload);
         } catch (error) {
@@ -1317,32 +1188,6 @@ export const useDesktopTracker = () => {
       }
 
       await closeActiveDesktopSession(resolveForegroundCapturedAt(payload));
-    };
-
-    const handleBrowserTrackingEvent = async (event: BrowserTrackingEvent) => {
-      if (!isCurrentRun()) {
-        return;
-      }
-
-      pendingTrackedSecondsRef.current = 0;
-      clearTrackedActivitySegment();
-      markExactBrowserTrackingHealthy(event.recorded_at);
-
-      if (event.kind === 'window-blurred' || event.kind === 'tab-closed') {
-        await closeActiveBrowserSession(event.recorded_at);
-        return;
-      }
-
-      if (!String(event.url || '').trim()) {
-        await closeActiveBrowserSession(event.recorded_at);
-        return;
-      }
-
-      try {
-        await ensureBrowserSessionStarted(event);
-      } catch (error) {
-        console.error('Desktop tracker failed to start browser activity session:', error);
-      }
     };
 
     const getIdleState = async (now: number) => {
@@ -1666,6 +1511,14 @@ export const useDesktopTracker = () => {
 
       cleanupAfterIdleStop();
 
+      /*
+       * The countdown reached zero, so replace it with the outcome rather than
+       * letting "stops in 0 seconds" sit there. This is also the one message a
+       * returning person most needs: the OS notification behind it may well
+       * have been dismissed or missed entirely while they were away.
+       */
+      pushIdlePopupState({ mode: 'stopped', idleSeconds });
+
       await notifyIdleAutoStop(idleSeconds);
 
       if (userId) {
@@ -1723,7 +1576,6 @@ export const useDesktopTracker = () => {
         const activeEntry = active.data;
         if (!activeEntry?.id) {
           await closeActiveDesktopSession(new Date(now).toISOString());
-          await closeActiveBrowserSession(new Date(now).toISOString());
           activeSegmentRef.current = null;
           activeEntryRef.current = null;
           lastAutoStoppedEntryIdRef.current = null;
@@ -1763,7 +1615,7 @@ export const useDesktopTracker = () => {
         // Retry anything a network blip lost. Safe to repeat: every queued
         // session carries (local_id, device_id) and the server resolves a
         // replay to the row it already created.
-        void pendingSessionQueueRef.current.drain(async (p) => {
+        void (async () => { await pendingSessionQueueRef.current.drain(async (p) => {
           // Read before the await: closeActiveDesktopSession can stamp the
           // real close time onto this same object while the create is in
           // flight, and by then the payload on the wire already carries the
@@ -1802,6 +1654,10 @@ export const useDesktopTracker = () => {
             active.pendingPayload = null;
           }
         }, now);
+          // Written back after every drain so sends that succeeded stop being
+          // replayed, and a queue emptied by a reconnect is emptied on disk too.
+          persistPendingSessions();
+        })();
 
         // Every eviction path — an unidentifiable device, the retry window,
         // overflow — throws away time an employee actually worked, and this
@@ -1879,7 +1735,6 @@ export const useDesktopTracker = () => {
         const recordedAt = new Date(now).toISOString();
         const rawAppName = String(activeContext?.app || '').trim();
         const rawIsBrowserApp = BROWSER_APP_KEYWORDS.some((keyword) => rawAppName.toLowerCase().includes(keyword));
-        const exactBrowserTrackingHealthy = hasHealthyExactBrowserTracking(rawAppName, now);
         /*
          * On Windows the platform never fills `url` — get-windows only does
          * that on macOS — so without this a browser with no extension produced
@@ -1890,11 +1745,24 @@ export const useDesktopTracker = () => {
          */
         const resolvedBrowserUrl = resolveBrowserUrlForContext({
           context: activeContext,
-          extensionHealthy: exactBrowserTrackingHealthy,
           isBrowser: rawIsBrowserApp,
         });
         const rawUrl = resolvedBrowserUrl.url ?? '';
-        const rawContextName = buildTrackedContextName(activeContext || {});
+        /*
+         * Named from the URL we just resolved, not only the platform one.
+         *
+         * `activeContext.url` is filled by get-windows, which supplies it on
+         * macOS alone — on Windows it is always null, so this fell through to
+         * the window title and reports were labelling browser rows with the raw
+         * title. It showed up as one Chrome row reading "Wikipedia" beside an
+         * Edge row reading "Fetch API - Web APIs | MDN and 1 more page -
+         * Profile 1 - Microsoft Edge": same run, same kind of visit, named two
+         * different ways depending on whether a URL happened to be available.
+         */
+        const rawContextName = buildTrackedContextName({
+          ...(activeContext || {}),
+          url: rawUrl || activeContext?.url || null,
+        });
         const rawActivityType: 'app' | 'url' = rawUrl || rawIsBrowserApp ? 'url' : 'app';
         const rawAppFamily = resolveAppFamily(rawAppName, rawActivityType);
         const hasReliableDesktopContext = Boolean(rawContextName)
@@ -1962,10 +1830,24 @@ export const useDesktopTracker = () => {
         // identified.
         const contextName = resolvedTrackingContext?.contextName || 'Active Input';
         const activityType: 'app' | 'url' = resolvedTrackingContext?.activityType || 'app';
+        /*
+         * Shaped exactly like the payload the foreground watcher sends.
+         *
+         * The desktop session signature is app|title|url|inferred_url, and
+         * this tick used to put a resolved browser URL in `url` while the
+         * watcher put the same URL in `inferred_url`. Two different signatures
+         * for one window, so whichever ran second closed the other's session
+         * and opened its own — measured live as byte-identical rows seconds
+         * apart, the first left at zero length.
+         */
         const currentForegroundPayload: DesktopForegroundWindowPayload = {
           app: rawAppName || null,
           title: String(activeContext?.title || '').trim() || null,
-          url: rawUrl || null,
+          url: String(activeContext?.url || '').trim() || null,
+          inferred_url: activeContext?.inferred_url ?? null,
+          inferred_url_source: activeContext?.inferred_url_source ?? null,
+          inferred_url_confidence: activeContext?.inferred_url_confidence ?? null,
+          is_self_window: activeContext?.is_self_window ?? false,
           captured_at: recordedAt,
         };
 
@@ -1983,12 +1865,23 @@ export const useDesktopTracker = () => {
         );
         if (warningSecondsRemaining !== null || idleStopWarningShownRef.current) {
           emitIdleStopWarning({ secondsRemaining: warningSecondsRemaining, idleSeconds });
+          /*
+           * And to the shell, which shows the same countdown as a real
+           * always-on-top window. Driven off the same value on the same tick
+           * so the two can never disagree; on the web, or an installed build
+           * too old to have the popup, this is a no-op and the in-app notice
+           * remains the only UI.
+           */
+          pushIdlePopupState(
+            warningSecondsRemaining !== null
+              ? { mode: 'warning', secondsRemaining: warningSecondsRemaining, idleSeconds }
+              : null
+          );
           idleStopWarningShownRef.current = warningSecondsRemaining !== null;
         }
 
         if (idleSeconds >= IDLE_THRESHOLD_SECONDS) {
           await closeActiveDesktopSession(new Date(lastActivityAtMs).toISOString());
-          await closeActiveBrowserSession(new Date(lastActivityAtMs).toISOString());
           pendingTrackedSecondsRef.current = 0;
           await syncIdleActivitySnapshot(
             activeEntry,
@@ -2019,6 +1912,22 @@ export const useDesktopTracker = () => {
               idleSeconds: unanswered.idleSeconds,
               timerRunning: true,
             });
+
+            /*
+             * The question, in front of whatever they came back to. Only when
+             * the organization actually leaves the choice open — under
+             * always_keep or never_keep the server has already resolved the
+             * span, and putting an always-on-top window in someone's way to
+             * offer a choice that no longer exists is worse than silence.
+             * IdleReturnPrompt reports those as a toast instead.
+             */
+            if (trackerPolicy.idle_resolution_policy === 'prompt') {
+              pushIdlePopupState({
+                mode: 'return',
+                idleSeconds: unanswered.idleSeconds,
+                activityId: unanswered.activityId,
+              });
+            }
           }
 
           if (
@@ -2047,11 +1956,22 @@ export const useDesktopTracker = () => {
             return;
           }
 
-          if (exactBrowserTrackingHealthy && rawIsBrowserApp) {
-            pendingTrackedSecondsRef.current = 0;
-            clearTrackedActivitySegment();
-            await closeActiveDesktopSession(recordedAt);
-            return;
+          /*
+           * Extended here, and deliberately without returning.
+           *
+           * The watcher only fires when the foreground CHANGES, so a browser
+           * left in front for half a minute produces exactly one event. Only
+           * this tick runs every second, which makes it the sole thing that
+           * can grow the session. Falling through afterwards is what keeps the
+           * url activity rows below intact — those are what the website
+           * reports read, and returning early here would silently empty them.
+           */
+          if (desktopAgentOwnsBrowserForeground(currentForegroundPayload)) {
+            try {
+              await ensureDesktopSessionStarted(currentForegroundPayload);
+            } catch (error) {
+              console.error('Desktop tracker failed to extend browser activity session:', error);
+            }
           }
 
           if (trackedSecondsThisTick <= 0) {
@@ -2070,8 +1990,18 @@ export const useDesktopTracker = () => {
             return;
           }
 
-          // Close any orphaned desktop session when foreground is no longer a reliable desktop context
-          await closeActiveDesktopSession(recordedAt);
+          // Close any orphaned desktop session when foreground is no longer a
+          // reliable desktop context. A browser this agent owns is not
+          // orphaned — it was just extended above, and closing it here is
+          // exactly what truncated every browser visit to zero seconds.
+          if (
+            !desktopAgentOwnsBrowserForeground(currentForegroundPayload)
+            // A shell transient is not the person leaving the window they were
+            // using; it is Windows passing the foreground along mid-switch.
+            && !isTransientShellForegroundContext(currentForegroundPayload)
+          ) {
+            await closeActiveDesktopSession(recordedAt);
+          }
 
           const attributedTrackedSeconds = trackedSecondsThisTick + pendingTrackedSecondsRef.current;
           pendingTrackedSecondsRef.current = 0;
@@ -2601,18 +2531,6 @@ export const useDesktopTracker = () => {
         void handleForegroundWindowChange(payload);
       })
       : undefined;
-    const removeBrowserTrackingStateListener = desktopApi && typeof desktopApi.onBrowserTrackingState === 'function'
-      ? desktopApi.onBrowserTrackingState((payload) => {
-        browserTrackingRealtimeSeenRef.current = true;
-        void applyBrowserTrackingState(payload);
-      })
-      : undefined;
-    const removeBrowserTrackingEventListener = desktopApi && typeof desktopApi.onBrowserTrackingEvent === 'function'
-      ? desktopApi.onBrowserTrackingEvent((payload) => {
-        browserTrackingRealtimeSeenRef.current = true;
-        void handleBrowserTrackingEvent(payload);
-      })
-      : undefined;
     const removeSystemLockStateListener = desktopApi && typeof desktopApi.onSystemLockState === 'function'
       ? desktopApi.onSystemLockState((payload) => {
         void applySystemLockState(payload);
@@ -2740,28 +2658,28 @@ export const useDesktopTracker = () => {
           }
 
           desktopDeviceIdentityRef.current = deviceIdentity;
-          const currentState = pendingBrowserTrackingSyncStateRef.current || browserTrackingStateRef.current;
-          if (currentState) {
-            scheduleBrowserTrackingHealthSync(currentState, { immediate: true });
-          }
         })
         .catch((error) => {
           console.warn('Desktop tracker device identity lookup failed:', error);
         });
     }
-    if (desktopApi && typeof desktopApi.getBrowserTrackingState === 'function') {
-      void desktopApi.getBrowserTrackingState()
-        .then((state) => {
-          if (!isCurrentRun() || !state || browserTrackingRealtimeSeenRef.current) {
-            return;
-          }
+    /*
+     * Sessions left unsent by a previous run come back before the first tick,
+     * so the drain below picks them up ahead of anything recorded now and the
+     * timeline replays in the order it happened. Restoring appends through
+     * enqueue, so the device_id guard still applies to whatever was on disk.
+     */
+    if (typeof desktopApi?.loadPendingSessions === 'function') {
+      void desktopApi.loadPendingSessions()
+        .then((stored) => {
+          if (!isCurrentRun() || !Array.isArray(stored) || stored.length === 0) return;
 
-          void applyBrowserTrackingState(state, { immediateSync: true });
+          pendingSessionQueueRef.current.restore(stored as PendingSession[]);
+          console.log(`[desktop-tracker] Restored ${stored.length} unsent session(s) from disk`);
         })
-        .catch((error) => {
-          console.warn('Desktop tracker browser tracking state lookup failed:', error);
-        });
+        .catch((error) => { reportSilentError('desktop-tracker', error); });
     }
+
     void tick().then(() => {
       if (!activeEntryRef.current?.id) {
         try {
@@ -2796,14 +2714,7 @@ export const useDesktopTracker = () => {
       activeSegmentRef.current = null;
       activeEntryRef.current = null;
       activeDesktopSessionRef.current = null;
-      activeBrowserSessionRef.current = null;
-      browserTrackingStateRef.current = null;
-      exactBrowserHealthyUntilMsRef.current = 0;
       desktopDeviceIdentityRef.current = null;
-      pendingBrowserTrackingSyncStateRef.current = null;
-      browserTrackingSyncSignatureRef.current = null;
-      browserTrackingRealtimeSeenRef.current = false;
-      clearBrowserTrackingSyncTimeout();
       pendingIdleRewindRef.current.clear();
       pendingTrackedSecondsRef.current = 0;
       activeScreenshotEntryIdRef.current = null;
@@ -2816,12 +2727,6 @@ export const useDesktopTracker = () => {
       lockScreenAutoStopRevealPendingRef.current = false;
       if (typeof removeForegroundWindowChangeListener === 'function') {
         removeForegroundWindowChangeListener();
-      }
-      if (typeof removeBrowserTrackingStateListener === 'function') {
-        removeBrowserTrackingStateListener();
-      }
-      if (typeof removeBrowserTrackingEventListener === 'function') {
-        removeBrowserTrackingEventListener();
       }
       if (typeof removeSystemLockStateListener === 'function') {
         removeSystemLockStateListener();

@@ -49,6 +49,8 @@ import { TOUR_ANCHORS } from '@/features/tour/tourSteps';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { greetUser } from '@/lib/greeting';
+import { buildAttendanceBreakdown, type PersonAttendanceFacts } from '@/lib/attendanceBreakdown';
+import { buildTaskPipeline } from '@/lib/taskPipeline';
 type DashboardEmployee = {
   id: number;
   name: string;
@@ -701,6 +703,14 @@ const AttendanceTrendChart = ({
   );
 };
 
+/** One colour per attendance category, so the two charts cannot drift apart. */
+const ORG_ATTENDANCE_COLORS = {
+  present_on_time: { hex: '#16a34a', bgClass: 'bg-emerald-500' },
+  present_late: { hex: '#f97316', bgClass: 'bg-rose-500' },
+  on_leave: { hex: '#f59e0b', bgClass: 'bg-amber-500' },
+  absent: { hex: '#dc2626', bgClass: 'bg-red-500' },
+} as const;
+
 export default function AdminDashboard() {
   const { user, organization } = useAuth();
 
@@ -723,6 +733,7 @@ export default function AdminDashboard() {
   const [workDepartmentFilter, setWorkDepartmentFilter] = useState('All');
   const [workStatusFilter, setWorkStatusFilter] = useState('All');
   const [viewInMyTimezone, setViewInMyTimezone] = useState(false);
+  const [showRowsWithoutPunch, setShowRowsWithoutPunch] = useState(false);
   const [selectedKpiStatus, setSelectedKpiStatus] = useState<RangeStatusFilter | null>(null);
   const [rangeStatusFilter, setRangeStatusFilter] = useState<RangeStatusFilter>('all');
   const [dashboardScope, setDashboardScope] = useState<DashboardScope>(() =>
@@ -813,6 +824,7 @@ export default function AdminDashboard() {
         overallResponse,
         tasksResponse,
         projectsResponse,
+        weeklyReportResponse,
         notificationsResponse,
         groupsResponse,
         auditResponse,
@@ -822,8 +834,20 @@ export default function AdminDashboard() {
         attendanceApi.summary({ start_date: selectedStartDate, end_date: selectedEndDate }),
         leaveApi.list({ status: 'approved', limit: 500 }),
         reportApi.overall(reportScopeParams),
-        taskApi.getAll({ timer_only: true }),
+        // Not timer_only: that filter is status != 'done' server-side, and the
+        // pipeline chart below claims to show the Done column too.
+        taskApi.getAll(),
         projectApi.getAll(),
+        /*
+         * Real per-project time for the selected range.
+         *
+         * weeklyReport was hardcoded to empty arrays below, and the Projects
+         * panel derives every project's hours from it — so each one rendered
+         * "0h 0m · 0%" no matter how much had been logged against it. Measured
+         * 17 Aug 2026: five projects held between 692 and 786 tracked hours
+         * while the dashboard showed zero for all of them.
+         */
+        reportApi.weekly({ start_date: selectedStartDate, end_date: selectedEndDate, scope: 'organization' }),
         notificationApi.list({ limit: 8 }),
         reportGroupApi.list(),
         auditApi.list({ per_page: 8 }),
@@ -839,6 +863,9 @@ export default function AdminDashboard() {
       ]);
 
       const overallPayload = overallResponse.status === 'fulfilled' ? overallResponse.value.data : { summary: {}, by_day: [], by_user: [] };
+      const weeklyPayload: any = weeklyReportResponse.status === 'fulfilled'
+        ? (weeklyReportResponse.value.data ?? {})
+        : { time_entries: [], entries: [], by_project: [] };
       const attendanceCalendarDays = attendanceCalendarResponse.status === 'fulfilled'
         ? safeArray<any>(attendanceCalendarResponse.value).flatMap((response) => safeArray<any>(response?.data?.days))
         : [];
@@ -854,7 +881,13 @@ export default function AdminDashboard() {
         notifications: notificationsResponse.status === 'fulfilled' ? safeArray<any>(notificationsResponse.value.data?.data) : [],
         groups: groupsResponse.status === 'fulfilled' ? safeArray<any>(groupsResponse.value.data?.data) : [],
         auditLogs: auditResponse.status === 'fulfilled' ? safeArray<any>(auditResponse.value.data?.data) : [],
-        weeklyReport: { time_entries: [], entries: [], by_project: [], total_duration: Number(overallPayload?.summary?.total_duration || 0) },
+        weeklyReport: {
+          ...weeklyPayload,
+          // Kept as the authority for the headline total: /reports/overall is
+          // already scoped to the selected employee or department, while the
+          // weekly report is organisation-wide.
+          total_duration: Number(overallPayload?.summary?.total_duration || weeklyPayload?.total_duration || 0),
+        },
         monthlyReport: { by_day: safeArray<any>(overallPayload?.by_day) },
         attendanceCalendarDays,
       };
@@ -984,13 +1017,44 @@ export default function AdminDashboard() {
     return !isLate && (Number(row.present_days || 0) > 0 || hasActiveAttendance(row));
   }).length;
   
-  const finalPresentLateInRange = presentLateInRange + (managerIsPresentLate ? 1 : 0);
-  const finalPresentOnTimeInRange = presentOnTimeInRange + (managerIsPresentOnTime ? 1 : 0);
-  const finalOnLeave = effectiveLeaveUserIds.size + (managerIsOnLeave && !effectiveLeaveUserIds.has(userId) ? 1 : 0);
-  const totalPresentInRange = finalPresentOnTimeInRange + finalPresentLateInRange;
-  const presentPercent = totalEmployees ? Math.round((totalPresentInRange / totalEmployees) * 100) : 0;
-  const onLeave = finalOnLeave;
-  const absentCount = Math.max(0, totalEmployees - finalPresentOnTimeInRange - finalPresentLateInRange - onLeave);
+  /*
+   * One classification for the whole page.
+   *
+   * Every card and chart that splits people by attendance reads from this, so
+   * the KPI row and the chart beneath it cannot print different percentages for
+   * the same count. Facts are per person and per range — "late" means late on
+   * at least one day, not late today — and buildAttendanceBreakdown puts each
+   * person in exactly one bucket.
+   */
+  const attendanceRowByUserId = new Map<number, any>(
+    attendanceRows.map((row: any) => [Number(row.user?.id || row.user_id || row.employee_id), row])
+  );
+  const attendanceFacts: PersonAttendanceFacts[] = employees.map((employee: any) => {
+    const row = attendanceRowByUserId.get(Number(employee.id));
+    const lateMinutes = Number(row?.late_days || row?.late_minutes || 0);
+    const isLateFlag = row?.is_late === true || row?.is_late === 'true' || row?.is_late === 1;
+    const wasLate = lateMinutes > 0 || isLateFlag;
+    return {
+      userId: Number(employee.id),
+      // Being late implies having turned up, so a late mark counts as attendance
+      // even where present_days did not get written.
+      hasAttendance: Number(row?.present_days || 0) > 0 || hasActiveAttendance(row) || wasLate,
+      wasLate,
+      hasApprovedLeave: effectiveLeaveUserIds.has(Number(employee.id)),
+    };
+  });
+  const orgAttendanceBreakdown = buildAttendanceBreakdown(attendanceFacts, totalEmployees);
+  const sliceValue = (key: string) =>
+    orgAttendanceBreakdown.slices.find((slice) => slice.key === key)?.value ?? 0;
+  const slicePercent = (key: string) =>
+    orgAttendanceBreakdown.slices.find((slice) => slice.key === key)?.percent ?? 0;
+
+  const finalPresentLateInRange = sliceValue('present_late');
+  const finalPresentOnTimeInRange = sliceValue('present_on_time');
+  const totalPresentInRange = orgAttendanceBreakdown.present;
+  const presentPercent = orgAttendanceBreakdown.presentPercent;
+  const onLeave = sliceValue('on_leave');
+  const absentCount = sliceValue('absent');
   const newHires = employees.filter((employee) => dateInRange(employee.joining_date || employee.created_at, selectedRange)).length;
   const resignations = employees.filter((employee) => dateInRange(employee.exit_date, selectedRange)).length;
   const dashboardSummary = data.summary as any;
@@ -1052,19 +1116,36 @@ export default function AdminDashboard() {
     return { label: 'Absent', value: 1, color: '#dc2626', bgClass: 'bg-red-600' };
   })();
   const isSingleEmployeeDay = dashboardScope === 'employee' && selectedStartDate === selectedEndDate;
+  /*
+   * One mutually exclusive breakdown, used by every chart that splits the
+   * population by attendance.
+   *
+   * Two separate bugs lived here. "Present" already included the late people,
+   * and a "Present Late" slice sat beside it — so anyone late was counted
+   * twice. On-leave was missing from the chart entirely. The result: 88 absent
+   * out of 92 read as 96% on the KPI card (denominator 92) and 98% in the
+   * chart right beside it (denominator 90, being 1 + 88 + 1). Same people,
+   * same screen, two numbers.
+   *
+   * These four categories partition the headcount by construction —
+   * absentCount is defined as the remainder — so the slices always total
+   * exactly totalEmployees and the two percentages agree.
+   */
   const attendancePieItems = dashboardScope === 'employee'
     ? isSingleEmployeeDay
       ? [selectedEmployeePieStatus]
       : [
-        { label: 'Present', value: attendancePresentDays, color: '#16a34a', bgClass: 'bg-green-600' },
-        { label: 'Absent', value: attendanceAbsentDays, color: '#dc2626', bgClass: 'bg-red-600' },
+        { label: 'Present on time', value: attendanceOnTimeDays, color: '#16a34a', bgClass: 'bg-green-600' },
         { label: 'Present Late', value: attendanceLatePresentDays, color: '#f97316', bgClass: 'bg-orange-500' },
+        { label: 'On leave', value: attendanceLeaveDays, color: '#f59e0b', bgClass: 'bg-amber-500' },
+        { label: 'Absent', value: attendanceAbsentDays, color: '#dc2626', bgClass: 'bg-red-600' },
       ]
-    : [
-      { label: 'Present', value: totalPresentInRange, color: '#16a34a', bgClass: 'bg-green-600' },
-      { label: 'Absent', value: absentCount, color: '#dc2626', bgClass: 'bg-red-600' },
-      { label: 'Present Late', value: finalPresentLateInRange, color: '#f97316', bgClass: 'bg-orange-500' },
-    ];
+    : orgAttendanceBreakdown.slices.map((slice) => ({
+      label: slice.label,
+      value: slice.value,
+      color: ORG_ATTENDANCE_COLORS[slice.key].hex,
+      bgClass: ORG_ATTENDANCE_COLORS[slice.key].bgClass,
+    }));
 
   const activities: DashboardActivity[] = data.auditLogs.map((item: any, index: number) => ({
     id: Number(item.id || index),
@@ -1185,9 +1266,10 @@ export default function AdminDashboard() {
         : Math.min(100, Math.round((Number(item.total_time || 0) / Math.max(1, weeklyTotal)) * 100)),
     }));
 
-  const leavePercent = totalEmployees ? Math.round((onLeave / totalEmployees) * 100) : 0;
-  const absentPercent = totalEmployees ? Math.round((absentCount / totalEmployees) * 100) : 0;
-  const presentLatePercent = totalEmployees ? Math.round((finalPresentLateInRange / totalEmployees) * 100) : 0;
+  // Straight from the breakdown, so a card can never disagree with the chart.
+  const leavePercent = slicePercent('on_leave');
+  const absentPercent = slicePercent('absent');
+  const presentLatePercent = slicePercent('present_late');
   const IDLE_SOURCE_LABELS: Record<'overall' | 'insights' | 'org' | 'none', string> = {
     overall: 'Source: per-user (reports/overall)',
     insights: 'Source: employee insights',
@@ -1240,7 +1322,7 @@ export default function AdminDashboard() {
   const selectedEmployeeOverallRow = selectedEmployee
     ? overallByUserRows.find((row: any) => Number(row.user?.id || row.user_id || 0) === selectedEmployee.id) || null
     : null;
-  const productivityLeaders = overallByUserRows
+  const productivityLeadersAll = overallByUserRows
     .map((row: any) => {
       const userId = Number(row.user?.id || row.user_id || 0);
       const employee = employeeById.get(userId);
@@ -1260,8 +1342,20 @@ export default function AdminDashboard() {
         productivityPercent,
       };
     })
-    .sort((left, right) => right.workingSeconds - left.workingSeconds)
-    .slice(0, 5);
+    .sort((left, right) => right.workingSeconds - left.workingSeconds);
+
+  /*
+   * Only people who actually tracked something can lead.
+   *
+   * The list was padded out to five from whoever came next, so on a quiet day
+   * it read "Ayush Borwal — 0% productive — 0h 0m" as a leader. Nobody with no
+   * recorded time is a leader in anything, and a row of zeroes dressed as a
+   * ranking is worse than a shorter list: it buries the one person who did
+   * work among people who were not at a desk.
+   */
+  const productivityLeadersTracked = productivityLeadersAll.filter((row) => row.trackedSeconds > 0);
+  const productivityLeaders = productivityLeadersTracked.slice(0, 5);
+  const productivityLeadersUntrackedCount = productivityLeadersAll.length - productivityLeadersTracked.length;
   const departmentPerformanceRows = (Object.values(overallByUserRows.reduce((acc: Record<string, {
     department: string;
     members: number;
@@ -1312,7 +1406,17 @@ export default function AdminDashboard() {
       attendanceCoverage,
       healthLabel: needsAttention ? 'Needs attention' : 'Healthy',
     };
-  }).sort((left, right) => right.trackedSeconds - left.trackedSeconds).slice(0, 6);
+  }).sort((left, right) => right.trackedSeconds - left.trackedSeconds);
+  /*
+   * Counted across every department, not the handful the list shows.
+   *
+   * This used to slice to the top six by tracked time and then count "needs
+   * attention" inside that slice — so the tile could never exceed six, and
+   * because the sort is by tracked time descending, the departments dropped
+   * were precisely the quiet ones most likely to need attention. Measured
+   * 18 Aug 2026: the tile read 0 while three of nine departments had not been
+   * looked at at all.
+   */
   const departmentsNeedingAttention = departmentPerformanceRows.filter((row) => row.healthLabel === 'Needs attention').length;
   const employeesWithoutTrackedTime = overallByUserRows.filter((row: any) => Number(row.total_duration || 0) <= 0).length;
   const isRangeIncludingToday = selectedStartDate <= todayIso() && selectedEndDate >= todayIso();
@@ -1364,6 +1468,16 @@ export default function AdminDashboard() {
             ? 'Working'
             : 'Not working',
       todaySeconds,
+      /*
+       * The last completed check-in to check-out, which is what the Check-In
+       * log's "Session" column claims to show. It used to render todaySeconds —
+       * the whole range — so a 7h shift punched in at 10:05 and out at 17:09
+       * displayed as 85h.
+       */
+      sessionSeconds:
+        checkInAt && checkOutAt
+          ? Math.max(0, Math.round((new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 1000))
+          : 0,
       workedSeconds,
       idleSeconds,
       breakSeconds: Number(overallRow?.break_seconds || 0),
@@ -1391,6 +1505,17 @@ export default function AdminDashboard() {
       || (workStatusFilter === 'Absent' && isAbsent);
     return matchesSearch && matchesDepartment && matchesStatus;
   });
+  /*
+   * The check-in log is a record of punches, and a row for somebody who never
+   * punched carries none. Measured 17 Aug 2026 it rendered all 92 employees
+   * with 91 reading "Not recorded / Not recorded / 0h 0m / No punch" — the one
+   * real punch was 80 rows down. Show the punches; keep the rest one click
+   * away, counted rather than hidden, because "who has not started" is a real
+   * question, just not the one this table answers.
+   */
+  const checkinRowsWithPunch = filteredWorkStatusRows.filter((row) => Boolean(row.checkInAt));
+  const checkinRowsWithoutPunch = filteredWorkStatusRows.filter((row) => !row.checkInAt);
+  const visibleCheckinRows = showRowsWithoutPunch ? filteredWorkStatusRows : checkinRowsWithPunch;
   const activeOverallRangeStatusFilter: RangeStatusFilter = selectedKpiStatus ?? 'all';
   const overallRangeStatusRows = useMemo(() => {
     if (!shouldShowRangeStatusDetail || dashboardScope === 'employee') return [];
@@ -1567,20 +1692,25 @@ export default function AdminDashboard() {
   const effectiveRangeStatusFilter = activeOverallRangeStatusFilter;
   const workingCount = workStatusRows.filter((row) => row.status === 'Working').length;
   const notWorkingCount = workStatusRows.filter((row) => row.status === 'Not working').length;
-  const attendanceHealth = [
-    { label: 'Working now', value: workingCount, color: 'bg-emerald-500' },
-    { label: 'Not started', value: notWorkingCount, color: 'bg-slate-400' },
-    { label: 'Present late', value: finalPresentLateInRange, color: 'bg-rose-500' },
-    { label: 'On leave', value: onLeave, color: 'bg-amber-500' },
-    { label: 'Absent', value: absentCount, color: 'bg-red-500' },
-  ];
-  const taskStatusCounts: Record<string, number> = data.tasks.reduce((acc: Record<string, number>, task: any) => {
-    const status = String(task.status || 'todo').toLowerCase();
-    const key = status.includes('progress') ? 'In Progress' : status.includes('done') || status.includes('complete') ? 'Done' : 'To Do';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, { 'To Do': 0, 'In Progress': 0, Done: 0 });
-  const taskTotal = Math.max(1, data.tasks.length);
+  /*
+   * The same four mutually exclusive categories as the overview chart.
+   *
+   * This used to carry both "Not started" and "Absent", which are the same
+   * people counted twice — measured 17 Aug 2026 they were both 88 — while
+   * "Working now" overlapped "Present late" (the one person working was the
+   * one person late). The bars summed to 181 in a 92-person organisation
+   * against an axis whose domain is totalEmployees, so the chart ran off its
+   * own scale. "Working now" is a live sub-state of present rather than a peer
+   * category, so it belongs in the quick-insight line below, not in the bars.
+   */
+  const attendanceHealth = orgAttendanceBreakdown.slices.map((slice) => ({
+    label: slice.label,
+    value: slice.value,
+    color: ORG_ATTENDANCE_COLORS[slice.key].bgClass,
+  }));
+  const taskPipeline = buildTaskPipeline(data.tasks);
+  const taskStatusCounts = taskPipeline.counts;
+  const taskTotal = Math.max(1, taskPipeline.total);
   const selectedWorkStatus = selectedEmployee ? workStatusRows.find((row) => row.employee.id === selectedEmployee.id) : null;
   const selectedEmployeeDetailQuery = useQuery({
     queryKey: ['dashboard-employee-detail', selectedEmployee?.id, selectedStartDate, selectedEndDate],
@@ -2045,13 +2175,39 @@ export default function AdminDashboard() {
             dailyData={buildDailyAttendanceTrend(calendarDaysInRange)}
             rangeLabel={selectedRangeLabel}
           />
-          <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {[
-              ['Present on time', attendanceOnTimeDays],
-              ['Present late', attendanceLatePresentDays],
-              ['On leave', attendanceLeaveDays],
-              ['Absent days', attendanceAbsentDays],
-            ].map(([label, value]) => (
+          {/*
+            These four count DAYS in the range, not people — in organisation
+            scope the calendar collapses the whole company to one status per
+            day, so `is_leave` means "somebody was on leave that day". They used
+            to be labelled "On leave" and "Absent days", sitting directly under
+            KPI cards that use those same words for head counts: the screen
+            showed "On leave 1" an inch below "On Leave 3" and both were right.
+            Naming the subject is the whole fix; the numbers were never wrong.
+          */}
+          <p className="mt-3 text-[11px] text-slate-500">
+            {dashboardScope === 'employee'
+              ? 'Days in the selected range for this employee.'
+              : 'Days in the selected range — a day counts once, however many people it applies to.'}
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+            {(dashboardScope === 'employee'
+              ? [
+                ['Days present on time', attendanceOnTimeDays],
+                ['Days present late', attendanceLatePresentDays],
+                ['Days on leave', attendanceLeaveDays],
+                ['Days absent', attendanceAbsentDays],
+              ]
+              : [
+                // Named for what the filters above actually test. "Days with
+                // absences" would be a lie: the absent-day filter requires
+                // nobody to have attended, so today reads 0 while 88 people
+                // are absent.
+                ['Days with no late arrivals', attendanceOnTimeDays],
+                ['Days with late arrivals', attendanceLatePresentDays],
+                ['Days with leave', attendanceLeaveDays],
+                ['Days nobody attended', attendanceAbsentDays],
+              ]
+            ).map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50 hover:shadow-sm">
                 <p className="text-[11px] text-slate-500">{label}</p>
                 <p className="mt-1 truncate text-xs font-semibold text-slate-900">{value}</p>
@@ -2621,9 +2777,20 @@ export default function AdminDashboard() {
               <span className="truncate font-semibold text-slate-900">{selectedEmployeeTimer?.taskTitle || 'Not assigned'}</span>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          {/*
+            * These three are org-wide in Overall scope while the clock above is
+            * personal, so the scope has to be on screen. Without it the card read
+            * "No active timer" over 6,649 hours — the whole organisation's July,
+            * which is 214 hours a day for one person.
+            */}
+          <p className="mt-4 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            {dashboardScope === 'employee'
+              ? `${selectedEmployee?.name || 'Selected employee'}, selected range`
+              : 'Whole organisation, selected range'}
+          </p>
+          <div className="mt-2 grid grid-cols-3 gap-3">
             <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">Selected Range</p>
+              <p className="text-xs text-slate-500">Tracked</p>
               <p className="mt-2 text-lg font-semibold">{formatDuration(totalDuration)}</p>
             </div>
             <div className="rounded-lg border border-slate-100 p-3">
@@ -2641,7 +2808,7 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card id="checkin-log" className="scroll-mt-24 p-4">
           <SectionTitle title="Check-In / Check-Out Log" action={<Link to="/attendance" className="text-xs font-medium text-blue-600">Open Attendance</Link>} />
-          <div className={`overflow-x-auto rounded-lg border border-slate-100 ${filteredWorkStatusRows.length > 10 ? 'max-h-[520px] overflow-y-auto' : ''}`}>
+          <div className={`overflow-x-auto rounded-lg border border-slate-100 ${visibleCheckinRows.length > 10 ? 'max-h-[520px] overflow-y-auto' : ''}`}>
             <table className="min-w-[760px] w-full text-left text-xs">
               <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
@@ -2653,7 +2820,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredWorkStatusRows.map((row) => (
+                {visibleCheckinRows.map((row) => (
                   <tr key={row.employee.id}>
                     <td className="px-4 py-3">
                       <div className="flex min-w-0 items-center gap-3">
@@ -2672,7 +2839,7 @@ export default function AdminDashboard() {
                       {row.status === 'Working' ? 'Still checked in' : formatDateTimeForEmployee(row.checkOutAt, row.employee)}
                       {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : row.status === 'On Break' ? 'On a break' : formatDuration(row.todaySeconds)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : row.status === 'On Break' ? 'On a break' : row.sessionSeconds > 0 ? formatDuration(row.sessionSeconds) : '—'}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${!row.checkInAt ? 'bg-slate-100 text-slate-600' : (row.lateDays > 0 || (isRangeIncludingToday && row.lateMinutes > 0)) ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
                         {!row.checkInAt
@@ -2695,8 +2862,32 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
-            {filteredWorkStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No punch records match the filters</EmptyInline></div> : null}
+            {visibleCheckinRows.length === 0 ? (
+              <div className="border-t border-slate-100 p-4">
+                <EmptyInline>
+                  {checkinRowsWithoutPunch.length > 0
+                    ? 'Nobody has punched in yet for this range'
+                    : 'No punch records match the filters'}
+                </EmptyInline>
+              </div>
+            ) : null}
           </div>
+          {checkinRowsWithoutPunch.length > 0 ? (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <span>
+                {checkinRowsWithPunch.length} punched in
+                {' · '}
+                {checkinRowsWithoutPunch.length} with no punch in this range
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowRowsWithoutPunch((current) => !current)}
+                className="font-medium text-blue-600 hover:text-blue-700"
+              >
+                {showRowsWithoutPunch ? 'Hide people with no punch' : 'Show people with no punch'}
+              </button>
+            </div>
+          ) : null}
         </Card>
 
         <Card id="attendance-health" className="scroll-mt-24 p-4">
@@ -2876,8 +3067,9 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card id="task-pipeline" className="scroll-mt-24 p-4">
             <SectionTitle title="Task Pipeline" action={<Link to="/tasks" className="text-xs font-medium text-blue-600">Manage</Link>} />
+            <div role="group" aria-label="Task Pipeline">
             {(() => {
-              const taskPipelineData = Object.entries(taskStatusCounts).map(([label, count]) => ({ label, count }));
+              const taskPipelineData = taskPipeline.rows.map((row) => ({ label: row.label, count: row.count }));
               return (
                 <ResponsiveContainer width="100%" height={taskPipelineData.length * 40}>
                   <BarChart data={taskPipelineData} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }} barCategoryGap="25%">
@@ -2908,6 +3100,7 @@ export default function AdminDashboard() {
                 </ResponsiveContainer>
               );
             })()}
+            </div>
         </Card>
       </section>
 
@@ -2922,9 +3115,15 @@ export default function AdminDashboard() {
                     <p className="font-semibold text-slate-900">{project.name}</p>
                     <span className="text-emerald-600">{project.status}</span>
                   </div>
+                  {/*
+                    * Not progress. The projects table has no progress column, so
+                    * this has always been the project's share of tracked hours in
+                    * the range — which read as completion beside a "completed"
+                    * badge showing 10%.
+                    */}
                   <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
                     <span>{project.hours}</span>
-                    <span>{project.percent}%</span>
+                    <span>{project.percent}% of tracked hours</span>
                   </div>
                 </div>
               ))}
@@ -2955,8 +3154,25 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
+              {productivityLeadersUntrackedCount > 0 && (
+                /*
+                 * Counted rather than listed. These people are in scope and
+                 * recorded nothing in this range, which is worth knowing —
+                 * "nobody tracked" and "one person tracked" look identical
+                 * otherwise — but they are not ranking data.
+                 */
+                <p className="pt-1 text-[11px] text-slate-500">
+                  {productivityLeadersUntrackedCount} other{productivityLeadersUntrackedCount === 1 ? '' : 's'} tracked no time in this range
+                </p>
+              )}
             </div>
-          ) : <EmptyInline>No productivity rows in this scope</EmptyInline>}
+          ) : (
+            <EmptyInline>
+              {productivityLeadersUntrackedCount > 0
+                ? `No time tracked in this range by any of the ${productivityLeadersUntrackedCount} people in scope`
+                : 'No productivity rows in this scope'}
+            </EmptyInline>
+          )}
         </Card>
       </section>
 
@@ -2999,7 +3215,10 @@ export default function AdminDashboard() {
                     <span>Avg / member: <strong>{formatDuration(row.averageTrackedPerMember)}</strong></span>
                     <span>Attendance: <strong>{row.attendanceCoverage}%</strong></span>
                     <span>Idle share: <strong>{row.idlePercent}%</strong></span>
-                    <span>Late today: <strong>{row.lateMembers}</strong></span>
+                    {/* Range-scoped like every other figure in this row, so it
+                        must not claim to be today's. Same mislabel as the
+                        Focus Board tile. */}
+                    <span>Late in range: <strong>{row.lateMembers}</strong></span>
                   </div>
                 </div>
               ))}
@@ -3020,10 +3239,10 @@ export default function AdminDashboard() {
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
               <p className="text-[11px] text-slate-500">Open Tasks</p>
-              <p className="mt-1 text-xl font-semibold text-amber-700">{taskStatusCounts['To Do'] + taskStatusCounts['In Progress']}</p>
+              <p className="mt-1 text-xl font-semibold text-amber-700">{taskPipeline.openCount}</p>
             </div>
             <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <p className="text-[11px] text-slate-500">Late Today</p>
+              <p className="text-[11px] text-slate-500">Late in range</p>
               <p className="mt-1 text-xl font-semibold text-orange-700">{finalPresentLateInRange}</p>
             </div>
           </div>

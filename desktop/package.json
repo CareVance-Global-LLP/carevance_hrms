@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -12,7 +12,7 @@
     "start": "npm run prepare:app-config && npm run prepare:browser-extension && node scripts/run-electron.cjs .",
     "pack": "node scripts/write-app-config.cjs --require-remote && npm run prepare:browser-extension && npm run prepare:renderer && electron-builder --dir --config.directories.output=release-v%npm_package_version%",
     "dist:win": "node scripts/write-app-config.cjs --require-remote && npm run prepare:browser-extension && npm run prepare:renderer && electron-builder --win nsis --config.directories.output=release-v%npm_package_version%",
-    "dist:portable": "npm run prepare:app-config && npm run prepare:browser-extension && electron-builder --win portable --config.directories.output=release-v%npm_package_version%",
+    "dist:portable": "node scripts/write-app-config.cjs --require-remote && npm run prepare:browser-extension && electron-builder --win portable --config.directories.output=release-v%npm_package_version%",
     "test": "node --test \"tests/*.test.cjs\""
   },
   "build": {
@@ -23,8 +23,12 @@
       "main.cjs",
       "preload.cjs",
       "auto-start.cjs",
+      "idle-popup.cjs",
+      "idle-popup-preload.cjs",
+      "idle-popup/**/*",
       "browser-tracking-bridge.cjs",
       "browser-tracking-install-guide.cjs",
+      "browser-url/**/*",
       "app-config.json",
       "offline/**/*",
       "renderer/**/*",

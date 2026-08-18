@@ -17,6 +17,7 @@ Route::get('/attendance/selfies/today', [AttendanceSelfieController::class, 'tod
 Route::get('/attendance/selfies/map', [AttendanceSelfieController::class, 'mapData'])->middleware('role:admin,manager');
 Route::get('/attendance/holidays', [AttendanceHolidayController::class, 'index']);
 Route::get('/attendance/summary', [AttendanceController::class, 'summary'])->middleware('role:admin,manager');
+Route::get('/attendance/team-presence', [AttendanceController::class, 'teamPresence']);
 
 Route::get('/leave-requests', [LeaveRequestController::class, 'index']);
 Route::get('/leave-requests/balances', [LeaveRequestController::class, 'balances']);

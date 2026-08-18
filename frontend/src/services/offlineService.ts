@@ -6,6 +6,13 @@ export type OfflineStatus = 'online' | 'offline' | 'syncing';
 export interface OfflineState {
   status: OfflineStatus;
   pendingRecords: number;
+  /*
+   * Records the desktop sync engine has stopped trying to send. Reported apart
+   * from pendingRecords, which counted them too and so described work that had
+   * been given up on as "Pending" — the one case that needs a person, wearing
+   * the label that says no action is required.
+   */
+  stuckRecords: number;
   lastSyncAt: string | null;
   isDesktopApp: boolean;
   queueSize: number;
@@ -37,6 +44,7 @@ export const getOfflineStatus = async (): Promise<OfflineState> => {
   const defaultState: OfflineState = {
     status: 'online',
     pendingRecords: 0,
+    stuckRecords: 0,
     lastSyncAt: null,
     isDesktopApp: isDesktopApp(),
     queueSize: 0,
@@ -49,6 +57,7 @@ export const getOfflineStatus = async (): Promise<OfflineState> => {
     return {
       status: status.isSyncing ? 'syncing' : (status.online ? 'online' : 'offline'),
       pendingRecords: status.pendingRecords,
+      stuckRecords: status.stuckRecords ?? 0,
       lastSyncAt: status.lastSyncAt,
       isDesktopApp: true,
       queueSize: status.queueSize,
@@ -256,6 +265,7 @@ export const onOfflineStatusChange = (
       callback({
         status: status.isSyncing ? 'syncing' : (status.online ? 'online' : 'offline'),
         pendingRecords: status.pendingRecords,
+        stuckRecords: status.stuckRecords ?? 0,
         lastSyncAt: status.lastSyncAt,
         isDesktopApp: true,
         queueSize: status.queueSize,

@@ -204,11 +204,43 @@ class GroupAccessService
         $visibleGroupIds = $this->visibleGroupIds($user);
 
         if (is_array($visibleGroupIds)) {
-            if (empty($visibleGroupIds)) {
-                return $query->whereRaw('1 = 0');
-            }
+            /*
+             * Tasks reach a user two ways: through a group, or through a
+             * project. This used to filter on group_id alone, and `whereIn`
+             * never matches NULL — so once tasks moved onto projects, every
+             * non-admin saw nothing. Measured 17 Aug 2026: all 54 tasks had
+             * group_id NULL, and an employee with three assigned to him could
+             * open none of them. Admins were unaffected because their branch
+             * above already carries the group-less fallback, which is why this
+             * looked like a working feature to whoever tested it.
+             *
+             * A group-less task is visible when its project belongs to the
+             * user's organisation AND the user is on that project — the same
+             * shape as group membership, so this widens the scope to reach
+             * project work without handing every task to everyone.
+             */
+            $query->where(function (Builder $builder) use ($visibleGroupIds, $user) {
+                if (!empty($visibleGroupIds)) {
+                    $builder->whereIn('group_id', $visibleGroupIds);
+                }
 
-            $query->whereIn('group_id', $visibleGroupIds);
+                $builder->orWhere(function (Builder $projectQuery) use ($user) {
+                    $projectQuery->whereNull('group_id')
+                        ->whereHas('project', fn (Builder $project) => $project->where('organization_id', $user->organization_id))
+                        /*
+                         * Reached either by being on the project, or by the
+                         * task being yours. Project membership alone was not
+                         * enough: test7 is the assignee on three tasks but a
+                         * member of only one of their projects, so two tasks
+                         * with his name on them stayed invisible to him.
+                         */
+                        ->where(function (Builder $reach) use ($user) {
+                            $reach->whereHas('project.assignedUsers', fn (Builder $member) => $member->where('users.id', $user->id))
+                                ->orWhere('assignee_id', $user->id)
+                                ->orWhereHas('assignees', fn (Builder $member) => $member->where('users.id', $user->id));
+                        });
+                });
+            });
         }
 
         if ($this->userHierarchyLevel($user) >= 100) {

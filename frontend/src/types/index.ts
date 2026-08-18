@@ -312,55 +312,9 @@ export interface ActivitySession {
   time_entry?: TimeEntry;
 }
 
-export interface BrowserTrackingEvent {
-  kind: 'tab-focused' | 'tab-updated' | 'tab-closed' | 'window-blurred' | 'heartbeat';
-  browser_name: string;
-  profile_key: string;
-  tab_id?: number | null;
-  window_id?: number | null;
-  url?: string | null;
-  title?: string | null;
-  recorded_at: string;
-}
-
-export interface BrowserTrackingPairingCode {
-  value: string;
-  expires_at: string;
-  browser_name?: string;
-  user_id?: number | null;
-}
-
-export interface BrowserTrackingConnection {
-  browser_name: string;
-  profile_key: string;
-  extension_origin?: string | null;
-  last_seen_at?: string | null;
-  extension_version?: string | null;
-  paired_at?: string | null;
-  user_id?: number | null;
-}
-
-export interface BrowserTrackingState {
-  ready: boolean;
-  local_url?: string | null;
-  connections: BrowserTrackingConnection[];
-  pairing_code?: BrowserTrackingPairingCode | null;
-  last_event_at?: string | null;
-  last_error?: string | null;
-}
-
 export interface DesktopDeviceIdentity {
   device_id: string;
   device_label: string | null;
-}
-
-export interface BrowserTrackingConnectionSyncItem {
-  browser_name: string;
-  profile_key: string;
-  extension_origin?: string | null;
-  extension_version?: string | null;
-  paired_at?: string | null;
-  last_seen_at?: string | null;
 }
 
 export interface ScreenshotCaptureHealth {
@@ -368,49 +322,6 @@ export interface ScreenshotCaptureHealth {
   since?: string | null;
   reason?: string | null;
   guidance?: string | null;
-}
-
-export interface BrowserTrackingConnectionSyncRequest {
-  device_id: string;
-  device_label?: string | null;
-  ready: boolean;
-  last_error?: string | null;
-  last_event_at?: string | null;
-  // Device-level screenshot capture health, piggybacked onto the existing
-  // desktop→admin heartbeat so silently failing captures surface in Monitoring.
-  screenshot_capture?: ScreenshotCaptureHealth | null;
-  connections: BrowserTrackingConnectionSyncItem[];
-}
-
-export interface BrowserTrackingConnectionSyncRecord {
-  id: number;
-  user_id: number;
-  organization_id: number;
-  device_id: string;
-  device_label?: string | null;
-  browser_name: string;
-  browser_profile_key: string;
-  extension_version?: string | null;
-  status: 'connected' | 'disconnected' | 'disabled' | string;
-  connected_at?: string | null;
-  last_seen_at?: string | null;
-  last_sync_at?: string | null;
-  disconnected_at?: string | null;
-  disconnect_reason?: string | null;
-  meta?: Record<string, any> | null;
-}
-
-export interface BrowserTrackingHealthSummary {
-  status: 'connected' | 'disconnected' | 'disabled' | 'unknown' | string;
-  device_label?: string | null;
-  connection_count: number;
-  connected_connections: number;
-  browsers: string[];
-  last_seen_at?: string | null;
-  last_sync_at?: string | null;
-  disconnect_reason?: string | null;
-  needs_attention: boolean;
-  is_exact_tracking_active: boolean;
 }
 
 // Invoice Types

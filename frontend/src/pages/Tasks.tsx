@@ -20,6 +20,7 @@ import TaskToolbar from '@/features/tasks/TaskToolbar';
 import { type TaskStatus } from '@/features/tasks/taskConstants';
 import { formatTrackedTime, isOverdue } from '@/features/tasks/taskUtils';
 import { useTaskViewState } from '@/features/tasks/useTaskViewState';
+import { apiErrorMessage } from '@/lib/apiErrorMessage';
 
 type TaskMutationPayload = Partial<Task> & { assignee_ids?: number[]; label_ids?: number[] };
 
@@ -38,9 +39,15 @@ export default function Tasks() {
   const { state, update, reset, hasActiveFilters } = useTaskViewState();
 
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  /*
+   * Prefer whatever the server said over the caller's wording. Several task
+   * actions are refused for reasons a retry cannot fix — a circular dependency,
+   * an edge that already exists — and every one of them used to surface as
+   * "Please try again."
+   */
   const notifyError = (message: string, error: unknown) => {
     console.error(message, error);
-    setFeedback({ tone: 'error', message });
+    setFeedback({ tone: 'error', message: apiErrorMessage(error, message) });
   };
 
   const [editingTask, setEditingTask] = useState<Task | null>(null);

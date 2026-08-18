@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { productivityClassificationApi } from '@/services/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { hasStrictAdminAccess } from '@/lib/permissions';
+import MonitoringAlertRules from '../components/MonitoringAlertRules';
 import { useToast } from '@/components/ui/Toast';
 import Button from '@/components/ui/Button';
 import { TextInput } from '@/components/ui/FormField';
@@ -25,6 +28,7 @@ const PERIODS = [
 
 export default function ProductivityPane() {
   const toast = useToast();
+  const { user } = useAuth();
   const [items, setItems] = useState<ProductivityClassificationItem[]>([]);
   const [meta, setMeta] = useState<Record<string, any>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -102,6 +106,12 @@ export default function ProductivityPane() {
 
   return (
     <div className="space-y-4">
+      {/*
+        Sits with productivity because that is what these alerts are about: the
+        same figures this page classifies, said out loud when they cross a line.
+      */}
+      <MonitoringAlertRules canManage={hasStrictAdminAccess(user)} />
+
       <p className="text-sm text-slate-600">
         Domains and apps your team visited. Classifying one here changes every report that counts it.
       </p>

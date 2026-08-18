@@ -116,6 +116,19 @@ QueueManager.prototype.dropExhausted = function (recordType, localId) {
   return dropped;
 };
 
+/** Put every given-up record back in the queue. Returns how many. */
+QueueManager.prototype.requeueFailed = function (options = {}) {
+  const requeued = this.db.requeueFailedRecords(options);
+  if (requeued > 0) {
+    this.emit('items-requeued', { count: requeued });
+  }
+  return requeued;
+};
+
+QueueManager.prototype.getFailedCount = function () {
+  return this.db.getFailedRecordCount ? this.db.getFailedRecordCount() : 0;
+};
+
 QueueManager.prototype.markFailed = function (recordType, localId, errorMessage) {
   const markMap = {
     attendance: (id, msg) => this.db.markAttendanceFailed(id, msg),

@@ -16,6 +16,8 @@ interface LaneBlock {
   label: string;
   classification: Classification;
   isIdle: boolean;
+  /** Break time: entitled, and neither work nor idle. */
+  isBreak: boolean;
   reason?: string;
   durationSeconds: number;
 }
@@ -28,9 +30,16 @@ interface Lane {
   lastMs: number;
   trackedSeconds: number;
   idleSeconds: number;
+  breakSeconds: number;
 }
 
 const IDLE_PATTERN = 'repeating-linear-gradient(45deg, #9AA4AC 0 4px, transparent 4px 8px)';
+/*
+ * Breaks read as their own thing at a glance: a calmer, vertical hatch against
+ * idle's diagonal one, so the two are told apart without reading the tooltip
+ * and neither is mistaken for a coloured block of work.
+ */
+const BREAK_PATTERN = 'repeating-linear-gradient(90deg, #7DA9C7 0 3px, transparent 3px 9px)';
 
 const timeLabel = (ms: number, timezone: string) => {
   try {
@@ -71,6 +80,17 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
         : startMs + Math.max(durationSeconds, 30) * 1000;
 
       const isIdle = String(row?.type) === 'idle' || String(row?.tool_type) === 'idle';
+      /*
+       * Break time is neither work nor idle, and must not be drawn as either.
+       *
+       * Anything that was not `idle` fell through to the classified-activity
+       * branch, so a break rendered as a coloured block indistinguishable from
+       * real work — 158 hours of it on this database, every row carrying a NULL
+       * classification. Idle is the person being away from a running timer; a
+       * break is time they are entitled to and which the Break figure elsewhere
+       * already counts separately.
+       */
+      const isBreak = !isIdle && (String(row?.type) === 'breaks' || String(row?.type) === 'break');
 
       if (!byUser.has(userId)) {
         byUser.set(userId, {
@@ -81,6 +101,7 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
           lastMs: endMs,
           trackedSeconds: 0,
           idleSeconds: 0,
+          breakSeconds: 0,
         });
       }
 
@@ -88,9 +109,10 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
       lane.blocks.push({
         startMs,
         endMs,
-        label: isIdle ? 'Idle' : blockLabelFor(row),
+        label: isIdle ? 'Idle' : isBreak ? 'Break' : blockLabelFor(row),
         classification: normalizeClassification(row?.classification),
         isIdle,
+        isBreak,
         reason: row?.classification_reason ? String(row.classification_reason) : undefined,
         durationSeconds,
       });
@@ -98,6 +120,9 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
       lane.lastMs = Math.max(lane.lastMs, endMs);
       if (isIdle) {
         lane.idleSeconds += durationSeconds;
+      } else if (isBreak) {
+        // Counted on its own so the lane's tracked total stays "time worked".
+        lane.breakSeconds += durationSeconds;
       } else {
         lane.trackedSeconds += durationSeconds;
       }
@@ -180,18 +205,20 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
                 <span className="block font-mono text-[11px] text-slate-500">
                   {timeLabel(lane.firstMs, timezone)} – {timeLabel(lane.lastMs, timezone)}
                   {' · '}{formatDuration(lane.trackedSeconds)}
+                  {lane.breakSeconds > 0 ? ` · ${formatDuration(lane.breakSeconds)} break` : ''}
                 </span>
               </button>
               <div className="relative h-6 overflow-hidden rounded-md bg-slate-100" role="img" aria-label={`${lane.userName}'s day timeline`}>
                 {lane.blocks.map((block, index) => (
                   <span
                     key={index}
-                    className={`absolute inset-y-0 ${block.isIdle ? '' : CLASSIFICATION_META[block.classification].barClass}`}
+                    className={`absolute inset-y-0 ${block.isIdle || block.isBreak ? '' : CLASSIFICATION_META[block.classification].barClass}`}
                     style={{
                       ...positionFor(block),
                       ...(block.isIdle ? { backgroundImage: IDLE_PATTERN, opacity: 0.7 } : {}),
+                      ...(block.isBreak ? { backgroundImage: BREAK_PATTERN, opacity: 0.85 } : {}),
                     }}
-                    title={`${timeLabel(block.startMs, timezone)} – ${timeLabel(block.endMs, timezone)} · ${block.label} · ${block.isIdle ? 'idle' : CLASSIFICATION_META[block.classification].label.toLowerCase()}${block.reason ? ` — ${block.reason}` : ''}`}
+                    title={`${timeLabel(block.startMs, timezone)} – ${timeLabel(block.endMs, timezone)} · ${block.label} · ${block.isIdle ? 'idle' : block.isBreak ? 'break' : CLASSIFICATION_META[block.classification].label.toLowerCase()}${block.reason ? ` — ${block.reason}` : ''}`}
                   />
                 ))}
               </div>
@@ -207,7 +234,8 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
           </div>
         </div>
         <p className="mt-3 text-xs text-slate-400">
-          Colored blocks are classified activity, hatched is recorded idle, empty is untracked. Hover a block for the tool and the classification reason. Click a name to zoom into their day.
+          Colored blocks are classified activity, diagonal hatch is recorded idle, vertical hatch is
+          break time, empty is untracked. Hover a block for the tool and the classification reason. Click a name to zoom into their day.
         </p>
       </div>
 

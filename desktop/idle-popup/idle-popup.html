@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>CareVance idle</title>
+<style>
+  /*
+   * Tokens rather than literals, so the dark block only restates the palette.
+   * prefers-color-scheme here follows nativeTheme.themeSource, which the shell
+   * pins to the app's own theme choice — so this popup matches the workspace
+   * the person was just looking at instead of flashing white over a dark
+   * desktop at 9pm. Same palette as the load-error and offline screens.
+   */
+  :root {
+    color-scheme: light;
+    --card: #ffffff; --ink: #16191C; --muted: #4E565D;
+    --line: #D2D8DD; --chip: #F1F4F6;
+    --accent: #5D969D; --on-accent: #ffffff;
+    --warn-bg: #FEF6E7; --warn-ink: #8A5A00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --card: #161F26; --ink: #E6EDF0; --muted: #A9B8C0;
+      --line: #2A3841; --chip: #0A1015;
+      --accent: #5D969D; --on-accent: #0E141A;
+      --warn-bg: #2A2113; --warn-ink: #E8C07A;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    background: var(--card);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font: 13px/1.45 "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    /* The window is frameless and non-movable, so nothing here should look
+       draggable or selectable. */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .head { display: flex; align-items: flex-start; gap: 10px; }
+
+  /*
+   * A flex item defaults to min-width: auto and refuses to shrink below its
+   * content. At the normal 360px this changes nothing, but resolvePopupBounds
+   * clamps the window to the work area, so a small or heavily scaled display
+   * gets a narrower popup — and this is a frameless window with no scrollbar
+   * and no way to resize, so anything that overflows is simply unreachable.
+   */
+  .head > div { min-width: 0; }
+
+  .badge {
+    flex: 0 0 auto;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 999px;
+    background: var(--warn-bg);
+    color: var(--warn-ink);
+    font-size: 15px;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  p {
+    margin: 3px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .actions { margin-top: auto; display: flex; gap: 8px; }
+
+  button {
+    flex: 1;
+    /* Same reason as .head > div: on a clamped window two long labels would
+       otherwise refuse to shrink and push the second button off the edge. */
+    min-width: 0;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--chip);
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  button:hover { border-color: var(--accent); }
+
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+  }
+
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="badge" aria-hidden="true">&#9201;</span>
+    <div>
+      <h1 id="title">Checking your activity</h1>
+      <p id="body"></p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="secondary" hidden></button>
+    <button type="button" id="primary" class="primary" hidden></button>
+  </div>
+
+<script>
+  var titleEl = document.getElementById('title');
+  var bodyEl = document.getElementById('body');
+  var primaryEl = document.getElementById('primary');
+  var secondaryEl = document.getElementById('secondary');
+
+  /**
+   * "12 minutes", "1h 5m" — the same shape the in-app prompt used, kept here
+   * rather than imported because this page deliberately bundles nothing.
+   */
+  function formatIdle(seconds) {
+    var total = Math.max(0, Math.floor(Number(seconds) || 0));
+    var minutes = Math.floor(total / 60);
+    if (minutes < 1) return total + ' seconds';
+    if (minutes < 60) return minutes + (minutes === 1 ? ' minute' : ' minutes');
+    var hours = Math.floor(minutes / 60);
+    var rest = minutes % 60;
+    return rest > 0 ? hours + 'h ' + rest + 'm' : hours + (hours === 1 ? ' hour' : ' hours');
+  }
+
+  function setButton(el, label, action) {
+    if (!label) {
+      el.hidden = true;
+      el.onclick = null;
+      return;
+    }
+    el.hidden = false;
+    el.textContent = label;
+    el.onclick = function () {
+      window.idlePopup.send(action);
+    };
+  }
+
+  function render(state) {
+    if (!state) return;
+    var idleLabel = formatIdle(state.idleSeconds);
+
+    if (state.mode === 'warning') {
+      var remaining = Number(state.secondsRemaining);
+      titleEl.textContent = remaining > 0
+        ? 'Your timer stops in ' + remaining + (remaining === 1 ? ' second' : ' seconds')
+        : 'Stopping your timer…';
+      bodyEl.textContent = 'No keyboard or mouse activity for ' + idleLabel + '.';
+      // Clicking is itself real input, so the OS idle clock resets and the
+      // tracker's next tick clears this through the same path as any other
+      // return. The action only hides the popup sooner than that tick would.
+      setButton(primaryEl, 'I’m still working', 'still-working');
+      setButton(secondaryEl, null);
+      return;
+    }
+
+    if (state.mode === 'stopped') {
+      titleEl.textContent = 'Timer stopped';
+      bodyEl.textContent = 'You were idle for ' + idleLabel + ', so your timer was stopped.';
+      setButton(primaryEl, 'Dismiss', 'dismiss');
+      setButton(secondaryEl, null);
+      return;
+    }
+
+    if (state.mode === 'return') {
+      titleEl.textContent = 'You were away for ' + idleLabel;
+      bodyEl.textContent = 'Your timer kept running. Was that work — a call, reading, or a meeting?';
+      // Discard is the primary because it is the conservative answer and the
+      // industry default; keeping time is the claim, so it is the deliberate
+      // click rather than the easy one.
+      setButton(primaryEl, 'Remove it', 'discard');
+      setButton(secondaryEl, 'I was working', 'keep');
+      return;
+    }
+  }
+
+  window.idlePopup.onState(render);
+  window.idlePopup.ready();
+</script>
+</body>
+</html>

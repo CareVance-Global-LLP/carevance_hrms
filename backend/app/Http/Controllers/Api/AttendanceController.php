@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Attendance\AttendanceCalendarRequest;
 use App\Http\Requests\Api\Attendance\AttendanceSummaryRequest;
 use App\Services\Attendance\AttendanceService;
+use App\Services\Attendance\TeamPresenceService;
 use Illuminate\Http\Request;
 
 use Illuminate\Support\Facades\Log;
@@ -130,5 +131,20 @@ class AttendanceController extends Controller
             Log::error('Attendance summary error', ['error' => $e->getMessage(), 'user_id' => $request->user()?->id]);
             return response()->json(['message' => 'Failed to load summary data', 'error' => 'Server error'], 500);
         }
+    }
+
+    public function teamPresence(Request $request, TeamPresenceService $teamPresence)
+    {
+        $viewer = $request->user();
+
+        if (!$viewer) {
+            return response()->json(['department' => null, 'people' => [], 'off_soon' => []]);
+        }
+
+        return response()->json([
+            'department' => $viewer->employeeWorkInfo?->department?->name,
+            'people' => $teamPresence->peopleFor($viewer),
+            'off_soon' => $teamPresence->offSoonFor($viewer),
+        ]);
     }
 }

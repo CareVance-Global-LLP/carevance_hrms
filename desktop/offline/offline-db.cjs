@@ -923,6 +923,118 @@ OfflineDatabase.prototype.dropExhaustedFromQueue = function (recordType, localId
   return true;
 };
 
+/**
+ * Every offline record type, with the queue priority and table it lives in.
+ * Kept beside the queue operations because that is the only thing that needs
+ * to walk all of them at once.
+ */
+/**
+ * Why an abandoned timer start is left alone rather than replayed.
+ *
+ * Deliberately phrased for whoever reads it in the UI: it has no end time
+ * because the app closed before one was written, so there is no duration in it
+ * to recover — and replaying the start would close the timer running now.
+ */
+const ABANDONED_TIMER_REASON =
+  'Timer start was never stopped (the app closed first), so it has no end time to record.';
+
+const RECORD_TABLES = [
+  { recordType: 'attendance', table: 'offline_attendance', priority: 1 },
+  { recordType: 'time_entry', table: 'offline_time_entries', priority: 1 },
+  { recordType: 'timeline', table: 'offline_timeline', priority: 2 },
+  { recordType: 'activity', table: 'offline_activity_records', priority: 2 },
+  { recordType: 'app_usage', table: 'offline_app_usage', priority: 3 },
+  { recordType: 'website_usage', table: 'offline_website_usage', priority: 4 },
+  { recordType: 'screenshot', table: 'offline_screenshots', priority: 5 },
+];
+
+/**
+ * Give records the sync engine gave up on another chance.
+ *
+ * A record that exhausts its retries leaves sync_queue, and until this existed
+ * nothing ever put it back — not a reconnect, not a restart. Since the retry
+ * budget was also being spent on unreachable-server errors, an API restart
+ * lasting under a minute was enough to strand tracked work permanently. This
+ * install had exactly one such row: a time entry from 06:40 still marked
+ * 'failed' hours after the API returned.
+ *
+ * Retries reset to zero because the budget is meant to bound genuinely bad
+ * records, and a record stranded by an outage was never that.
+ *
+ * @returns {number} how many records were put back in the queue
+ */
+OfflineDatabase.prototype.requeueFailedRecords = function (options = {}) {
+  if (!this.isReady()) return 0;
+
+  // A timer start with no stop is only replayable while the process that
+  // opened it is still running. See the skip below.
+  const includeOpenTimerStarts = options.includeOpenTimerStarts !== false;
+  let requeued = 0;
+
+  for (const { recordType, table, priority } of RECORD_TABLES) {
+    let rows = [];
+    try {
+      rows = this._all(`SELECT * FROM ${table} WHERE sync_status = 'failed'`) || [];
+    } catch {
+      // A table that does not exist in this schema version has nothing to give
+      // back; the remaining types must still be swept.
+      continue;
+    }
+
+    for (const row of rows) {
+      const localId = row && row.local_id;
+      if (!localId) continue;
+
+      /*
+       * Never replay an abandoned timer start.
+       *
+       * `POST /time-entries` closes whatever is currently running and stamps it
+       * with the incoming start time, so replaying a start from hours ago ends
+       * the live timer at a moment before it began and opens a duplicate in its
+       * place. The record also has no stop of its own — the process died before
+       * one was written — so there is no duration in it to recover, only damage
+       * to do. Left 'failed' and counted, which is what makes it visible.
+       */
+      if (
+        !includeOpenTimerStarts
+        && recordType === 'time_entry'
+        && String(row.action || '') === 'start'
+        && !row.ended_at
+      ) {
+        // Say why in the record itself. "connect ECONNREFUSED" describes the
+        // outage that stranded it, not the reason it is being left alone now,
+        // and that reason is the one a person needs when they go looking.
+        this._run(
+          `UPDATE ${table} SET error_message = ? WHERE local_id = ?`,
+          [ABANDONED_TIMER_REASON, localId]
+        );
+        continue;
+      }
+
+      this._run(
+        `UPDATE ${table} SET sync_status = 'pending', retry_count = 0 WHERE local_id = ?`,
+        [localId]
+      );
+      this._enqueueSync(recordType, localId, priority);
+      requeued += 1;
+    }
+  }
+
+  return requeued;
+};
+
+OfflineDatabase.prototype.getFailedRecordCount = function () {
+  if (!this.isReady()) return 0;
+
+  return RECORD_TABLES.reduce((total, { table }) => {
+    try {
+      return total + this._count(`SELECT COUNT(*) as count FROM ${table} WHERE sync_status = 'failed'`);
+    } catch {
+      return total;
+    }
+  }, 0);
+};
+
 OfflineDatabase.prototype.getNextSyncBatch = function (limit = 20) {
   return this._all(
     'SELECT sq.* FROM sync_queue sq ORDER BY sq.priority ASC, sq.created_at ASC LIMIT ?',

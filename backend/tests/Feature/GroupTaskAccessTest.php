@@ -6,6 +6,7 @@ use App\Models\AttendanceRecord;
 use App\Models\EmployeeWorkInfo;
 use App\Models\Group;
 use App\Models\Organization;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
 use Carbon\Carbon;
@@ -465,6 +466,67 @@ class GroupTaskAccessTest extends TestCase
         $this->assertSame('Operations', $groupRow['name']);
         $this->assertArrayNotHasKey('tasks_count', $groupRow);
         $this->assertSame([$employee->id], collect($groupRow['users'] ?? [])->pluck('id')->all());
+    }
+
+    public function test_an_employee_can_see_a_project_task_assigned_to_them(): void
+    {
+        /*
+         * Every task in the production database has group_id NULL and hangs off
+         * a project instead — measured 17 Aug 2026, 54 of 54. The visibility
+         * scope filters non-admins with whereIn('group_id', $visibleGroupIds),
+         * and NULL never matches an IN list, so managers and employees saw zero
+         * tasks: test7 had three assigned and could open none of them. Only
+         * admins were unaffected, because their branch carries an explicit
+         * "group_id IS NULL and the project is mine" fallback.
+         *
+         * Every existing test in this file creates tasks WITH a group, which is
+         * why the suite stayed green while the feature was unusable for
+         * everyone who is not an admin.
+         */
+        $organization = Organization::create(['name' => 'CareVance', 'slug' => 'carevance']);
+        $employee = $this->createUser($organization, 'Project Employee', 'project@carevance.test', 'employee');
+        $otherOrg = Organization::create(['name' => 'Rival', 'slug' => 'rival']);
+        $outsider = $this->createUser($otherOrg, 'Outsider', 'outsider@rival.test', 'employee');
+
+        $project = Project::create([
+            'organization_id' => $organization->id,
+            'name' => 'Website Redesign',
+            'status' => 'active',
+        ]);
+        $foreignProject = Project::create([
+            'organization_id' => $otherOrg->id,
+            'name' => 'Rival Roadmap',
+            'status' => 'active',
+        ]);
+
+        // Project membership is how a group-less task reaches somebody.
+        $project->assignedUsers()->attach($employee->id);
+        $foreignProject->assignedUsers()->attach($outsider->id);
+
+        $assigned = Task::create([
+            'group_id' => null,
+            'project_id' => $project->id,
+            'title' => 'Ship the new header',
+            'status' => 'todo',
+            'priority' => 'medium',
+            'assignee_id' => $employee->id,
+        ]);
+        $foreignTask = Task::create([
+            'group_id' => null,
+            'project_id' => $foreignProject->id,
+            'title' => 'Rival secret work',
+            'status' => 'todo',
+            'priority' => 'medium',
+            'assignee_id' => $outsider->id,
+        ]);
+
+        $ids = collect($this->getJson('/api/tasks', $this->apiHeadersFor($employee))->assertOk()->json())
+            ->pluck('id')
+            ->all();
+
+        $this->assertContains($assigned->id, $ids, 'an assignee must be able to see their own task');
+        // Widening the scope must not widen it across tenants.
+        $this->assertNotContains($foreignTask->id, $ids);
     }
 
     private function createUser(Organization $organization, string $name, string $email, string $role): User

@@ -722,7 +722,7 @@ class TaskController extends Controller
         if (!$task) return response()->json(['message' => 'Not found'], 404);
 
         $request->validate([
-            'depends_on_task_id' => 'required|integer|exists:tasks,id',
+            'depends_on_task_id' => 'required|integer',
         ]);
 
         $depId = (int) $request->depends_on_task_id;
@@ -731,8 +731,39 @@ class TaskController extends Controller
             return response()->json(['message' => 'A task cannot depend on itself.'], 422);
         }
 
+        /*
+         * Resolve the blocker through the same visibility scope the rest of
+         * this controller uses, instead of validating it with exists:tasks,id.
+         * Tasks carry no organization_id of their own — they inherit the tenant
+         * from their project or group — so that rule was a raw lookup across
+         * every tenant: the dependency row was written against a foreign task,
+         * and a caller could map which ids exist elsewhere by reading 201
+         * against 422.
+         */
+        if (!$this->findScopedTask($depId)) {
+            return response()->json([
+                'message' => 'The selected task does not exist.',
+                'errors' => ['depends_on_task_id' => ['The selected task does not exist.']],
+            ], 422);
+        }
+
         if ($task->dependencies()->where('depends_on_task_id', $depId)->exists()) {
             return response()->json(['message' => 'Dependency already exists.'], 409);
+        }
+        /*
+         * Refuse an edge that closes a loop.
+         *
+         * Only the self-edge A -> A was checked, so A -> B -> A and anything
+         * longer went straight in. A cycle has no valid reading: every task in
+         * the loop is waiting on another task in the same loop, so none of them
+         * can ever be startable, and any traversal that answers "what is
+         * unblocked" either loops forever or reports the whole set as blocked.
+         */
+        if ($this->dependencyPathExists($depId, $task->id)) {
+            return response()->json([
+                'message' => 'That would create a circular dependency.',
+                'errors' => ['depends_on_task_id' => ['That would create a circular dependency.']],
+            ], 422);
         }
 
         $dep = $task->dependencies()->create(['depends_on_task_id' => $depId]);
@@ -849,6 +880,46 @@ class TaskController extends Controller
     {
         $user = request()->user();
         return $this->groupAccessService->canAccessTask($user, $task);
+    }
+
+    /**
+     * True when following blocker edges from $fromTaskId ever reaches
+     * $targetTaskId — i.e. adding $target -> $from would close a loop.
+     *
+     * Breadth-first and iterative rather than recursive: a deep chain would
+     * otherwise be limited by the PHP stack, and one query per level keeps this
+     * to a handful of round trips instead of one per edge. `$visited` is what
+     * makes it terminate even if the table already contains a cycle written
+     * before this guard existed.
+     */
+    private function dependencyPathExists(int $fromTaskId, int $targetTaskId): bool
+    {
+        $visited = [$fromTaskId => true];
+        $frontier = [$fromTaskId];
+
+        while ($frontier !== []) {
+            $blockerIds = TaskDependency::query()
+                ->whereIn('task_id', $frontier)
+                ->pluck('depends_on_task_id')
+                ->map(static fn ($id) => (int) $id)
+                ->all();
+
+            $next = [];
+            foreach ($blockerIds as $blockerId) {
+                if ($blockerId === $targetTaskId) {
+                    return true;
+                }
+
+                if (!isset($visited[$blockerId])) {
+                    $visited[$blockerId] = true;
+                    $next[] = $blockerId;
+                }
+            }
+
+            $frontier = $next;
+        }
+
+        return false;
     }
 
     private function findScopedTask(int $id): ?Task

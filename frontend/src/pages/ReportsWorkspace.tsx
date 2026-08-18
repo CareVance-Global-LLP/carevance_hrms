@@ -851,13 +851,16 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       }
 
       if (mode === 'timeline') {
-        if (timelineView === 'day' && startDate === endDate) {
+        if (timelineView === 'day') {
           // The swimlanes need every block of the day at once. The processed
           // endpoint serves 200 rows per page now, so this is 1–5 requests.
           const rows = await activityApi.getAllPages({
             user_id: effectiveSelectedUserId ? Number(effectiveSelectedUserId) : undefined,
             group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
-            start_date: startDate,
+            // One day, always: the swimlanes draw a 24-hour strip. Sending the
+            // whole range here would pull days it cannot show and overrun the
+            // record cap on the day it can.
+            start_date: endDate,
             end_date: endDate,
             processed: true,
             per_page: 200,
@@ -1236,15 +1239,23 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     setEndDate(iso);
   };
 
+  /*
+   * Day view narrows to one day WITHOUT rewriting the date filter.
+   *
+   * It used to set startDate = endDate, so choosing "Last 7 days" and then Day
+   * view silently threw six days out of the filter — and switching back to the
+   * log showed a single day, with nothing on screen explaining where the range
+   * had gone. The swimlanes still need one day at a time; that is a property of
+   * the drawing, not a reason to edit what somebody asked for.
+   */
   const switchTimelineView = (view: 'day' | 'log') => {
-    if (view === 'day' && startDate !== endDate) {
-      // Day view needs one day — jump to the end of the current range.
-      setDatePreset('custom');
-      setStartDate(endDate);
-    }
     setTimelinePage(1);
     setTimelineView(view);
   };
+
+  /** The single day the swimlanes draw: the end of whatever range is selected. */
+  const timelineFocusDate = endDate;
+  const timelineRangeIsMultiDay = startDate !== endDate;
 
   const canReclassifyTools = hasStrictAdminAccess(user);
   const handleReclassifyTool = async (
@@ -2678,7 +2689,22 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
               </button>
             </div>
 
-            {timelineView === 'day' && startDate === endDate && (
+            {timelineView === 'day' && timelineRangeIsMultiDay && (
+              /*
+               * Says which day is on screen rather than quietly editing the
+               * filter to match. The range the person chose is still theirs —
+               * switching back to the event log shows all of it.
+               */
+              <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-600">
+                Showing{' '}
+                <strong className="font-semibold text-slate-800">
+                  {new Date(`${timelineFocusDate}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                </strong>
+                {' '}— the last day of the selected range. The event log covers the whole range.
+              </span>
+            )}
+
+            {timelineView === 'day' && !timelineRangeIsMultiDay && (
               <div className="flex items-center gap-1">
                 <Button type="button" variant="ghost" size="sm" aria-label="Previous day" onClick={() => shiftTimelineDay(-1)}>
                   ◀
@@ -2729,7 +2755,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <span className="ml-auto">{renderPanelRefreshButton()}</span>
           </div>
 
-          {timelineView === 'day' && startDate === endDate ? (
+          {timelineView === 'day' ? (
             <TimelineSwimlanes
               rows={timelineSwimlaneData?.swimlaneRows || []}
               timezone={displayTimezone}

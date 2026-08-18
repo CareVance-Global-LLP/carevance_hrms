@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Bell, Chrome, FileSpreadsheet, Monitor } from 'lucide-react';
+import { ArrowRight, Bell, FileSpreadsheet, Monitor } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -10,7 +10,6 @@ import type { SettingsTabId } from '../types';
 
 interface IntegrationsPaneProps {
   onOpenTab: (tab: SettingsTabId) => void;
-  hasDesktopBrowserTracking: boolean;
 }
 
 /**
@@ -18,7 +17,7 @@ interface IntegrationsPaneProps {
  * render time. The previous version rendered four hardcoded cards whose
  * "Ready" badges were string literals in the JSX — nothing was ever checked.
  */
-export default function IntegrationsPane({ onOpenTab, hasDesktopBrowserTracking }: IntegrationsPaneProps) {
+export default function IntegrationsPane({ onOpenTab }: IntegrationsPaneProps) {
   const isDesktopConnected = Boolean(window.desktopTracker);
   const [desktopVersion, setDesktopVersion] = useState<string | null>(null);
 
@@ -61,24 +60,6 @@ export default function IntegrationsPane({ onOpenTab, hasDesktopBrowserTracking 
             isDesktopConnected
               ? <StatusBadge tone="success">Connected</StatusBadge>
               : <StatusBadge tone="neutral">Not detected</StatusBadge>
-          }
-        />
-        <SettingRow
-          icon={Chrome}
-          title="Browser tracking"
-          description={
-            hasDesktopBrowserTracking
-              ? 'Pairs visited URLs with desktop tracking. Manage pairing and per-browser status in Browser Tracking.'
-              : 'Needs the desktop app. It pairs your browser so visited URLs join the activity timeline.'
-          }
-          control={
-            hasDesktopBrowserTracking ? (
-              <Button variant="secondary" size="sm" onClick={() => onOpenTab('browser-tracking')}>
-                Manage
-              </Button>
-            ) : (
-              <StatusBadge tone="neutral">Desktop app required</StatusBadge>
-            )
           }
         />
       </SettingsCard>

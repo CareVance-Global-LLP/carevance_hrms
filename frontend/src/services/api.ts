@@ -18,8 +18,6 @@ import type {
   Screenshot,
   Activity,
   ActivitySession,
-  BrowserTrackingConnectionSyncRecord,
-  BrowserTrackingConnectionSyncRequest,
   ProductivityClassificationItem,
   TeamHierarchyPayload,
   Invoice,
@@ -1344,10 +1342,6 @@ export const activitySessionApi = {
     api.patch<ActivitySession>(`/activity-sessions/${id}`, data),
 };
 
-export const browserTrackingConnectionApi = {
-  sync: (data: BrowserTrackingConnectionSyncRequest) =>
-    api.post<{ data: BrowserTrackingConnectionSyncRecord[] }>('/browser-tracking/connections/sync', data),
-};
 
 export const productivityClassificationApi = {
   history: (params?: { search?: string; classification?: string; target_type?: string; days?: number; page?: number; per_page?: number }) =>
@@ -1387,6 +1381,38 @@ export const invoiceApi = {
 };
 
 // Report API
+/**
+ * Rules that decide when a monitoring figure is worth telling somebody about.
+ * Admin-only on the server; the pane hides itself for everyone else.
+ */
+export interface MonitoringAlertRule {
+  id: number;
+  name: string;
+  metric: string;
+  threshold: number;
+  group_id: number | null;
+  group_name: string | null;
+  is_enabled: boolean;
+  description: string;
+  last_evaluated_at: string | null;
+}
+
+export interface MonitoringAlertMetric {
+  value: string;
+  label: string;
+  unit: 'none' | 'hours' | 'percent';
+  help: string;
+}
+
+export const monitoringAlertRuleApi = {
+  list: () => api.get<{ data: MonitoringAlertRule[]; metrics: MonitoringAlertMetric[] }>('/monitoring/alert-rules'),
+  create: (payload: { name: string; metric: string; threshold: number; group_id?: number | null }) =>
+    api.post<MonitoringAlertRule>('/monitoring/alert-rules', payload),
+  update: (id: number, payload: Partial<{ name: string; metric: string; threshold: number; is_enabled: boolean }>) =>
+    api.put<MonitoringAlertRule>(`/monitoring/alert-rules/${id}`, payload),
+  remove: (id: number) => api.delete(`/monitoring/alert-rules/${id}`),
+};
+
 export const reportApi = {
   daily: (params?: { date?: string; scope?: 'self' | 'organization' }) => 
     api.get<DailyReport>('/reports/daily', { params }),
@@ -1461,6 +1487,23 @@ export const dashboardApi = {
 };
 
 export const attendanceApi = {
+  /**
+   * The presence board an ordinary employee sees of their own department.
+   * Carries no attendance rates or worked hours — see AttendanceRoster for
+   * the HR view, which is gated to admins and managers.
+   */
+  teamPresence: () =>
+    api.get<{
+      department: string | null;
+      people: Array<{
+        id: number;
+        name: string;
+        designation?: string | null;
+        status: 'in' | 'on_break' | 'not_in' | 'on_leave';
+        checked_in_at?: string | null;
+      }>;
+      off_soon: Array<{ id: number; name: string; from: string; to: string }>;
+    }>('/attendance/team-presence'),
   today: (params?: { user_id?: number }) =>
     api.get<{
       record: {

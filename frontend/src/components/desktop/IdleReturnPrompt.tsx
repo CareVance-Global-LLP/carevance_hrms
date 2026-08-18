@@ -9,6 +9,7 @@ import {
   DESKTOP_TIMER_IDLE_RETURN_EVENT,
   type DesktopTimerIdleReturnDetail,
 } from '@/lib/desktopTimerSession';
+import { isNativeIdlePopupAvailable } from '@/lib/idlePopupBridge';
 
 /**
  * "You were away — what was that?"
@@ -67,6 +68,15 @@ export default function IdleReturnPrompt() {
     toastRef.current = toast;
   }, [toast]);
 
+  /**
+   * The idle span the native popup is currently asking about.
+   *
+   * A ref rather than state because nothing renders from it — the popup is the
+   * UI — and because the IPC listener below is mounted once and would otherwise
+   * close over a stale value.
+   */
+  const nativePendingRef = useRef<DesktopTimerIdleReturnDetail | null>(null);
+
   useEffect(() => {
     const onIdleReturn = (event: Event) => {
       const detail = (event as CustomEvent<DesktopTimerIdleReturnDetail>).detail;
@@ -86,6 +96,23 @@ export default function IdleReturnPrompt() {
         return;
       }
 
+      /*
+       * On a shell that can show it, the question is asked by the native popup
+       * instead — a modal inside the app window is invisible to somebody who
+       * has been away from that window, which is everybody this asks. The
+       * answer still comes back through `resolveIdle`; only the surface moved.
+       *
+       * The toast branch above deliberately stays in-app under either shell:
+       * it reports a decision already made rather than asking for one, so it
+       * can wait until the person next looks at the app.
+       */
+      if (isNativeIdlePopupAvailable()) {
+        // Remembered, not rendered: the answer arrives over IPC and has to be
+        // attributed to this span.
+        nativePendingRef.current = detail;
+        return;
+      }
+
       // One question at a time. A second idle span while this is open would
       // otherwise replace the first and leave it silently unanswered.
       setPrompt((current) => current ?? detail);
@@ -93,6 +120,45 @@ export default function IdleReturnPrompt() {
 
     window.addEventListener(DESKTOP_TIMER_IDLE_RETURN_EVENT, onIdleReturn);
     return () => window.removeEventListener(DESKTOP_TIMER_IDLE_RETURN_EVENT, onIdleReturn);
+  }, []);
+
+  /**
+   * Answers given in the native popup.
+   *
+   * Routed through the same `resolveIdle` call as the in-app buttons, on
+   * purpose: the popup reports which button was pressed and nothing more, so
+   * there is no second copy of what keeping or discarding means.
+   */
+  useEffect(() => {
+    const bridge = window.desktopTracker;
+    if (typeof bridge?.onIdlePopupAction !== 'function') return;
+
+    const dispose = bridge.onIdlePopupAction((payload) => {
+      const action = payload?.action;
+      if (action !== 'keep' && action !== 'discard') return;
+
+      const pending = nativePendingRef.current;
+      // Cleared before the await, so a duplicate delivery of the same click
+      // cannot resolve the span twice. The server is idempotent on this too,
+      // but a second discard that raced the first would still be a wasted
+      // request against a person's timesheet.
+      nativePendingRef.current = null;
+      if (!pending?.activityId) return;
+
+      void (async () => {
+        try {
+          await activityApi.resolveIdle(pending.activityId, action === 'keep' ? 'kept' : 'discarded');
+        } catch (error) {
+          reportSilentError('idle-return-prompt-native', error);
+        } finally {
+          void window.desktopTracker?.hideIdlePopup?.();
+        }
+      })();
+    });
+
+    return () => {
+      if (typeof dispose === 'function') dispose();
+    };
   }, []);
 
   // Focus the safe option, so Enter takes the conservative path.
