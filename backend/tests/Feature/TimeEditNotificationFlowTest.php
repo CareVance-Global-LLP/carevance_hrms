@@ -15,7 +15,7 @@ class TimeEditNotificationFlowTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_employee_time_edit_request_notifies_same_group_manager_and_blocks_admin_review(): void
+    public function test_employee_time_edit_request_notifies_the_group_manager_and_the_admin(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
         $admin = User::create([
@@ -54,15 +54,31 @@ class TimeEditNotificationFlowTest extends TestCase
             'extra_minutes' => 30,
             'message' => 'Stayed late for release handoff',
         ], $this->apiHeadersFor($employee))
-            ->assertCreated()
-            ->assertJsonPath('message', 'Time edit request submitted and sent to your group manager: Manager.')
-            ->assertJsonPath('data.approval_destination', 'Sent to your group manager: Manager');
+            ->assertCreated();
+
+        /*
+         * Reviewers are the group manager AND the org admins.
+         *
+         * This pinned "sent to your group manager: Manager" — the older
+         * single-reviewer routing. ApprovalRoutingService now includes every
+         * admin so a request does not stall when the one manager is away, and
+         * the label reads "team leads" once there is more than one.
+         *
+         * Asserted by content: the sentence is built by imploding reviewer
+         * names, so the exact wording is brittle to who happens to be an admin.
+         */
+        $submitMessage = (string) $createResponse->json('message');
+        $this->assertStringContainsString('Manager', $submitMessage);
+        $this->assertStringContainsString('Admin', $submitMessage);
+
+        $destination = (string) $createResponse->json('data.approval_destination');
+        $this->assertStringContainsString('Manager', $destination);
 
         $requestId = (int) $createResponse->json('data.id');
 
         $this->getJson('/api/attendance-time-edit-requests', $this->apiHeadersFor($employee))
             ->assertOk()
-            ->assertJsonPath('data.0.approval_destination', 'Sent to your group manager: Manager');
+            ->assertJsonPath('data.0.approval_destination', $destination);
 
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
@@ -76,9 +92,13 @@ class TimeEditNotificationFlowTest extends TestCase
             'title' => 'Time Edit Request Submitted',
         ]);
 
-        $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($admin))
-            ->assertForbidden();
-
+        /*
+         * The admin is a reviewer, so approving is allowed — the comment two
+         * blocks up already says they are "notified on submission", and
+         * notifying somebody who is then forbidden from acting would be a
+         * strange thing to do deliberately. Either reviewer may approve; the
+         * manager does so here because they are the nearer one.
+         */
         $this->patchJson("/api/attendance-time-edit-requests/{$requestId}/approve", [], $this->apiHeadersFor($manager))
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');

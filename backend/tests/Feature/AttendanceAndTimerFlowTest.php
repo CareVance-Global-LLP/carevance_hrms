@@ -417,10 +417,21 @@ class AttendanceAndTimerFlowTest extends TestCase
             'timer_slot' => 'primary',
         ]);
 
+        /*
+         * current_project stays null; the task travels in current_task.
+         *
+         * This asserted that a task title falls back INTO current_project.
+         * It must not: AdminDashboard and Attendance both read
+         * `current_project || current_task`, so folding one into the other
+         * would render a task title labelled as a project with no way for
+         * either screen to tell them apart. The fallback is the caller's, and
+         * both callers already make it.
+         */
         $this->getJson("/api/users/{$employee->id}/profile-360", $this->apiHeadersFor($admin))
             ->assertOk()
             ->assertJsonPath('status.is_working', true)
-            ->assertJsonPath('status.current_project', 'Prepare rollout plan');
+            ->assertJsonPath('status.current_project', null)
+            ->assertJsonPath('status.current_task', 'Prepare rollout plan');
     }
 
     public function test_idle_auto_stop_stop_request_sends_email_to_employee(): void
@@ -570,7 +581,16 @@ class AttendanceAndTimerFlowTest extends TestCase
     public function test_idle_auto_stop_threshold_respects_configuration_value(): void
     {
         Mail::fake();
-        config()->set('time_tracking.idle_auto_stop_threshold_seconds', 240);
+        /*
+         * 600, not 240.
+         *
+         * TrackerPolicyResolver enforces MIN_IDLE_AUTO_STOP_SECONDS = 300, so a
+         * configured 240 is clamped up to 300 and an idle stop reported at 240
+         * is correctly refused as below threshold — this test proved the
+         * opposite of its own name. A value ABOVE the floor is what actually
+         * demonstrates the configuration being honoured.
+         */
+        config()->set('time_tracking.idle_auto_stop_threshold_seconds', 600);
 
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
         $user = User::create([
@@ -598,20 +618,20 @@ class AttendanceAndTimerFlowTest extends TestCase
             'time_entry_id' => $timeEntryId,
             'type' => 'idle',
             'name' => 'System Idle - Visual Studio Code',
-            'duration' => 240,
+            'duration' => 600,
             'recorded_at' => now(),
         ]);
 
         $this->postJson('/api/time-entries/stop', [
             'timer_slot' => 'primary',
             'auto_stopped_for_idle' => true,
-            'idle_seconds' => 240,
+            'idle_seconds' => 600,
         ], $headers)->assertOk();
 
         Mail::assertQueued(IdleTimerStoppedMail::class, function (IdleTimerStoppedMail $mail) use ($user) {
             return $mail->hasTo($user->email)
-                && $mail->idleSeconds === 240
-                && $mail->idleDurationLabel === '4 minutes';
+                && $mail->idleSeconds === 600
+                && $mail->idleDurationLabel === '10 minutes';
         });
     }
 

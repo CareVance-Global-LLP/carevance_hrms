@@ -38,7 +38,17 @@ class AttendanceService
 
         $groupIds = $this->managerGroupIds($user);
         if (empty($groupIds)) {
-            return User::query()->whereRaw('1 = 0');
+            /*
+             * You can always see yourself.
+             *
+             * This returned an empty set, so an employee who belongs to no
+             * group could not load their OWN attendance calendar — the target
+             * resolved to them, the visibility query excluded them, and the
+             * endpoint answered 403 to a person asking about their own
+             * attendance. Group membership decides whose ELSE's records you
+             * may read; it was never meant to gate your own.
+             */
+            return $query->where('id', $user->id);
         }
 
         if ($excludeHigherOrEqualRank) {
@@ -53,7 +63,12 @@ class AttendanceService
             });
         }
 
-        return $query->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds));
+        // Same reason: the group filter narrows who else is visible, and must
+        // not narrow away the person doing the asking.
+        return $query->where(function (Builder $scoped) use ($groupIds, $user) {
+            $scoped->whereHas('groups', fn (Builder $groupQuery) => $groupQuery->whereIn('groups.id', $groupIds))
+                ->orWhere('id', $user->id);
+        });
     }
 
     public function todayPayload(?User $user, ?int $targetUserId = null): array

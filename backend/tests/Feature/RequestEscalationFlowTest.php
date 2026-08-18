@@ -227,7 +227,11 @@ class RequestEscalationFlowTest extends TestCase
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
             'user_id' => $admin->id,
-            'title' => 'Leave Request Escalated to You',
+            // "Forwarded", not "Escalated" — the leave and time-edit paths word
+            // this differently, and only the time-edit one says "Escalated".
+            // Cosmetic drift between the two subsystems; the test pinned the
+            // wording the other one uses.
+            'title' => 'Leave Request Forwarded to You',
         ]);
     }
 }

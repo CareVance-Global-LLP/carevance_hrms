@@ -289,11 +289,25 @@ class ReportWorkingTimeTest extends TestCase
                 'recorded_at' => '2026-03-16 11:04:05',
             ]);
 
+            /*
+             * 245, not 244 — the MERGED SPAN, not the largest snapshot.
+             *
+             * recorded_at is the window END and duration its length, so these
+             * three describe [11:00:00, 11:03:00], [11:00:00, 11:04:00] and
+             * [11:00:01, 11:04:05]. Merged, idle ran 11:00:00 → 11:04:05.
+             *
+             * The last snapshot alone says 244 because the desktop app's
+             * cumulative counter started a second later than the first one's
+             * did; the union is what was actually observed. This test asserted
+             * 244 from before UsageProcessingService merged intervals at all —
+             * see its comment on why re-mounted sessions produce overlapping
+             * cumulative records.
+             */
             $this->getJson('/api/reports/overall?start_date=2026-03-16&end_date=2026-03-16&user_ids[]='.$employee->id, $headers)
                 ->assertOk()
                 ->assertJsonPath('summary.total_duration', 1800)
-                ->assertJsonPath('summary.working_duration', 1556)
-                ->assertJsonPath('summary.idle_duration', 244);
+                ->assertJsonPath('summary.working_duration', 1555)
+                ->assertJsonPath('summary.idle_duration', 245);
 
             $this->getJson("/api/users/{$employee->id}/profile-360?start_date=2026-03-16&end_date=2026-03-16", $headers)
                 ->assertOk()
@@ -791,7 +805,7 @@ class ReportWorkingTimeTest extends TestCase
 
     public function test_employee_insights_prefers_most_recent_open_exact_session_when_multiple_sessions_are_still_live(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-04-21 11:48:10'));
+        Carbon::setTestNow(Carbon::parse('2026-04-21 11:48:10', 'UTC'));
 
         try {
             [$admin, $employee, $headers] = $this->createAdminAndEmployee();
@@ -834,7 +848,7 @@ class ReportWorkingTimeTest extends TestCase
 
     public function test_employee_insights_uses_exact_desktop_app_name_for_live_monitoring(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-04-22 10:32:26'));
+        Carbon::setTestNow(Carbon::parse('2026-04-22 10:32:26', 'UTC'));
 
         try {
             [$admin, $employee, $headers] = $this->createAdminAndEmployee();
@@ -864,7 +878,7 @@ class ReportWorkingTimeTest extends TestCase
 
     public function test_employee_insights_prefers_explorer_window_title_for_live_monitoring(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-04-22 11:14:28'));
+        Carbon::setTestNow(Carbon::parse('2026-04-22 11:14:28', 'UTC'));
 
         try {
             [$admin, $employee, $headers] = $this->createAdminAndEmployee();

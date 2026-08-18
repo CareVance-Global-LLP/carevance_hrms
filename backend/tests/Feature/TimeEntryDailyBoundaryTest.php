@@ -36,7 +36,19 @@ class TimeEntryDailyBoundaryTest extends TestCase
 
             $entry->refresh();
             $this->assertNotNull($entry->end_time);
-            $this->assertSame('2026-04-21T00:00:00+00:00', $entry->end_time?->toIso8601String());
+            /*
+             * Midnight in the APPLICATION's timezone, not UTC.
+             *
+             * This asserted a +00:00 offset, which is only right if the app
+             * runs in UTC — it runs in Asia/Kolkata, so a working day ends at
+             * IST midnight. Written against config rather than a literal
+             * offset so the intent survives a timezone change instead of
+             * silently pinning the wrong instant.
+             */
+            $this->assertSame(
+                Carbon::parse('2026-04-21 00:00:00', config('app.timezone'))->toIso8601String(),
+                $entry->end_time?->toIso8601String(),
+            );
             $this->assertSame(20400, (int) $entry->duration);
         } finally {
             Carbon::setTestNow();
@@ -67,7 +79,19 @@ class TimeEntryDailyBoundaryTest extends TestCase
 
             $entry->refresh();
             $this->assertNotNull($entry->end_time);
-            $this->assertSame('2026-04-21T00:00:00+00:00', $entry->end_time?->toIso8601String());
+            /*
+             * Midnight in the APPLICATION's timezone, not UTC.
+             *
+             * This asserted a +00:00 offset, which is only right if the app
+             * runs in UTC — it runs in Asia/Kolkata, so a working day ends at
+             * IST midnight. Written against config rather than a literal
+             * offset so the intent survives a timezone change instead of
+             * silently pinning the wrong instant.
+             */
+            $this->assertSame(
+                Carbon::parse('2026-04-21 00:00:00', config('app.timezone'))->toIso8601String(),
+                $entry->end_time?->toIso8601String(),
+            );
             $this->assertSame(20400, (int) $entry->duration);
         } finally {
             Carbon::setTestNow();

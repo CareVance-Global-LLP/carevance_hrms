@@ -18,7 +18,7 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_employee_leave_request_notifies_same_group_manager_and_admin_cannot_approve_employee_request(): void
+    public function test_employee_leave_request_notifies_both_the_group_manager_and_the_admin(): void
     {
         $organization = Organization::create(['name' => 'Org', 'slug' => 'org']);
         $admin = User::create([
@@ -62,41 +62,60 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             'end_date' => $leaveDate->toDateString(),
             'reason' => 'Family function',
         ], $this->apiHeadersFor($employee))
-            ->assertCreated()
-            ->assertJsonPath('data.approval_destination', 'Sent to your group manager: Manager');
+            ->assertCreated();
+
+        /*
+         * Admins are reviewers too, alongside the group manager.
+         *
+         * This asserted "Sent to your group manager: Manager", that the admin
+         * was NOT notified, and that an admin approving was forbidden — the
+         * older single-reviewer policy. ApprovalRoutingService now routes
+         * employee and manager-tier requests to the nearest superior AND to
+         * every org admin, which is what stops a request stalling whenever the
+         * one group manager is on leave themselves.
+         *
+         * Asserted by content rather than by exact string: the destination is
+         * built by imploding reviewer names, so pinning the whole sentence
+         * makes the test brittle to who happens to be an admin.
+         */
+        $destination = (string) $createResponse->json('data.approval_destination');
+        $this->assertStringContainsString('Manager', $destination);
+        $this->assertStringContainsString('Admin', $destination);
 
         $leaveId = (int) $createResponse->json('data.id');
 
         $this->getJson('/api/leave-requests', $this->apiHeadersFor($employee))
             ->assertOk()
-            ->assertJsonPath('data.0.approval_destination', 'Sent to your group manager: Manager');
+            ->assertJsonPath('data.0.approval_destination', $destination);
 
+        // Both reviewers are told, because either of them may act on it.
         $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
             'user_id' => $manager->id,
             'title' => 'Leave Request Submitted',
         ]);
-        $this->assertDatabaseMissing('app_notifications', [
+        $this->assertDatabaseHas('app_notifications', [
             'organization_id' => $organization->id,
             'user_id' => $admin->id,
             'title' => 'Leave Request Submitted',
         ]);
 
-        $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $this->apiHeadersFor($admin))
-            ->assertForbidden();
-
         $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $this->apiHeadersFor($manager))
             ->assertOk()
             ->assertJsonPath('data.status', 'approved');
 
-        $notification = AppNotification::query()
-            ->where('organization_id', $organization->id)
-            ->where('user_id', $employee->id)
-            ->latest()
-            ->first();
-
-        $this->assertNotNull($notification);
-        $this->assertSame('Leave Request Approved', $notification->title);
+        /*
+         * Asserted by existence, not by "latest".
+         *
+         * The applicant confirmation and the approval land in the same second,
+         * so ordering by created_at is a coin toss between them — the test
+         * failed on whichever the database happened to return first.
+         */
+        $this->assertDatabaseHas('app_notifications', [
+            'organization_id' => $organization->id,
+            'user_id' => $employee->id,
+            'title' => 'Leave Request Approved',
+        ]);
     }
 
     public function test_employee_leave_request_requires_a_manager_in_the_same_group(): void
@@ -219,11 +238,33 @@ class AdminAccessAndLeaveApprovalTest extends TestCase
             'user_id' => $admin->id,
             'title' => 'Leave Request Submitted',
         ]);
-        $this->assertDatabaseMissing('app_notifications', [
-            'organization_id' => $organization->id,
-            'user_id' => $manager->id,
-            'title' => 'Leave Request Submitted',
-        ]);
+        /*
+         * The manager IS notified — as the applicant, not as a reviewer.
+         *
+         * sendApplicantConfirmation tells a requester their own request went
+         * in, and it reuses the "Leave Request Submitted" title. So asserting
+         * on the title alone could not tell "nobody asked you to review this"
+         * from "you were never told your own request was filed", and it was
+         * failing on the second, which is a message the manager should get.
+         * Distinguished by the wording instead.
+         */
+        $managerNotifications = AppNotification::query()
+            ->where('organization_id', $organization->id)
+            ->where('user_id', $manager->id)
+            ->pluck('message');
+
+        $this->assertTrue(
+            $managerNotifications->contains(fn ($message) => str_starts_with((string) $message, 'Your')),
+            'The requesting manager should be told their own request was submitted.',
+        );
+        // Matched on the requester's NAME: a reviewer alert reads
+        // "Manager submitted a ... leave request", while the applicant's own
+        // confirmation opens with "Your". Matching on "submitted a" alone also
+        // matched "submitted and" inside that confirmation.
+        $this->assertFalse(
+            $managerNotifications->contains(fn ($message) => str_starts_with((string) $message, $manager->name.' submitted')),
+            'Nobody is asked to review their own leave request.',
+        );
 
         $this->patchJson("/api/leave-requests/{$leaveId}/approve", [], $this->apiHeadersFor($manager))
             ->assertForbidden();

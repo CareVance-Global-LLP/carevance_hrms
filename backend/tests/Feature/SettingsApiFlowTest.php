@@ -146,7 +146,8 @@ class SettingsApiFlowTest extends TestCase
 
         $this->getJson('/api/settings/billing', $headers)
             ->assertOk()
-            ->assertJsonPath('plan.code', 'basic')
+            // The default plan is 'starter'; 'basic' was its old slug.
+            ->assertJsonPath('plan.code', 'starter')
             ->assertJsonPath('workspace.id', $organization->id);
     }
 

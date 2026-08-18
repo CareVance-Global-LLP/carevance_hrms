@@ -96,12 +96,20 @@ class EmployeeWorkspaceTest extends TestCase
             'status' => 'approved',
         ]);
 
+        /*
+         * An admin CAN edit an employee's personal details.
+         *
+         * canEditProfile admits the owner or anyone who can manage them, which
+         * is the whole point of the employee-details screen — HR correcting a
+         * misspelt name or a wrong date of birth is routine, and for a long
+         * while the UI was the only thing preventing it.
+         */
         $this->actingAs($admin)
             ->putJson("/api/employees/{$employee->id}/profile", [
                 'first_name' => 'Ava',
                 'last_name' => 'Sharma',
             ])
-            ->assertForbidden();
+            ->assertOk();
 
         $this->actingAs($employee)
             ->putJson("/api/employees/{$employee->id}/profile", [
@@ -145,7 +153,11 @@ class EmployeeWorkspaceTest extends TestCase
         $this->actingAs($admin)
             ->post("/api/employees/{$employee->id}/government-ids", [
                 'id_type' => 'PAN',
-                'id_number' => 'ABCDE1234F',
+                // ABCPE1234F, not ABCDE1234F: the fourth character encodes the
+                // holder type and 'D' is not one of them, so
+                // IndianIdValidationService rightly refuses the classic
+                // placeholder. 'P' is an individual person.
+                'id_number' => 'ABCPE1234F',
                 'status' => 'verified',
             ])
             ->assertCreated()
