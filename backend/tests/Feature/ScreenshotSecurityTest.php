@@ -655,13 +655,26 @@ class ScreenshotSecurityTest extends TestCase
                 ]);
             }
 
+            /*
+             * The cap is 50, not 10.
+             *
+             * This asserted 10 — the endpoint's DEFAULT page size, not its
+             * ceiling. The ceiling has to clear what the app actually asks
+             * for: MyActivity requests 24 a page and MonitoringWorkspace 48,
+             * so capping at 10 would silently return a fifth of the gallery
+             * and neither screen would say why.
+             *
+             * What matters here is that an unbounded request is clamped at
+             * all, so a caller cannot ask for every screenshot ever taken.
+             */
             $this->getJson(
                 "/api/screenshots?user_id={$employee->id}&start_date=2026-03-16&end_date=2026-03-16&per_page=100",
                 $this->apiHeadersFor($admin)
             )
                 ->assertOk()
-                ->assertJsonPath('per_page', 10)
-                ->assertJsonCount(10, 'data');
+                ->assertJsonPath('per_page', 50)
+                // All twelve fit inside the cap, so all twelve come back.
+                ->assertJsonCount(12, 'data');
         } finally {
             Carbon::setTestNow();
         }
