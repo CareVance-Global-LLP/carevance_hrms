@@ -150,20 +150,19 @@ describe('AddUserDrawer — email recipients', () => {
     return screen.findByPlaceholderText(/type or paste email/i);
   };
 
-  it('turns a typed address into a recipient chip with its own role control', async () => {
+  it('turns a typed address into a recipient chip', async () => {
     const user = userEvent.setup();
     renderDrawer();
 
     const input = await goToEmail(user);
     await user.type(input, 'asha@acme.in{Enter}');
 
-    expect(await screen.findByText('asha@acme.in')).toBeInTheDocument();
-    // Per-recipient role: the API takes one role per request, so the service
-    // groups by role — but the admin sets it per person.
-    expect(screen.getByRole('combobox', { name: /role for asha@acme\.in/i })).toBeInTheDocument();
+    // findAllByText, not findByText: the address is rendered twice on purpose —
+    // once as the chip and once as the label of its employee-code row.
+    expect(await screen.findAllByText('asha@acme.in')).not.toHaveLength(0);
   });
 
-  it('keeps a per-recipient role override independent of the batch default', async () => {
+  it('shows the access level on the chip instead of a per-recipient control', async () => {
     const user = userEvent.setup();
     renderDrawer();
 
@@ -171,14 +170,38 @@ describe('AddUserDrawer — email recipients', () => {
     await user.type(input, 'asha@acme.in{Enter}');
     await user.type(input, 'ravi@acme.in{Enter}');
 
-    const ravi = screen.getByRole('combobox', { name: /role for ravi@acme\.in/i });
-    await user.selectOptions(ravi, 'manager');
+    /*
+     * There used to be a <select> on every chip. It contradicted the Access
+     * Level control above it — two places setting the same thing — and could
+     * only ever offer the three built-in roles, so choosing an admin-defined
+     * role above and then touching a chip silently discarded it. One control
+     * owns the decision now and the chips report it read-only.
+     */
+    expect(screen.queryByRole('combobox', { name: /role for asha@acme\.in/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: /role for ravi@acme\.in/i })).not.toBeInTheDocument();
 
-    expect(ravi).toHaveValue('manager');
-    expect(screen.getByRole('combobox', { name: /role for asha@acme\.in/i })).toHaveValue('employee');
+    // One label per chip, naming the level every recipient will be invited at.
+    expect(screen.getAllByText('Employee').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('drops a recipient and their role override together', async () => {
+  it('gives every recipient an employee-code field of their own', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const input = await goToEmail(user);
+    await user.type(input, 'asha@acme.in{Enter}');
+    await user.type(input, 'ravi@acme.in{Enter}');
+
+    // The code identifies the person, so unlike every other field in this
+    // drawer it cannot be shared across the batch.
+    const asha = screen.getByRole('textbox', { name: /employee code for asha@acme\.in/i });
+    await user.type(asha, 'EMP-001');
+
+    expect(asha).toHaveValue('EMP-001');
+    expect(screen.getByRole('textbox', { name: /employee code for ravi@acme\.in/i })).toHaveValue('');
+  });
+
+  it('drops a recipient and their employee code together', async () => {
     const user = userEvent.setup();
     renderDrawer();
 
@@ -187,7 +210,8 @@ describe('AddUserDrawer — email recipients', () => {
     await user.click(screen.getByRole('button', { name: /remove asha@acme\.in/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText('asha@acme.in')).not.toBeInTheDocument();
+      // Both renderings must go — chip and employee-code row alike.
+      expect(screen.queryAllByText('asha@acme.in')).toHaveLength(0);
     });
   });
 });

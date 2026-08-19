@@ -75,6 +75,8 @@ class StoreInvitationImportRequest extends ApiFormRequest
             'rows.*.project_ids' => 'nullable|array',
             'rows.*.project_ids.*' => 'integer',
             'rows.*.job_title' => 'nullable|string|max:255',
+            // Per row, because the code identifies the person, not the batch.
+            'rows.*.employee_code' => 'nullable|string|max:80',
             // Per row, so one import can carry staggered start dates; the
             // batch-level key below is the fallback for rows that omit it.
             'rows.*.joining_date' => 'nullable|date|before_or_equal:'.now()->addYears(2)->format('Y-m-d'),

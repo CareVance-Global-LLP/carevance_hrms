@@ -210,16 +210,24 @@ class EmployeeWorkspaceService
             $data['reporting_manager_source'] = \App\Services\Organization\ReportingManagerResolver::SOURCE_DERIVED;
         }
 
-        // Check for duplicate employee_code within the same organization
+        /*
+         * Employee-code uniqueness, delegated so there is one definition of it.
+         *
+         * The check used to live here as an exact-match query against
+         * employee_work_infos alone, which meant 'EMP-001' and 'emp-001' could
+         * both exist, and that a code already reserved by a pending invitation
+         * could be handed to someone else by hand — the collision then surfaced
+         * when the invitee accepted, which is the worst possible moment.
+         */
         if (!empty($data['employee_code'])) {
-            $existing = EmployeeWorkInfo::query()
-                ->where('organization_id', $employee->organization_id)
-                ->where('employee_code', $data['employee_code'])
-                ->where('user_id', '!=', $employee->id)
-                ->exists();
+            $conflict = app(\App\Services\Invitations\InvitationService::class)->employeeCodeConflict(
+                (int) $employee->organization_id,
+                (string) $data['employee_code'],
+                (int) $employee->id
+            );
 
-            if ($existing) {
-                throw new \InvalidArgumentException("Employee code '{$data['employee_code']}' is already assigned to another employee in this organization.");
+            if ($conflict !== null) {
+                throw new \InvalidArgumentException($conflict);
             }
         }
 

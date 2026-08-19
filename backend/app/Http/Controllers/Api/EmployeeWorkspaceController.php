@@ -88,6 +88,14 @@ class EmployeeWorkspaceController extends Controller
             'employment_status' => 'nullable|in:active,inactive,notice,exited',
             'exit_date' => 'nullable|date',
             'work_mode' => 'nullable|in:office,remote,hybrid',
+            /*
+             * Both columns exist and are fillable, but neither was listed here —
+             * and validate() returns only the keys it validated, so the
+             * "Save Work Info" button posted them and the controller dropped
+             * them on the floor. The schedule editor has never saved anything.
+             */
+            'expected_start_time' => 'nullable|date_format:H:i',
+            'expected_timezone' => 'nullable|string|max:64',
         ]);
 
         // Setting the manager by hand marks the line explicit, so no later group

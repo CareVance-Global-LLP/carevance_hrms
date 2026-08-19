@@ -1,27 +1,34 @@
 import { KeyboardEvent, useState } from 'react';
 import { Mail, X } from 'lucide-react';
 import { FieldLabel } from '@/components/ui/FormField';
-import { normalizeEmails, type InviteUserRole } from '@/services/addUser';
+import { normalizeEmails } from '@/services/addUser';
 
-const ROLE_OPTIONS: Array<{ value: InviteUserRole; label: string }> = [
-  { value: 'employee', label: 'Employee' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'admin', label: 'Admin' },
-];
+/**
+ * Above this many recipients the inline code list is replaced by a pointer to
+ * the CSV tab. Chosen to cover the ad-hoc case without turning the drawer into
+ * a data-entry grid.
+ */
+const EMPLOYEE_CODE_INLINE_LIMIT = 10;
 
 interface EmailTagInputProps {
   emails: string[];
   invalidEmails: string[];
   onChange: (emails: string[]) => void;
   onInvalidChange: (invalidEmails: string[]) => void;
-  /** Role applied to anyone without an override. */
-  defaultRole?: InviteUserRole;
-  /** Per-recipient overrides, keyed by lower-cased email. */
-  roleByEmail?: Record<string, InviteUserRole>;
-  /** Omit to hide the per-chip role control entirely. */
-  onRoleChange?: (email: string, role: InviteUserRole) => void;
-  /** Roles this admin may grant — anything else is filtered out. */
-  allowedRoles?: string[];
+  /**
+   * The access level every recipient gets, shown on each chip as a plain label.
+   *
+   * It used to be a per-chip <select>, which contradicted the Access Level
+   * control above it — two places setting the same thing, and the chip could
+   * only ever offer the three built-in roles, so picking an admin-defined role
+   * above and then touching a chip silently discarded it. One control now owns
+   * the decision and the chips report it.
+   */
+  roleLabel?: string;
+  /** Per-recipient employee codes, keyed by lower-cased email. */
+  employeeCodeByEmail?: Record<string, string>;
+  /** Omit to hide the per-recipient code control entirely. */
+  onEmployeeCodeChange?: (email: string, code: string) => void;
 }
 
 export default function EmailTagInput({
@@ -29,14 +36,10 @@ export default function EmailTagInput({
   invalidEmails,
   onChange,
   onInvalidChange,
-  defaultRole = 'employee',
-  roleByEmail,
-  onRoleChange,
-  allowedRoles,
+  roleLabel,
+  employeeCodeByEmail,
+  onEmployeeCodeChange,
 }: EmailTagInputProps) {
-  const roleChoices = allowedRoles
-    ? ROLE_OPTIONS.filter((option) => allowedRoles.includes(option.value))
-    : ROLE_OPTIONS;
   const [draft, setDraft] = useState('');
 
   const commitDraft = (value: string) => {
@@ -68,24 +71,14 @@ export default function EmailTagInput({
               <Mail className="h-3.5 w-3.5" />
               {email}
               {/*
-                Role per recipient, not per batch.
-
-                One RoleSelector used to apply to everybody, so inviting two
-                employees and a manager meant sending two separate batches. The
-                API still takes one role per request — addUserService groups by
-                role and sends one request per group, so that stays invisible.
+                Read-only: the access level chosen above, echoed so it is clear
+                what each recipient will get. Editing it here is deliberately
+                not possible — see roleLabel on the props for why.
               */}
-              {onRoleChange && roleChoices.length > 1 ? (
-                <select
-                  value={roleByEmail?.[email.toLowerCase()] ?? defaultRole}
-                  onChange={(event) => onRoleChange(email, event.target.value as InviteUserRole)}
-                  aria-label={`Role for ${email}`}
-                  className="rounded-full border border-sky-300 bg-white px-1.5 py-0.5 text-[11px] font-semibold text-sky-800 outline-none focus:ring-2 focus:ring-sky-300"
-                >
-                  {roleChoices.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+              {roleLabel ? (
+                <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                  {roleLabel}
+                </span>
               ) : null}
               <button
                 type="button"
@@ -119,6 +112,47 @@ export default function EmailTagInput({
       ) : (
         <p className="mt-2 text-xs text-slate-500">Use comma, enter, tab, or new lines to add multiple recipients.</p>
       )}
+
+      {/*
+        Employee codes get their own row per recipient rather than a control on
+        the chip. Every other field in this drawer is shared by the whole batch;
+        a code identifies one person and must be unique, so it cannot be. A chip
+        is too small to type an identifier into and read it back.
+
+        Hidden entirely for a large paste: this is for the handful-of-people
+        case, and the CSV tab already carries an employee_code column for the
+        rest. Typing fifty codes into a drawer is the wrong tool.
+      */}
+      {onEmployeeCodeChange && emails.length > 0 && emails.length <= EMPLOYEE_CODE_INLINE_LIMIT ? (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-medium text-slate-600">
+            Employee codes <span className="font-normal text-slate-400">(optional — can be added later)</span>
+          </p>
+          <div className="mt-2 space-y-2">
+            {emails.map((email) => (
+              <div key={`code-${email}`} className="flex items-center gap-2">
+                <span className="w-1/2 truncate text-xs text-slate-600" title={email}>{email}</span>
+                <input
+                  type="text"
+                  maxLength={80}
+                  value={employeeCodeByEmail?.[email.toLowerCase()] ?? ''}
+                  onChange={(event) => onEmployeeCodeChange(email, event.target.value)}
+                  aria-label={`Employee code for ${email}`}
+                  placeholder="e.g., EMP-001"
+                  className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 outline-none focus:ring-2 focus:ring-sky-300"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {onEmployeeCodeChange && emails.length > EMPLOYEE_CODE_INLINE_LIMIT ? (
+        <p className="mt-2 text-xs text-slate-500">
+          {emails.length} recipients — use the CSV tab to import employee codes in bulk, or add them
+          later from each employee's work details.
+        </p>
+      ) : null}
     </div>
   );
 }

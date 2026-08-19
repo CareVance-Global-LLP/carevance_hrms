@@ -50,6 +50,15 @@ class StoreInvitationRequest extends ApiFormRequest
             // both paths agree on what a plausible start date looks like.
             'joining_date' => 'nullable|date|before_or_equal:'.now()->addYears(2)->format('Y-m-d'),
             'job_title' => 'nullable|string|max:255',
+            // The organisation's own employee code. Scalar form is for a
+            // single recipient; `employee_codes` maps email => code so a batch
+            // can carry one per person. Length matches employee_work_infos.
+            // An admin-defined role for this organisation. Ownership and the
+            // matching base role are resolved server-side, not trusted here.
+            'role_id' => 'nullable|integer',
+            'employee_code' => 'nullable|string|max:80',
+            'employee_codes' => 'nullable|array',
+            'employee_codes.*' => 'nullable|string|max:80',
             'group_ids' => 'nullable|array',
             'group_ids.*' => 'integer',
             'project_ids' => 'nullable|array',
