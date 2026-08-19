@@ -3,8 +3,23 @@
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\ActivitySessionController;
 use App\Http\Controllers\Api\MonitoringAlertRuleController;
+use App\Http\Controllers\Api\MonitoringConsentController;
 use App\Http\Controllers\Api\ScreenshotController;
 use Illuminate\Support\Facades\Route;
+
+/*
+ * Notice and consent.
+ *
+ * Reading and answering are open to every employee about themselves — a
+ * disclosure an employee cannot read is not a disclosure, and a consent they
+ * cannot withdraw is not consent. Publishing the notice is an admin act.
+ */
+Route::get('/monitoring/consent', [MonitoringConsentController::class, 'show']);
+Route::post('/monitoring/consent', [MonitoringConsentController::class, 'grant']);
+Route::delete('/monitoring/consent', [MonitoringConsentController::class, 'withdraw']);
+
+Route::post('/monitoring/notice', [MonitoringConsentController::class, 'publishNotice'])
+    ->middleware('role:admin');
 
 Route::get('/screenshots', [ScreenshotController::class, 'index']);
 Route::post('/screenshots', [ScreenshotController::class, 'store'])->middleware('throttle:screenshots.upload');

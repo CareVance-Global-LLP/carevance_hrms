@@ -1435,7 +1435,13 @@ class PayrollFilingService
             'generated_at' => now(),
             'generated_by' => $userId,
             'meta_data' => [
-                'total_employees' => $entries->count() ?? count($entries),
+                // Was calling the collection method on this plain array, with
+                // a null-coalesce behind it as though that were a fallback.
+                // It is not: invoking a method on an array raises an Error,
+                // and `??` only rescues null. Latent only because
+                // renderAndStorePdf throws on the missing view first — it
+                // would have surfaced the day form19.blade.php was written.
+                'total_employees' => count($entries),
                 'total_settlement' => $totalSettlement,
                 'total_gratuity' => $totalGratuity,
             ],
@@ -1953,14 +1959,36 @@ class PayrollFilingService
     {
         $filings = [];
         $failures = [];
+        $unavailable = [];
+
+        $registry = new \App\Services\Payroll\FilingGeneratorRegistry();
 
         /**
          * InvalidArgumentException is how the generators say "not due this
          * period" — a bi-annual LWF state in the wrong half, bonus with no
          * percentage configured. That is a skip, not a failure. Anything else
          * is recorded against the filing type so the report names what broke.
+         *
+         * A filing whose blade template was never written is a third thing
+         * again: not a due-ness question and not a breakage, but a feature
+         * that does not exist. Ten of them are in that state. Reporting them
+         * by name lets the caller say so plainly instead of surfacing a
+         * view-not-found stack trace as though something had gone wrong.
          */
-        $attempt = function (string $type, callable $generate) use (&$filings, &$failures, $run, $orgId): void {
+        $attempt = function (string $type, callable $generate) use (&$filings, &$failures, &$unavailable, $registry, $run, $orgId): void {
+            // State-scoped types arrive as "pt_return:MH" — the registry keys
+            // on the family, not the per-state instance.
+            $family = explode(':', $type)[0];
+
+            if (! $registry->isAvailable($family)) {
+                $unavailable[] = [
+                    'type' => $type,
+                    'reason' => $registry->unavailableReason($family),
+                ];
+
+                return;
+            }
+
             try {
                 $produced = $generate();
 
@@ -2034,7 +2062,7 @@ class PayrollFilingService
             $this->markFirstFilingGeneratedIfNeeded($orgId);
         }
 
-        return ['filings' => $filings, 'failures' => $failures];
+        return ['filings' => $filings, 'failures' => $failures, 'unavailable' => $unavailable];
     }
 
     /**

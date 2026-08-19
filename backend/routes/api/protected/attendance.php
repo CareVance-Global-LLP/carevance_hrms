@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\AttendanceSelfieController;
 use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
 use App\Http\Controllers\Api\BreakTrackingController;
 use App\Http\Controllers\Api\LeaveRequestController;
+use App\Http\Controllers\Api\ShiftAssignmentController;
+use App\Http\Controllers\Api\ShiftController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/attendance/today', [AttendanceController::class, 'today']);
@@ -51,3 +53,25 @@ Route::post('/breaks/types', [BreakTrackingController::class, 'storeType']);
 Route::put('/breaks/types/{id}', [BreakTrackingController::class, 'updateType']);
 Route::delete('/breaks/types/{id}', [BreakTrackingController::class, 'destroyType']);
 Route::delete('/breaks/{id}', [BreakTrackingController::class, 'destroy']);
+
+/*
+ * Shifts.
+ *
+ * Route order matters: "/shifts/my" and "/shifts/assignments" are declared
+ * before "/shifts/{id}" so neither word is ever captured as an id.
+ *
+ * There is no `role:` middleware here on purpose. The gate is inline in the
+ * controllers (ShiftController::canManage), which reads the settings.manage
+ * permission first and only falls back to hierarchy — a custom role holding
+ * that permission would be turned away at the door by a role-string match and
+ * never reach the check meant to admit it. "/shifts/my" is open to every member
+ * because reading your own roster is not a management action.
+ */
+Route::get('/shifts/my', [ShiftController::class, 'my']);
+Route::get('/shifts/assignments', [ShiftAssignmentController::class, 'index']);
+Route::post('/shifts/assignments', [ShiftAssignmentController::class, 'store']);
+Route::delete('/shifts/assignments/{id}', [ShiftAssignmentController::class, 'destroy']);
+Route::get('/shifts', [ShiftController::class, 'index']);
+Route::post('/shifts', [ShiftController::class, 'store']);
+Route::match(['put', 'patch'], '/shifts/{id}', [ShiftController::class, 'update']);
+Route::delete('/shifts/{id}', [ShiftController::class, 'destroy']);

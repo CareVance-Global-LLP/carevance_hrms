@@ -10,6 +10,7 @@ import NotificationsPane from '@/features/settings/panes/NotificationsPane';
 import AppearancePane from '@/features/settings/panes/AppearancePane';
 import SecurityPane from '@/features/settings/panes/SecurityPane';
 import OrganizationPane from '@/features/settings/panes/OrganizationPane';
+import ShiftsPane from '@/features/settings/panes/ShiftsPane';
 import ProductivityPane from '@/features/settings/panes/ProductivityPane';
 import IntegrationsPane from '@/features/settings/panes/IntegrationsPane';
 import CustomFieldsPane from '@/features/settings/panes/CustomFieldsPane';
@@ -24,6 +25,7 @@ const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }>
   appearance: { title: 'Appearance', description: 'How CareVance looks on this device.' },
   security: { title: 'Security', description: 'Your password and how this account is signed in.' },
   organization: { title: 'Organization', description: 'Everything that applies to everyone in this workspace.' },
+  shifts: { title: 'Shifts', description: 'The shift patterns this workspace runs, and who works which. A shift decides what a full day is worth counting down to.' },
   productivity: { title: 'Productivity', description: 'How visited domains and apps are counted in reports.' },
   integrations: { title: 'Integrations', description: 'What CareVance is connected to right now.' },
   'custom-fields': { title: 'Custom fields', description: 'Extra data you want on every employee record.' },
@@ -102,6 +104,7 @@ export default function SettingsPage() {
           {activeTab === 'appearance' && <AppearancePane />}
           {activeTab === 'security' && <SecurityPane controller={controller} />}
           {activeTab === 'organization' && <OrganizationPane controller={controller} />}
+          {activeTab === 'shifts' && <ShiftsPane />}
           {activeTab === 'productivity' && <ProductivityPane />}
           {activeTab === 'integrations' && (
             <IntegrationsPane onOpenTab={handleTabChange} />

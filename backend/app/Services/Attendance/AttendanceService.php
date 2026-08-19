@@ -19,6 +19,11 @@ class AttendanceService
     private const DEFAULT_OFFICE_START = '09:00:00';
     private const DEFAULT_LATE_AFTER = '10:30:00';
 
+    public function __construct(
+        private readonly UserTimezoneResolver $userTimezoneResolver,
+    ) {
+    }
+
     private function managerGroupIds(User $user): array
     {
         return $user->groups()
@@ -89,7 +94,7 @@ class AttendanceService
                     'late_after' => $this->lateAfterTimeForUser($user),
                     'office_start' => $this->officeStartTimeForUser($user),
                     'timezone' => $this->expectedTimezoneForUser($user),
-                    'shift_target_seconds' => $this->shiftTargetSeconds(),
+                    'shift_target_seconds' => $this->shiftTargetSecondsFor($user),
                     'has_approved_leave_today' => false,
                     'has_half_day_leave_today' => false,
                     'leave_today' => null,
@@ -106,7 +111,7 @@ class AttendanceService
                     'late_after' => $this->lateAfterTimeForUser($user),
                     'office_start' => $this->officeStartTimeForUser($user),
                     'timezone' => $this->expectedTimezoneForUser($user),
-                    'shift_target_seconds' => $this->shiftTargetSeconds(),
+                    'shift_target_seconds' => $this->shiftTargetSecondsFor($user),
                     'has_approved_leave_today' => false,
                     'has_half_day_leave_today' => false,
                     'leave_today' => null,
@@ -120,14 +125,27 @@ class AttendanceService
             ->with('punches')
             ->first();
         $leaveForToday = $this->approvedLeaveForDate($targetUser, $today);
-        $shiftTarget = $this->shiftTargetSecondsForLeave($leaveForToday);
+        $shiftTarget = $this->shiftTargetSecondsForLeave($leaveForToday, $targetUser, $today);
 
         return [
-            'record' => $this->decorateRecord($record, $leaveForToday),
+            'record' => $this->decorateRecord($record, $leaveForToday, $targetUser),
             'late_after' => $this->lateAfterTimeForUser($targetUser),
             'office_start' => $this->officeStartTimeForUser($targetUser),
             'timezone' => $this->expectedTimezoneForUser($targetUser),
             'shift_target_seconds' => $shiftTarget,
+            // Additive and descriptive: the shift scheduled for the SAME date
+            // this payload's record is for, with both ends as real datetimes.
+            // It is the only way a client can know that a night shift running
+            // now finishes tomorrow morning; shift_target_seconds is a length
+            // and says nothing about where the boundary falls.
+            //
+            // Deliberately NOT the attribution rule. ShiftResolver::
+            // attendanceDateFor() is what decides which day a punch at 01:30
+            // belongs to, and moving record creation onto it is a change to
+            // how attendance is written, not how it is read. That stays a
+            // separate, tested migration rather than a side effect of this key.
+            'shift_occurrence' => app(ShiftResolver::class)
+                ->occurrenceFor($targetUser, $today)?->toArray(),
             'has_approved_leave_today' => $leaveForToday && !$leaveForToday->isHalfDay(),
             'has_half_day_leave_today' => (bool) ($leaveForToday?->isHalfDay()),
             'leave_today' => $leaveForToday ? [
@@ -259,7 +277,7 @@ class AttendanceService
             'status' => 200,
             'payload' => [
                 'message' => 'Punched in successfully',
-                'record' => $this->decorateRecord($record->fresh('punches')),
+                'record' => $this->decorateRecord($record->fresh('punches'), null, $user),
             ],
         ];
     }
@@ -303,7 +321,7 @@ class AttendanceService
                     'status' => 200,
                     'payload' => [
                         'message' => 'Punched out successfully',
-                        'record' => $existing ? $this->decorateRecord($existing) : null,
+                        'record' => $existing ? $this->decorateRecord($existing, null, $user) : null,
                     ],
                 ];
             }
@@ -357,7 +375,7 @@ class AttendanceService
             'status' => 200,
             'payload' => [
                 'message' => 'Punched out successfully',
-                'record' => $this->decorateRecord($record->fresh('punches')),
+                'record' => $this->decorateRecord($record->fresh('punches'), null, $user),
             ],
         ];
     }
@@ -902,14 +920,17 @@ class AttendanceService
         return $user->getHierarchyLevel() < 100;
     }
 
-    private function decorateRecord(?AttendanceRecord $record, ?LeaveRequest $leaveForDate = null): ?array
-    {
+    private function decorateRecord(
+        ?AttendanceRecord $record,
+        ?LeaveRequest $leaveForDate = null,
+        ?User $user = null,
+    ): ?array {
         if (!$record) {
             if (!$leaveForDate) {
                 return null;
             }
 
-            $target = $this->shiftTargetSecondsForLeave($leaveForDate);
+            $target = $this->shiftTargetSecondsForLeave($leaveForDate, $user, now()->toDateString());
 
             return [
                 'id' => null,
@@ -943,8 +964,14 @@ class AttendanceService
 
         $worked = $this->calculateEffectiveWorkedSeconds($record);
         $breakSeconds = $this->calculateBreakSeconds($record);
-        $target = $this->shiftTargetSecondsForLeave($leaveForDate);
         $recordDate = Carbon::parse($record->attendance_date)->startOfDay();
+        // The record knows whose day it is; resolving the owner here means a
+        // punch payload cannot report a different shift length from the one
+        // /attendance/today reported five seconds earlier.
+        $recordUser = $user && (int) $user->id === (int) $record->user_id
+            ? $user
+            : $record->user ?? User::find($record->user_id);
+        $target = $this->shiftTargetSecondsForLeave($leaveForDate, $recordUser, $recordDate);
         $workTimeBreakdown = app(WorkTimeSummaryService::class)->forUserRange(
             $record->user_id,
             $recordDate,
@@ -977,9 +1004,39 @@ class AttendanceService
         ];
     }
 
+    /**
+     * The organization-agnostic last resort: eight hours, from config.
+     *
+     * Kept only for callers that genuinely have no employee and no date to
+     * resolve against. Anything that knows who and when must use
+     * shiftTargetSecondsFor(), or it will report an eight-hour day to an
+     * organization that does not run one.
+     */
     public function shiftTargetSeconds(): int
     {
         return config('attendance.shift_seconds', 8 * 3600);
+    }
+
+    /**
+     * How long this person's shift is on this date.
+     *
+     * The shift domain answers first. It returns null for an organization that
+     * has configured no shifts — which is every organization until it rosters
+     * someone — and for a day its shift does not run, so the config default
+     * stays as the fallback rather than being replaced by a zero that would
+     * mark every Sunday as an instantly completed shift.
+     */
+    public function shiftTargetSecondsFor(?User $user, Carbon|string|null $date = null): int
+    {
+        $resolved = $user
+            ? app(ShiftResolver::class)->expectedSecondsFor($user, $date)
+            : null;
+
+        if ($resolved !== null && $resolved > 0) {
+            return $resolved;
+        }
+
+        return $this->shiftTargetSeconds();
     }
 
     private function officeStartTimeForUser(User $user): string
@@ -1029,28 +1086,14 @@ class AttendanceService
         );
     }
 
+    /**
+     * The chain this method used to own now lives in UserTimezoneResolver, so
+     * the activity feed and the report rollups resolve the same zone this does.
+     * Order and outcome are unchanged; only the home moved.
+     */
     private function expectedTimezoneForUser(User $user): string
     {
-        // First check employee's personal expected_timezone from employee_work_infos
-        $employeeWorkInfo = $user->employeeWorkInfo;
-        if ($employeeWorkInfo && $employeeWorkInfo->expected_timezone) {
-            return $employeeWorkInfo->expected_timezone;
-        }
-
-        // Fall back to user's personal timezone from settings
-        $userSettings = is_array($user->settings) ? $user->settings : [];
-        if (!empty($userSettings['timezone'])) {
-            return $userSettings['timezone'];
-        }
-
-        // Fall back to organization's timezone from settings
-        $orgSettings = is_array($user->organization?->settings) ? $user->organization->settings : [];
-        if (!empty($orgSettings['timezone'])) {
-            return $orgSettings['timezone'];
-        }
-
-        // Final fallback to application default
-        return config('app.timezone', 'Asia/Kolkata');
+        return $this->userTimezoneResolver->forUser($user);
     }
 
     private function attendanceSettingsForUser(User $user): array
@@ -1074,9 +1117,14 @@ class AttendanceService
         }
     }
 
-    private function shiftTargetSecondsForLeave(?LeaveRequest $leave): int
-    {
-        $baseTarget = $this->shiftTargetSeconds();
+    private function shiftTargetSecondsForLeave(
+        ?LeaveRequest $leave,
+        ?User $user = null,
+        Carbon|string|null $date = null,
+    ): int {
+        // Half a day is half of THIS person's shift, not half of a global
+        // eight hours. On a six-hour shift the two answers differ by an hour.
+        $baseTarget = $this->shiftTargetSecondsFor($user, $date);
         if (!$leave || !$leave->isHalfDay()) {
             return $baseTarget;
         }

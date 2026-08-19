@@ -199,10 +199,15 @@ class PayrollFilingController extends Controller
                     continue;
                 }
 
-                // Look up employee by PAN
+                // Look up employee by PAN.
+                //
+                // Through the blind index, not the column: pan_number is
+                // encrypted, and Laravel's encryption is randomised, so the
+                // same PAN produces different ciphertext on every write and a
+                // direct equality match would never find anybody.
                 $employee = User::where('organization_id', $orgId)
                     ->whereHas('employeeProfile', function ($q) use ($pan) {
-                        $q->where('pan_number', $pan);
+                        $q->wherePii('pan_number', $pan);
                     })
                     ->first();
 
@@ -784,6 +789,31 @@ class PayrollFilingController extends Controller
         }
 
         return response()->json($query->orderBy('submitted_at', 'desc')->paginate(20));
+    }
+
+    /**
+     * Which statutory filings this installation can actually produce.
+     *
+     * The dashboard used to carry its own hardcoded array of nineteen
+     * returns, every one of them marked ready — including the ten whose
+     * blade templates do not exist. Serving the catalogue from the registry
+     * means the screen cannot drift from the truth again, and a template
+     * landing on disk is the whole act of making its filing available.
+     */
+    public function catalogue(\App\Services\Payroll\FilingGeneratorRegistry $registry)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'filings' => collect($registry->all())
+                    ->map(fn (array $meta) => [
+                        'label' => $meta['label'],
+                        'available' => $meta['available'],
+                        'unavailable_reason' => $meta['unavailable_reason'],
+                    ])
+                    ->all(),
+            ],
+        ]);
     }
 
     public function listFilings(Request $request)

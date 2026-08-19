@@ -12,7 +12,7 @@ const modules = [
     description: 'One-click timer with project/task context, idle auto-pause, overtime calculation, and attendance check-in/out in one flow.',
     gradient: 'from-blue-500 to-blue-600',
     lightBg: 'bg-blue-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: Scan,
@@ -20,7 +20,7 @@ const modules = [
     description: 'Windows tracker captures active apps, URLs, idle periods, and screenshots — giving managers clear workday visibility.',
     gradient: 'from-emerald-500 to-emerald-600',
     lightBg: 'bg-emerald-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: BarChart3,
@@ -28,7 +28,7 @@ const modules = [
     description: 'Tracked activity classified as productive, unproductive, or neutral. Dashboards surface trends and exportable reports.',
     gradient: 'from-violet-500 to-violet-600',
     lightBg: 'bg-violet-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: Users,
@@ -36,7 +36,7 @@ const modules = [
     description: 'Punch in/out, leave requests, overtime edits, and manager approvals through a unified calendar and workflow.',
     gradient: 'from-amber-500 to-amber-600',
     lightBg: 'bg-amber-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: Globe2,
@@ -44,7 +44,7 @@ const modules = [
     description: 'Define location boundaries for attendance — employees check in only when inside the designated geo-fence.',
     gradient: 'from-cyan-500 to-cyan-600',
     lightBg: 'bg-cyan-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: MessageSquare,
@@ -52,7 +52,7 @@ const modules = [
     description: 'Built-in messaging tied to workspace and role structure. No need for a separate communication tool.',
     gradient: 'from-rose-500 to-rose-600',
     lightBg: 'bg-rose-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: Shield,
@@ -60,7 +60,7 @@ const modules = [
     description: 'Payroll records, payouts, payslips, and invoices — all within the same system as tracking and attendance.',
     gradient: 'from-indigo-500 to-indigo-600',
     lightBg: 'bg-indigo-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
   {
     icon: LifeBuoy,
@@ -68,7 +68,7 @@ const modules = [
     description: 'Admin, manager, and employee roles with org-scoped data access and bearer-token API security.',
     gradient: 'from-teal-500 to-teal-600',
     lightBg: 'bg-teal-50',
-    iconColor: 'text-white',
+    iconColor: 'text-on-brand',
   },
 ];
 
@@ -163,7 +163,7 @@ export default function DemoSection() {
                     <div className={`flex h-14 w-14 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm ${mod.iconColor}`}>
                       <mod.icon className="h-7 w-7" />
                     </div>
-                    <h3 className="text-xl font-bold text-white">{mod.title}</h3>
+                    <h3 className="text-xl font-bold text-on-brand">{mod.title}</h3>
                   </div>
                 </div>
                 {/* Content */}

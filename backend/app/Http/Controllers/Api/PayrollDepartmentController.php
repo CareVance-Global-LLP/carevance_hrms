@@ -4429,6 +4429,24 @@ class PayrollDepartmentController extends Controller
             ], 422);
         }
 
+        /*
+         * Maker-checker on the last step, which was the only one missing it.
+         *
+         * lock → approve and approve → release both already refuse to let one
+         * person take both sides. Disbursement did not, so a single admin could
+         * release a run and then, in the very next request, declare every
+         * employee paid — the one step in the chain that asserts money actually
+         * moved, and the one an auditor asks about first.
+         */
+        $org = Organization::find($organizationId);
+        if ($org && $this->shouldRequireSecondApprover($org)
+            && (int) auth()->id() === (int) $run->released_by) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A different admin must record this run as disbursed.',
+            ], 422);
+        }
+
         // Mark every pending item as paid (bank file confirmed uploaded).
         $pendingItems = PayrollItem::where('payroll_run_id', $run->id)
             ->where('payment_status', 'pending')

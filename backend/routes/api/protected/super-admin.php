@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\BreakGlassController;
 use App\Http\Controllers\Api\SuperAdminController;
 use App\Http\Controllers\Api\PlanController;
 use Illuminate\Support\Facades\Route;
@@ -18,7 +19,21 @@ Route::middleware(['role:super_admin'])->group(function () {
     
     // Users across all orgs
     Route::get('/super-admin/users', [SuperAdminController::class, 'allUsers']);
-    Route::post('/super-admin/users/{user}/impersonate', [SuperAdminController::class, 'impersonate']);
+
+    /*
+     * Break-glass replaces `POST /super-admin/users/{user}/impersonate`.
+     *
+     * That endpoint minted an unlimited, non-expiring, unlogged token for any
+     * user in any tenant — no reason, no customer approval, no notification,
+     * no audit entry. It also called a Sanctum method on a model that does not
+     * use Sanctum, in an application that does not install it, so it threw a
+     * fatal error on every call and had plainly never been executed.
+     *
+     * Nothing is preserved from it. There was no working behaviour to keep.
+     */
+    Route::post('/super-admin/break-glass', [BreakGlassController::class, 'store']);
+    Route::get('/super-admin/break-glass', [BreakGlassController::class, 'indexAll']);
+    Route::post('/super-admin/break-glass/{id}/token', [BreakGlassController::class, 'issueToken']);
     
     // Billing & subscriptions
     Route::get('/super-admin/subscriptions', [SuperAdminController::class, 'subscriptions']);

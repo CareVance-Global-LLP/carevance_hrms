@@ -28,6 +28,30 @@ services:
     networks:
       - carevance
 
+  # Cache, session store and queue backend.
+  #
+  # Every one of those defaulted to `database`, so a read-only API call cost a
+  # write to the same Postgres that computes payroll, and month-end contended
+  # with ordinary attendance traffic on one connection pool. Redis is a
+  # separate, in-memory store for work that is by nature ephemeral.
+  #
+  # Optional by construction: with REDIS_HOST unset the application falls back
+  # to the database drivers it used before, so an existing deployment that has
+  # not been reconfigured keeps working exactly as it did.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No persistence. Everything here is a cache, a session or a queued job;
+    # none of it is a system of record, and an fsync per write buys nothing.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - carevance
+
   backend:
     image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE before running docker compose}
     restart: unless-stopped
@@ -36,8 +60,12 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     # Bound to loopback: caddy is the only ingress, and this stack now serves
     # over TLS. The mapping stays so the API can still be curled on the box
@@ -66,11 +94,15 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
     # --tries=1 means a single SMTP hiccup permanently drops the mail, and
     # --timeout=0 means one hung job stalls the only worker forever.
     command: ["sh", "-lc", "php artisan queue:work --tries=3 --timeout=60 --sleep=3"]
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       backend:
         condition: service_started
@@ -90,9 +122,13 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
     command: ["sh", "-lc", "php artisan schedule:work"]
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       backend:
         condition: service_started

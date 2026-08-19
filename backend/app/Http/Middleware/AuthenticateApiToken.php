@@ -86,6 +86,26 @@ class AuthenticateApiToken
             }
         }
 
+        // A break-glass token acts as the customer's employee, which is what
+        // makes it useful and what makes an unmarked one indistinguishable
+        // from the employee themselves. Resolve the session before the request
+        // proceeds so the audit observer can stamp every write with it — and
+        // refuse immediately if the customer has since revoked it, rather than
+        // waiting for the token's own expiry to catch up.
+        $breakGlass = $this->resolveBreakGlassSession($tokenRecord);
+
+        if ($breakGlass !== null) {
+            if (! $breakGlass->isUsable()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $breakGlass->unusableReason(),
+                    'error_code' => 'BREAK_GLASS_ENDED',
+                ], 403);
+            }
+
+            $request->attributes->set('break_glass_session_id', $breakGlass->id);
+        }
+
         Auth::setUser($user);
         $request->setUserResolver(fn () => $user);
         $request->attributes->set('access_token', $tokenRecord);
@@ -93,6 +113,42 @@ class AuthenticateApiToken
         $this->touchActivity($tokenRecord, $user);
 
         return $next($request);
+    }
+
+    /**
+     * The break-glass session a token belongs to, or null for an ordinary one.
+     *
+     * The session id travels in the token's abilities as "break_glass:41", so
+     * an ordinary login token — abilities ["*"] — costs nothing here: no query
+     * runs unless the marker is present.
+     */
+    private function resolveBreakGlassSession(object $tokenRecord): ?\App\Models\BreakGlassSession
+    {
+        $abilities = json_decode((string) ($tokenRecord->abilities ?? '[]'), true);
+
+        if (! is_array($abilities)) {
+            return null;
+        }
+
+        foreach ($abilities as $ability) {
+            if (! is_string($ability) || ! str_starts_with($ability, 'break_glass:')) {
+                continue;
+            }
+
+            $sessionId = (int) substr($ability, strlen('break_glass:'));
+
+            if ($sessionId <= 0) {
+                continue;
+            }
+
+            // Without the scope: at this point in the request no user is
+            // authenticated yet, and the session belongs to the customer's
+            // tenant rather than the vendor's.
+            return \App\Models\BreakGlassSession::withoutOrganizationScope()
+                ->find($sessionId);
+        }
+
+        return null;
     }
 
     /**

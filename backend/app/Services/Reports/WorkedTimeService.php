@@ -152,7 +152,8 @@ class WorkedTimeService
      */
     public function shiftTargetSecondsFor(User $user, ?Carbon $date = null): int
     {
-        $target = (int) app(\App\Services\Attendance\AttendanceService::class)->shiftTargetSeconds();
+        $target = (int) app(\App\Services\Attendance\AttendanceService::class)
+            ->shiftTargetSecondsFor($user, $date);
 
         return $target > 0 ? $target : self::DEFAULT_SHIFT_SECONDS;
     }

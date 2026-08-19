@@ -366,9 +366,12 @@ class EmployeeWorkspaceService
             ->when(
                 !empty($data['id']),
                 fn ($query) => $query->where('id', (int) $data['id']),
+                // Through the blind index: account_number is encrypted, so a
+                // direct equality match never finds the existing row and every
+                // save would create a duplicate payout account.
                 fn ($query) => $accountNumber === null || $accountNumber === ''
                     ? $query->whereRaw('1 = 0')
-                    : $query->where('account_number', $accountNumber),
+                    : $query->wherePii('account_number', $accountNumber),
             )
             ->first() ?: new EmployeeBankAccount([
                 'organization_id' => $employee->organization_id,

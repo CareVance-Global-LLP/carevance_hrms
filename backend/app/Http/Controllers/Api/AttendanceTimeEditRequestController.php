@@ -9,6 +9,7 @@ use App\Models\AttendanceTimeEditRequest;
 use App\Models\User;
 use App\Services\AppNotificationService;
 use App\Services\Approvals\ApprovalRoutingService;
+use App\Services\Attendance\AttendanceService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Payroll\PayrollPeriodGuard;
 use Carbon\Carbon;
@@ -141,7 +142,7 @@ class AttendanceTimeEditRequestController extends Controller
         $overtimeSeconds = (int) max(
             $request->integer('overtime_seconds', 0),
             $extraSeconds,
-            max(0, $workedSeconds - $this->shiftTargetSeconds())
+            max(0, $workedSeconds - $this->shiftTargetSeconds($currentUser, $date))
         );
 
         $reviewerIds = $this->approvalRoutingService->reviewerUserIds($currentUser);
@@ -573,9 +574,15 @@ class AttendanceTimeEditRequestController extends Controller
         );
     }
 
-    private function shiftTargetSeconds(): int
+    /**
+     * Overtime is anything past the shift, so the shift has to be the one this
+     * person actually works on that date. Reading a single env value here meant
+     * an employee on a six-hour roster had to log eight before a minute of it
+     * counted as overtime.
+     */
+    private function shiftTargetSeconds(?User $user = null, ?string $date = null): int
     {
-        return max(1, (int) env('ATTENDANCE_SHIFT_SECONDS', 8 * 3600));
+        return max(1, app(AttendanceService::class)->shiftTargetSecondsFor($user, $date));
     }
 
     private function formatDuration(int $seconds): string

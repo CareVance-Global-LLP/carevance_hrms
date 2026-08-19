@@ -28,6 +28,12 @@ class AppServiceProvider extends ServiceProvider
         // per resolution would mean the observer never sees it and every
         // governed correction would be refused.
         $this->app->singleton(\App\Services\Payroll\ClosedRunWriteContext::class);
+
+        // Singleton so its userId => timezone memo survives a whole request.
+        // The report rollups and the activity feed ask it per ROW; a fresh
+        // instance per resolution would re-read employee_work_infos for every
+        // row of a timeline page.
+        $this->app->singleton(\App\Services\Attendance\UserTimezoneResolver::class);
     }
 
     /**
@@ -43,6 +49,24 @@ class AppServiceProvider extends ServiceProvider
          * PayrollItemObserver for what it does and does not guard.
          */
         \App\Models\PayrollItem::observe(\App\Observers\PayrollItemObserver::class);
+
+        /*
+         * Outbound webhooks.
+         *
+         * Registered on exactly the five models that carry the eight published
+         * events, so nothing else pays for the check. On the model lifecycle
+         * rather than at each call site because an event somebody has to
+         * remember to emit is one that silently stops being emitted.
+         */
+        foreach ([
+            \App\Models\User::class,
+            \App\Models\EmployeeExit::class,
+            \App\Models\PayrollMonthlyRun::class,
+            \App\Models\LeaveRequest::class,
+            \App\Models\Invoice::class,
+        ] as $model) {
+            $model::observe(\App\Observers\WebhookEventObserver::class);
+        }
 
         /*
          * The password policy, in one place.
@@ -94,6 +118,38 @@ class AppServiceProvider extends ServiceProvider
             return [
                 Limit::perMinute($emailLimit)->by($email.'|'.$request->ip().'|'.$clientFingerprint),
                 Limit::perMinute($ipLimit)->by($request->ip().'|'.$clientType),
+            ];
+        });
+
+        /*
+         * Second-factor verification.
+         *
+         * Tighter than login on purpose. A six-digit code has a million
+         * combinations, but a one-step clock window means several are valid at
+         * once, so an unbounded attempt rate against a *known-good* password
+         * is a genuine brute force. Keyed on the challenge as well as the IP:
+         * limiting by IP alone would let one attacker exhaust the budget for
+         * every user behind a shared NAT.
+         */
+        RateLimiter::for('auth.mfa.verify', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_MFA_PER_MINUTE', 6))
+                ->by(sha1((string) $request->input('challenge', 'none'))),
+            Limit::perMinute((int) env('RATE_LIMIT_MFA_IP_PER_MINUTE', 30))->by($request->ip()),
+        ]);
+
+        /*
+         * The customer-facing read API.
+         *
+         * Keyed on the API key rather than the IP: several customers may
+         * integrate from the same cloud region, and limiting by IP would let
+         * one of them exhaust the budget for the others.
+         */
+        RateLimiter::for('api.public', function (Request $request) {
+            $key = (string) ($request->header('X-API-Key')
+                ?: $request->header('Authorization', 'anonymous'));
+
+            return [
+                Limit::perMinute((int) env('RATE_LIMIT_PUBLIC_API_PER_MINUTE', 120))->by(sha1($key)),
             ];
         });
 

@@ -83,6 +83,24 @@ trait BelongsToOrganization
      */
     protected static function currentOrganizationId(): ?int
     {
+        /*
+         * A tenant pinned by AuthenticateApiClient, checked first.
+         *
+         * An API key belongs to an organisation but not to a person, so
+         * Auth::user() is null for the whole request and the no-user branch
+         * below would make the scope a no-op — for an inbound HTTP request
+         * that means querying across every tenant.
+         *
+         * Held in TenantContext rather than a static on this trait: a static
+         * property declared in a trait gives every using class its own copy,
+         * so pinning here would have scoped one model out of ninety-seven.
+         */
+        $pinned = \App\Support\TenantContext::current();
+
+        if ($pinned !== null) {
+            return $pinned;
+        }
+
         if (!Auth::hasUser()) {
             return null;
         }

@@ -47,21 +47,67 @@ return [
             'report' => false,
         ],
 
-        'screenshots' => [
+        /*
+         * Object storage, when it exists.
+         *
+         * Screenshots, employee documents and chat attachments all wrote to a
+         * local volume on the single application instance. Losing that instance
+         * lost every screenshot ever captured and every uploaded PAN card, and
+         * no second application node could ever serve them.
+         *
+         * Set AWS_BUCKET and these three move to S3 automatically; leave it
+         * unset and they stay exactly where they are, so an existing deployment
+         * changes nothing until it is ready to. The per-disk root keeps one
+         * bucket from mixing the three together.
+         */
+        'screenshots' => env('AWS_BUCKET') ? [
+            'driver' => 's3',
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'region' => env('AWS_DEFAULT_REGION'),
+            'bucket' => env('AWS_BUCKET'),
+            'root' => 'screenshots',
+            'endpoint' => env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ] : [
             'driver' => 'local',
             'root' => storage_path('app/private/screenshots'),
             'throw' => false,
             'report' => false,
         ],
 
-        'chat_attachments' => [
+        'chat_attachments' => env('AWS_BUCKET') ? [
+            'driver' => 's3',
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'region' => env('AWS_DEFAULT_REGION'),
+            'bucket' => env('AWS_BUCKET'),
+            'root' => 'chat_attachments',
+            'endpoint' => env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ] : [
             'driver' => 'local',
             'root' => storage_path('app/private/chat_attachments'),
             'throw' => false,
             'report' => false,
         ],
 
-        'employee_documents' => [
+        'employee_documents' => env('AWS_BUCKET') ? [
+            'driver' => 's3',
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'region' => env('AWS_DEFAULT_REGION'),
+            'bucket' => env('AWS_BUCKET'),
+            'root' => 'employee_documents',
+            'endpoint' => env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+            'report' => false,
+        ] : [
             'driver' => 'local',
             'root' => storage_path('app/private/employee_documents'),
             'throw' => false,

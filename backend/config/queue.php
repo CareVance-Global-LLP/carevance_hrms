@@ -13,7 +13,15 @@ return [
     |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'database'),
+    /*
+    | Redis when it is configured, database otherwise.
+    |
+    | Note this changes nothing about the requirement to RUN a worker:
+    | `php artisan queue:work` is mandatory under either driver, and without
+    | it payroll processing returns 202 and then never happens. /api/health
+    | now reports a stalled queue so that failure is visible.
+    */
+    'default' => env('QUEUE_CONNECTION', env('REDIS_HOST') ? 'redis' : 'database'),
 
     /*
     |--------------------------------------------------------------------------

@@ -223,6 +223,22 @@
   --ring: 93 150 157;
   --on-brand: 255 255 255;
 
+  /* Frosted chrome that floats over the page — the landing navbar's pill.
+     Held as whole box-shadow values rather than a shadow *colour* because the
+     two themes need different alphas, not the same alpha in a new hue: a dark
+     surface swallows a 0.08 shadow entirely. */
+  --glass-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  --glass-shadow-lifted: 0 4px 24px -4px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+
+  /* The landing CTA slab. Pinned rather than taken from the brand ramp: the
+     ramp inverts, so `from-blue-600 … to-blue-900` turns into a near-white
+     band in dark mode while the white text on it stays white. A full-width
+     hero-scale slab is the one place the inversion is wrong — it has to stay
+     a deep brand block in both themes for the white type to hold. */
+  --cta-from: 93 150 157;
+  --cta-via: 61 101 107;
+  --cta-to: 35 59 64;
+
   /* Page canvas gradient — see the .page-canvas utility below. */
   --canvas-1: 252 253 255;
   --canvas-2: 242 248 255;
@@ -439,6 +455,13 @@
   --ring: 140 198 206;
   --on-brand: 10 15 20;
 
+  --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --glass-shadow-lifted: 0 8px 28px -6px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.45);
+
+  --cta-from: 48 80 86;
+  --cta-via: 33 57 62;
+  --cta-to: 20 34 39;
+
   /* Deepest at the top so the canvas recedes behind cards, mirroring the way
      the light gradient lifts towards the viewer. */
   --canvas-1: 10 15 20;
@@ -529,6 +552,21 @@
 .surface-fixed-dark {
   background-color: #131b21;
   color: #e6edf0;
+}
+
+/*
+ * The landing CTA slab. `from-blue-600 … to-blue-900` cannot express it: the
+ * brand ramp inverts, so the band turns near-white in dark mode while the
+ * white type on it stays white. Deep in both themes, just deeper in dark so it
+ * still reads as a distinct block against the near-black page.
+ */
+.cta-band {
+  background-image: linear-gradient(
+    to bottom right,
+    rgb(var(--cta-from)) 0%,
+    rgb(var(--cta-via)) 50%,
+    rgb(var(--cta-to)) 100%
+  );
 }
 
 body {

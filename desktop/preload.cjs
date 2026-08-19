@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   downloadUpdate: () => ipcRenderer.invoke('desktop:download-update'),
   installUpdate: () => ipcRenderer.invoke('desktop:install-update'),
   getDesktopDeviceIdentity: () => ipcRenderer.invoke('desktop:get-device-identity'),
+  // Opens the scrubbed diagnostics folder, so a bug report can carry a log
+  // file instead of a photograph of the screen.
+  openDiagnostics: () => ipcRenderer.invoke('desktop:open-diagnostics'),
   // Lets the shell paint its window background and its native fallback screens
   // in whatever theme the web app resolved to.
   setTheme: (payload) => ipcRenderer.invoke('desktop:set-theme', payload),

@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\Auditable;
 use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeePayrollTemplate extends Model
 {
+    use Auditable;
     use BelongsToOrganization;
 
     protected $table = 'employee_payroll_templates';

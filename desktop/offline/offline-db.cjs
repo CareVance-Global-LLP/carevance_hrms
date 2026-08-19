@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 
 const { encrypt, decrypt } = require('./crypto-utils.cjs');
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
  const DB_FILENAME = 'carevance-offline.db';
 
 /** Every table that carries a sync_status and therefore accumulates. */
@@ -35,8 +35,12 @@ CREATE TABLE IF NOT EXISTS schema_version (
 CREATE TABLE IF NOT EXISTS offline_auth (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
-  token TEXT NOT NULL,
+  -- No plaintext token column. It used to sit right here, beside its own
+  -- encrypted copy, which made the encryption decorative: anything that could
+  -- read the file could read the token out of the next column. See
+  -- offline/auth-cipher.cjs.
   encrypted_session TEXT,
+  session_cipher TEXT,
   device_id TEXT NOT NULL,
   organization_id INTEGER,
   user_data TEXT,
@@ -465,7 +469,70 @@ if (fromVersion < 4) {
       }
       this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [6]);
     }
+    if (fromVersion < 7) {
+      this._migrateAuthStorage();
+      this.db.run('INSERT OR IGNORE INTO schema_version (version) VALUES (?)', [7]);
+    }
   };
+
+/**
+ * Remove the plaintext `token` column from offline_auth.
+ *
+ * Rows keep their sealed copy and are tagged `machine_key`, which is what every
+ * pre-v7 build used, so nobody is signed out by the upgrade. A row whose ONLY
+ * copy of the token is the plaintext one is dropped: carrying it forward would
+ * mean keeping the column, and requiring one fresh sign-in is a far smaller
+ * cost than leaving a live bearer token readable on disk.
+ *
+ * Written as a table rebuild rather than ALTER TABLE DROP COLUMN so it does not
+ * depend on the SQLite version sql.js happens to bundle.
+ */
+OfflineDatabase.prototype._migrateAuthStorage = function () {
+  const columns = this.db.exec('PRAGMA table_info(offline_auth)');
+  const names = columns.length ? columns[0].values.map((row) => row[1]) : [];
+  if (!names.includes('token')) {
+    return;
+  }
+
+  try {
+    this.db.run('ALTER TABLE offline_auth RENAME TO offline_auth_pre_v7');
+    this.db.run(`CREATE TABLE offline_auth (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      encrypted_session TEXT,
+      session_cipher TEXT,
+      device_id TEXT NOT NULL,
+      organization_id INTEGER,
+      user_data TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT,
+      UNIQUE(user_id, device_id)
+    )`);
+    this.db.run(`INSERT INTO offline_auth
+        (user_id, encrypted_session, session_cipher, device_id, organization_id, user_data, created_at, expires_at)
+      SELECT user_id, encrypted_session, 'machine_key', device_id, organization_id, user_data, created_at, expires_at
+      FROM offline_auth_pre_v7
+      WHERE encrypted_session IS NOT NULL AND encrypted_session <> ''`);
+    this.db.run('DROP TABLE offline_auth_pre_v7');
+
+    /*
+     * VACUUM, or the plaintext survives the migration.
+     *
+     * Dropping a table returns its pages to the freelist; it does not erase
+     * them. The old rows — tokens and all — stay in the file as free space and
+     * are trivially recoverable with `strings`. sql.js then serialises that
+     * whole image, freelist included, straight back to disk.
+     *
+     * VACUUM rewrites the database from its live contents, so the freed pages
+     * are simply not carried over. `offlineAuthStorage.test.cjs` scans the
+     * resulting file for the raw token and fails without this line.
+     */
+    this.db.run('VACUUM');
+    this.dirty = true;
+  } catch (err) {
+    console.warn('[offline-db] Migration v7 auth rebuild failed:', err.message);
+  }
+};
 
 OfflineDatabase.prototype.close = function () {
   if (this.saveTimer) {
@@ -537,14 +604,25 @@ OfflineDatabase.prototype._count = function (sql, params = []) {
 //
 // Auth operations
 //
-OfflineDatabase.prototype.saveAuthSession = function (userId, token, deviceId, organizationId, userData, encryptSecret) {
+/**
+ * @param {object} authCipher From offline/auth-cipher.cjs. The token is stored
+ *   only inside what this seals — there is no plaintext copy to fall back to,
+ *   so a cipher that cannot seal means the session is not saved at all.
+ */
+OfflineDatabase.prototype.saveAuthSession = function (userId, token, deviceId, organizationId, userData, authCipher) {
   if (!this.isReady()) return null;
-  const encryptedSession = encrypt(JSON.stringify({ token, userData, userId }), encryptSecret);
+
+  const sealed = authCipher && authCipher.encrypt(JSON.stringify({ token, userData, userId }));
+  if (!sealed) {
+    console.warn('[offline-db] Refusing to store an auth session that could not be encrypted.');
+    return null;
+  }
+
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const ok = this._run(
-    `INSERT OR REPLACE INTO offline_auth (user_id, token, encrypted_session, device_id, organization_id, user_data, expires_at)
+    `INSERT OR REPLACE INTO offline_auth (user_id, encrypted_session, session_cipher, device_id, organization_id, user_data, expires_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [userId, token, encryptedSession, deviceId, organizationId || null, userData ? JSON.stringify(userData) : null, expiresAt]
+    [userId, sealed.payload, sealed.cipher, deviceId, organizationId || null, userData ? JSON.stringify(userData) : null, expiresAt]
   );
   return ok ? { userId, token, expiresAt } : null;
 };
@@ -560,19 +638,26 @@ OfflineDatabase.prototype.getAuthSession = function (deviceId) {
   return row;
 };
 
-OfflineDatabase.prototype.getDecryptedAuthSession = function (deviceId, encryptSecret) {
+/**
+ * The session, or null. Never a row without its token: this used to fall
+ * through to `row.token` — the plaintext column — and after that column was
+ * removed the same fall-through would have returned a session object with no
+ * credential in it, which reads as "signed in" to every caller downstream.
+ */
+OfflineDatabase.prototype.getDecryptedAuthSession = function (deviceId, authCipher) {
   const row = this.getAuthSession(deviceId);
-  if (!row) return null;
-  if (row.encrypted_session) {
-    try {
-      const decrypted = decrypt(row.encrypted_session, encryptSecret);
-      if (decrypted) {
-        const parsed = JSON.parse(decrypted);
-        return { ...row, token: parsed.token || row.token, userData: parsed.userData };
-      }
-    } catch {}
+  if (!row || !row.encrypted_session || !authCipher) return null;
+
+  const decrypted = authCipher.decrypt(row.session_cipher, row.encrypted_session);
+  if (!decrypted) return null;
+
+  try {
+    const parsed = JSON.parse(decrypted);
+    if (!parsed || !parsed.token) return null;
+    return { ...row, token: parsed.token, userData: parsed.userData };
+  } catch {
+    return null;
   }
-  return row;
 };
 
 OfflineDatabase.prototype.clearAuthSession = function (deviceId) {

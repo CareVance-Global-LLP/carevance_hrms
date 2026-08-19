@@ -14,8 +14,15 @@ use Throwable;
 
 class AttendanceSelfieController extends Controller
 {
+    use \App\Http\Controllers\Api\Concerns\GuardsMonitoringConsent;
+
     public function upload(Request $request): JsonResponse
     {
+        // A photograph of a person's face, and usually their location with it.
+        if ($refusal = $this->refuseIfCaptureNotConsented($request->user(), 'selfie')) {
+            return $refusal;
+        }
+
         $request->validate([
             'image' => 'required|string',
             'latitude' => 'nullable|numeric|between:-90,90',

@@ -445,29 +445,17 @@ class SuperAdminController extends Controller
         ]);
     }
     
-    /**
-     * Impersonate a user (login as them)
+    /*
+     * `impersonate()` was removed here and replaced by break-glass access —
+     * see BreakGlassController and routes/api/protected/super-admin.php.
+     *
+     * It minted an unlimited, non-expiring token for any user in any tenant
+     * with no reason, no customer approval, no notification and no audit
+     * entry. It also called Sanctum's createToken() on a model that does not
+     * use Sanctum, in an application that does not install it, so every call
+     * raised a fatal error. Nothing was preserved because nothing worked.
      */
-    public function impersonate(Request $request, User $user)
-    {
-        // Create impersonation token
-        $token = $user->createToken('impersonation-' . now()->timestamp)->plainTextToken;
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Impersonation token created',
-            'data' => [
-                'token' => $token,
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'organization' => $user->organization?->name
-                ]
-            ]
-        ]);
-    }
-    
+
     /**
      * Export organizations to Excel
      */

@@ -540,7 +540,17 @@ class User extends Authenticatable
 
         return match ($this->role) {
             'super_admin' => true,
-            'admin' => in_array($key, self::PERMISSIONS_ADMIN, true),
+            // HR and payroll managers were absent from this map and fell
+            // through to `default => false`, so an HR user with no custom role
+            // held NO permissions at all: /auth/me returned an empty list, the
+            // frontend hid every module, and the eight controllers that gate on
+            // hasPermission() refused them outright.
+            //
+            // This is the same omission that getHierarchyLevel() already had
+            // and already fixed — the two maps have to be corrected together or
+            // the role is privileged for routing and unprivileged for features.
+            // They sit with admin, which is where the hierarchy places them.
+            'admin', 'hr', 'payroll_manager' => in_array($key, self::PERMISSIONS_ADMIN, true),
             'manager' => in_array($key, self::PERMISSIONS_MANAGER, true),
             'employee' => in_array($key, self::PERMISSIONS_EMPLOYEE, true),
             default => false,

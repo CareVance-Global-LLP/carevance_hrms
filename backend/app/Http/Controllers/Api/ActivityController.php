@@ -22,6 +22,8 @@ use Throwable;
 
 class ActivityController extends Controller
 {
+    use \App\Http\Controllers\Api\Concerns\GuardsMonitoringConsent;
+
     public function __construct(
         private readonly ActivityFeedService $activityFeedService,
         private readonly UsageProcessingService $usageProcessingService,
@@ -281,6 +283,7 @@ class ActivityController extends Controller
             ->reject(fn (array $row) => $this->isCareVanceWorkspaceRow($row))
             ->map(function (array $row) use ($usersById) {
                 $recordedAt = data_get($row, 'recorded_at');
+                $rowUserId = (int) ($row['user_id'] ?? 0);
                 $toolType = (string) ($row['tool_type'] ?? 'software');
                 $label = (string) ($row['label'] ?? '');
                 $rawName = (string) ($row['raw_name'] ?? '');
@@ -292,15 +295,15 @@ class ActivityController extends Controller
                     'type' => (string) ($row['type'] ?? 'app'),
                     'name' => $rawName !== '' ? $rawName : ($label !== '' ? $label : 'Unknown'),
                     'duration' => (int) ($row['duration'] ?? 0),
-                    'recorded_at' => $this->formatApiTimestamp($recordedAt),
+                    'recorded_at' => $this->formatApiTimestamp($recordedAt, $rowUserId),
                     'normalized_label' => $label !== '' ? $label : null,
                     'normalized_domain' => $toolType === 'website' && $label !== '' ? $label : null,
                     'software_name' => $toolType === 'software' && $label !== '' ? $label : null,
                     'tool_type' => $toolType,
                     'classification' => (string) ($row['classification'] ?? 'neutral'),
                     'classification_reason' => (string) ($row['classification_reason'] ?? ''),
-                    'start_at' => $this->formatApiTimestamp(data_get($row, 'start_at')),
-                    'end_at' => $this->formatApiTimestamp(data_get($row, 'end_at')),
+                    'start_at' => $this->formatApiTimestamp(data_get($row, 'start_at'), $rowUserId),
+                    'end_at' => $this->formatApiTimestamp(data_get($row, 'end_at'), $rowUserId),
                     'user' => $usersById->get((int) ($row['user_id'] ?? 0)),
                     'raw_events_count' => (int) ($row['raw_events_count'] ?? 1),
                 ];
@@ -343,23 +346,32 @@ class ActivityController extends Controller
         return $label === 'carevance' || str_contains($rawName, 'carevance hrms');
     }
 
-    private function formatApiTimestamp(mixed $value): ?string
+    /**
+     * Render an instant in the wall clock of the person the row belongs to.
+     *
+     * Timeline rows are per-employee, so `config('app.timezone')` was only ever
+     * right for tenants who happen to sit in the app's default zone. Everyone
+     * else read their own day shifted by the offset between the two.
+     *
+     * A null/0 $userId means no user is in scope and falls back to the app
+     * timezone through UserTimezoneResolver.
+     */
+    private function formatApiTimestamp(mixed $value, ?int $userId = null): ?string
     {
-        if ($value instanceof Carbon) {
-            return ExternalTimestamp::parseToAppTimezone($value)?->toIso8601String();
-        }
-
         if ($value === null || $value === '') {
             return null;
         }
 
-        return ExternalTimestamp::parseToAppTimezone($value)?->toIso8601String();
+        return ExternalTimestamp::parseToUserTimezone($value, $userId)?->toIso8601String();
     }
 
     private function mapFeedItemForResponse(object $item, Collection $usersById): array
     {
         $startedAt = $item->started_at ?? null;
         $endedAt = $item->ended_at ?? null;
+        // Same reasoning as the processed rows: a feed row belongs to one
+        // person, so it is rendered in that person's wall clock.
+        $itemUserId = (int) ($item->user_id ?? 0);
 
         return [
             'id' => (int) ($item->id ?? 0),
@@ -370,7 +382,7 @@ class ActivityController extends Controller
             'name' => (string) ($item->name ?? 'Unknown'),
             'duration' => max(0, (int) ($item->duration ?? 0)),
             'recorded_at' => $item->recorded_at instanceof Carbon
-                ? $item->recorded_at->toIso8601String()
+                ? (string) $this->formatApiTimestamp($item->recorded_at, $itemUserId)
                 : (string) ($item->recorded_at ?? ''),
             'normalized_label' => $item->normalized_label ?? null,
             'normalized_domain' => $item->normalized_domain ?? null,
@@ -382,10 +394,10 @@ class ActivityController extends Controller
             'window_title' => $item->window_title ?? null,
             'url' => $item->url ?? null,
             'started_at' => $startedAt instanceof Carbon
-                ? $startedAt->toIso8601String()
+                ? $this->formatApiTimestamp($startedAt, $itemUserId)
                 : null,
             'ended_at' => $endedAt instanceof Carbon
-                ? $endedAt->toIso8601String()
+                ? $this->formatApiTimestamp($endedAt, $itemUserId)
                 : null,
             'confidence' => $item->confidence ?? null,
             'metadata' => $item->metadata ?? null,
@@ -395,6 +407,13 @@ class ActivityController extends Controller
 
     public function store(Request $request)
     {
+        // Application names, window titles and URLs are a record of what a
+        // person did all day. Refused before it is read, not after it is
+        // stored.
+        if ($refusal = $this->refuseIfCaptureNotConsented($request->user(), 'activity')) {
+            return $refusal;
+        }
+
         $validated = $request->validate([
             'user_id' => 'nullable|exists:users,id',
             'time_entry_id' => 'nullable|exists:time_entries,id',

@@ -31,6 +31,14 @@ class AuthController extends Controller
      */
     public const TRIAL_SEATS = 5;
 
+    /**
+     * How long a half-finished login stays valid.
+     *
+     * Long enough to unlock a phone and read a code; short enough that a
+     * challenge left in a browser history is worthless.
+     */
+    public const MFA_CHALLENGE_TTL_SECONDS = 300;
+
     public function __construct(
         private readonly AuditLogService $auditLogService,
         private readonly ApiTokenService $apiTokenService,
@@ -229,9 +237,41 @@ class AuthController extends Controller
 
         // Load user organization (if exists)
         $user->load('organization');
-        
+
         // Note: We allow login even without organization - frontend will handle redirect to workspace creation
         // This allows users who had their org deleted or are pending invitation acceptance to still log in
+
+        /*
+         * Second factor.
+         *
+         * The password is correct, but on an account with an authenticator
+         * enrolled that is only half the answer, so no API token is issued
+         * here. What comes back is a short-lived challenge the client trades
+         * for a token at /auth/mfa/verify once it has the code.
+         *
+         * Returned as 200 rather than 401: nothing has failed. Treating it as
+         * an auth error is how clients end up clearing stored credentials and
+         * bouncing the user back to a blank login form mid-way through signing
+         * in.
+         */
+        $mfa = app(\App\Services\Security\MfaService::class);
+
+        if ($mfa->isEnrolled($user)) {
+            $challenge = $this->issueMfaChallenge($user, $remember);
+
+            $this->auditLogService->log(
+                action: 'auth.mfa_challenged',
+                actor: $user,
+                target: $user,
+                request: $request,
+            );
+
+            return $this->successResponse([
+                'mfa_required' => true,
+                'challenge' => $challenge,
+                'expires_in' => self::MFA_CHALLENGE_TTL_SECONDS,
+            ], 'Enter the code from your authenticator app.');
+        }
 
         $token = $this->apiTokenService->issue(
             $user,
@@ -496,6 +536,127 @@ class AuthController extends Controller
 
             return false;
         }
+    }
+
+    /**
+     * Trade a verified second factor for a real session.
+     *
+     * Public route: the caller is by definition not authenticated yet. What
+     * stands in for authentication is the challenge, which only a successful
+     * password check could have produced, and which is destroyed on use.
+     */
+    public function verifyMfaChallenge(Request $request)
+    {
+        $validated = $request->validate([
+            'challenge' => ['required', 'string'],
+            // Six digits for TOTP, or an XXXXX-XXXXX recovery code.
+            'code' => ['required', 'string', 'max:32'],
+        ]);
+
+        $cacheKey = $this->mfaChallengeKey($validated['challenge']);
+        $payload = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+        if (! is_array($payload) || empty($payload['user_id'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'That sign-in attempt has expired. Enter your password again.',
+                'error_code' => 'MFA_CHALLENGE_EXPIRED',
+            ], 401);
+        }
+
+        $user = User::find($payload['user_id']);
+
+        if (! $user) {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'That sign-in attempt is no longer valid.',
+                'error_code' => 'MFA_CHALLENGE_EXPIRED',
+            ], 401);
+        }
+
+        $mfa = app(\App\Services\Security\MfaService::class);
+
+        if (! $mfa->verify($user, $validated['code'])) {
+            /*
+             * The challenge deliberately survives a wrong code. Burning it on
+             * the first mistype would send the user back to the password form
+             * for a fat-fingered digit — and the rate limiter on this route,
+             * plus the five-minute expiry, already bound how many attempts a
+             * single password check can buy.
+             */
+            $this->auditLogService->log(
+                action: 'auth.mfa_failed',
+                actor: $user,
+                target: $user,
+                request: $request,
+            );
+
+            return response()->json([
+                'success' => false,
+                'message' => 'That code is not correct. Check your authenticator app and try again.',
+                'error_code' => 'MFA_CODE_INVALID',
+            ], 422);
+        }
+
+        // Single use: a correct code must not be replayable from a captured
+        // challenge.
+        \Illuminate\Support\Facades\Cache::forget($cacheKey);
+
+        $remember = (bool) ($payload['remember'] ?? false);
+
+        $token = $this->apiTokenService->issue(
+            $user,
+            'auth-token',
+            $this->getApiAuthTokenMinutes($remember)
+        );
+
+        $user->load(['organization', 'groups', 'employeeProfile']);
+
+        $this->auditLogService->log(
+            action: 'auth.login',
+            actor: $user,
+            target: $user,
+            metadata: ['role' => $user->role, 'mfa' => true],
+            request: $request,
+        );
+
+        return $this->successResponse([
+            'user' => [
+                ...$user->toArray(),
+                'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
+                'hierarchy_level' => $user->getHierarchyLevel(),
+            ],
+            'token' => $token,
+            'organization' => $user->organization,
+        ], 'Logged in successfully.')
+            ->withCookie($this->makeApiAuthCookie($token, $remember));
+    }
+
+    /**
+     * Park a half-finished login and hand back an opaque handle.
+     *
+     * The user id is never exposed to the client — the handle is random and
+     * the mapping lives server-side, so a challenge reveals nothing about
+     * whose account it belongs to.
+     */
+    private function issueMfaChallenge(User $user, bool $remember): string
+    {
+        $challenge = Str::random(64);
+
+        \Illuminate\Support\Facades\Cache::put(
+            $this->mfaChallengeKey($challenge),
+            ['user_id' => $user->id, 'remember' => $remember],
+            now()->addSeconds(self::MFA_CHALLENGE_TTL_SECONDS),
+        );
+
+        return $challenge;
+    }
+
+    private function mfaChallengeKey(string $challenge): string
+    {
+        return 'mfa:challenge:'.hash('sha256', $challenge);
     }
 
     private function makeApiAuthCookie(string $token, bool $remember = true): Cookie

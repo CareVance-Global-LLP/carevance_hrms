@@ -33,6 +33,10 @@ Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->gr
 
     // ===== Statutory Filings =====
     Route::prefix('filings')->group(function () {
+        // Registered before '/{id}', which would otherwise match "catalogue"
+        // as a filing id and 404 on every request the dashboard makes.
+        Route::get('/catalogue', [PayrollFilingController::class, 'catalogue']);
+
         Route::get('/', [PayrollFilingController::class, 'listFilings']);
         Route::get('/{id}/download', [PayrollFilingController::class, 'downloadFiling']);
         Route::get('/{id}/portal', [PayrollFilingController::class, 'portalInfo']);

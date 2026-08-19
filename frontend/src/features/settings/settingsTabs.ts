@@ -1,4 +1,5 @@
 import {
+  AlarmClock,
   Bell,
   Briefcase,
   Building,
@@ -68,6 +69,13 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     group: 'workspace',
     icon: Building,
     keywords: 'company workspace logo slug office start late after working hours leave policy quota holiday break types paid unpaid screenshot interval monitoring timezone delete danger',
+  },
+  {
+    id: 'shifts',
+    name: 'Shifts',
+    group: 'workspace',
+    icon: AlarmClock,
+    keywords: 'shift roster rota night shift timing start end break grace overnight assign employee schedule working hours target overtime',
   },
   {
     id: 'productivity',

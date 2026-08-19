@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { buildTrackedContextName, resolveExeDisplayName } from '@/lib/activityProductivity';
 import { idleGuardIntervalMs } from '@/lib/runtimeConfig';
 import { idleStopWarningSecondsRemaining } from '@/lib/idleStopWarning';
+import { formatIdleDurationLabel, idleAutoStopMessage } from '@/lib/idleAutoStopMessage';
 import { pushIdlePopupState } from '@/lib/idlePopupBridge';
 import { resolveBrowserUrlForContext } from '@/lib/inferredBrowserUrl';
 import { isCaptureBlockedContext, resolveTrackerPolicy } from '@/lib/trackerPolicy';
@@ -144,20 +145,6 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 };
 
-const formatIdleDurationLabel = (seconds: number) => {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (minutes <= 0) {
-    return `${seconds} second${seconds === 1 ? '' : 's'}`;
-  }
-
-  if (remainingSeconds === 0) {
-    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
-  }
-
-  return `${minutes} minute${minutes === 1 ? '' : 's'} ${remainingSeconds} second${remainingSeconds === 1 ? '' : 's'}`;
-};
 
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
   'mousemove',
@@ -632,8 +619,15 @@ export const useDesktopTracker = () => {
     const IDLE_THRESHOLD_SECONDS = trackerPolicy.idle_track_threshold_seconds;
     const IDLE_AUTO_STOP_THRESHOLD_SECONDS = trackerPolicy.idle_auto_stop_threshold_seconds;
     const LOCK_SCREEN_AUTO_STOP_THRESHOLD_SECONDS = trackerPolicy.lock_auto_stop_threshold_seconds;
-    const IDLE_AUTO_STOP_MESSAGE =
-      `You were idle for ${formatIdleDurationLabel(IDLE_AUTO_STOP_THRESHOLD_SECONDS)}, so your timer was stopped.`;
+    /*
+     * Report the measured idle where the stop is actually handled, and the
+     * threshold — described as a threshold — where we are only telling someone
+     * on their return that a stop happened earlier. The old single constant
+     * claimed "You were idle for <threshold>" everywhere, which reads as a
+     * measurement and never was one.
+     */
+    const idleStopMessage = (measuredIdleSeconds?: number | null) =>
+      idleAutoStopMessage(measuredIdleSeconds, IDLE_AUTO_STOP_THRESHOLD_SECONDS);
 
     const screenshotIntervalMs = trackerPolicy.capture_interval_minutes * 60 * 1000;
     let inFlight = false;
@@ -1525,10 +1519,10 @@ export const useDesktopTracker = () => {
         try {
           suppressAutoStart(userId);
           suppressAutoStartGlobally(userId);
-          setIdleAutoStopNotice(userId, IDLE_AUTO_STOP_MESSAGE);
+          setIdleAutoStopNotice(userId, idleStopMessage(idleSeconds));
           emitDesktopTimerIdleStop({
             userId,
-            message: IDLE_AUTO_STOP_MESSAGE,
+            message: idleStopMessage(idleSeconds),
           });
         } catch (eventError) {
           console.warn('[desktop-tracker] failed to emit idle-stop events:', eventError);
@@ -2314,7 +2308,7 @@ export const useDesktopTracker = () => {
             await desktopApi.showNotification({
               id: Date.now(),
               title: 'Timer Stopped - Idle Detected',
-              body: IDLE_AUTO_STOP_MESSAGE,
+              body: idleStopMessage(),
               route: '/dashboard',
               type: 'idle_stop',
             });
@@ -2637,7 +2631,7 @@ export const useDesktopTracker = () => {
           await desktopApi.showNotification({
             id: Date.now(),
             title: 'Timer Stopped - Idle Detected',
-            body: IDLE_AUTO_STOP_MESSAGE,
+            body: idleStopMessage(),
             route: '/dashboard',
             type: 'idle_stop',
           });

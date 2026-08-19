@@ -297,6 +297,14 @@ export function useSettingsController() {
   const canEditTimezone = canManageOrg && (hasAdminAccess(user) || canManageSettings || hasStrictAdminAccess(user));
   const isStrictAdminUser = hasStrictAdminAccess(user);
   const canEditEmail = hasStrictAdminAccess(user);
+  /*
+   * Rostering is a line-management job, not an owner's, so this mirrors the
+   * server's own gate exactly — ShiftController::canManage() reads
+   * settings.manage first and falls back to hierarchy < 100. Gating the tab on
+   * strict admin instead would hide a screen the API would happily serve to a
+   * manager, which is the mismatch that makes people think a feature is broken.
+   */
+  const canManageShifts = canManageSettings || hasAdminAccess(user);
 
   const visibleTabs = useMemo(() => {
     const allowed = new Set<SettingsTabId>(['profile', 'notifications', 'appearance', 'security', 'help']);
@@ -314,8 +322,11 @@ export function useSettingsController() {
     if (canManageProductivity) {
       allowed.add('productivity');
     }
+    if (canManageShifts) {
+      allowed.add('shifts');
+    }
     return SETTINGS_TABS.filter((tab) => allowed.has(tab.id));
-  }, [canManageProductivity, canManageSettings, isStrictAdminUser]);
+  }, [canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);
 
   const allowedTabIds = useMemo(() => new Set(visibleTabs.map((tab) => tab.id)), [visibleTabs]);
 

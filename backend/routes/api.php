@@ -4,7 +4,14 @@ use Illuminate\Support\Facades\Route;
 
 require base_path('routes/api/public.php');
 
-Route::middleware('api.token')->group(function () {
+/*
+ * The customer-facing read API, authenticated by API key rather than by a
+ * user session. Registered outside the api.token group on purpose — see the
+ * file for why the two auth mechanisms stay separate.
+ */
+require base_path('routes/api/v1.php');
+
+Route::middleware(['api.token', 'mfa.enrolled'])->group(function () {
     require base_path('routes/api/protected/auth.php');
     require base_path('routes/api/protected/users.php');
     require base_path('routes/api/protected/attendance.php');
@@ -32,4 +39,6 @@ Route::middleware('api.token')->group(function () {
     require base_path('routes/api/protected/compoff.php');
     require base_path('routes/api/protected/assets.php');
     require base_path('routes/api/protected/search.php');
+    require base_path('routes/api/protected/security.php');
+    require base_path('routes/api/protected/integrations.php');
 });

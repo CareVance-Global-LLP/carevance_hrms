@@ -259,6 +259,24 @@ Artisan::command('timestamps:repair-local
     return 0;
 })->purpose('Shift affected telemetry timestamps into the correct local time window after a bad deployment');
 
+/*
+ * Scheduler heartbeat.
+ *
+ * The scheduler is mandatory and fails silently. `timers:close-idle` is the
+ * only server-side backstop for desktop idle detection, and without something
+ * driving the schedule the only thing that can stop an idle timer is the
+ * desktop app itself — which cannot act once it is closed, asleep or crashed.
+ * Measured with no scheduler running: time entry #2114 started at 17:59 and
+ * was still open at midday the next day.
+ *
+ * Nothing recorded that the scheduler had stopped. This does, and
+ * /api/health reads it, so a dead scheduler is now visible rather than
+ * discovered a day later in the timesheets.
+ */
+Artisan::command('schedule:heartbeat', function () {
+    Cache::put('scheduler:last-run-at', now()->toIso8601String(), now()->addHours(6));
+})->everyMinute();
+
 // Schedule: send task reminders every 5 minutes
 Artisan::command('schedule:tasks-reminders', function () {
     $this->call('tasks:process-reminders');

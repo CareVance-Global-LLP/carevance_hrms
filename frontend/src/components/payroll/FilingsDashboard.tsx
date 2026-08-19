@@ -16,8 +16,9 @@ import Modal from '@/components/ui/dialog/Modal';
 import type { PayGroupFilingDetail } from '@/types';
 
 import UploadForm16Modal from './UploadForm16Modal';
+import { mergeCatalogueAvailability } from './filingAvailability';
 
-type ComplianceStatus = 'ready' | 'reference_only' | 'needs_external_input' | 'not_configured' | 'source_data_only';
+type ComplianceStatus = 'ready' | 'reference_only' | 'needs_external_input' | 'not_configured' | 'source_data_only' | 'unavailable';
 
 const COMPLIANCE_BADGE: Record<ComplianceStatus, { label: string; className: string }> = {
   ready: { label: 'Filing-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -25,6 +26,10 @@ const COMPLIANCE_BADGE: Record<ComplianceStatus, { label: string; className: str
   source_data_only: { label: 'Source data only — needs NSDL RPU', className: 'bg-amber-50 text-amber-700 border-amber-200' },
   needs_external_input: { label: 'Needs external input — incomplete without outside data', className: 'bg-orange-50 text-orange-700 border-orange-200' },
   not_configured: { label: 'Not configured for your state', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+  // Distinct from not_configured on purpose: that badge says "for your
+  // state", which would be an untrue explanation for a form whose statutory
+  // template has not been written for anybody.
+  unavailable: { label: 'Not available yet', className: 'bg-slate-100 text-slate-600 border-slate-300' },
 };
 
 const DUE_DATE_KEYS: Record<string, string> = {
@@ -651,6 +656,20 @@ export default function FilingsDashboard() {
 
   const dueDates = (settings as any)?.compliance_due_dates ?? (settings as any)?.settings?.compliance_due_dates ?? {};
 
+  /*
+   * The server is the authority on which filings exist. Ten of the returns
+   * below reference statutory templates that have never been written; without
+   * this the screen advertises them as filing-ready and the generator throws
+   * after the user commits to a run.
+   */
+  const { data: filingCatalogue } = useQuery({
+    queryKey: ['filing-catalogue'],
+    queryFn: () => payrollApi.getFilingCatalogue(),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const filingCards = mergeCatalogueAvailability(FILING_CARDS, filingCatalogue ?? {});
+
   const calendarItems = FILING_CARDS
     .map((ft) => {
       const key = DUE_DATE_KEYS[ft.key];
@@ -893,8 +912,13 @@ export default function FilingsDashboard() {
           {selectedRun && (
             <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {FILING_CARDS.map((card) => {
-                const badge = FILING_DISPLAY[card.displayStatus];
+              {filingCards.map((card) => {
+                // "Not Due" is the wrong word for a form whose template was
+                // never written — it implies it will become due. Say what is
+                // actually true instead.
+                const badge = card.available
+                  ? FILING_DISPLAY[card.displayStatus]
+                  : COMPLIANCE_BADGE.unavailable;
                 const patternBadge = PATTERN_BADGE[card.pattern];
                 const runReady = runValidation?.ready === true || (selectedRunData?.status && ['locked', 'approved', 'processed'].includes(selectedRunData.status));
                 const runBlocked = !!selectedRun && !runReady;
@@ -903,7 +927,9 @@ export default function FilingsDashboard() {
                 const existingFiling = filingsList.find((f: any) => f.type === card.key && (f.status === 'generated' || f.status === 'filed' || f.status === 'approved'));
                 const prereqs = getPrerequisites(card);
                 const allPrereqsMet = prereqs.every(p => p.met);
-                const generateDisabled = disabled || (card.needsRun && !allPrereqsMet);
+                // An unavailable filing can never be generated, whatever the
+                // run's state — there is no template to render.
+                const generateDisabled = disabled || !card.available || (card.needsRun && !allPrereqsMet);
 
                 return (
                   <SurfaceCard key={card.key} className={`p-4 border-l-4 ${patternBadge.borderColor}`}>
@@ -925,10 +951,17 @@ export default function FilingsDashboard() {
                       <CalendarClock className="h-3 w-3" />
                       {card.periodInfo}
                     </p>
-                    <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
-                      <HelpCircle className="h-3 w-3" />
-                      {card.nextAction}
-                    </p>
+                    {card.available ? (
+                      <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                        <HelpCircle className="h-3 w-3" />
+                        {card.nextAction}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-600 mb-2 flex items-start gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                        <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                        <span>{card.unavailableReason}</span>
+                      </p>
+                    )}
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {canDownload && existingFiling && (
                         <Button
@@ -1061,7 +1094,7 @@ export default function FilingsDashboard() {
           {!selectedRun && !runsLoading && runsList.length > 0 && (
             <PageEmptyState
               title="Select a payroll run"
-              description="Filings are generated from a specific run. Choose one above to see the 19 returns available for it."
+              description="Filings are generated from a specific run. Choose one above to see the returns available for it."
             />
           )}
         </>

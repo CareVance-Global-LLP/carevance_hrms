@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Download, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from '@/components/branding/BrandLogo';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
 
@@ -93,22 +94,26 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
     }
   };
 
-  const glassOpacity = isScrolled ? 0.95 : 0.8;
-
   return (
     <header
       className={`sticky top-0 z-50 px-4 pt-4 transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:px-6 lg:px-8 ${
         isVisible || isOpen ? 'translate-y-0' : '-translate-y-[115%]'
       }`}
     >
+      {/*
+        Background and shadow both resolve through the token layer. They used to
+        be inline styles (`rgba(255,255,255,…)` plus a slate-tinted shadow), and
+        an inline style is the one thing theme.css's `bg-white` remap cannot
+        reach — so the pill stayed white in dark mode while its `text-slate-600`
+        labels flipped light, leaving light text on a light bar.
+      */}
       <div
-        className="mx-auto max-w-7xl rounded-lg border border-slate-200/80 backdrop-blur-xl transition-all duration-500"
-        style={{
-          backgroundColor: `rgba(255, 255, 255, ${glassOpacity})`,
-          boxShadow: isScrolled
-            ? '0 4px 24px -4px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)'
-            : '0 1px 3px rgba(15, 23, 42, 0.04)',
-        }}
+        data-testid="landing-nav-panel"
+        className={`mx-auto max-w-7xl rounded-lg border border-slate-200/80 backdrop-blur-xl transition-all duration-500 ${
+          isScrolled
+            ? 'bg-surface-card/95 shadow-[var(--glass-shadow-lifted)]'
+            : 'bg-surface-card/80 shadow-[var(--glass-shadow)]'
+        }`}
       >
         <div className="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-3.5 lg:px-6">
           <Link to="/" onClick={handleBrandClick} className="flex min-w-0 items-center">
@@ -126,6 +131,7 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
           )}
 
           <div className="hidden items-center gap-2 lg:flex">
+            <ThemeToggle />
             {desktopDownloadUrl && !isDesktopAuthMode && (
               <a
                 href={desktopDownloadUrl}
@@ -185,6 +191,13 @@ export default function Navbar({ mode = 'marketing' }: NavbarProps) {
                   visible: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } },
                 }}
               >
+                <motion.div
+                  variants={{ hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } }}
+                  className="mb-2 flex items-center justify-between rounded-lg border border-slate-200 px-4 py-2.5"
+                >
+                  <span className="text-sm font-semibold text-slate-700">Appearance</span>
+                  <ThemeToggle />
+                </motion.div>
                 {desktopDownloadUrl && !isDesktopAuthMode && (
                   <motion.a
                     href={desktopDownloadUrl}

@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Traits\Auditable;
 use App\Traits\BelongsToOrganization;
+use App\Traits\EncryptsPii;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeBankAccount extends Model
 {
+    use Auditable;
     use BelongsToOrganization;
+    use EncryptsPii;
     use HasFactory;
 
     protected $fillable = [
@@ -36,7 +40,22 @@ class EmployeeBankAccount extends Model
         return [
             'is_default' => 'boolean',
             'meta' => 'array',
+
+            // Encrypted at rest; *_bidx carries the keyed lookup index.
+            //
+            // ifsc_swift is deliberately NOT encrypted. An IFSC identifies a
+            // bank branch and is published by the RBI, so encrypting it
+            // protects nothing while breaking the whereNotNull completeness
+            // checks that decide who can be paid.
+            'account_number' => 'encrypted',
+            'upi_id' => 'encrypted',
         ];
+    }
+
+    /** @return array<int, string> */
+    public function piiColumns(): array
+    {
+        return ['account_number', 'upi_id'];
     }
 
     /**

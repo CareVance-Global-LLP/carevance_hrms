@@ -2956,6 +2956,22 @@ export const payrollApi = {
     api.get<PayrollSummary>('/payroll/summary', { params }),
 
 // ===== Statutory Filings =====
+   /**
+    * Which filings this installation can actually produce. The dashboard
+    * merges this over its own card list so the screen cannot advertise a
+    * return whose statutory template has not been written.
+    */
+   getFilingCatalogue: async (): Promise<
+     Record<string, { label: string; available: boolean; unavailable_reason: string | null }>
+   > => {
+     const response = await api.get<{
+       data: {
+         filings: Record<string, { label: string; available: boolean; unavailable_reason: string | null }>;
+       };
+     }>('/payroll/filings/catalogue');
+
+     return response.data?.data?.filings ?? {};
+   },
    listFilings: (params?: Record<string, any>) =>
      api.get<any>('/payroll/filings', { params }),
    getFiling: (id: number) =>

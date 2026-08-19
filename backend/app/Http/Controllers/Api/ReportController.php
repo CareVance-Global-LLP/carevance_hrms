@@ -24,6 +24,7 @@ use App\Services\Reports\DashboardSummaryService;
 use App\Services\Reports\IdleValidationService;
 use App\Services\Reports\ReportPayloadBuilder;
 use App\Services\Reports\TimeBreakdownService;
+use App\Services\Attendance\UserTimezoneResolver;
 use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -147,6 +148,7 @@ class ReportController extends Controller
         private readonly UsageProcessingService $usageProcessingService,
         private readonly ActivityFeedService $activityFeedService,
         private readonly GroupAccessService $groupAccessService,
+        private readonly UserTimezoneResolver $userTimezoneResolver,
     ) {
     }
 
@@ -1114,8 +1116,16 @@ class ReportController extends Controller
         })->values();
 
         $dayUserBuckets = [];
+        // A day bucket is a per-PERSON fact, so it is keyed in that person's
+        // wall clock. Keyed in the app zone, an employee outside it has an
+        // evening's work filed under the previous or next calendar day, and
+        // nothing downstream can detect the misattribution.
+        $timezoneByUser = $this->userTimezoneResolver->forUserIds($workedEntries->pluck('user_id'));
         foreach ($workedEntries as $entry) {
-            $date = Carbon::parse($entry->start_time)->toDateString();
+            $entryUserId = (int) $entry->user_id;
+            $date = Carbon::parse($entry->start_time)
+                ->setTimezone($timezoneByUser[$entryUserId] ?? $this->userTimezoneResolver->appDefault())
+                ->toDateString();
             $key = (string) $entry->user_id.'|'.$date;
 
             if (! isset($dayUserBuckets[$key])) {
@@ -1370,8 +1380,16 @@ class ReportController extends Controller
         })->values();
 
         $dayUserBuckets = [];
+        // A day bucket is a per-PERSON fact, so it is keyed in that person's
+        // wall clock. Keyed in the app zone, an employee outside it has an
+        // evening's work filed under the previous or next calendar day, and
+        // nothing downstream can detect the misattribution.
+        $timezoneByUser = $this->userTimezoneResolver->forUserIds($workedEntries->pluck('user_id'));
         foreach ($workedEntries as $entry) {
-            $date = Carbon::parse($entry->start_time)->toDateString();
+            $entryUserId = (int) $entry->user_id;
+            $date = Carbon::parse($entry->start_time)
+                ->setTimezone($timezoneByUser[$entryUserId] ?? $this->userTimezoneResolver->appDefault())
+                ->toDateString();
             $key = (string) $entry->user_id.'|'.$date;
 
             if (! isset($dayUserBuckets[$key])) {
@@ -1542,7 +1560,7 @@ class ReportController extends Controller
             ->map(function ($activity) {
                 $userId = (int) data_get($activity, 'user_id', 0);
                 $recordedAt = data_get($activity, 'recorded_at');
-                $date = $this->resolveActivityDateString($recordedAt);
+                $date = $this->resolveActivityDateString($recordedAt, $userId);
 
                 if ($userId <= 0 || !$date) {
                     return null;
@@ -1558,18 +1576,25 @@ class ReportController extends Controller
             ->map(fn (Collection $rows) => $rows->pluck('activity')->values());
     }
 
-    private function resolveActivityDateString(mixed $recordedAt): ?string
+    /**
+     * The calendar day an activity belongs to, in the wall clock of the person
+     * it belongs to. $userId <= 0 means no user is in scope and falls back to
+     * the app default via UserTimezoneResolver.
+     */
+    private function resolveActivityDateString(mixed $recordedAt, int $userId = 0): ?string
     {
-        if ($recordedAt instanceof Carbon) {
-            return $recordedAt->toDateString();
-        }
-
         if ($recordedAt === null || $recordedAt === '') {
             return null;
         }
 
+        $timezone = $this->userTimezoneResolver->forUserId($userId > 0 ? $userId : null);
+
+        if ($recordedAt instanceof Carbon) {
+            return $recordedAt->copy()->setTimezone($timezone)->toDateString();
+        }
+
         try {
-            return Carbon::parse((string) $recordedAt)->toDateString();
+            return Carbon::parse((string) $recordedAt)->setTimezone($timezone)->toDateString();
         } catch (\Throwable) {
             return null;
         }

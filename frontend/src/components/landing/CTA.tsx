@@ -7,7 +7,7 @@ import GradientOrb from './GradientOrb';
 
 export default function CTA() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-900 px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+    <section className="relative overflow-hidden cta-band px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
       {/* Animated gradient orbs */}
       <GradientOrb color="rgba(255, 255, 255, 0.08)" size={500} className="-top-40 -left-40" speed={0.06} blur={80} />
       <GradientOrb color="rgba(93, 150, 157, 0.15)" size={400} className="-bottom-20 -right-20" speed={0.08} blur={70} />

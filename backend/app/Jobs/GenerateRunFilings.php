@@ -109,12 +109,18 @@ class GenerateRunFilings implements ShouldQueue
 
             $generated = count($report['filings']);
             $failures = $report['failures'];
+            $unavailable = $report['unavailable'] ?? [];
 
-            // Partial success is the honest outcome and the common one: ten of
-            // the declaration-form generators reference blade views that do not
-            // exist yet, so they fail individually while the statutory filings
-            // that matter most — PF ECR, ESI, 24Q, PT — succeed. Reporting the
-            // whole batch as failed would hide that.
+            /*
+             * Three outcomes, not two, and the distinction is the point.
+             *
+             * A *failure* is something that broke and should be investigated.
+             * An *unavailable* filing is one whose statutory template has never
+             * been written — ten of the declaration forms are in that state.
+             * Reporting those as failures sent people to support for a feature
+             * that simply does not exist yet, and buried any real breakage in
+             * the same list.
+             */
             $message = "{$generated} filing(s) generated.";
 
             if ($failures !== []) {
@@ -122,11 +128,17 @@ class GenerateRunFilings implements ShouldQueue
                 $message .= ' '.count($failures)." could not be generated: {$types}.";
             }
 
+            if ($unavailable !== []) {
+                $types = implode(', ', array_column($unavailable, 'type'));
+                $message .= ' '.count($unavailable)." not available yet: {$types}.";
+            }
+
             $run->update([
                 'filings_state' => 'completed',
-                'filings_total' => $generated + count($failures),
+                'filings_total' => $generated + count($failures) + count($unavailable),
                 'filings_done' => $generated,
                 'filings_failed' => count($failures),
+                'filings_skipped' => count($unavailable),
                 'filings_finished_at' => now(),
                 'filings_message' => $message,
             ]);

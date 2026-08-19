@@ -39,6 +39,8 @@ const {
   prepareManagedBrowserTrackingExtensionDir,
 } = require('./browser-tracking-install-guide.cjs');
 const { OfflineDatabase, generateLocalId } = require('./offline/offline-db.cjs');
+const { createAuthCipher } = require('./offline/auth-cipher.cjs');
+const { createLogger } = require('./diagnostics/logger.cjs');
 const { PendingSessionsStore } = require('./offline/pending-sessions-store.cjs');
 const { LocalShellServer } = require('./offline/local-shell.cjs');
 const { NetworkMonitor } = require('./offline/network-monitor.cjs');
@@ -377,6 +379,40 @@ const configureRuntimeStorage = () => {
 };
 
 configureRuntimeStorage();
+
+/*
+ * Diagnostics, started as early as it can correctly be.
+ *
+ * Placed directly after configureRuntimeStorage() and not with the requires:
+ * app.setPath('userData', …) runs in there, so a logger built any earlier
+ * resolves the DEFAULT profile directory and writes its file somewhere the
+ * app never looks.
+ *
+ * `captureConsole` tees the existing `console` calls into a rotating file in
+ * userData/logs, so the shell's existing logging becomes evidence without any
+ * of it being rewritten. The scrubber in diagnostics/logger.cjs is what makes
+ * that safe — this process holds a live API token.
+ *
+ * Before this existed a packaged build left no trace at all: the 19 Aug 2026
+ * timer report arrived as a photograph of a laptop screen because there was
+ * nothing else to send.
+ */
+const diagnosticsLog = createLogger({ dir: path.join(app.getPath('userData'), 'logs') });
+
+process.on('uncaughtException', (error) => {
+  diagnosticsLog.error('[desktop] uncaught exception', error);
+  diagnosticsLog.flush();
+});
+
+process.on('unhandledRejection', (reason) => {
+  diagnosticsLog.error('[desktop] unhandled rejection', reason);
+  diagnosticsLog.flush();
+});
+
+app.on('before-quit', () => {
+  diagnosticsLog.info('[desktop] quitting');
+  diagnosticsLog.flush();
+});
 
 const loadActiveWindowGetter = async () => {
   if (activeWindowGetter) {
@@ -1934,6 +1970,20 @@ ipcMain.handle('desktop:get-device-identity', async () => {
   return getDesktopDeviceIdentity();
 });
 
+/*
+ * "Where are the logs?" answered without asking anyone to find AppData. The
+ * file is already scrubbed, so it is safe to hand to support as-is.
+ */
+ipcMain.handle('desktop:open-diagnostics', async () => {
+  diagnosticsLog.flush();
+  try {
+    await shell.openPath(diagnosticsLog.dir);
+    return { opened: true, path: diagnosticsLog.dir };
+  } catch (error) {
+    return { opened: false, path: diagnosticsLog.dir, error: String(error && error.message) };
+  }
+});
+
 ipcMain.handle('desktop:set-theme', async (_event, payload = {}) => {
   const applied = applyDesktopTheme(payload?.theme);
   persistThemeChoice(applied);
@@ -2204,16 +2254,35 @@ ipcMain.handle('desktop:offline-save-time-entry', async (_event, payload) => {
   return { saved: !!savedId, local_id: savedId };
 });
 
+/**
+ * The cipher the offline auth session is sealed with.
+ *
+ * Built once: `safeStorage.isEncryptionAvailable()` touches the OS keyring, and
+ * the answer does not change within a run. `safeStorage` is passed in rather
+ * than imported inside offline/, which keeps that module free of Electron and
+ * is the reason it can be tested at all.
+ */
+let authCipher = null;
+const getAuthCipher = () => {
+  if (!authCipher) {
+    authCipher = createAuthCipher({
+      safeStorage,
+      machineSecret: getDesktopDeviceIdentity().device_id,
+    });
+    console.log('[desktop] Offline auth sealed with:', authCipher.preferredId);
+  }
+  return authCipher;
+};
+
 ipcMain.handle('desktop:offline-save-auth', async (_event, payload) => {
   if (!offlineDb || !offlineDb.isReady()) return { saved: false, error: 'Offline database not available' };
-  const encryptSecret = getDesktopDeviceIdentity().device_id;
   const result = offlineDb.saveAuthSession(
     payload.user_id,
     payload.token,
     getDesktopDeviceIdentity().device_id,
     payload.organization_id || null,
     payload.user_data || null,
-    encryptSecret
+    getAuthCipher()
   );
   console.log('[desktop] Offline auth session saved for user:', payload.user_id);
   return { saved: !!result };
@@ -2221,8 +2290,7 @@ ipcMain.handle('desktop:offline-save-auth', async (_event, payload) => {
 
 ipcMain.handle('desktop:offline-get-auth', async () => {
   if (!offlineDb || !offlineDb.isReady()) return null;
-  const encryptSecret = getDesktopDeviceIdentity().device_id;
-  const session = offlineDb.getDecryptedAuthSession(getDesktopDeviceIdentity().device_id, encryptSecret);
+  const session = offlineDb.getDecryptedAuthSession(getDesktopDeviceIdentity().device_id, getAuthCipher());
   if (!session) return null;
   return {
     user_id: session.user_id,

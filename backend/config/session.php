@@ -18,7 +18,8 @@ return [
     |
     */
 
-    'driver' => env('SESSION_DRIVER', 'database'),
+    // Redis when it is configured, database otherwise — see config/cache.php.
+    'driver' => env('SESSION_DRIVER', env('REDIS_HOST') ? 'redis' : 'database'),
 
     /*
     |--------------------------------------------------------------------------

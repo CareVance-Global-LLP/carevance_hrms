@@ -20,6 +20,8 @@ use Throwable;
 
 class ScreenshotController extends Controller
 {
+    use \App\Http\Controllers\Api\Concerns\GuardsMonitoringConsent;
+
     private const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
     private const MAX_DATA_URL_CHARS = 14 * 1024 * 1024;
 
@@ -272,6 +274,14 @@ class ScreenshotController extends Controller
 
     public function store(Request $request)
     {
+        // Before anything is read from the request, let alone written to disk.
+        // A screenshot is a full-resolution picture of whatever was on screen;
+        // storing it first and asking afterwards is the collection this guard
+        // exists to prevent.
+        if ($refusal = $this->refuseIfCaptureNotConsented($request->user(), 'screenshot')) {
+            return $refusal;
+        }
+
         try {
             // Offline clients may not know the server-side time entry id yet:
             // when the timer was started while offline they only hold their own

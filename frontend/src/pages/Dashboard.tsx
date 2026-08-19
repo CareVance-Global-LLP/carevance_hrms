@@ -11,6 +11,7 @@ import MyOnboardingCard from '@/components/onboarding/MyOnboardingCard';
 import { formatDate as formatDateForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { formatDuration, formatTimerClock } from '@/lib/formatters';
 import { greetUser } from '@/lib/greeting';
+import { DEFAULT_SHIFT_TARGET_SECONDS, resolveShiftTargetSeconds } from '@/lib/shiftTarget';
 import {
   Activity,
   Briefcase,
@@ -95,7 +96,7 @@ export default function Dashboard() {
   const [todayDeltaLabel, setTodayDeltaLabel] = useState('No change from yesterday');
   const [isLoading, setIsLoading] = useState(true);
   const [attendanceToday, setAttendanceToday] = useState<any | null>(null);
-  const [shiftTargetSeconds, setShiftTargetSeconds] = useState(8 * 3600);
+  const [shiftTargetSeconds, setShiftTargetSeconds] = useState(DEFAULT_SHIFT_TARGET_SECONDS);
   const [workedSeconds, setWorkedSeconds] = useState(0);
   const [totalBreakSeconds, setTotalBreakSeconds] = useState(0);
   const [todayTrackSeconds, setTodayTrackSeconds] = useState(0);
@@ -132,7 +133,19 @@ export default function Dashboard() {
         setTotalTasksCount(Number(data?.total_tasks_count ?? data?.total_projects_count) || 0);
         setAttendanceToday(attendanceRecord);
         setLeaveToday(attendancePayload?.leave_today || null);
-        setShiftTargetSeconds(Number(attendancePayload?.shift_target_seconds || attendanceRecord?.shift_target_seconds || 8 * 3600));
+        /*
+         * The server resolves this from the employee's assigned shift and only
+         * falls back to eight hours when the workspace has configured none, so
+         * the payload figure is preferred over the record's snapshot and over
+         * any default here. `Number(a || b || 8 * 3600)` used to sit on this
+         * line: it turned an unparseable value into NaN, and NaN then flowed
+         * straight through the remaining-time subtraction and the completion
+         * percentage into the tiles below.
+         */
+        setShiftTargetSeconds(resolveShiftTargetSeconds(
+          attendancePayload?.shift_target_seconds,
+          attendanceRecord?.shift_target_seconds
+        ));
         setWorkedSeconds(Number(attendanceRecord?.worked_seconds || data?.today_total_elapsed_duration || data?.today_total_duration || 0) || 0);
         setTotalBreakSeconds(Number(attendanceRecord?.total_break_seconds ?? data?.total_break_seconds ?? 0) || 0);
         setTodayTrackSeconds(Number(data?.today_track_time ?? 0) || 0);

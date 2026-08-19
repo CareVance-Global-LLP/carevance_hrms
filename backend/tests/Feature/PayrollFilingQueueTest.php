@@ -125,13 +125,54 @@ class PayrollFilingQueueTest extends TestCase
     }
 
     /**
-     * Ten of the declaration-form generators reference blade views that do not
-     * exist, so some of them fail on every run today. The batch must still
-     * complete and still produce the statutory filings that matter — this is the
-     * regression guard for the old behaviour, where the first missing view threw
-     * and destroyed the whole batch after four filings had already been written.
+     * The batch must survive one generator throwing.
+     *
+     * This is the regression guard for the old behaviour, where the first
+     * exception destroyed the whole batch after four filings had already been
+     * written, leaving a 500 and no report.
+     *
+     * It used to obtain its exception for free from the ten declaration forms
+     * whose blade views do not exist. Those are now recognised as unavailable
+     * and skipped before they can throw, so the throw has to be induced
+     * deliberately — otherwise this test would keep passing while testing
+     * nothing.
      */
     public function test_a_generator_that_throws_does_not_destroy_the_rest_of_the_batch(): void
+    {
+        $run = $this->fileableRun();
+
+        $service = \Mockery::mock(
+            PayrollFilingService::class,
+            [app(\App\Services\PayrollCalculatorService::class)]
+        )->makePartial();
+
+        $service->shouldReceive('generateEsiChallan')
+            ->andThrow(new \RuntimeException('ESI portal unreachable'));
+
+        (new GenerateRunFilings($run->id, $this->organization->id, $this->admin->id))
+            ->handle($service);
+
+        $run->refresh();
+
+        $this->assertSame('completed', $run->filings_state, 'Partial failure is still a completed batch');
+        $this->assertTrue($run->filings_failed >= 1, 'The throwing generator must be recorded as a failure');
+        $this->assertTrue($run->filings_done >= 1, 'The working generators must still have produced filings');
+
+        // The report has to name what broke, or nobody can act on it.
+        $this->assertMatchesRegularExpression(
+            '/could not be generated: .*esi_challan/',
+            (string) $run->filings_message
+        );
+    }
+
+    /**
+     * A filing whose statutory template was never written is not a failure.
+     *
+     * Ten declaration forms are in that state. Reporting them as failures sent
+     * people to support for a feature that does not exist, and buried genuine
+     * breakage in the same list.
+     */
+    public function test_filings_with_no_template_are_reported_as_unavailable_not_failed(): void
     {
         $run = $this->fileableRun();
 
@@ -140,14 +181,29 @@ class PayrollFilingQueueTest extends TestCase
 
         $run->refresh();
 
-        $this->assertSame('completed', $run->filings_state, 'Partial failure is still a completed batch');
-        $this->assertTrue($run->filings_failed >= 1, 'The missing-view generators should be recorded as failures');
+        $this->assertSame('completed', $run->filings_state);
+        $this->assertSame(
+            0,
+            (int) $run->filings_failed,
+            'With nothing actually broken, the batch must report zero failures — '
+                .'the ten templateless forms are skipped, not failed.'
+        );
+        $this->assertGreaterThanOrEqual(
+            10,
+            (int) $run->filings_skipped,
+            'The ten declaration forms with no blade view must be counted as unavailable.'
+        );
         $this->assertTrue($run->filings_done >= 1, 'The working generators must still have produced filings');
 
-        // The report has to name what broke, or nobody can act on it.
         $this->assertMatchesRegularExpression(
-            '/could not be generated: .+/',
-            (string) $run->filings_message
+            '/not available yet: .*form_19/',
+            (string) $run->filings_message,
+            'The message must name what is unavailable so the user is not left guessing.'
+        );
+        $this->assertStringNotContainsString(
+            'could not be generated',
+            (string) $run->filings_message,
+            'Nothing broke, so nothing should be reported as broken.'
         );
     }
 

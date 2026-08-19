@@ -6,6 +6,7 @@ import { checkInOfflineAware, checkOutOfflineAware } from '@/services/offlineApi
 import { useAuth } from '@/contexts/AuthContext';
 import { usePlan } from '@/hooks/usePlan';
 import { canReviewApprovalRequest, hasAdminAccess, resolveUserHierarchyLevel, resolveUserRoleLabel } from '@/lib/permissions';
+import { DEFAULT_SHIFT_TARGET_SECONDS, resolveShiftTargetSeconds } from '@/lib/shiftTarget';
 import DateRangeFields from '@/components/dashboard/DateRangeFields';
 import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
@@ -272,6 +273,16 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }>;
   }>(null);
   const [hasApprovedLeaveToday, setHasApprovedLeaveToday] = useState(false);
+  /*
+   * The shift length the server resolved for this person and this date.
+   *
+   * Held separately from the record because it arrives on the payload, not in
+   * it, and the record is null until the first punch of the day. Reading it off
+   * the record alone meant that before anyone clocked in — exactly when the
+   * target matters most — the tile fell back to eight hours regardless of the
+   * shift they are actually on.
+   */
+  const [payloadShiftTargetSeconds, setPayloadShiftTargetSeconds] = useState<number | null>(null);
   const [lateAfter, setLateAfter] = useState('10:30:00');
   const [officeStart, setOfficeStart] = useState('09:00:00');
   const [userTimezone, setUserTimezone] = useState('');
@@ -630,6 +641,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
       setLateAfter(res.data.late_after || '10:30:00');
       setOfficeStart(res.data.office_start || '09:00:00');
       setUserTimezone(res.data.timezone || '');
+      setPayloadShiftTargetSeconds(
+        typeof (res.data as any).shift_target_seconds === 'number'
+          ? (res.data as any).shift_target_seconds
+          : null
+      );
       setHasApprovedLeaveToday(Boolean((res.data as any).has_approved_leave_today));
       setHasHalfDayLeaveToday(Boolean((res.data as any).has_half_day_leave_today));
       setLeaveToday((res.data as any).leave_today || null);
@@ -1903,7 +1919,15 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
               ) : null}
               {canAccessLeave && hasHalfDayLeaveToday ? (
                 <p className="text-xs text-amber-700 mt-1">
-                  Half day leave applied for today. Your shift target is reduced to {formatDuration(todayRecord?.shift_target_seconds || 4 * 3600)}.
+                  Half day leave applied for today. Your shift target is reduced to{' '}
+                  {formatDuration(resolveShiftTargetSeconds(
+                    todayRecord?.shift_target_seconds,
+                    payloadShiftTargetSeconds,
+                    // The server has already halved the resolved shift; half of
+                    // the eight-hour default is only reached when no shift is
+                    // configured at all.
+                    { fallbackSeconds: DEFAULT_SHIFT_TARGET_SECONDS / 2 }
+                  ))}.
                 </p>
               ) : null}
               {canAccessLeave && leaveToday && !hasApprovedLeaveToday && !hasHalfDayLeaveToday ? (
@@ -1948,7 +1972,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 </div>
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <p className="text-[11px] text-gray-500">Shift Target</p>
-                  <p className="text-sm font-semibold text-gray-900">{formatDuration(todayRecord?.shift_target_seconds || 8 * 3600)}</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatDuration(resolveShiftTargetSeconds(todayRecord?.shift_target_seconds, payloadShiftTargetSeconds))}</p>
                 </div>
               </div>
             </div>

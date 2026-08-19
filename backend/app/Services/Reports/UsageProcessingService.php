@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Services\Monitoring\ProductivityClassifier;
+use App\Services\Attendance\UserTimezoneResolver;
 use App\Support\ExternalTimestamp;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -15,6 +16,7 @@ class UsageProcessingService
     public function __construct(
         private readonly ActivityProductivityService $activityProductivityService,
         private readonly ProductivityClassifier $productivityClassifier,
+        private readonly UserTimezoneResolver $userTimezoneResolver,
     ) {
     }
 
@@ -175,8 +177,21 @@ class UsageProcessingService
         return (int) ($this->summarizeIdleDurations($logs, $activityEvents)['total_idle_time'] ?? 0);
     }
 
-    public function summarizeIdleDurations(iterable $logs, iterable $activityEvents = []): array
+    /**
+     * In-memory idle summary over caller-supplied logs.
+     *
+     * $timezone is the wall clock the `by_user_day` keys are built in. This
+     * overload takes raw arrays with no database in scope — it cannot look a
+     * person up — so it defaults to config('app.timezone'), which is safe here
+     * only because production reads `total_idle_time` off this method and gets
+     * its per-user-per-day buckets from summarizeIdleDurationsFastForUsers()
+     * below, which does resolve each user's own zone. A caller that knows whose
+     * logs these are should pass that person's zone.
+     */
+    public function summarizeIdleDurations(iterable $logs, iterable $activityEvents = [], ?string $timezone = null): array
     {
+        $timezone = $timezone ?? ExternalTimestamp::timezone();
+
         $normalizedLogs = $this->normalizeUsageLogs($logs);
         $idleResult = $this->detectAndFilterIdleTime($normalizedLogs, $activityEvents);
         $idleLogs = collect($idleResult['idle_logs'] ?? [])->values();
@@ -187,14 +202,18 @@ class UsageProcessingService
             ->all();
 
         $byUserDay = $idleLogs
-            ->groupBy(function (array $row) {
+            ->groupBy(function (array $row) use ($timezone) {
                 $userId = (int) ($row['user_id'] ?? 0);
                 $endTimestamp = (int) ($row['end_timestamp'] ?? 0);
                 if ($userId <= 0 || $endTimestamp <= 0) {
                     return null;
                 }
 
-                return sprintf('%d|%s', $userId, ExternalTimestamp::fromTimestamp($endTimestamp)->toDateString());
+                return sprintf(
+                    '%d|%s',
+                    $userId,
+                    ExternalTimestamp::fromTimestampIn($endTimestamp, $timezone)->toDateString()
+                );
             })
             ->filter(fn ($rows, $key) => is_string($key) && $key !== '')
             ->map(fn (Collection $rows) => (int) $rows->sum(fn (array $row) => (int) ($row['duration'] ?? 0)))
@@ -431,6 +450,10 @@ class UsageProcessingService
         // exactly once.
         $entryWindowsByUser = $this->entryWindowsForUsers($ids, $startDate, $endDate);
 
+        // One query for every zone the day keys below will need, rather than
+        // one per user inside the loop.
+        $this->userTimezoneResolver->forUserIds(array_keys($intervalsByUser));
+
         foreach ($intervalsByUser as $userId => $intervals) {
             // Sort by interval start time
             usort($intervals, fn ($a, $b) => $a[0] <=> $b[0]);
@@ -454,7 +477,8 @@ class UsageProcessingService
                 $totalIdle += $segmentDuration;
                 $totalSegments++;
 
-                $day = ExternalTimestamp::fromTimestamp($end)->toDateString();
+                // Per-user day key -> the user's own zone (see above).
+                $day = ExternalTimestamp::fromTimestampForUser($end, (int) $userId)->toDateString();
                 $key = sprintf('%d|%s', $userId, $day);
                 $byUserDay[$key] = ($byUserDay[$key] ?? 0) + $segmentDuration;
             }

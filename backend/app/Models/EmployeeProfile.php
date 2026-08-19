@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Traits\BelongsToOrganization;
+use App\Traits\EncryptsPii;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class EmployeeProfile extends Model
 {
     use BelongsToOrganization;
+    use EncryptsPii;
     use HasFactory;
 
     protected $fillable = [
@@ -64,7 +66,19 @@ class EmployeeProfile extends Model
             // day early — and the detail page rendered that string verbatim.
             'date_of_birth' => 'date:Y-m-d',
             'meta' => 'array',
+
+            // Statutory identity. Encrypted at rest; the matching *_bidx
+            // columns carry the keyed lookup index EncryptsPii maintains.
+            'pan_number' => 'encrypted',
+            'uan_number' => 'encrypted',
+            'esi_ip_number' => 'encrypted',
         ];
+    }
+
+    /** @return array<int, string> */
+    public function piiColumns(): array
+    {
+        return ['pan_number', 'uan_number', 'esi_ip_number'];
     }
 
     public function organization(): BelongsTo

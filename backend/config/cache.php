@@ -15,7 +15,14 @@ return [
     |
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    /*
+    | Defaults to redis when REDIS_HOST is configured, and to the database
+    | otherwise. Every cache read was a write to the same Postgres that
+    | computes payroll; making redis the default the moment it exists moves
+    | that load off the primary without requiring an existing deployment to
+    | change anything.
+    */
+    'default' => env('CACHE_STORE', env('REDIS_HOST') ? 'redis' : 'database'),
 
     /*
     |--------------------------------------------------------------------------

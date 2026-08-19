@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi } from '@/services/api';
+import { attendanceApi, attendanceTimeEditApi, timeEntryApi, dashboardApi, projectApi, taskApi, type WorkedTimeBlock } from '@/services/api';
 import { breakTrackingApi, type BreakType } from '@/services/breakTrackingApi';
 import { startTimerOfflineAware, stopTimerOfflineAware } from '@/services/offlineApiWrapper';
+import { liveTimerDuration } from '@/lib/liveTimerDuration';
+import { serverRebasedFloor, shiftCountdown } from '@/lib/shiftCountdown';
 import {
   ACTIVE_TIMER_KEY,
   armAutoStart,
@@ -26,6 +28,7 @@ import {
 } from '@/lib/desktopTimerSession';
 import { isTrackedTimerUser } from '@/lib/permissions';
 import { formatDuration } from '@/lib/formatters';
+import { reportSilentError } from '@/lib/reportSilentError';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { OfflineBanner } from '@/components/desktop/OfflineStatusIndicator';
 import { SelectInput } from '@/components/ui/FormField';
@@ -250,6 +253,16 @@ export default function DesktopTimerDashboard() {
     remainingSeconds: number;
     overtimeSeconds: number;
     shiftTargetSeconds: number;
+    /*
+     * The session clock, and the timer it belonged to, at the instant this
+     * block was read. Local counting resumes from HERE — not from
+     * `active_timer.duration`, which is the session's raw span and therefore
+     * says nothing about how much of the session survived idle-netting into
+     * `billed_seconds`. Subtracting the raw span from the live clock is what
+     * made the countdown consume 8 seconds while the session showed 19.
+     */
+    capturedSessionSeconds: number;
+    capturedTimerId: number | null;
   } | null>(null);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(0);
   const [isSubmittingOvertime, setIsSubmittingOvertime] = useState(false);
@@ -285,11 +298,43 @@ export default function DesktopTimerDashboard() {
   // overwrite the displayed start_time, because the server can silently
   // refresh it and that is what reset the visible timer.
   const knownStartTimeRef = useRef<{ id: number; start_time: string } | null>(null);
-  // Locked client-side epoch anchor for the running timer. The displayed
-  // elapsed time is always extrapolated forward from THIS anchor, never
-  // recomputed from a start_time that could be silently refreshed by an
-  // unrelated API response.
-  const startAnchorRef = useRef<number | null>(null);
+  /*
+   * Anchor for the running timer: a client epoch, plus the server duration
+   * that was current when we took it.
+   *
+   * `clientMs` is deliberately `Date.now()` on THIS machine and never the
+   * server's `start_time`. Anchoring on a server timestamp and advancing with
+   * the client clock put the difference between the two clocks straight into
+   * the display — on a laptop 3.5s behind the server the timer sat on
+   * 00:00:00 for three seconds, then "started at 1" (18 Aug 2026). The
+   * server's contribution is a duration, a length rather than a point in time,
+   * so no server clock enters the arithmetic.
+   */
+  const startAnchorRef = useRef<{ clientMs: number; baseSeconds: number } | null>(null);
+
+  /**
+   * The session clock right now, read from the anchor. One definition, shared
+   * by the 1s tick, the fetch sync and the worked-time capture, so those three
+   * can never disagree about what "the timer says" at a given moment.
+   */
+  const currentSessionSeconds = () => {
+    const anchor = startAnchorRef.current;
+    if (!anchor) {
+      return 0;
+    }
+
+    return liveTimerDuration(anchor.baseSeconds, anchor.clientMs, Date.now());
+  };
+
+  /*
+   * Highest worked figure already shown today, and the day it belongs to.
+   *
+   * A countdown may never hand time back. Without this, stopping a timer
+   * collapsed the local term to zero and the display fell back to a
+   * `remaining_seconds` fetched at mount — which is how a stop jumped the
+   * countdown from 07:59:52 back to 08:00:00 (19 Aug 2026).
+   */
+  const workedHighWaterRef = useRef<{ date: string | null; seconds: number }>({ date: null, seconds: 0 });
 
   useEffect(() => {
     console.log('[Live Duration] Effect triggered', {
@@ -316,22 +361,29 @@ export default function DesktopTimerDashboard() {
       })
     );
 
+    const serverBase = Number.isFinite(Number(activeTimer.duration)) ? Number(activeTimer.duration) : 0;
+
     const computeDuration = () => {
-      const base = Number.isFinite(Number(activeTimer.duration)) ? Number(activeTimer.duration) : 0;
-      // Single source of truth for elapsed time: trust the server's last-known
-      // duration (base) and extrapolate forward from the locked client anchor.
-      // We deliberately do NOT recompute elapsed from activeTimer.start_time,
-      // because that value can be silently refreshed by an unrelated API
-      // response and reset the visible timer.
-      const anchorMs = startAnchorRef.current;
-      if (!Number.isFinite(anchorMs)) {
-        return base;
+      const anchor = startAnchorRef.current;
+      if (!anchor) {
+        return Math.max(0, Math.floor(serverBase));
       }
 
-      const elapsed = Math.floor((Date.now() - anchorMs) / 1000);
-      // Use the larger of server-reported duration or client-extrapolated elapsed
-      return Math.max(base, elapsed, 0);
+      return liveTimerDuration(anchor.baseSeconds, anchor.clientMs, Date.now());
     };
+
+    /*
+     * Let a fresh server duration pull the display FORWARD, never backward.
+     *
+     * This preserves what the old `Math.max(base, elapsed)` was for — the
+     * server remains the authority on the total — while re-anchoring on the
+     * client clock so the two clocks are never subtracted from each other. A
+     * stale or lower server duration is ignored, because a timer that jumps
+     * backwards reads as lost work even when the total is right.
+     */
+    if (!startAnchorRef.current || serverBase > computeDuration()) {
+      startAnchorRef.current = { clientMs: Date.now(), baseSeconds: serverBase };
+    }
 
     setLiveDuration(computeDuration());
 
@@ -415,6 +467,10 @@ export default function DesktopTimerDashboard() {
       if (stoppedForIdle) {
         showIdleStopNotice(runningTimerId);
       }
+
+      // The backend stopped this timer without us; the countdown's server
+      // figure is now stale in the same way it is after a manual stop.
+      void refreshServerWorkedTime();
     };
 
     const reconcileInterval = setInterval(() => {
@@ -472,9 +528,17 @@ export default function DesktopTimerDashboard() {
         // Keep the existing anchor for this running timer.
       } else if (entry.start_time) {
         // New timer id (or first sighting): lock its start_time and anchor now.
+        //
+        // The anchor is this machine's clock, paired with whatever the server
+        // has already counted. Parsing the server's start_time into an epoch
+        // and advancing it with Date.now() is what made the timer stall for
+        // however many seconds the two clocks disagreed by.
         knownStartTimeRef.current = { id: entry.id, start_time: entry.start_time };
-        const parsedAnchor = getStartTimeMs(entry.start_time);
-        startAnchorRef.current = Number.isFinite(parsedAnchor) ? parsedAnchor : Date.now();
+        const serverCounted = Number(entry.duration);
+        startAnchorRef.current = {
+          clientMs: Date.now(),
+          baseSeconds: Number.isFinite(serverCounted) ? serverCounted : 0,
+        };
         // A genuinely new running timer: allow the idle notice to fire again for
         // this fresh session (the guard is keyed by the stopped timer id, but we
         // also clear it here so a restarted timer is never suppressed).
@@ -542,6 +606,72 @@ export default function DesktopTimerDashboard() {
     });
   };
 
+  /**
+   * Apply a freshly read worked-time block. The single place the countdown's
+   * server figure enters the component, so the floor can never be rebased in
+   * one read path and forgotten in the other.
+   *
+   * `capturedSessionSeconds`/`capturedTimerId` mark where local counting
+   * resumes: the session clock as THIS machine reported it at the instant the
+   * block was read, paired with the timer it belonged to.
+   */
+  const applyServerWorkedTime = (
+    workedTime: WorkedTimeBlock,
+    capturedSessionSeconds: number,
+    capturedTimerId: number | null,
+  ) => {
+    const billedSeconds = Number(workedTime.billed_seconds ?? workedTime.worked_seconds ?? 0);
+
+    setServerWorkedTime({
+      workedSeconds: Number(workedTime.worked_seconds ?? 0),
+      billedSeconds,
+      remainingSeconds: Number(workedTime.remaining_seconds ?? 0),
+      overtimeSeconds: Number(workedTime.overtime_seconds ?? 0),
+      shiftTargetSeconds: Number(workedTime.shift_target_seconds ?? 8 * 3600),
+      capturedSessionSeconds,
+      capturedTimerId,
+    });
+
+    // Rebase the floor on the server's figure — see serverRebasedFloor. Keeping
+    // a higher local value here would make sub-auto-stop idle permanent.
+    workedHighWaterRef.current = {
+      date: attendanceToday?.attendance_date ?? getLocalDateString(),
+      seconds: serverRebasedFloor(billedSeconds),
+    };
+  };
+
+  /**
+   * Re-read the worked-time block on its own, from `GET /time-entries/today`.
+   *
+   * Deliberately not `fetchData()`: the dashboard summary is cached server-side
+   * for 30s, so a refresh immediately after a stop can be answered with the
+   * pre-stop snapshot. This endpoint computes worked time on every call.
+   *
+   * Without it the countdown had no way to learn about a finished session at
+   * all — the server figure was set only inside fetchData, which fires on mount
+   * and on a project change, and nothing re-read it while a timer ran or when
+   * one stopped.
+   */
+  const refreshServerWorkedTime = async () => {
+    try {
+      const response = await timeEntryApi.today();
+      const workedTime = response.data?.worked_time;
+      if (!workedTime) {
+        return;
+      }
+
+      applyServerWorkedTime(
+        workedTime,
+        currentSessionSeconds(),
+        knownStartTimeRef.current?.id ?? null,
+      );
+    } catch (error) {
+      // Non-fatal: the countdown holds its last figure until the next
+      // successful read rather than rewinding to a guess.
+      reportSilentError('DesktopTimerDashboard.refreshServerWorkedTime', error);
+    }
+  };
+
   const fetchData = async () => {
     // Prevent concurrent fetch calls
     if (isFetchingRef.current) {
@@ -567,6 +697,13 @@ export default function DesktopTimerDashboard() {
         attendanceApi.today(),
         breakTrackingApi.getToday(),
       ]);
+
+      // The session clock at the instant this payload is applied. Captured
+      // alongside the server's worked-time block so the two describe the same
+      // moment, and local counting can resume from a value measured on this
+      // machine's clock rather than from the server's raw span.
+      let syncedSessionSeconds = 0;
+      let syncedTimerId: number | null = null;
 
       const projectsSucceeded = projectsResult.status === 'fulfilled';
       const dashboardSucceeded = dashboardResult.status === 'fulfilled';
@@ -705,15 +842,15 @@ export default function DesktopTimerDashboard() {
             clearAutoStartArm(userId);
             clearAutoStartSuppression(userId);
             hasRestoredSnapshotRef.current = false;
-            // Immediately compute live duration when timer is restored
-            const base = Number.isFinite(Number(activeFromApi.duration)) ? Number(activeFromApi.duration) : 0;
-            const startMs = getStartTimeMs(activeFromApi.start_time);
-            if (Number.isFinite(startMs)) {
-              const elapsed = Math.floor((Date.now() - startMs) / 1000);
-              setLiveDuration(Math.max(base, elapsed, 0));
-            } else {
-              setLiveDuration(base);
-            }
+            // Immediately show the restored timer's elapsed time, read from the
+            // anchor commitActiveTimer just set (or kept, for a timer id we are
+            // already displaying). This used to be
+            // `max(duration, Date.now() - parse(start_time))`, which subtracts
+            // the server's clock from this machine's — the very mixing that
+            // liveTimerDuration exists to prevent, reintroduced on every poll.
+            syncedSessionSeconds = currentSessionSeconds();
+            syncedTimerId = activeFromApi.id ?? null;
+            setLiveDuration(syncedSessionSeconds);
           }
         }
 
@@ -792,7 +929,7 @@ export default function DesktopTimerDashboard() {
       // idle-netted figure. Taking the biggest of several disagreeing numbers
       // produces a value nobody computed and that flips depending on which
       // source happens to lead, which is why Shift Remaining jumped on refresh.
-      const workedTime = (data as any)?.worked_time ?? null;
+      const workedTime = ((data as any)?.worked_time ?? null) as WorkedTimeBlock | null;
       const attendanceWorkedSeconds = Number(attendanceRecord?.worked_seconds || 0);
       const persistedWorkedSeconds = getWorkedBaselineSnapshot(userId, attendanceDate);
 
@@ -804,13 +941,7 @@ export default function DesktopTimerDashboard() {
         : Math.max(attendanceWorkedSeconds, todayElapsedSeconds, persistedWorkedSeconds);
 
       if (workedTime) {
-        setServerWorkedTime({
-          workedSeconds: Number(workedTime.worked_seconds ?? 0),
-          billedSeconds: Number(workedTime.billed_seconds ?? workedTime.worked_seconds ?? 0),
-          remainingSeconds: Number(workedTime.remaining_seconds ?? 0),
-          overtimeSeconds: Number(workedTime.overtime_seconds ?? 0),
-          shiftTargetSeconds: Number(workedTime.shift_target_seconds ?? 8 * 3600),
-        });
+        applyServerWorkedTime(workedTime, syncedSessionSeconds, syncedTimerId);
       }
 
       setTodayTotal(resolvedWorkedSeconds);
@@ -1273,6 +1404,11 @@ export default function DesktopTimerDashboard() {
         setTodayEntries(todayResponse.data.time_entries);
         setTodayTotal(todayResponse.data.total_duration);
       }
+
+      // Pull the shift countdown back onto the server's figure now the session
+      // is closed. Until this lands the display holds its high-water mark, so
+      // the countdown never jumps back to a full shift the way it did before.
+      await refreshServerWorkedTime();
     } catch (error) {
       const status = (error as any)?.response?.status;
       if (status === 404) {
@@ -1600,24 +1736,42 @@ export default function DesktopTimerDashboard() {
   latestWorkedSecondsRef.current = todayDisplaySeconds;
   const timerDisplaySeconds = activeTimer ? liveDuration : 0;
 
-  // Shift Remaining and Overtime come straight from the server, which derives
-  // both from one high-water worked figure. They are NOT recomputed from
-  // effectiveWorkedSeconds: that value is a max() over client-extrapolated
-  // wall-clock, which climbs through idle periods and then snaps back on the
-  // next fetch — the countdown was observed going 07:53 -> 07:54 on refresh.
+  // Shift Remaining and Overtime are derived from the server's worked-time
+  // block, advanced locally between polls. Two rules, both from real reports —
+  // see lib/shiftCountdown.ts for the measurements:
   //
-  // Interpolated locally between polls so the countdown still ticks, but never
-  // upward: Math.min against the last server value keeps it monotonic.
-  const remainingShiftSeconds = serverWorkedTime
-    ? Math.max(0, Math.min(
-        serverWorkedTime.remainingSeconds,
-        serverWorkedTime.remainingSeconds - Math.max(0, liveDuration - timerBaseSeconds),
-      ))
-    : Math.max(0, shiftTargetSeconds - effectiveWorkedSeconds);
+  //  * the local term is measured against the session clock captured WITH the
+  //    server figure, never against `active_timer.duration`; and
+  //  * the countdown never hands time back, so a stop cannot restore the
+  //    shift to full.
+  const countdownDate = attendanceToday?.attendance_date ?? getLocalDateString();
+  if (workedHighWaterRef.current.date !== countdownDate) {
+    workedHighWaterRef.current = { date: countdownDate, seconds: 0 };
+  }
 
-  const overtimeSeconds = serverWorkedTime
-    ? serverWorkedTime.overtimeSeconds
-    : Math.max(0, effectiveWorkedSeconds - shiftTargetSeconds);
+  // The captured session seconds only apply to the timer they were taken from.
+  // For any other timer, none of the running session is inside the server's
+  // total yet, so local counting starts at zero.
+  const capturedSessionSeconds =
+    serverWorkedTime && activeTimer && serverWorkedTime.capturedTimerId === activeTimer.id
+      ? serverWorkedTime.capturedSessionSeconds
+      : 0;
+
+  const countdown = shiftCountdown({
+    shiftTargetSeconds: serverWorkedTime?.shiftTargetSeconds ?? shiftTargetSeconds,
+    // Without the server block we fall back to the locally accumulated figure,
+    // which already carries the running session — so there is nothing further
+    // to advance and both session terms are zero.
+    serverWorkedSeconds: serverWorkedTime ? serverWorkedTime.billedSeconds : effectiveWorkedSeconds,
+    capturedSessionSeconds: serverWorkedTime ? capturedSessionSeconds : 0,
+    liveSessionSeconds: serverWorkedTime && activeTimer ? liveDuration : 0,
+    floorWorkedSeconds: workedHighWaterRef.current.seconds,
+  });
+
+  workedHighWaterRef.current = { date: countdownDate, seconds: countdown.workedSeconds };
+
+  const remainingShiftSeconds = countdown.remainingSeconds;
+  const overtimeSeconds = countdown.overtimeSeconds;
 
   useEffect(() => {
     if (!activeBreak?.start_at) {

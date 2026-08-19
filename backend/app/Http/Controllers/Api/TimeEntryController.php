@@ -1263,6 +1263,22 @@ class TimeEntryController extends Controller
             return;
         }
 
+        /*
+         * No consent to location capture: record the punch, drop the location.
+         *
+         * Deliberately a skip rather than a refusal. This runs as a side effect
+         * of clocking in, and refusing the whole punch would stop someone
+         * attending work over a data-collection preference — disproportionate,
+         * and it would push people to withdraw consent and then be unable to
+         * mark attendance at all. Dropping the coordinate is the
+         * data-minimisation answer: the attendance record survives, the
+         * location does not.
+         */
+        if (! app(\App\Services\Monitoring\MonitoringConsentService::class)
+            ->isCaptureAllowed($user, 'location')) {
+            return;
+        }
+
         $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
 
         GeofenceLog::create([

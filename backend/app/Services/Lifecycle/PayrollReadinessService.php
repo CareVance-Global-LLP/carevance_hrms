@@ -103,12 +103,22 @@ class PayrollReadinessService
         $duplicate = User::query()
             ->where('id', '!=', $user->id)
             ->where('organization_id', $user->organization_id)
+            /*
+             * Matched through the blind index rather than UPPER(column).
+             *
+             * Both columns are encrypted now, so the SQL upper-casing that
+             * used to normalise them would be upper-casing ciphertext and
+             * matching nothing — which reads as "no duplicates" and is the
+             * most dangerous possible failure for this particular check.
+             * BlindIndex::of() applies the same trim-and-upper normalisation
+             * these clauses did, on the way in and on the way out.
+             */
             ->where(function ($query) use ($normalised) {
                 $query
-                    ->whereHas('employeeProfile', fn ($q) => $q->whereRaw('UPPER(pan_number) = ?', [$normalised]))
+                    ->whereHas('employeeProfile', fn ($q) => $q->wherePii('pan_number', $normalised))
                     ->orWhereHas('employeeGovernmentIds', fn ($q) => $q
                         ->whereRaw('LOWER(id_type) LIKE ?', ['%pan%'])
-                        ->whereRaw('UPPER(TRIM(id_number)) = ?', [$normalised]));
+                        ->wherePii('id_number', $normalised));
             })
             ->exists();
 

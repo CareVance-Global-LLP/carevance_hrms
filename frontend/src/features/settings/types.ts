@@ -4,6 +4,7 @@ export type SettingsTabId =
   | 'appearance'
   | 'security'
   | 'organization'
+  | 'shifts'
   | 'productivity'
   | 'integrations'
   | 'custom-fields'

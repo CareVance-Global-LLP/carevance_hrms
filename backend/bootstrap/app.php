@@ -34,6 +34,13 @@ return Application::configure(basePath: dirname(__DIR__))
             // desktop/mobile clients created duplicate rows despite the
             // (local_id, device_id) unique indexes being in place.
             'idempotent.sync' => \App\Http\Middleware\IdempotentSync::class,
+            // Applied to the whole authenticated API in routes/api.php rather
+            // than to a list of sensitive routes — a per-route list is one
+            // somebody eventually forgets to extend.
+            'mfa.enrolled' => \App\Http\Middleware\EnsureMfaEnrolled::class,
+            // Authenticates a customer API key and pins its tenant. Takes the
+            // required scope as a parameter, e.g. 'api.client:employees.read'.
+            'api.client' => \App\Http\Middleware\AuthenticateApiClient::class,
         ]);
 
         // Apply sanitize middleware to API routes
@@ -42,6 +49,20 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        /*
+         * Error tracking.
+         *
+         * There was none: no Sentry, no Datadog, no OpenTelemetry, nothing. A
+         * 500 wrote a line to a log file on a single instance and that was the
+         * whole of the observability story, so nobody learned a payroll run had
+         * broken until a customer said so.
+         *
+         * No-ops entirely when SENTRY_LARAVEL_DSN is unset, which is the point:
+         * an unconfigured deployment behaves exactly as it did, and setting one
+         * environment variable turns it on. See deploy/lightsail/RUNBOOK.md.
+         */
+        Sentry\Laravel\Integration::handles($exceptions);
+
         $exceptions->render(function (ValidationException $e, Request $request) {
             if (!$request->is('api/*')) {
                 return null;

@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Traits\Auditable;
 use App\Traits\BelongsToOrganization;
+use App\Traits\EncryptsPii;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EmployeeGovernmentId extends Model
 {
+    use Auditable;
     use BelongsToOrganization;
+    use EncryptsPii;
 
     protected $fillable = [
         'organization_id',
@@ -30,7 +34,18 @@ class EmployeeGovernmentId extends Model
             'issue_date' => 'date:Y-m-d',
             'expiry_date' => 'date:Y-m-d',
             'reviewed_at' => 'datetime',
+
+            // Aadhaar, PAN, passport, driving licence — whatever id_type says
+            // this row holds. Encrypted at rest; id_number_bidx carries the
+            // keyed lookup index EncryptsPii maintains.
+            'id_number' => 'encrypted',
         ];
+    }
+
+    /** @return array<int, string> */
+    public function piiColumns(): array
+    {
+        return ['id_number'];
     }
 
     public function organization(): BelongsTo
