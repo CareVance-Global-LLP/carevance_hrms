@@ -6,7 +6,7 @@ import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { validateGovernmentId } from '@/lib/idValidation';
 import { canAccess } from '@/lib/permissions';
-import { employeeWorkspaceApi } from '@/services/api';
+import { employeeWorkspaceApi, groupApi } from '@/services/api';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
 import { formatCalendarDate, formatTenure } from '@/lib/employeeDates';
 import { usePlan } from '@/hooks/usePlan';
@@ -181,6 +181,13 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     enabled: Boolean(id),
   });
 
+  // Only fetched when the department picker can actually be shown.
+  const groupsQuery = useQuery({
+    queryKey: ['groups', 'employee-work-info'],
+    queryFn: async () => (await groupApi.getAll()).data?.data ?? [],
+    enabled: Boolean(editable),
+  });
+
   useEffect(() => {
     if (!workspaceQuery.data) return;
     setAboutForm({
@@ -212,6 +219,13 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
       designation: workspaceQuery.data.work_info?.designation || '',
       employment_type: workspaceQuery.data.work_info?.employment_type || '',
       work_location: workspaceQuery.data.work_info?.work_location || '',
+      // Sliced because the API serialises a date-only column as an ISO string;
+      // an <input type="date"> will not accept the time portion.
+      joining_date: (workspaceQuery.data.work_info?.joining_date || '').slice(0, 10),
+      report_group_id: workspaceQuery.data.work_info?.report_group_id
+        ? String(workspaceQuery.data.work_info.report_group_id)
+        : '',
+      work_mode: workspaceQuery.data.work_info?.work_mode || '',
       expected_start_time: workspaceQuery.data.work_info?.expected_start_time || '',
       expected_timezone: workspaceQuery.data.work_info?.expected_timezone || '',
     });
@@ -243,6 +257,17 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
 
   const saveWorkMutation = useMutation({
     mutationFn: async () => employeeWorkspaceApi.updateWorkInfo(id, {
+      // The employment fields are editable here so an admin who skipped the
+      // employee code at invitation time has somewhere to put it. Every value
+      // is sent as null rather than '' when cleared, so the column ends up
+      // genuinely empty instead of holding a blank string.
+      employee_code: workForm.employee_code?.trim() || null,
+      designation: workForm.designation?.trim() || null,
+      report_group_id: workForm.report_group_id ? Number(workForm.report_group_id) : null,
+      joining_date: workForm.joining_date || null,
+      employment_type: workForm.employment_type?.trim() || null,
+      work_location: workForm.work_location?.trim() || null,
+      work_mode: workForm.work_mode || null,
       expected_start_time: workForm.expected_start_time || null,
       expected_timezone: workForm.expected_timezone || null,
     }),
@@ -684,6 +709,84 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
 
         {canEditWorkInfo ? (
           <>
+            <div className="mt-6 border-t border-slate-200 pt-6">
+              <p className="text-sm font-medium text-slate-900">Edit Employment Details</p>
+              <p className="mt-1 text-xs text-slate-500">
+                The employee code is your organisation's own identifier and must be unique. If it was
+                not set when this person was invited, add it here.
+              </p>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <FieldLabel>Employee Code</FieldLabel>
+                  <TextInput
+                    maxLength={80}
+                    value={workForm.employee_code || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, employee_code: event.target.value }))}
+                    placeholder="e.g., EMP-001"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Designation</FieldLabel>
+                  <TextInput
+                    maxLength={120}
+                    value={workForm.designation || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, designation: event.target.value }))}
+                    placeholder="e.g., Senior Engineer"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Department</FieldLabel>
+                  <SelectInput
+                    value={workForm.report_group_id || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, report_group_id: event.target.value }))}
+                  >
+                    <option value="">Not assigned</option>
+                    {(groupsQuery.data ?? []).map((group: any) => (
+                      <option key={group.id} value={String(group.id)}>{group.name}</option>
+                    ))}
+                  </SelectInput>
+                </div>
+                <div>
+                  <FieldLabel>Joining Date</FieldLabel>
+                  <TextInput
+                    type="date"
+                    value={workForm.joining_date || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, joining_date: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Employment Type</FieldLabel>
+                  <TextInput
+                    maxLength={80}
+                    value={workForm.employment_type || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, employment_type: event.target.value }))}
+                    placeholder="e.g., Full-time"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Work Location</FieldLabel>
+                  <TextInput
+                    maxLength={255}
+                    value={workForm.work_location || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, work_location: event.target.value }))}
+                    placeholder="e.g., Bengaluru"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Work Mode</FieldLabel>
+                  <SelectInput
+                    value={workForm.work_mode || ''}
+                    onChange={(event) => setWorkForm((current) => ({ ...current, work_mode: event.target.value }))}
+                  >
+                    <option value="">Not set</option>
+                    <option value="office">Office</option>
+                    <option value="remote">Remote</option>
+                    <option value="hybrid">Hybrid</option>
+                  </SelectInput>
+                </div>
+              </div>
+            </div>
+
             <div className="mt-6 border-t border-slate-200 pt-6">
               <p className="text-sm font-medium text-slate-900">Edit Work Schedule</p>
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">

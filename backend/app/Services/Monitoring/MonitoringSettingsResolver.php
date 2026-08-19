@@ -25,19 +25,42 @@ class MonitoringSettingsResolver
     /** @var array<int, int|null> Memo of org id => org default, so list endpoints don't re-query per row. */
     private array $orgDefaultMemo = [];
 
+    /*
+     * Both of these read config and rebuild an array on every call, and
+     * sanitize() calls allowedIntervals() every time it runs. That is invisible
+     * for a single user and expensive in bulk: User appends
+     * `effective_monitoring_interval_minutes`, so serialising a list endpoint
+     * resolves it once per row — the task list alone spent ~270 ms of its 400 ms
+     * inside these two methods for 450 assignees. Config cannot change inside a
+     * request, so both answers are computed once.
+     *
+     * @var list<int>|null
+     */
+    private ?array $allowedIntervalsMemo = null;
+
+    private ?int $systemDefaultMemo = null;
+
     /** @return array<int, int> */
     public function allowedIntervals(): array
     {
+        if ($this->allowedIntervalsMemo !== null) {
+            return $this->allowedIntervalsMemo;
+        }
+
         $configured = config('screenshots.monitoring_interval.allowed_minutes', [1, 3, 5, 10, 15, 30]);
 
-        return array_values(array_map('intval', (array) $configured));
+        return $this->allowedIntervalsMemo = array_values(array_map('intval', (array) $configured));
     }
 
     public function systemDefault(): int
     {
+        if ($this->systemDefaultMemo !== null) {
+            return $this->systemDefaultMemo;
+        }
+
         $configured = (int) config('screenshots.monitoring_interval.default_minutes', 10);
 
-        return $this->sanitize($configured) ?? 10;
+        return $this->systemDefaultMemo = ($this->sanitize($configured) ?? 10);
     }
 
     /**

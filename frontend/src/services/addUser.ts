@@ -40,11 +40,27 @@ export interface InviteSubmissionPayload {
    * roles cannot go in a single call. Omit this and behaviour is unchanged.
    */
   roleByEmail?: Record<string, InviteUserRole>;
+  /**
+   * An admin-defined role applied to the whole batch.
+   *
+   * The server resolves the matching base role from it and ignores `role` when
+   * this is set, so the two can never disagree — and a client cannot pair a
+   * low-privilege custom role with `role: 'admin'`.
+   */
+  roleId?: number | null;
   groupIds: number[];
   projectIds: number[];
   settings: AdditionalInviteSettings;
   joiningDate?: string;
   jobTitle?: string;
+  /**
+   * Employee code per recipient, keyed by email.
+   *
+   * Keyed rather than positional because the code belongs to the person, not
+   * to a slot in the list — every other field on this payload is shared by the
+   * whole batch, and this one cannot be.
+   */
+  employeeCodeByEmail?: Record<string, string>;
   expiresInHours?: number;
 }
 
@@ -57,6 +73,9 @@ export interface InviteLinkPayload {
   settings: AdditionalInviteSettings;
   joiningDate?: string;
   jobTitle?: string;
+  employeeCode?: string;
+  /** Admin-defined role; the server derives the base role from it. */
+  roleId?: number | null;
   expiresInHours?: number;
 }
 
@@ -84,6 +103,7 @@ export interface CsvParseRow {
   projectIds: number[];
   timezone?: string;
   jobTitle?: string;
+  employeeCode?: string;
   joiningDate?: string;
   skippedRoleLabel?: string;
 }
@@ -100,8 +120,30 @@ interface BulkInviteRowPayload {
   department_ids?: number[];
   project_ids?: number[];
   job_title?: string;
+  employee_code?: string;
   joining_date?: string;
   settings?: Record<string, any>;
+}
+
+/**
+ * The subset of the email => employee-code map covering `emails`.
+ *
+ * Returns nothing at all when the subset is empty, so the key stays off the
+ * request body rather than being sent as `{}`.
+ */
+function pickEmployeeCodes(
+  codes: Record<string, string> | undefined,
+  emails: string[],
+): { employee_codes?: Record<string, string> } {
+  if (!codes) return {};
+
+  const picked: Record<string, string> = {};
+  emails.forEach((email) => {
+    const code = codes[email]?.trim();
+    if (code) picked[email] = code;
+  });
+
+  return Object.keys(picked).length > 0 ? { employee_codes: picked } : {};
 }
 
 type TabularRow = unknown[];
@@ -432,6 +474,11 @@ export const addUserService = {
         project_ids: payload.projectIds,
         ...(payload.joiningDate ? { joining_date: payload.joiningDate } : {}),
         ...(payload.jobTitle ? { job_title: payload.jobTitle } : {}),
+        ...(payload.roleId ? { role_id: payload.roleId } : {}),
+        // Narrowed to this chunk. Emails are split by role and batch size, so
+        // sending the whole map to every request would reserve a code against
+        // a request that is not inviting that person.
+        ...pickEmployeeCodes(payload.employeeCodeByEmail, chunk),
         ...(payload.expiresInHours ? { expires_in_hours: payload.expiresInHours } : {}),
         settings: {
           monitoring_interval_minutes: payload.settings.monitoringInterval,
@@ -473,6 +520,8 @@ export const addUserService = {
       project_ids: payload.projectIds,
       ...(payload.joiningDate ? { joining_date: payload.joiningDate } : {}),
       ...(payload.jobTitle ? { job_title: payload.jobTitle } : {}),
+      ...(payload.employeeCode ? { employee_code: payload.employeeCode } : {}),
+      ...(payload.roleId ? { role_id: payload.roleId } : {}),
       ...(payload.expiresInHours ? { expires_in_hours: payload.expiresInHours } : {}),
       settings: {
         monitoring_interval_minutes: payload.settings.monitoringInterval,
@@ -547,6 +596,9 @@ export const addUserService = {
     const timezoneIndex = getHeaderIndex(headers, ['timezone', 'time zone', 'tz']);
     const jobTitleIndex = getHeaderIndex(headers, ['job title', 'job_title', 'job role', 'designation', 'position']);
     const joiningDateIndex = getHeaderIndex(headers, ['joining date', 'joining_date', 'date of joining', 'start date', 'doj']);
+    // The organisation's own identifier, so the aliases cover what a legacy HR
+    // export is likely to have called it rather than one canonical spelling.
+    const employeeCodeIndex = getHeaderIndex(headers, ['employee code', 'employee_code', 'emp code', 'emp_code', 'employee id', 'employee_id', 'emp id', 'staff id', 'staff code', 'payroll id', 'code']);
 
     if (emailIndex < 0) {
       return { rows: [], errors: ['Import file must include an email column.'] };
@@ -570,6 +622,7 @@ export const addUserService = {
 
       const rawTimezone = timezoneIndex >= 0 ? (columns[timezoneIndex] || '').trim() : '';
       const rawJobTitle = jobTitleIndex >= 0 ? (columns[jobTitleIndex] || '').trim() : '';
+      const rawEmployeeCode = employeeCodeIndex >= 0 ? (columns[employeeCodeIndex] || '').trim() : '';
       const rawJoiningDate = joiningDateIndex >= 0 ? (columns[joiningDateIndex] || '').trim() : '';
       const joiningDate = normalizeJoiningDate(rawJoiningDate);
 
@@ -586,6 +639,7 @@ export const addUserService = {
         projectIds: mapOptionNamesToIds(parseMultiValueField(columns[projectIndex] || ''), projects),
         timezone: rawTimezone || undefined,
         jobTitle: rawJobTitle || (rawRole && !role ? rawRole : undefined),
+        employeeCode: rawEmployeeCode || undefined,
         joiningDate,
         skippedRoleLabel: rawRole && !role ? rawRole : undefined,
       });
@@ -676,6 +730,7 @@ export const addUserService = {
       department_ids: row.groupIds,
       project_ids: row.projectIds,
       job_title: row.jobTitle || row.skippedRoleLabel || undefined,
+      ...(row.employeeCode ? { employee_code: row.employeeCode } : {}),
       ...(row.joiningDate ? { joining_date: row.joiningDate } : {}),
       ...(row.timezone ? { settings: { timezone: row.timezone } } : {}),
     }));

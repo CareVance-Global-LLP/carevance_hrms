@@ -4,8 +4,11 @@ import Button from '@/components/ui/Button';
 
 interface InviteLinkPanelProps {
   email: string;
+  /** The organisation's own employee code for this recipient. */
+  employeeCode: string;
   inviteUrl: string;
   onEmailChange: (value: string) => void;
+  onEmployeeCodeChange: (value: string) => void;
   onGenerate: () => void;
   onCopy: () => void;
   isGenerating?: boolean;
@@ -36,8 +39,10 @@ const expiryLabel = (hours: number): string => {
 
 export default function InviteLinkPanel({
   email,
+  employeeCode,
   inviteUrl,
   onEmailChange,
+  onEmployeeCodeChange,
   onGenerate,
   onCopy,
   isGenerating = false,
@@ -74,15 +79,39 @@ export default function InviteLinkPanel({
         </p>
       </div>
 
-      <div>
-        <FieldLabel htmlFor="invite-link-email">Recipient Email</FieldLabel>
-        <TextInput
-          id="invite-link-email"
-          type="email"
-          value={email}
-          onChange={(event) => onEmailChange(event.target.value)}
-          placeholder="new.user@company.com"
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <FieldLabel htmlFor="invite-link-email">Recipient Email</FieldLabel>
+          <TextInput
+            id="invite-link-email"
+            type="email"
+            value={email}
+            onChange={(event) => onEmailChange(event.target.value)}
+            placeholder="new.user@company.com"
+          />
+        </div>
+
+        {/*
+          Collected here rather than generated, because the code is the
+          organisation's own identifier and almost always predates this system.
+          Optional at this step: it can be filled in later from the employee's
+          work details, and an invite should not be blocked on a code finance
+          has not issued yet.
+        */}
+        <div>
+          <FieldLabel htmlFor="invite-link-employee-code">
+            Employee Code <span className="text-xs font-normal text-slate-400">(optional)</span>
+          </FieldLabel>
+          <TextInput
+            id="invite-link-employee-code"
+            type="text"
+            maxLength={80}
+            value={employeeCode}
+            onChange={(event) => onEmployeeCodeChange(event.target.value)}
+            placeholder="e.g., EMP-001"
+          />
+          <p className="mt-1 text-xs text-slate-400">Must be unique. Can be added later.</p>
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
@@ -104,6 +133,12 @@ export default function InviteLinkPanel({
               <dt className="text-[11px] uppercase tracking-[0.14em] text-slate-500">For</dt>
               <dd className="mt-0.5 truncate text-sm font-medium text-slate-900">{email || '—'}</dd>
             </div>
+            {employeeCode ? (
+              <div>
+                <dt className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Code</dt>
+                <dd className="mt-0.5 truncate text-sm font-medium text-slate-900">{employeeCode}</dd>
+              </div>
+            ) : null}
             {role ? (
               <div>
                 <dt className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Grants</dt>

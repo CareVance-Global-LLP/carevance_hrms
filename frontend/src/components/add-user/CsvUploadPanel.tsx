@@ -52,7 +52,7 @@ export default function CsvUploadPanel({
             {file ? 'Replace import file' : 'Choose a CSV or XLSX file'}
           </p>
           <p className="mt-2 text-sm text-slate-500">
-            Columns: email, name, access_role, job_title, departments, projects, joining_date, timezone.
+            Columns: email, name, access_role, employee_code, job_title, departments, projects, joining_date, timezone.
             Only email is required. Use access_role for employee, manager or admin.
           </p>
           <p className="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-sky-700">
@@ -137,6 +137,7 @@ export default function CsvUploadPanel({
                     <th className="px-3 py-2 font-medium">Email</th>
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Access</th>
+                    <th className="px-3 py-2 font-medium">Emp. code</th>
                     <th className="px-3 py-2 font-medium">Job title</th>
                     <th className="px-3 py-2 font-medium">Departments</th>
                     <th className="px-3 py-2 font-medium">Joining</th>
@@ -148,6 +149,7 @@ export default function CsvUploadPanel({
                       <td className="px-3 py-2">{row.email}</td>
                       <td className="px-3 py-2">{row.name}</td>
                       <td className="px-3 py-2 capitalize">{row.role}</td>
+                      <td className="px-3 py-2">{row.employeeCode || <span className="text-slate-400">—</span>}</td>
                       <td className="px-3 py-2">{row.jobTitle || <span className="text-slate-400">—</span>}</td>
                       <td className="px-3 py-2">
                         {row.groupIds.length > 0

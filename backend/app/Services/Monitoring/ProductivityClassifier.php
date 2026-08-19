@@ -16,6 +16,42 @@ class ProductivityClassifier
     ) {
     }
 
+    /**
+     * Every admin override for an organisation, indexed for in-memory lookup.
+     *
+     * @var array<int, array<string, array<string, \App\Models\ProductivityClassification>>>
+     */
+    private array $overrideCache = [];
+
+    /*
+     * Schema::hasTable() is a live pg_class query, not a cached lookup, and
+     * both call sites below sit on the per-activity path — one processed
+     * timeline issued 384 of them. A table cannot appear or vanish inside a
+     * request, so the answer is resolved once.
+     *
+     * @var array<string, bool>
+     */
+    private array $tableExistsCache = [];
+
+    /** @var array<int, \App\Models\User|null> */
+    private array $userCache = [];
+
+    private function tableExists(string $table): bool
+    {
+        return $this->tableExistsCache[$table] ??= Schema::hasTable($table);
+    }
+
+    /** @return array<string, array<string, \App\Models\ProductivityClassification>> */
+    private function overridesFor(int $organizationId): array
+    {
+        return $this->overrideCache[$organizationId] ??= ProductivityClassification::query()
+            ->where('organization_id', $organizationId)
+            ->get()
+            ->groupBy('target_type')
+            ->map(fn ($rows) => $rows->keyBy(fn ($row) => mb_strtolower((string) $row->target_value))->all())
+            ->all();
+    }
+
     public function classifyActivity(Activity|array $activity, ?User $user = null): array
     {
         $activityData = $activity instanceof Activity ? $activity->toArray() : $activity;
@@ -23,8 +59,10 @@ class ProductivityClassifier
 
         if (! $resolvedUser) {
             $userId = (int) data_get($activityData, 'user_id', 0);
-            if ($userId > 0 && Schema::hasTable('users')) {
-                $resolvedUser = User::query()->with('groups:id')->find($userId);
+            if ($userId > 0 && $this->tableExists('users')) {
+                // Activity rows arrive in long runs for the same person, so the
+                // resolved user (and their groups) is worth holding onto.
+                $resolvedUser = $this->userCache[$userId] ??= User::query()->with('groups:id')->find($userId);
             }
         }
 
@@ -125,26 +163,30 @@ class ProductivityClassifier
                 $organizationId = (int) ($user->organization_id ?? 0);
             }
         }
-        if ($organizationId <= 0 || ! Schema::hasTable('productivity_classifications')) {
+        if ($organizationId <= 0 || ! $this->tableExists('productivity_classifications')) {
             return null;
         }
+
+        /*
+         * Every override lookup below runs once per ACTIVITY ROW, and the
+         * processed timeline classifies hundreds in a request — the same
+         * productivity_classifications query was issued 468 times for one
+         * page. The overrides for an organisation are a small, fixed set that
+         * cannot change mid-request, so they are read once and matched in
+         * memory from here on.
+         */
+        $overrides = $this->overridesFor($organizationId);
 
         $domain = (string) ($normalized['normalized_domain'] ?? '');
         $softwareName = (string) ($normalized['software_name'] ?? '');
         $isWebsite = ($normalized['tool_type'] ?? null) === 'website';
 
         if ($domain !== '') {
-            $override = ProductivityClassification::where('organization_id', $organizationId)
-                ->where('target_type', 'domain')
-                ->where('target_value', mb_strtolower($domain))
-                ->first();
+            $override = $overrides['domain'][mb_strtolower($domain)] ?? null;
 
             if ($override) {
-                Log::info('Classifier: domain direct match for ' . $domain . ' -> ' . $override->classification);
                 return $this->formatOverrideRule($override, "Admin domain override: {$domain} is classified as {$override->classification}");
             }
-
-            Log::info('Classifier: no domain override found for ' . $domain . ' (org=' . $organizationId . ')');
         }
 
         // When no explicit domain was extracted but activity is browser-based, match
@@ -155,9 +197,7 @@ class ProductivityClassifier
             $haystack = $rawName . ' ' . $windowTitle;
 
             if ($haystack !== '') {
-                $domainOverrides = ProductivityClassification::where('organization_id', $organizationId)
-                    ->where('target_type', 'domain')
-                    ->get();
+                $domainOverrides = collect($overrides['domain'] ?? []);
 
                 foreach ($domainOverrides as $override) {
                     $parts = explode('.', mb_strtolower(trim($override->target_value)));
@@ -170,10 +210,7 @@ class ProductivityClassifier
         }
 
         if ($softwareName !== '') {
-            $override = ProductivityClassification::where('organization_id', $organizationId)
-                ->where('target_type', 'app')
-                ->where('target_value', mb_strtolower($softwareName))
-                ->first();
+            $override = $overrides['app'][mb_strtolower($softwareName)] ?? null;
 
             if ($override) {
                 $browserApps = collect((array) config('productivity_monitoring.browser_apps', []))
@@ -198,9 +235,7 @@ class ProductivityClassifier
             $appHaystack = $rawName . ' ' . $windowTitle . ' ' . $url;
 
             if ($appHaystack !== '') {
-                $appOverrides = ProductivityClassification::where('organization_id', $organizationId)
-                    ->where('target_type', 'app')
-                    ->get();
+                $appOverrides = collect($overrides['app'] ?? []);
 
                 foreach ($appOverrides as $appOverride) {
                     $overrideValue = mb_strtolower(trim($appOverride->target_value));
@@ -218,10 +253,8 @@ class ProductivityClassifier
                 $isBrowser = $browserApps->contains(mb_strtolower($softwareName));
 
                 if ($isBrowser) {
-                    $browserOverride = ProductivityClassification::where('organization_id', $organizationId)
-                        ->where('target_type', 'app')
-                        ->whereIn('target_value', $browserApps->toArray())
-                        ->first();
+                    $browserOverride = collect($overrides['app'] ?? [])
+                        ->first(fn ($row) => $browserApps->contains(mb_strtolower((string) $row->target_value)));
 
                     if ($browserOverride) {
                         return $this->formatOverrideRule($browserOverride, "Browser rule: {$browserOverride->target_value} is classified as {$browserOverride->classification}, inherited by all URLs");

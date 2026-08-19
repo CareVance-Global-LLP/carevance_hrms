@@ -143,7 +143,17 @@ export default function AddUserDrawer({
    * differ from it. Cleared when a recipient is removed so a re-added address
    * does not silently inherit a role the admin cannot see.
    */
-  const [roleByEmail, setRoleByEmail] = useState<Record<string, InviteUserRole>>({});
+  /**
+   * The admin-defined role, when one is chosen. Null means a built-in.
+   *
+   * This replaces the old per-recipient role override: two controls setting the
+   * same value contradicted each other, and the chip variant could only offer
+   * the three built-ins, so choosing a custom role above and then touching a
+   * chip silently threw it away.
+   */
+  const [roleId, setRoleId] = useState<number | null>(null);
+  /** What the chips display — the custom role's name, else the built-in's. */
+  const [accessLevelLabel, setAccessLevelLabel] = useState<string>('Employee');
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>(storedDefaults.groupIds);
   const selectedProjectIds: number[] = [];
   const [rememberDefaults, setRememberDefaults] = useState(storedDefaults.remember);
@@ -152,6 +162,8 @@ export default function AddUserDrawer({
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [inviteUrl, setInviteUrl] = useState('');
   const [linkEmail, setLinkEmail] = useState('');
+  const [linkEmployeeCode, setLinkEmployeeCode] = useState('');
+  const [employeeCodeByEmail, setEmployeeCodeByEmail] = useState<Record<string, string>>({});
   /*
    * Shared by all three invite tabs.
    *
@@ -360,7 +372,8 @@ export default function AddUserDrawer({
         organizationId: organization.id,
         emails,
         role,
-        roleByEmail,
+        roleId,
+        employeeCodeByEmail,
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
         settings,
@@ -402,6 +415,8 @@ export default function AddUserDrawer({
       addUserService.generateInviteLink({
         organizationId: organization?.id || 0,
         email: linkEmail.trim(),
+        employeeCode: linkEmployeeCode.trim() || undefined,
+        roleId,
         role,
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
@@ -552,17 +567,19 @@ export default function AddUserDrawer({
                     setEmails(next);
                     // Drop overrides for anyone no longer in the list.
                     const keep = new Set(next.map((item) => item.toLowerCase()));
-                    setRoleByEmail((current) =>
+                    // Codes are dropped with their recipient too — a stale code
+                    // left in the map would be reserved for someone who is no
+                    // longer being invited.
+                    setEmployeeCodeByEmail((current) =>
                       Object.fromEntries(Object.entries(current).filter(([key]) => keep.has(key))),
                     );
                   }}
                   onInvalidChange={setInvalidEmails}
-                  defaultRole={role}
-                  roleByEmail={roleByEmail}
-                  onRoleChange={(email, nextRole) =>
-                    setRoleByEmail((current) => ({ ...current, [email.toLowerCase()]: nextRole }))
+                  roleLabel={accessLevelLabel}
+                  employeeCodeByEmail={employeeCodeByEmail}
+                  onEmployeeCodeChange={(email, code) =>
+                    setEmployeeCodeByEmail((current) => ({ ...current, [email.toLowerCase()]: code }))
                   }
-                  allowedRoles={allowedRoles}
                 />
                 {duplicateEmailMessage ? (
                   <FeedbackBanner tone="error" message={duplicateEmailMessage} />
@@ -612,7 +629,16 @@ export default function AddUserDrawer({
 
             {activeTab !== 'csv' && activeTab !== 'custom' ? (
               <>
-                <RoleSelector value={role} onChange={setRole} allowedRoles={allowedRoles} />
+                <RoleSelector
+                  value={role}
+                  roleId={roleId}
+                  onChange={(nextRole, nextRoleId, label) => {
+                    setRole(nextRole);
+                    setRoleId(nextRoleId);
+                    setAccessLevelLabel(label);
+                  }}
+                  allowedRoles={allowedRoles}
+                />
                 <div className="h-px bg-slate-200" />
               </>
             ) : null}
@@ -800,8 +826,10 @@ export default function AddUserDrawer({
             {activeTab === 'link' ? (
               <InviteLinkPanel
                 email={linkEmail}
+                employeeCode={linkEmployeeCode}
                 inviteUrl={inviteUrl}
                 onEmailChange={setLinkEmail}
+                onEmployeeCodeChange={setLinkEmployeeCode}
                 onGenerate={() => {
                   setFeedback(null);
                   linkMutation.mutate();

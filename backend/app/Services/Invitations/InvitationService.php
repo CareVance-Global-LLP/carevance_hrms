@@ -27,8 +27,101 @@ class InvitationService
     ) {
     }
 
+    /**
+     * Why an employee code cannot be used, or null when it is free.
+     *
+     * The code is the organisation's own identifier — it predates this system,
+     * so it is never generated, only recorded. That makes uniqueness the only
+     * guarantee worth enforcing, and it has to span two places: people already
+     * in the system, and people invited but not yet through the door. Checking
+     * only `employee_work_infos` lets two pending invitations claim the same
+     * code and hands the collision to whoever accepts second.
+     */
+    public function employeeCodeConflict(
+        int $organizationId,
+        ?string $code,
+        ?int $ignoreUserId = null,
+        ?int $ignoreInvitationId = null
+    ): ?string
+    {
+        $code = trim((string) $code);
+
+        if ($code === '') {
+            return null;
+        }
+
+        $takenByUser = EmployeeWorkInfo::query()
+            ->where('organization_id', $organizationId)
+            ->whereRaw('LOWER(employee_code) = ?', [mb_strtolower($code)])
+            ->when($ignoreUserId, fn ($query) => $query->where('user_id', '!=', $ignoreUserId))
+            ->exists();
+
+        if ($takenByUser) {
+            return "Employee code '{$code}' is already assigned to another employee.";
+        }
+
+        /*
+         * The invitation being accepted is excluded, because it is still
+         * `pending` at the point acceptance re-checks the code — without this
+         * every invited code collides with its own reservation and is dropped.
+         */
+        $claimedByInvite = Invitation::query()
+            ->where('organization_id', $organizationId)
+            ->where('status', 'pending')
+            ->where('metadata->employee_code', $code)
+            ->when($ignoreInvitationId, fn ($query) => $query->where('id', '!=', $ignoreInvitationId))
+            ->exists();
+
+        if ($claimedByInvite) {
+            return "Employee code '{$code}' is already reserved by a pending invitation.";
+        }
+
+        return null;
+    }
+
+    /**
+     * The custom role for this organisation, or null.
+     *
+     * Admin-defined roles refine the hierarchy (a "Team Lead" at level 60 sits
+     * between manager and employee) but they do not replace the base role —
+     * middleware still authorises on `users.role`. Both therefore travel
+     * together, and the base one is DERIVED here rather than taken from the
+     * client, so a request cannot pair a low-privilege custom role with
+     * `role: admin` and be believed.
+     */
+    private function resolveCustomRole(Organization $organization, mixed $roleId): ?\App\Models\Role
+    {
+        if (blank($roleId)) {
+            return null;
+        }
+
+        return \App\Models\Role::query()
+            ->where('organization_id', $organization->id)
+            ->where('is_active', true)
+            ->find((int) $roleId);
+    }
+
+    /** The base role a custom role's hierarchy level corresponds to. */
+    private function baseRoleForLevel(int $level): string
+    {
+        return match (true) {
+            $level <= 10 => 'admin',
+            $level < 100 => 'manager',
+            default => 'employee',
+        };
+    }
+
     public function createBatch(User $actor, Organization $organization, array $payload): array
     {
+        $customRole = $this->resolveCustomRole($organization, $payload['role_id'] ?? null);
+
+        if ($customRole) {
+            $payload['role'] = $this->baseRoleForLevel((int) $customRole->hierarchy_level);
+            $payload['role_id'] = $customRole->id;
+        } else {
+            unset($payload['role_id']);
+        }
+
         $this->organizationRoleService->assertCanAssignRole($actor, $payload['role']);
 
         $emails = collect($payload['emails'] ?? [])
@@ -41,6 +134,22 @@ class InvitationService
         $created = [];
         $failed = [];
 
+        /*
+         * Employee codes are per-person and unique, so the scalar `employee_code`
+         * is only honoured for a single-recipient invite. Applying one code to a
+         * batch would guarantee a collision for everyone after the first, which
+         * is worse than ignoring it.
+         */
+        $codesByEmail = collect($payload['employee_codes'] ?? [])
+            ->mapWithKeys(fn ($code, $key) => [mb_strtolower(trim((string) $key)) => trim((string) $code)])
+            ->all();
+
+        if ($emails->count() === 1 && filled($payload['employee_code'] ?? null)) {
+            $codesByEmail[$emails->first()] = trim((string) $payload['employee_code']);
+        }
+
+        $claimedCodes = [];
+
         foreach ($emails as $email) {
             $failure = $this->validateRecipient($actor, $organization, $email);
 
@@ -52,7 +161,30 @@ class InvitationService
                 continue;
             }
 
-            $invitation = $this->createSingle($actor, $organization, $email, $payload);
+            $employeeCode = $codesByEmail[$email] ?? null;
+
+            if (filled($employeeCode)) {
+                // Two recipients in the same submission cannot share a code, and
+                // neither can a recipient and someone already in the system.
+                $conflict = isset($claimedCodes[mb_strtolower($employeeCode)])
+                    ? "Employee code '{$employeeCode}' is used more than once in this invitation."
+                    : $this->employeeCodeConflict((int) $organization->id, $employeeCode);
+
+                if ($conflict !== null) {
+                    $failed[] = [
+                        'email' => $email,
+                        'message' => $conflict,
+                    ];
+                    continue;
+                }
+
+                $claimedCodes[mb_strtolower($employeeCode)] = true;
+            }
+
+            $invitation = $this->createSingle($actor, $organization, $email, [
+                ...$payload,
+                'employee_code' => $employeeCode,
+            ]);
             $created[] = $invitation;
 
             if (($invitation['mail_delivery'] ?? null) === 'failed') {
@@ -74,6 +206,7 @@ class InvitationService
         $created = [];
         $failed = [];
         $seenEmails = [];
+        $seenCodes = [];
 
         foreach ($rows as $index => $row) {
             $email = mb_strtolower(trim((string) ($row['email'] ?? '')));
@@ -121,7 +254,31 @@ class InvitationService
                 continue;
             }
 
+            // Checked inside the file as well as against the system, exactly as
+            // the email column above is — a CSV that repeats a code is the most
+            // likely way one gets duplicated.
+            $employeeCode = trim((string) ($row['employee_code'] ?? ''));
+
+            if ($employeeCode !== '') {
+                $codeKey = mb_strtolower($employeeCode);
+                $conflict = isset($seenCodes[$codeKey])
+                    ? "Duplicate employee code '{$employeeCode}' found in CSV upload."
+                    : $this->employeeCodeConflict((int) $organization->id, $employeeCode);
+
+                if ($conflict !== null) {
+                    $failed[] = [
+                        'email' => $email,
+                        'message' => $conflict,
+                        'row' => $index + 1,
+                    ];
+                    continue;
+                }
+
+                $seenCodes[$codeKey] = true;
+            }
+
             $invitation = $this->createSingle($actor, $organization, $email, [
+                'employee_code' => $employeeCode !== '' ? $employeeCode : null,
                 'role' => $role,
                 'delivery' => 'email',
                 'expires_in_hours' => $defaults['expires_in_hours'] ?? null,
@@ -323,6 +480,14 @@ class InvitationService
                 'email' => $invitation->email,
                 'password' => $payload['password'],
                 'role' => $invitation->role,
+                // Re-checked against the organisation at acceptance: the role
+                // could have been deleted or deactivated since the invite was
+                // sent, and a dangling role_id would break every hierarchy
+                // lookup that reads it.
+                'role_id' => $this->resolveCustomRole(
+                    $invitation->organization,
+                    $invitation->metadata['role_id'] ?? null
+                )?->id,
                 'organization_id' => $invitation->organization_id,
                 'invited_by' => $invitation->invited_by,
                 'settings' => !empty($userSettings) ? $userSettings : null,
@@ -374,18 +539,65 @@ class InvitationService
 
             $user->assignedProjects()->sync($allowedProjectIds);
 
-            if (!empty($groupIds) || $jobTitle !== '') {
-                EmployeeWorkInfo::query()->updateOrCreate(
-                    [
-                        'organization_id' => $invitation->organization_id,
-                        'user_id' => $user->id,
-                    ],
-                    [
-                        'report_group_id' => $allowedGroupIds[0] ?? null,
-                        'designation' => $jobTitle !== '' ? $jobTitle : null,
-                    ]
-                );
+            /*
+             * The work info row is created unconditionally.
+             *
+             * It used to be written only when a group or job title was present,
+             * so anyone invited without either had no work info at all — and
+             * therefore nowhere to hold their employee code, designation or
+             * joining date. Three of twenty users on this deployment were in
+             * that state. The row is the employment record; it exists because
+             * the person was hired, not because a particular field was filled.
+             */
+            $employeeCode = trim((string) ($invitation->metadata['employee_code'] ?? ''));
+
+            /*
+             * Re-checked here because the code was reserved when the invite was
+             * issued and anything could have happened since — most obviously an
+             * admin creating the same person by hand through Create User.
+             *
+             * A collision must NOT fail the acceptance. The invitee is at the
+             * door with a password already typed; refusing them turns an admin's
+             * clerical mistake into a lockout. The account is created without a
+             * code instead, which surfaces as an incomplete profile for HR to
+             * resolve.
+             */
+            if ($employeeCode !== '' && $this->employeeCodeConflict(
+                (int) $invitation->organization_id,
+                $employeeCode,
+                (int) $user->id,
+                (int) $invitation->id
+            ) !== null) {
+                $employeeCode = '';
             }
+
+            /*
+             * Every field is written only when the invitation actually carries a
+             * value. Now that this runs unconditionally, passing nulls through
+             * would let a re-accept blank a designation, department or code that
+             * an admin had since filled in by hand.
+             */
+            $workInfo = [];
+
+            if (! empty($allowedGroupIds)) {
+                $workInfo['report_group_id'] = $allowedGroupIds[0];
+            }
+
+            if ($jobTitle !== '') {
+                $workInfo['designation'] = $jobTitle;
+            }
+
+            if ($employeeCode !== '') {
+                $workInfo['employee_code'] = $employeeCode;
+            }
+
+            EmployeeWorkInfo::query()->updateOrCreate(
+                [
+                    'organization_id' => $invitation->organization_id,
+                    'user_id' => $user->id,
+                ],
+                $workInfo
+            );
 
             // Eagerly create payroll template with default salary structure
             \App\Models\EmployeePayrollTemplate::getOrCreateForUser(
@@ -503,6 +715,14 @@ class InvitationService
                     'group_ids' => $allowedGroupIds,
                     'project_ids' => $allowedProjectIds,
                     'job_title' => isset($payload['job_title']) ? trim((string) $payload['job_title']) : null,
+                    // The organisation's own employee code, recorded at invite
+                    // time and stamped onto the work info at acceptance.
+                    'employee_code' => filled($payload['employee_code'] ?? null)
+                        ? trim((string) $payload['employee_code'])
+                        : null,
+                    // The admin-defined role, applied to the user at acceptance.
+                    // Already validated against this organisation by the caller.
+                    'role_id' => filled($payload['role_id'] ?? null) ? (int) $payload['role_id'] : null,
                     // Read back by resolveJoiningDate() when the invite is
                     // accepted. Before this the key was only ever read, so
                     // every invited employee's onboarding checklist anchored on

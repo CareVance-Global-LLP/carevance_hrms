@@ -138,12 +138,30 @@ class OverrideGridService
     }
 
     /**
+     * Memoised per organisation.
+     *
+     * row() asks this for every employee, so a page of seventeen was issuing
+     * the same salary_components query 221 times — the gate is a property of
+     * the ORGANISATION, identical for every row, and it does not change
+     * between rows of one request.
+     *
+     * @var array<int, list<string>>
+     */
+    private array $overridableTargetsCache = [];
+
+    /**
      * Which of basic/hra the organisation has opened to employee-level
      * override, as engine keys.
      *
      * @return list<string>
      */
     public function overridableTargets(int $organizationId): array
+    {
+        return $this->overridableTargetsCache[$organizationId] ??= $this->loadOverridableTargets($organizationId);
+    }
+
+    /** @return list<string> */
+    private function loadOverridableTargets(int $organizationId): array
     {
         return SalaryComponent::query()
             ->where('organization_id', $organizationId)
