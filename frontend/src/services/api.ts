@@ -1171,6 +1171,10 @@ export const timeEntryApi = {
       work_time: number;
       idle_time: number;
       break_time: number;
+      // The canonical worked-time block, computed on every call — unlike
+      // GET /dashboard, which serves it from a 30s cache. This is the endpoint
+      // to re-read after stopping a timer.
+      worked_time?: WorkedTimeBlock;
     }>('/time-entries/today'),
 };
 
@@ -1480,6 +1484,24 @@ export const reportApi = {
       params, 
       responseType: 'blob' as AxiosRequestConfig['responseType'] 
     }),
+};
+
+/**
+ * The server's canonical answer to "how long has this person worked today",
+ * from WorkedTimeService. Clients render these verbatim and must not recombine
+ * them with any other worked-time source — doing that is what made the shift
+ * countdown run backwards.
+ *
+ * `billed_seconds` is the high-water figure the countdown is derived from and
+ * never regresses; `worked_seconds` is the truthful one and can dip when idle
+ * is confirmed after the fact.
+ */
+export type WorkedTimeBlock = {
+  worked_seconds: number;
+  billed_seconds: number;
+  shift_target_seconds: number;
+  remaining_seconds: number;
+  overtime_seconds: number;
 };
 
 export const dashboardApi = {

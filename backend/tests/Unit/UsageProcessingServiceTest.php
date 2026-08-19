@@ -203,6 +203,34 @@ class UsageProcessingServiceTest extends TestCase
         );
     }
 
+    /**
+     * Day rollups were bucketed with `Carbon::createFromTimestamp($ts)`, which
+     * Carbon 3 pins to UTC. Any activity between midnight and the app's UTC
+     * offset therefore landed on the *previous* calendar day — for an IST
+     * tenant, everything before 05:30 local.
+     *
+     * A zone east of UTC is chosen here on purpose, and it is not the shipped
+     * default, so the assertion tracks `config('app.timezone')` rather than an
+     * assumed India.
+     */
+    public function test_idle_before_the_utc_offset_is_bucketed_into_the_local_day(): void
+    {
+        config(['app.timezone' => 'Asia/Tokyo']); // +09:00
+
+        $service = app(UsageProcessingService::class);
+
+        // 01:30 Tokyo on the 16th is 16:30 UTC on the 15th.
+        $summary = $service->summarizeIdleDurations([
+            $this->log(1, 1, 'idle', 'System Idle', 300, '2026-03-16 01:30:00'),
+        ]);
+
+        $this->assertSame(
+            ['1|2026-03-16' => 300],
+            $summary['by_user_day'],
+            'early-morning idle must roll up to the local calendar day, not the UTC one'
+        );
+    }
+
     private function log(int $id, int $timeEntryId, string $type, string $name, int $duration, string $recordedAt): array
     {
         return [

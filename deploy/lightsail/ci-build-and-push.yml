@@ -43,4 +43,4 @@ jobs:
 
 # Notes:
 # - After moving this file to .github/workflows/, grant the repo packages:write permission to the workflow runner (GITHUB_TOKEN has sufficient rights by default for same-org pushes).
-# - For improved reproducibility, tag images with commit SHA or semver and update docker-compose.production.yml accordingly.
+# - For improved reproducibility, tag images with commit SHA or semver and update docker-compose.deploy.yml accordingly.

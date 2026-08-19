@@ -37,7 +37,24 @@ class TimeEntryController extends Controller
         private readonly \App\Services\Reports\WorkTimeSummaryService $workTimeSummaryService,
         private readonly \App\Services\Reports\WorkedTimeService $workedTimeService,
         private readonly \App\Services\Monitoring\TrackerPolicyResolver $trackerPolicy,
+        private readonly \App\Services\Reports\DashboardSummaryService $dashboardSummaryService,
     ) {
+    }
+
+    /**
+     * Drop this user's cached dashboard payload.
+     *
+     * GET /dashboard is cached for 30s, and that cache carries the shift
+     * countdown (`worked_time`) and the running timer's duration. Nothing ever
+     * invalidated it, so for up to half a minute after starting or stopping a
+     * timer the dashboard answered with the state from before the change — a
+     * client that refreshed on stop was told the timer was still running and
+     * that no time had been worked. Starting and stopping are the only two
+     * moments that make the snapshot wrong immediately.
+     */
+    private function forgetDashboardCache(User $user): void
+    {
+        $this->dashboardSummaryService->clearCache((int) $user->id);
     }
 
     public function index(Request $request)
@@ -124,6 +141,7 @@ class TimeEntryController extends Controller
         ]);
 
         $this->syncTaskStatusForTimer($taskId, $user);
+        $this->forgetDashboardCache($user);
         $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
@@ -314,6 +332,7 @@ class TimeEntryController extends Controller
         ]);
 
         $this->syncTaskStatusForTimer($taskId, $user);
+        $this->forgetDashboardCache($user);
         $timeEntry->load(['project', 'task.group']);
         return response()->json($timeEntry, 201);
     }
@@ -365,6 +384,12 @@ class TimeEntryController extends Controller
             $slot,
             skipIdleSweep: $request->boolean('auto_stopped_for_idle'),
         );
+
+        // The sweep above can close entries on its own, and every early return
+        // below it skips the success path. Clear here so no exit from stop()
+        // can leave the cached dashboard reporting a timer that is already
+        // stopped — a 404 is precisely when the client most needs the truth.
+        $this->forgetDashboardCache($user);
 
         $runningEntries = $this->runningEntriesQuery((int) $user->id, $slot)
             ->orderByDesc('start_time')
@@ -456,6 +481,8 @@ class TimeEntryController extends Controller
                 'email_sent' => $emailSent,
             ]);
         }
+
+        $this->forgetDashboardCache($user);
 
         return response()->json($timeEntry->load(['project', 'task.group']));
     }

@@ -1,0 +1,42 @@
+# Edge for the deployed stack: the only thing on this box facing the internet.
+#
+# Caddy obtains and renews the Let's Encrypt certificate for $APP_DOMAIN itself,
+# so there is no certbot and no renewal cron to forget. TLS is not cosmetic here
+# — Google OAuth requires HTTPS origins, and the desktop app refuses to package
+# against a remote http:// URL (`isAllowedAppUrl`, desktop/main.cjs).
+#
+# APP_DOMAIN comes from deploy/lightsail/.env via the caddy service. Caddy
+# expands {$VAR} when it parses this file, so an unset APP_DOMAIN is a startup
+# error rather than a site quietly answering on the wrong name.
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Self-hosted update channel for the desktop tracker (docs/desktop-updates.md).
+	# `latest.yml` must not be cached: a stale manifest keeps clients on the
+	# previous version for as long as the cache lives, and the release looks
+	# published while nobody receives it.
+	handle_path /updates/* {
+		root * /var/www/updates
+		header Cache-Control "no-cache"
+		file_server
+	}
+
+	# The API, proxied straight to the backend rather than through the frontend
+	# nginx. One hop fewer, and this is the timeout that governs payroll and
+	# filing requests — the backend allows 300s, so the edge must not cut in
+	# below it.
+	handle /api/* {
+		reverse_proxy backend:10000 {
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+			}
+		}
+	}
+
+	# Everything else is the React app, served by its nginx container unchanged.
+	handle {
+		reverse_proxy frontend:80
+	}
+}

@@ -8,3 +8,10 @@ storage/framework/cache
 storage/framework/sessions
 storage/framework/views
 tests
+# Laravel's package-discovery and config caches, generated per environment. They
+# are untracked, so CI never sees them — but a build from a working tree copies
+# them in, and a manifest written with dev dependencies installed names
+# providers the --no-dev image does not have. That is a 500 on every request
+# (Class "Laravel\Pail\PailServiceProvider" not found). The directory itself is
+# kept; only the generated files are excluded.
+bootstrap/cache/*.php

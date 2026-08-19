@@ -17,7 +17,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 DEPLOY_DIR="${DEPLOY_DIR:-$HOME/carevance}"
-COMPOSE_FILE="docker-compose.production.yml"
+COMPOSE_FILE="docker-compose.deploy.yml"
 
 cd "$DEPLOY_DIR"
 

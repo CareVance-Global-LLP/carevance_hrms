@@ -31,7 +31,7 @@ Immediate safe changes (non-breaking):
 
 Non-invasive next steps I can do now in the repo:
 - Add sample CI workflow to build/push images
-- Add example docker-compose.production.yml that uses image: tags
+- Add example docker-compose.deploy.yml that uses image: tags
 - Add logrotate config template
 
 Which of these should be applied next? (I can open a PR with the .dockerignore and notes now.)

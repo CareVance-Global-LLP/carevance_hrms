@@ -29,7 +29,7 @@ Updated `ActivityFeedService` with:
 - Optimized pagination (max 50 per page)
 
 ### 4. Docker Configuration
-Updated `docker-compose.production.yml` with:
+Updated `docker-compose.deploy.yml` with:
 - Memory limits per container
 - Persistent database connections
 - PHP OPcache enabled
@@ -58,7 +58,7 @@ mkdir -p ~/carevance
 cd ~/carevance
 
 # Copy configuration files
-cp /path/to/docker-compose.production.yml .
+cp /path/to/docker-compose.deploy.yml .
 cp /path/to/postgres.conf .
 cp /path/to/.env.lightsail.example .env
 
@@ -82,13 +82,13 @@ chmod +x deploy.sh
 cd ~/carevance
 
 # Run new performance indexes migration
-docker-compose -f docker-compose.production.yml exec backend php artisan migrate
+docker-compose -f docker-compose.deploy.yml exec backend php artisan migrate
 
 # Clear Laravel cache
-docker-compose -f docker-compose.production.yml exec backend php artisan optimize:clear
+docker-compose -f docker-compose.deploy.yml exec backend php artisan optimize:clear
 
 # Optimize Laravel
-docker-compose -f docker-compose.production.yml exec backend php artisan optimize
+docker-compose -f docker-compose.deploy.yml exec backend php artisan optimize
 ```
 
 ## Performance Monitoring
@@ -97,7 +97,7 @@ docker-compose -f docker-compose.production.yml exec backend php artisan optimiz
 
 ```bash
 # Connect to database
-docker-compose -f docker-compose.production.yml exec db psql -U carevance -d carevance
+docker-compose -f docker-compose.deploy.yml exec db psql -U carevance -d carevance
 
 # Check index usage
 SELECT 
@@ -138,13 +138,13 @@ df -h
 
 ```bash
 # Clear all caches
-docker-compose -f docker-compose.production.yml exec backend php artisan cache:clear
-docker-compose -f docker-compose.production.yml exec backend php artisan config:clear
-docker-compose -f docker-compose.production.yml exec backend php artisan route:clear
-docker-compose -f docker-compose.production.yml exec backend php artisan view:clear
+docker-compose -f docker-compose.deploy.yml exec backend php artisan cache:clear
+docker-compose -f docker-compose.deploy.yml exec backend php artisan config:clear
+docker-compose -f docker-compose.deploy.yml exec backend php artisan route:clear
+docker-compose -f docker-compose.deploy.yml exec backend php artisan view:clear
 
 # Show cache stats
-docker-compose -f docker-compose.production.yml exec backend php artisan cache:table
+docker-compose -f docker-compose.deploy.yml exec backend php artisan cache:table
 ```
 
 ## Expected Performance Improvements
@@ -172,29 +172,29 @@ After implementing these optimizations:
 
 1. Check if indexes are created:
 ```bash
-docker-compose -f docker-compose.production.yml exec db psql -U carevance -d carevance -c "\di"
+docker-compose -f docker-compose.deploy.yml exec db psql -U carevance -d carevance -c "\di"
 ```
 
 2. Clear all caches:
 ```bash
-docker-compose -f docker-compose.production.yml exec backend php artisan optimize:clear
+docker-compose -f docker-compose.deploy.yml exec backend php artisan optimize:clear
 ```
 
 3. Check Laravel logs:
 ```bash
-docker-compose -f docker-compose.production.yml exec backend cat storage/logs/laravel.log
+docker-compose -f docker-compose.deploy.yml exec backend cat storage/logs/laravel.log
 ```
 
 ### If Database Connection Issues
 
 1. Check PostgreSQL logs:
 ```bash
-docker-compose -f docker-compose.production.yml logs db
+docker-compose -f docker-compose.deploy.yml logs db
 ```
 
 2. Verify connection settings:
 ```bash
-docker-compose -f docker-compose.production.yml exec db pg_isready -U carevance
+docker-compose -f docker-compose.deploy.yml exec db pg_isready -U carevance
 ```
 
 ### If Out of Memory
@@ -214,7 +214,7 @@ sudo mkswap /swapfile
 sudo swapon /swapfile
 ```
 
-3. Reduce container memory limits in docker-compose.production.yml
+3. Reduce container memory limits in docker-compose.deploy.yml
 
 ## Additional Optimizations (Optional)
 
@@ -262,12 +262,12 @@ If issues persist after these optimizations:
 
 If needed, rollback migrations:
 ```bash
-docker-compose -f docker-compose.production.yml exec backend php artisan migrate:rollback --step=1
+docker-compose -f docker-compose.deploy.yml exec backend php artisan migrate:rollback --step=1
 ```
 
 Restore previous version:
 ```bash
-docker-compose -f docker-compose.production.yml down
-docker-compose -f docker-compose.production.yml pull
-docker-compose -f docker-compose.production.yml up -d
+docker-compose -f docker-compose.deploy.yml down
+docker-compose -f docker-compose.deploy.yml pull
+docker-compose -f docker-compose.deploy.yml up -d
 ```

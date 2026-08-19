@@ -6,6 +6,7 @@ use App\Models\AppNotification;
 use App\Models\User;
 use App\Services\ExpoPushService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
 class AppNotificationService
 {
@@ -39,12 +40,18 @@ class AppNotificationService
             ->whereIn('id', $normalizedUserIds)
             ->get(['id', 'settings']);
 
+        // One resolve for the whole publish: the same payload goes into every
+        // row and into the push, and it does not vary by recipient. Doing it
+        // here also fixes where it can throw — before anything is written and
+        // before the push guard below, so a bug in composing it stays loud.
+        $resolvedMeta = $this->resolveMeta($type, $meta);
+        $encodedMeta = $resolvedMeta ? json_encode($resolvedMeta) : null;
+
         $recipientUserIds = [];
 
         $rows = $users
             ->filter(fn (User $user) => $this->shouldStoreNotification($user, $type))
-            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $meta, $pollId, $broadcastId, &$recipientUserIds) {
-                $resolvedMeta = $this->resolveMeta($type, $meta);
+            ->map(function (User $user) use ($organizationId, $senderId, $type, $title, $message, $encodedMeta, $pollId, $broadcastId, &$recipientUserIds) {
                 $recipientUserIds[] = (int) $user->id;
 
                 return [
@@ -57,7 +64,7 @@ class AppNotificationService
                     'title' => $title,
                     'message' => $message,
                     // insert() bypasses Eloquent casts, so JSON must be encoded explicitly.
-                    'meta' => $resolvedMeta ? json_encode($resolvedMeta) : null,
+                    'meta' => $encodedMeta,
                     'is_read' => false,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -66,16 +73,57 @@ class AppNotificationService
             ->values()
             ->all();
 
-        if (!empty($rows)) {
-            AppNotification::insert($rows);
+        if (empty($rows)) {
+            return;
+        }
 
-            $resolvedMeta = $this->resolveMeta($type, $meta);
-            app(ExpoPushService::class)->sendToUsers(
+        // The in-app row IS the notification. A failure here is a real data
+        // problem and must surface as a 500 rather than a log line.
+        AppNotification::insert($rows);
+
+        // Resolving the service here rather than inside dispatchPushSafely()
+        // keeps container failures — a genuine wiring bug — outside the guard.
+        $pushService = app(ExpoPushService::class);
+
+        $this->dispatchPushSafely($pushService, $recipientUserIds, $type, $title, $message, $resolvedMeta ?? []);
+    }
+
+    /**
+     * Hand the notification to Expo without letting push decide the response.
+     *
+     * The rows are already committed by the time this runs, so a throw here
+     * used to turn a completed write into a 500 at every one of the callers —
+     * chat, leave approval, task assignment, time-edit requests, payslip
+     * delivery and the task console commands. The one that reached production
+     * was a missing device_tokens table, which throws before ExpoPushService
+     * reaches its own try/catch around the HTTP call. Push is a side effect of
+     * the notification, not part of it.
+     *
+     * @param array<int, int> $recipientUserIds
+     * @param array<string, mixed> $pushData
+     */
+    private function dispatchPushSafely(
+        ExpoPushService $pushService,
+        array $recipientUserIds,
+        string $type,
+        string $title,
+        string $message,
+        array $pushData
+    ): void {
+        try {
+            $pushService->sendToUsers(
                 users: $recipientUserIds,
                 title: $title,
                 body: $message,
-                data: $resolvedMeta ?? []
+                data: $pushData
             );
+        } catch (\Throwable $exception) {
+            Log::warning('Push notification dispatch failed.', [
+                'type' => $type,
+                'recipient_user_ids' => $recipientUserIds,
+                'exception' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
         }
     }
 

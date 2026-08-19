@@ -15,6 +15,10 @@ yarn-error.log*
 .env.*
 !.env.example
 
+# Written on the server by the deploy workflow, after a health check passes. It
+# is the rollback target, so it is per-machine state and never travels in git.
+deploy/lightsail/.deployed-sha
+
 # Node dependencies/build artifacts
 **/node_modules/
 **/dist/
@@ -87,3 +91,12 @@ backend/timetrackpro
 # Local scratch that has a habit of appearing at the repo root.
 cookies.txt
 debug.log
+
+# Test reports — regenerated on every run, never committed
+vitest-report.xml
+vitest-check.xml
+phpunit-report.xml
+.tmp-*.xml
+
+# Scraped research docs
+.firecrawl/

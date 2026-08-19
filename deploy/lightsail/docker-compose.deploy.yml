@@ -1,3 +1,15 @@
+# The single deployed topology. `docker-compose.ci.yml` (which the workflow used)
+# and `docker-compose.production.yml` (which deploy.sh used) disagreed about the
+# most load-bearing setting in the stack: production.yml pinned
+# QUEUE_CONNECTION=sync on the web container while the worker polled the
+# database queue, so `process-remaining` returned 202 and then ran inline under a
+# 300s limit against a job declaring timeout=3600 — a real payroll run died at
+# five minutes, half processed — and SendInvitationMail's tries=3 became one
+# attempt, silently losing an invitation on any SMTP hiccup.
+#
+# There is no QUEUE_CONNECTION anywhere below on purpose. Every container
+# inherits it from .env, so the web app and the worker cannot drift apart.
+
 services:
   db:
     image: postgres:16-alpine
@@ -22,14 +34,25 @@ services:
     env_file:
       - .env
     environment:
-      PORT: 10000
       DB_HOST: db
       DB_PORT: 5432
     depends_on:
       db:
         condition: service_healthy
+    # Bound to loopback: caddy is the only ingress, and this stack now serves
+    # over TLS. The mapping stays so the API can still be curled on the box
+    # while debugging, without publishing plaintext to the internet.
     ports:
-      - "${BACKEND_PORT:-8000}:10000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:10000"
+    # /api/health/simple, not /api/health: liveness should report whether PHP is
+    # executing, not flap the container every time Postgres blinks. The deploy's
+    # health gate polls the full check instead.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:10000/api/health/simple"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     volumes:
       - backend_storage:/var/www/html/storage
     networks:
@@ -44,8 +67,7 @@ services:
       DB_HOST: db
       DB_PORT: 5432
     # --tries=1 means a single SMTP hiccup permanently drops the mail, and
-    # --timeout=0 means one hung job stalls the only worker forever. Matched to
-    # the production settings so CI exercises the same retry behaviour.
+    # --timeout=0 means one hung job stalls the only worker forever.
     command: ["sh", "-lc", "php artisan queue:work --tries=3 --timeout=60 --sleep=3"]
     depends_on:
       db:
@@ -93,14 +115,43 @@ services:
     depends_on:
       backend:
         condition: service_started
+    # No published port. It used to take host :80, which caddy now needs for the
+    # ACME HTTP-01 challenge; caddy reaches it over the carevance network.
+    networks:
+      - carevance
+
+  # Terminates TLS and routes the two upstreams. See ./Caddyfile.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env — caddy needs it to request a certificate}
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Issued certificates and the ACME account key. Without this volume every
+      # `up -d` re-issues, and Let's Encrypt's rate limit turns a few deploys in
+      # a day into a site with no certificate at all.
+      - caddy_data:/data
+      - caddy_config:/config
+      # Desktop update channel, published to by scripts/publish-update.cjs.
+      - ${UPDATES_DIR:-/var/www/updates}:/var/www/updates:ro
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
     networks:
       - carevance
 
 volumes:
   postgres_data:
   backend_storage:
+  caddy_data:
+  caddy_config:
 
 networks:
   carevance:

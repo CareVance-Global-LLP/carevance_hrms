@@ -24,8 +24,19 @@ fi
 
 # Configuration
 DEPLOY_DIR="$HOME/carevance"
-COMPOSE_FILE="docker-compose.production.yml"
+# The same file .github/workflows/deploy-lightsail.yml deploys. There is one
+# deployed topology; this script and CI must not be able to disagree about it.
+COMPOSE_FILE="docker-compose.deploy.yml"
 BACKUP_DIR="$HOME/backups"
+
+# That file pins images by digest-bearing tag rather than :latest, so it will not
+# start without knowing which build to run. Fail here with the reason instead of
+# at `docker-compose pull` with an interpolation error.
+if [[ -z "${BACKEND_IMAGE:-}" || -z "${FRONTEND_IMAGE:-}" ]]; then
+    echo -e "${RED}BACKEND_IMAGE and FRONTEND_IMAGE must be set (export them, or add them to $DEPLOY_DIR/.env).${NC}"
+    echo -e "${RED}CI tags every build ghcr.io/<owner>/<repo>-{backend,frontend}:<commit-sha>.${NC}"
+    exit 1
+fi
 
 # Create directories
 mkdir -p "$DEPLOY_DIR"
