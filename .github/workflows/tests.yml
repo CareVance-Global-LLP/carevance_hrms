@@ -13,6 +13,10 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # Callable so deploy-lightsail.yml can gate on this workflow with `needs:`
+  # rather than restating the test configuration. One definition of "the tests
+  # pass", used by both PRs and deploys.
+  workflow_call:
 
 jobs:
   backend:
@@ -23,9 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Matches backend/Dockerfile. On 8.2 the suite validated a runtime that
+      # was never shipped.
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.4'
           extensions: pdo, pdo_sqlite, mbstring, bcmath, gd, zip
           coverage: none
 

@@ -11,11 +11,20 @@ permissions:
   packages: write
 
 jobs:
+  # The gate. tests.yml and this workflow both triggered on push to main and
+  # neither waited for the other, so a red build shipped. Calling it here means
+  # nothing is built or deployed unless both suites clear their baselines.
+  tests:
+    uses: ./.github/workflows/tests.yml
+
   build-and-push:
+    needs: tests
     runs-on: ubuntu-latest
     outputs:
       backend_image: ${{ steps.image_refs.outputs.backend_image_sha }}
       frontend_image: ${{ steps.image_refs.outputs.frontend_image_sha }}
+      backend_repo: ${{ steps.image_refs.outputs.backend_image_repo }}
+      frontend_repo: ${{ steps.image_refs.outputs.frontend_image_repo }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +36,8 @@ jobs:
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           repo="${GITHUB_REPOSITORY#*/}"
           repo="${repo,,}"
+          echo "backend_image_repo=ghcr.io/${owner}/${repo}-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend_image_repo=ghcr.io/${owner}/${repo}-frontend" >> "$GITHUB_OUTPUT"
           echo "backend_image_sha=ghcr.io/${owner}/${repo}-backend:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "backend_image_main=ghcr.io/${owner}/${repo}-backend:main" >> "$GITHUB_OUTPUT"
           echo "frontend_image_sha=ghcr.io/${owner}/${repo}-frontend:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
@@ -42,6 +53,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # The :<sha> tag is not decoration — it is the only thing that makes
+      # rollback possible, because it is how the deploy names a revision it
+      # already knows was healthy.
       - name: Build and push backend image
         uses: docker/build-push-action@v6
         with:
@@ -71,23 +85,127 @@ jobs:
         env:
           BACKEND_IMAGE: ${{ needs.build-and-push.outputs.backend_image }}
           FRONTEND_IMAGE: ${{ needs.build-and-push.outputs.frontend_image }}
+          BACKEND_IMAGE_REPO: ${{ needs.build-and-push.outputs.backend_repo }}
+          FRONTEND_IMAGE_REPO: ${{ needs.build-and-push.outputs.frontend_repo }}
+          DEPLOY_SHA: ${{ github.sha }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USERNAME }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: BACKEND_IMAGE,FRONTEND_IMAGE,GHCR_USERNAME,GHCR_TOKEN
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE,BACKEND_IMAGE_REPO,FRONTEND_IMAGE_REPO,DEPLOY_SHA,GHCR_USERNAME,GHCR_TOKEN
           script_stop: true
           script: |
             set -eu
+
+            COMPOSE="docker compose -f docker-compose.deploy.yml"
+            BACKUP_DIR="/var/backups/carevance"
+
             cd /var/www/carevance
             git pull origin main
             cd deploy/lightsail
+
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             export BACKEND_IMAGE
             export FRONTEND_IMAGE
-            docker compose -f docker-compose.ci.yml pull
-            docker compose -f docker-compose.ci.yml up -d
-            docker compose -f docker-compose.ci.yml exec -T backend php artisan screenshots:health-check || true
-            docker compose -f docker-compose.ci.yml exec -T backend php artisan idle:health-check || true
+
+            # (a) The revision currently serving traffic. .deployed-sha is written
+            # only after a health check passes, so it never names a revision that
+            # was merely attempted — which is what makes it safe to fall back to.
+            PREVIOUS_SHA="$(cat .deployed-sha 2>/dev/null || true)"
+            echo "currently deployed: ${PREVIOUS_SHA:-<none recorded>}"
+            echo "deploying:          $DEPLOY_SHA"
+
+            # The health gate below asks the certificate's own name for the site,
+            # so it verifies the edge end to end rather than a container port.
+            APP_DOMAIN="$(grep -m1 '^APP_DOMAIN=' .env | cut -d= -f2- | tr -d "\"'\r")"
+            if [ -z "$APP_DOMAIN" ]; then
+              echo "APP_DOMAIN is not set in deploy/lightsail/.env — caddy cannot serve and the deploy cannot be verified"
+              exit 1
+            fi
+
+            # (b) A restore point taken minutes before the migration rather than
+            # from last night. Rollback covers application code only: reverting a
+            # migration automatically is not safe — a down-migration that drops a
+            # column destroys everything written since the deploy. If a migration
+            # is the problem, this dump is the recovery path and a human decides.
+            if [ ! -d "$BACKUP_DIR" ]; then
+              sudo -n mkdir -p "$BACKUP_DIR"
+              sudo -n chown "$(id -un):$(id -gn)" "$BACKUP_DIR"
+            fi
+            if $COMPOSE ps --status running --services 2>/dev/null | grep -qx db; then
+              BACKUP_FILE="$BACKUP_DIR/carevance-$(date -u +%Y%m%dT%H%M%SZ).sql.gz"
+              # Dumped uncompressed first, deliberately. Piping into gzip would
+              # hide pg_dump's exit status behind gzip's from `set -e`, and would
+              # leave a file that passes `-s` no matter what: gzip writes a
+              # header for empty input, so an empty dump still lands ~20 bytes
+              # and looks like a backup until the day someone needs it.
+              $COMPOSE exec -T db sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > "$BACKUP_FILE.raw"
+              if [ ! -s "$BACKUP_FILE.raw" ]; then
+                rm -f "$BACKUP_FILE.raw"
+                echo "pg_dump produced an empty backup — refusing to migrate"
+                exit 1
+              fi
+              gzip -c "$BACKUP_FILE.raw" > "$BACKUP_FILE"
+              rm -f "$BACKUP_FILE.raw"
+              echo "backup: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
+              find "$BACKUP_DIR" -name 'carevance-*.sql.gz' -mtime +7 -delete
+            else
+              echo "db is not running — first deploy, nothing to back up"
+            fi
+
+            # (c)
+            $COMPOSE pull
+
+            # (d) Migrations used to run from the image CMD, so every container
+            # restart re-entered them and a failure showed up as a crash loop
+            # rather than as a failed deploy. Once per deploy, visible here.
+            $COMPOSE run --rm backend php artisan migrate --force
+
+            # (e)
+            $COMPOSE up -d --remove-orphans
+
+            # (f) 60s budget. Until this passes the deploy is not a deploy.
+            echo "health gate: https://$APP_DOMAIN/api/health"
+            HEALTHY=0
+            attempt=1
+            while [ "$attempt" -le 20 ]; do
+              if curl -fsS --max-time 5 -o /dev/null "https://$APP_DOMAIN/api/health"; then
+                HEALTHY=1
+                echo "healthy after $(( (attempt - 1) * 3 ))s"
+                break
+              fi
+              sleep 3
+              attempt=$((attempt + 1))
+            done
+
+            # (g) The two post-deploy checks that used to live here both ended in
+            # `|| true`, so nothing in this script could fail a deploy and a bad
+            # one simply stayed up.
+            if [ "$HEALTHY" -ne 1 ]; then
+              echo "health check failed after 60s"
+              if [ -z "$PREVIOUS_SHA" ]; then
+                echo "no previously healthy revision recorded — cannot roll back automatically"
+                exit 1
+              fi
+              echo "rollback: redeploying $PREVIOUS_SHA"
+              BACKEND_IMAGE="$BACKEND_IMAGE_REPO:$PREVIOUS_SHA"
+              FRONTEND_IMAGE="$FRONTEND_IMAGE_REPO:$PREVIOUS_SHA"
+              export BACKEND_IMAGE
+              export FRONTEND_IMAGE
+              $COMPOSE pull
+              $COMPOSE up -d --remove-orphans
+              exit 1
+            fi
+
+            # Written only now, and only here: this revision has been observed
+            # serving. Anything else would let a rollback target a revision that
+            # was never known to work.
+            printf '%s\n' "$DEPLOY_SHA" > .deployed-sha
+
+            # Diagnostics, not gates. They report on the screenshot and idle
+            # pipelines; a warning from either is not grounds to fail a deploy
+            # the health gate already passed.
+            $COMPOSE exec -T backend php artisan screenshots:health-check || true
+            $COMPOSE exec -T backend php artisan idle:health-check || true

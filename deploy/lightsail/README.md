@@ -168,8 +168,8 @@ Pick image names that match your repo and owner. Example:
 export BACKEND_IMAGE=ghcr.io/YOUR_GITHUB_USERNAME/carevance_hrms-backend:main
 export FRONTEND_IMAGE=ghcr.io/YOUR_GITHUB_USERNAME/carevance_hrms-frontend:main
 docker login ghcr.io
-docker compose -f docker-compose.ci.yml pull
-docker compose -f docker-compose.ci.yml up -d
+docker compose -f docker-compose.deploy.yml pull
+docker compose -f docker-compose.deploy.yml up -d
 ```
 
 After that, every push to `main` can deploy automatically through GitHub Actions.
@@ -177,7 +177,7 @@ After that, every push to `main` can deploy automatically through GitHub Actions
 ### Notes
 
 - `docker-compose.yml` is still the local/manual build-on-server option
-- `docker-compose.ci.yml` is the CI/CD option that pulls prebuilt images
+- `docker-compose.deploy.yml` is the CI/CD option that pulls prebuilt images
 - if you change `deploy/lightsail/.env`, those env changes still live on the server and are picked up on the next deploy
 - the workflow currently deploys from `/var/www/carevance`; change that path in the workflow if your server uses a different folder
 

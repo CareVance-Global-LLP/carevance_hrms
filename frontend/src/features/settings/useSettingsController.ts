@@ -22,6 +22,7 @@ import {
   type SettingsTabId,
 } from './types';
 import { SETTINGS_TABS } from './settingsTabs';
+import { SETTINGS_FALLBACK_PANE, requestedPaneFromLocation, resolveInitialPane } from './paneDeepLink';
 
 export const helpIssueCategories = [
   { value: 'bug', label: 'Something is broken' },
@@ -189,7 +190,7 @@ export function useSettingsController() {
   const navigate = useNavigate();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>(SETTINGS_FALLBACK_PANE);
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedOnce = useRef(false);
   const [error, setError] = useState('');
@@ -360,26 +361,30 @@ export function useSettingsController() {
       : 0;
 
   // ---- routing -------------------------------------------------------------
+  /*
+   * Reading the URL and judging what it named are two steps (paneDeepLink.ts),
+   * composed here: requestedPaneFromLocation says what was asked for,
+   * resolveInitialPane says what this person is allowed to be shown.
+   *
+   * Re-runs on allowedTabIds too, because the set is thinner until the user has
+   * hydrated. A link to a workspace pane would otherwise be judged against an
+   * empty-handed permission set and bounced to Profile for good.
+   */
   useEffect(() => {
-    const tabFromQuery = new URLSearchParams(location.search).get('tab');
-    let tabFromPath = '';
-
-    if (location.pathname.endsWith('/integrations')) {
-      tabFromPath = 'integrations';
-    } else if (location.pathname.endsWith('/custom-fields')) {
-      tabFromPath = 'custom-fields';
-    }
-
-    const requestedTab = (tabFromPath || tabFromQuery || '') as SettingsTabId;
-    if (requestedTab && allowedTabIds.has(requestedTab)) {
-      if (activeTab !== requestedTab) {
-        setActiveTab(requestedTab);
+    const requestedPane = requestedPaneFromLocation(location.pathname, location.search);
+    if (requestedPane === null) {
+      // Nothing asked for, so leave whatever is on screen — this effect also
+      // runs after a tab click, which clears the query string. Only a pane the
+      // person may no longer see has to move.
+      if (!allowedTabIds.has(activeTab)) {
+        setActiveTab(SETTINGS_FALLBACK_PANE);
       }
       return;
     }
 
-    if (!allowedTabIds.has(activeTab)) {
-      setActiveTab('profile');
+    const resolvedPane = resolveInitialPane(requestedPane, allowedTabIds);
+    if (activeTab !== resolvedPane) {
+      setActiveTab(resolvedPane);
     }
   }, [activeTab, allowedTabIds, location.pathname, location.search]);
 
