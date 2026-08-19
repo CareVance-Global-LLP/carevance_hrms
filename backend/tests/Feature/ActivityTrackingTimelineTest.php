@@ -111,8 +111,17 @@ class ActivityTrackingTimelineTest extends TestCase
         $this->assertNotNull($idleRow);
         $this->assertSame('instagram.com', $webRow['normalized_label']);
         $this->assertSame(121, (int) $webRow['duration']);
-        $this->assertSame('2026-03-16T05:24:59+05:30', $webRow['start_at']);
-        $this->assertSame('2026-03-16T05:27:00+05:30', $webRow['end_at']);
+        /*
+         * These two used to assert 05:24:59 / 05:27:00 for activities recorded
+         * at 10:57 IST — the UTC wall clock mislabelled '+05:30' — and so
+         * certified the timeline bug rather than catching it. The block runs
+         * up to the 10:57:00 idle block that starts where it ends; the idle
+         * assertions below always read correctly, because idle rows are merged
+         * separately and never pass through the overlap resolver that lost the
+         * zone.
+         */
+        $this->assertSame('2026-03-16T10:54:59+05:30', $webRow['start_at']);
+        $this->assertSame('2026-03-16T10:57:00+05:30', $webRow['end_at']);
         $this->assertSame('website', $webRow['tool_type']);
         $this->assertSame($user->name, $webRow['user']['name']);
 

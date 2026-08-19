@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Services\Monitoring\ProductivityClassifier;
+use App\Support\ExternalTimestamp;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -193,7 +194,7 @@ class UsageProcessingService
                     return null;
                 }
 
-                return sprintf('%d|%s', $userId, Carbon::createFromTimestamp($endTimestamp)->toDateString());
+                return sprintf('%d|%s', $userId, ExternalTimestamp::fromTimestamp($endTimestamp)->toDateString());
             })
             ->filter(fn ($rows, $key) => is_string($key) && $key !== '')
             ->map(fn (Collection $rows) => (int) $rows->sum(fn (array $row) => (int) ($row['duration'] ?? 0)))
@@ -453,7 +454,7 @@ class UsageProcessingService
                 $totalIdle += $segmentDuration;
                 $totalSegments++;
 
-                $day = Carbon::createFromTimestamp($end)->toDateString();
+                $day = ExternalTimestamp::fromTimestamp($end)->toDateString();
                 $key = sprintf('%d|%s', $userId, $day);
                 $byUserDay[$key] = ($byUserDay[$key] ?? 0) + $segmentDuration;
             }
@@ -878,12 +879,12 @@ class UsageProcessingService
             'raw_name' => $contextName,
             'label' => (string) ($descriptor['label'] ?? 'unknown-site'),
             'tool_type' => (string) ($descriptor['type'] ?? 'website'),
-            'start_at' => $idleLog['start_at'] instanceof Carbon ? $idleLog['start_at']->copy() : Carbon::createFromTimestamp((int) ($idleLog['start_timestamp'] ?? 0)),
-            'end_at' => $idleLog['end_at'] instanceof Carbon ? $idleLog['end_at']->copy() : Carbon::createFromTimestamp((int) ($idleLog['end_timestamp'] ?? 0)),
+            'start_at' => $idleLog['start_at'] instanceof Carbon ? $idleLog['start_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($idleLog['start_timestamp'] ?? 0)),
+            'end_at' => $idleLog['end_at'] instanceof Carbon ? $idleLog['end_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($idleLog['end_timestamp'] ?? 0)),
             'start_timestamp' => (int) ($idleLog['start_timestamp'] ?? 0),
             'end_timestamp' => (int) ($idleLog['end_timestamp'] ?? 0),
             'duration' => (int) ($idleLog['duration'] ?? 0),
-            'recorded_at' => $idleLog['recorded_at'] instanceof Carbon ? $idleLog['recorded_at']->copy() : Carbon::createFromTimestamp((int) ($idleLog['end_timestamp'] ?? 0)),
+            'recorded_at' => $idleLog['recorded_at'] instanceof Carbon ? $idleLog['recorded_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($idleLog['end_timestamp'] ?? 0)),
             'raw_events_count' => (int) ($idleLog['raw_events_count'] ?? 1),
             'source_ids' => (array) ($idleLog['source_ids'] ?? []),
             'source_recorded_timestamps' => (array) ($idleLog['source_recorded_timestamps'] ?? []),
@@ -1088,12 +1089,12 @@ class UsageProcessingService
                     'raw_name' => (string) ($winner['raw_name'] ?? ''),
                     'label' => (string) ($winner['label'] ?? 'unknown'),
                     'tool_type' => (string) ($winner['tool_type'] ?? 'software'),
-                    'start_at' => Carbon::createFromTimestamp($segmentStart),
-                    'end_at' => Carbon::createFromTimestamp($segmentEnd),
+                    'start_at' => ExternalTimestamp::fromTimestamp($segmentStart),
+                    'end_at' => ExternalTimestamp::fromTimestamp($segmentEnd),
                     'start_timestamp' => $segmentStart,
                     'end_timestamp' => $segmentEnd,
                     'duration' => $segmentEnd - $segmentStart,
-                    'recorded_at' => $winner['recorded_at'] instanceof Carbon ? $winner['recorded_at']->copy() : Carbon::createFromTimestamp((int) ($winner['end_timestamp'] ?? $segmentEnd)),
+                    'recorded_at' => $winner['recorded_at'] instanceof Carbon ? $winner['recorded_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($winner['end_timestamp'] ?? $segmentEnd)),
                     'raw_events_count' => (int) ($winner['raw_events_count'] ?? 1),
                     'source_ids' => (array) ($winner['source_ids'] ?? []),
                     'source_recorded_timestamps' => (array) ($winner['source_recorded_timestamps'] ?? []),
@@ -1212,12 +1213,12 @@ class UsageProcessingService
                     'raw_name' => (string) ($activeLog['raw_name'] ?? ''),
                     'label' => (string) ($activeLog['label'] ?? 'unknown'),
                     'tool_type' => (string) ($activeLog['tool_type'] ?? 'software'),
-                    'start_at' => Carbon::createFromTimestamp($segment['start']),
-                    'end_at' => Carbon::createFromTimestamp($segment['end']),
+                    'start_at' => ExternalTimestamp::fromTimestamp($segment['start']),
+                    'end_at' => ExternalTimestamp::fromTimestamp($segment['end']),
                     'start_timestamp' => $segment['start'],
                     'end_timestamp' => $segment['end'],
                     'duration' => $segment['end'] - $segment['start'],
-                    'recorded_at' => $activeLog['recorded_at'] instanceof Carbon ? $activeLog['recorded_at']->copy() : Carbon::createFromTimestamp((int) ($activeLog['end_timestamp'] ?? $segment['end'])),
+                    'recorded_at' => $activeLog['recorded_at'] instanceof Carbon ? $activeLog['recorded_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($activeLog['end_timestamp'] ?? $segment['end'])),
                     'raw_events_count' => (int) ($activeLog['raw_events_count'] ?? 1),
                     'source_ids' => (array) ($activeLog['source_ids'] ?? []),
                     'source_recorded_timestamps' => (array) ($activeLog['source_recorded_timestamps'] ?? []),
@@ -1375,12 +1376,12 @@ class UsageProcessingService
             'raw_name' => 'Inferred Idle',
             'label' => 'idle',
             'tool_type' => 'idle',
-            'start_at' => Carbon::createFromTimestamp($startTimestamp),
-            'end_at' => Carbon::createFromTimestamp($endTimestamp),
+            'start_at' => ExternalTimestamp::fromTimestamp($startTimestamp),
+            'end_at' => ExternalTimestamp::fromTimestamp($endTimestamp),
             'start_timestamp' => $startTimestamp,
             'end_timestamp' => $endTimestamp,
             'duration' => $endTimestamp - $startTimestamp,
-            'recorded_at' => Carbon::createFromTimestamp($endTimestamp),
+            'recorded_at' => ExternalTimestamp::fromTimestamp($endTimestamp),
             'raw_events_count' => 1,
             'source_ids' => (array) ($sourceRow['source_ids'] ?? []),
             'source_recorded_timestamps' => [],
@@ -1549,8 +1550,8 @@ class UsageProcessingService
         $startTimestamp = (int) ($preferred['start_timestamp'] ?? 0);
         $endTimestamp = (int) ($preferred['end_timestamp'] ?? 0);
 
-        $merged['start_at'] = $preferred['start_at'] instanceof Carbon ? $preferred['start_at']->copy() : Carbon::createFromTimestamp($startTimestamp);
-        $merged['end_at'] = $preferred['end_at'] instanceof Carbon ? $preferred['end_at']->copy() : Carbon::createFromTimestamp($endTimestamp);
+        $merged['start_at'] = $preferred['start_at'] instanceof Carbon ? $preferred['start_at']->copy() : ExternalTimestamp::fromTimestamp($startTimestamp);
+        $merged['end_at'] = $preferred['end_at'] instanceof Carbon ? $preferred['end_at']->copy() : ExternalTimestamp::fromTimestamp($endTimestamp);
         $merged['start_timestamp'] = $startTimestamp;
         $merged['end_timestamp'] = $endTimestamp;
         $merged['duration'] = max(0, $endTimestamp - $startTimestamp);
@@ -1564,8 +1565,8 @@ class UsageProcessingService
         $startTimestamp = min((int) ($left['start_timestamp'] ?? 0), (int) ($right['start_timestamp'] ?? 0));
         $endTimestamp = max((int) ($left['end_timestamp'] ?? 0), (int) ($right['end_timestamp'] ?? 0));
 
-        $merged['start_at'] = Carbon::createFromTimestamp($startTimestamp);
-        $merged['end_at'] = Carbon::createFromTimestamp($endTimestamp);
+        $merged['start_at'] = ExternalTimestamp::fromTimestamp($startTimestamp);
+        $merged['end_at'] = ExternalTimestamp::fromTimestamp($endTimestamp);
         $merged['start_timestamp'] = $startTimestamp;
         $merged['end_timestamp'] = $endTimestamp;
         $merged['duration'] = max(0, $endTimestamp - $startTimestamp);
@@ -1575,8 +1576,8 @@ class UsageProcessingService
 
     private function mergeMetadata(array $primary, array $secondary): array
     {
-        $recordedAt = $primary['recorded_at'] instanceof Carbon ? $primary['recorded_at']->copy() : Carbon::createFromTimestamp((int) ($primary['end_timestamp'] ?? 0));
-        $secondaryRecordedAt = $secondary['recorded_at'] instanceof Carbon ? $secondary['recorded_at']->copy() : Carbon::createFromTimestamp((int) ($secondary['end_timestamp'] ?? 0));
+        $recordedAt = $primary['recorded_at'] instanceof Carbon ? $primary['recorded_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($primary['end_timestamp'] ?? 0));
+        $secondaryRecordedAt = $secondary['recorded_at'] instanceof Carbon ? $secondary['recorded_at']->copy() : ExternalTimestamp::fromTimestamp((int) ($secondary['end_timestamp'] ?? 0));
         if ($secondaryRecordedAt->greaterThan($recordedAt)) {
             $recordedAt = $secondaryRecordedAt;
         }
