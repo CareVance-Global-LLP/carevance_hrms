@@ -8,6 +8,7 @@ use App\Models\ReportGroup;
 use App\Models\TimeEntry;
 use App\Models\User;
 use App\Support\ExternalTimestamp;
+use App\Services\Attendance\UserTimezoneResolver;
 use App\Services\Monitoring\ActivityFeedService;
 use App\Services\Monitoring\IdleResolutionService;
 use App\Services\Monitoring\TrackerPolicyResolver;
@@ -304,6 +305,12 @@ class ActivityController extends Controller
                     'classification_reason' => (string) ($row['classification_reason'] ?? ''),
                     'start_at' => $this->formatApiTimestamp(data_get($row, 'start_at'), $rowUserId),
                     'end_at' => $this->formatApiTimestamp(data_get($row, 'end_at'), $rowUserId),
+                    // The timestamps above already carry this employee's own
+                    // offset, but an offset is not a zone: a client cannot
+                    // label "+08:00" as Manila. Without the name a viewer in
+                    // Mumbai sees a colleague's 09:00 start drawn at 05:30 and
+                    // nothing on screen explains why.
+                    'timezone' => $this->timezoneForUser($rowUserId),
                     'user' => $usersById->get((int) ($row['user_id'] ?? 0)),
                     'raw_events_count' => (int) ($row['raw_events_count'] ?? 1),
                 ];
@@ -363,6 +370,16 @@ class ActivityController extends Controller
         }
 
         return ExternalTimestamp::parseToUserTimezone($value, $userId)?->toIso8601String();
+    }
+
+    /**
+     * The IANA zone a row's timestamps were rendered in, so the client can
+     * label them. Same resolution the timestamps went through, so the name and
+     * the offset can never disagree.
+     */
+    private function timezoneForUser(?int $userId): string
+    {
+        return app(UserTimezoneResolver::class)->forUserId($userId > 0 ? $userId : null);
     }
 
     private function mapFeedItemForResponse(object $item, Collection $usersById): array

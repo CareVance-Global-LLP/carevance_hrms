@@ -70,6 +70,8 @@ class MonitoringConsentService
         array $purposes,
         int $retentionDays,
         ?User $actor = null,
+        ?string $grievanceContactName = null,
+        ?string $grievanceContactEmail = null,
     ): MonitoringNotice {
         $nextVersion = (int) MonitoringNotice::forOrganization($organization->id)->max('version') + 1;
 
@@ -79,6 +81,11 @@ class MonitoringConsentService
             'body' => $body,
             'purposes' => array_intersect_key($purposes, array_flip(self::CAPTURE_TYPES)),
             'retention_days' => $retentionDays,
+            // Required by the DPDP Rules: a consent notice must say who to
+            // complain to. Without it the notice discloses without offering
+            // any way to object, which is not consent.
+            'grievance_contact_name' => $grievanceContactName,
+            'grievance_contact_email' => $grievanceContactEmail,
             'published_at' => now(),
             'published_by_user_id' => $actor?->id,
         ]);
@@ -282,6 +289,14 @@ class MonitoringConsentService
                 'purposes' => $notice->purposes,
                 'retention_days' => $notice->retention_days,
                 'published_at' => $notice->published_at?->toIso8601String(),
+                'grievance' => [
+                    'contact_name' => $notice->grievance_contact_name,
+                    'contact_email' => $notice->grievance_contact_email,
+                    // Stated on every notice rather than left to the customer's
+                    // wording: the right to escalate to the Board exists whether
+                    // or not an employer chooses to mention it.
+                    'authority' => 'Data Protection Board of India',
+                ],
             ] : null,
             'consent' => $consent ? [
                 'notice_version' => $consent->notice_version,

@@ -383,10 +383,225 @@ export function getApiErrorMessage(err: any, fallback = 'Something went wrong. P
 }
 
 // Auth API
+/** One governed episode of vendor access to this organisation. */
+export type BreakGlassSession = {
+  id: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'revoked';
+  is_usable: boolean;
+  unusable_reason: string | null;
+  remaining_minutes: number;
+  requested_at: string | null;
+  approved_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+  target_user: { id: number | null; name: string | null };
+  requested_by: { id: number | null; name: string | null };
+};
+
+/** What the employee-facing privacy screen renders, all read from the server. */
+export type MonitoringDisclosure = {
+  monitoring_enabled: boolean;
+  policy: 'off' | 'grace' | 'enforced';
+  grace_ends_at: string | null;
+  notice: {
+    version: number;
+    body: string;
+    purposes: Record<string, string>;
+    retention_days: number;
+    published_at: string | null;
+    grievance: { contact_name: string | null; contact_email: string | null; authority: string };
+  } | null;
+  consent: {
+    notice_version: number;
+    capture_types: string[];
+    granted_at: string | null;
+    withdrawn_at: string | null;
+    is_current: boolean;
+  } | null;
+  capture_types: Record<
+    string,
+    { purpose: string; allowed_now: boolean; refusal_reason: string | null }
+  >;
+};
+
+export type ApiClientSummary = {
+  id: number;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  is_usable: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+};
+
+export type WebhookEndpointSummary = {
+  id: number;
+  name: string;
+  url: string;
+  events: string[];
+  is_active: boolean;
+  consecutive_failures: number;
+  disabled_at: string | null;
+  disabled_reason: string | null;
+};
+
+export type WebhookDeliverySummary = {
+  id: number;
+  endpoint_id: number;
+  event: string;
+  status: 'pending' | 'delivered' | 'failed';
+  attempts: number;
+  response_status: number | null;
+  error: string | null;
+  delivered_at: string | null;
+  next_attempt_at: string | null;
+  created_at: string | null;
+};
+
+/** What a monitoring/security screen needs to render without inventing state. */
+export type MfaStatus = {
+  enrolled: boolean;
+  required: boolean;
+  privileged: boolean;
+  policy: 'off' | 'grace' | 'enforced';
+  grace_ends_at: string | null;
+  unused_recovery_codes: number;
+};
+
+/** Notice and consent for workforce monitoring. */
+export const monitoringConsentApi = {
+  disclosure: async (): Promise<MonitoringDisclosure> => {
+    const { data } = await api.get<{ data: MonitoringDisclosure }>('/monitoring/consent');
+    return data.data;
+  },
+
+  grant: (captureTypes: string[]) =>
+    api.post('/monitoring/consent', { capture_types: captureTypes }),
+
+  /**
+   * One call, no arguments, no confirmation payload.
+   *
+   * The DPDP Rules require withdrawing consent to be as easy as giving it —
+   * anything that makes someone justify themselves first fails that test.
+   */
+  withdraw: () => api.delete('/monitoring/consent'),
+
+  publishNotice: (payload: {
+    body: string;
+    purposes: Record<string, string>;
+    retention_days: number;
+    grievance_contact_name: string;
+    grievance_contact_email: string;
+  }) => api.post('/monitoring/notice', payload),
+};
+
+/** Customer-managed API keys and outbound webhooks. */
+export const integrationsApi = {
+  listKeys: async (): Promise<{ available_scopes: string[]; keys: ApiClientSummary[] }> => {
+    const { data } = await api.get<{
+      data: { available_scopes: string[]; keys: ApiClientSummary[] };
+    }>('/integrations/keys');
+    return data.data;
+  },
+
+  /** Returns the key in the clear. This is the only time it exists. */
+  createKey: async (payload: { name: string; scopes: string[]; expires_at?: string }): Promise<string> => {
+    const { data } = await api.post<{ data: { key: string } }>('/integrations/keys', payload);
+    return data.data.key;
+  },
+
+  revokeKey: (id: number) => api.delete(`/integrations/keys/${id}`),
+
+  listWebhooks: async (): Promise<{
+    available_events: string[];
+    endpoints: WebhookEndpointSummary[];
+  }> => {
+    const { data } = await api.get<{
+      data: { available_events: string[]; endpoints: WebhookEndpointSummary[] };
+    }>('/integrations/webhooks');
+    return data.data;
+  },
+
+  /** Returns the signing secret in the clear. Also only once. */
+  createWebhook: async (payload: { name: string; url: string; events: string[] }): Promise<string> => {
+    const { data } = await api.post<{ data: { signing_secret: string } }>(
+      '/integrations/webhooks',
+      payload,
+    );
+    return data.data.signing_secret;
+  },
+
+  enableWebhook: (id: number) => api.post(`/integrations/webhooks/${id}/enable`),
+
+  deleteWebhook: (id: number) => api.delete(`/integrations/webhooks/${id}`),
+
+  deliveries: async (status?: string): Promise<WebhookDeliverySummary[]> => {
+    const { data } = await api.get<{ data: WebhookDeliverySummary[] }>(
+      '/integrations/webhook-deliveries',
+      { params: status ? { status } : undefined },
+    );
+    return data.data ?? [];
+  },
+
+  retryDelivery: (id: number) => api.post(`/integrations/webhook-deliveries/${id}/retry`),
+};
+
 export const authApi = {
-  login: (data: LoginRequest) => 
+  login: (data: LoginRequest) =>
     api.post<AuthResponse>('/auth/login', data),
-  
+
+  /**
+   * Trade a verified second factor for a session.
+   *
+   * Public, like login: the caller is not authenticated yet by definition.
+   */
+  verifyMfa: (data: { challenge: string; code: string }) =>
+    api.post<AuthResponse>('/auth/mfa/verify', data),
+
+  // ===== Two-factor authentication, for an already signed-in user =====
+  mfaStatus: async (): Promise<MfaStatus> => {
+    const { data } = await api.get<{ data: MfaStatus }>('/auth/mfa');
+    return data.data;
+  },
+
+  mfaBeginSetup: async (): Promise<{ secret: string; otpauth_url: string }> => {
+    const { data } = await api.post<{ data: { secret: string; otpauth_url: string } }>('/auth/mfa/setup');
+    return data.data;
+  },
+
+  mfaConfirmSetup: async (code: string): Promise<string[]> => {
+    const { data } = await api.post<{ data: { recovery_codes: string[] } }>('/auth/mfa/confirm', { code });
+    return data.data.recovery_codes;
+  },
+
+  mfaRegenerateRecoveryCodes: async (password: string): Promise<string[]> => {
+    const { data } = await api.post<{ data: { recovery_codes: string[] } }>(
+      '/auth/mfa/recovery-codes',
+      { password },
+    );
+    return data.data.recovery_codes;
+  },
+
+  mfaDisable: (payload: { password: string; code: string }) =>
+    api.delete('/auth/mfa', { data: payload }),
+
+  // ===== Break-glass: vendor support access to this organisation =====
+  breakGlassSessions: async (): Promise<BreakGlassSession[]> => {
+    const { data } = await api.get<{ data: BreakGlassSession[] }>('/security/break-glass');
+    return data.data ?? [];
+  },
+
+  breakGlassApprove: (id: number, minutes?: number) =>
+    api.post(`/security/break-glass/${id}/approve`, minutes ? { minutes } : {}),
+
+  breakGlassReject: (id: number, reason?: string) =>
+    api.post(`/security/break-glass/${id}/reject`, reason ? { reason } : {}),
+
+  breakGlassRevoke: (id: number, reason?: string) =>
+    api.post(`/security/break-glass/${id}/revoke`, reason ? { reason } : {}),
+
   register: (data: RegisterRequest) => 
     api.post<AuthResponse>('/auth/register', data),
 

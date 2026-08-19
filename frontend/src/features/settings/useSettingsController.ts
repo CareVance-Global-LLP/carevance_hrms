@@ -307,7 +307,21 @@ export function useSettingsController() {
   const canManageShifts = canManageSettings || hasAdminAccess(user);
 
   const visibleTabs = useMemo(() => {
-    const allowed = new Set<SettingsTabId>(['profile', 'notifications', 'appearance', 'security', 'help']);
+    /*
+     * 'privacy' is in the base set on purpose. What is collected about you at
+     * work, why, and how to withdraw is the employee's own information — a
+     * disclosure only administrators can reach is not a disclosure, and the
+     * DPDP notice-and-consent obligation is owed to the person being
+     * monitored, not to the person configuring it.
+     */
+    const allowed = new Set<SettingsTabId>([
+      'profile',
+      'notifications',
+      'appearance',
+      'security',
+      'privacy',
+      'help',
+    ]);
     if (isStrictAdminUser) {
       allowed.add('organization');
       allowed.add('billing');

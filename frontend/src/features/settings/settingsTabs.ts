@@ -4,6 +4,7 @@ import {
   Briefcase,
   Building,
   CreditCard,
+  Eye,
   FileSpreadsheet,
   LifeBuoy,
   Link2,
@@ -61,7 +62,14 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     name: 'Security',
     group: 'you',
     icon: Lock,
-    keywords: 'password change sign in session device login credentials',
+    keywords: 'password change sign in session device login credentials two-factor 2fa mfa authenticator totp recovery codes support access break glass',
+  },
+  {
+    id: 'privacy',
+    name: 'Privacy',
+    group: 'you',
+    icon: Eye,
+    keywords: 'monitoring consent notice screenshot activity location selfie tracking withdraw dpdp data protection grievance retention what is collected about me surveillance',
   },
   {
     id: 'organization',

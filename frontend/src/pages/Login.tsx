@@ -26,6 +26,7 @@ import AuthPageShell, {
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
 import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
+import OneTimeCodeInput from '@/components/auth/OneTimeCodeInput';
 
 const REMEMBERED_EMAIL_KEY = 'carevance.rememberedEmail';
 
@@ -84,7 +85,17 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(() => getRememberedEmail() !== '');
   const [error, setError] = useState<React.ReactNode>('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+
+  /**
+   * A half-finished sign-in. Non-null means the password was accepted and the
+   * page is waiting for a second factor. It is an opaque handle — it says
+   * nothing about whose account it belongs to.
+   */
+  const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+
+  const { login, completeMfaChallenge } = useAuth();
   const navigate = useNavigate();
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,12 +125,27 @@ export default function Login() {
       analytics.trackEvent('login_submitted', {
         source: 'login-page',
       });
-      await login(submittedEmail, submittedPassword, { remember: shouldRemember });
+      const result = await login(submittedEmail, submittedPassword, { remember: shouldRemember });
+
       if (shouldRemember) {
         window.localStorage.setItem(REMEMBERED_EMAIL_KEY, submittedEmail);
       } else {
         window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
       }
+
+      /*
+       * The password was right, but this account has an authenticator, so no
+       * session exists yet. Hand over to the code step rather than navigating
+       * — before this branch existed, anyone who enrolled in two-factor could
+       * never sign in again.
+       */
+      if (result?.mfaRequired) {
+        setMfaChallenge(result.challenge);
+        setMfaCode('');
+        setError(null);
+        return;
+      }
+
       navigate(isLikelyMobile() ? '/mobile/dashboard' : '/dashboard');
     } catch (err: any) {
       const errorCode = err.response?.data?.error_code;
@@ -167,6 +193,41 @@ export default function Login() {
 
       const fieldError = err.response?.data?.errors?.email?.[0] || err.response?.data?.errors?.password?.[0];
       setError(fieldError || 'Invalid email or password');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMfaSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!mfaChallenge || mfaCode.trim().length === 0) {
+      return;
+    }
+
+    setError('');
+    setIsLoading(true);
+
+    try {
+      await completeMfaChallenge(mfaChallenge, mfaCode);
+      navigate(isLikelyMobile() ? '/mobile/dashboard' : '/dashboard');
+    } catch (err: any) {
+      const errorCode = err.response?.data?.error_code;
+
+      /*
+       * The challenge expired, so there is nothing left to retry against.
+       * Send them back to the password form rather than leaving them typing
+       * codes into a handle the server has already forgotten.
+       */
+      if (errorCode === 'MFA_CHALLENGE_EXPIRED') {
+        setMfaChallenge(null);
+        setMfaCode('');
+        setError('That sign-in attempt timed out. Please enter your password again.');
+        return;
+      }
+
+      setError(err.response?.data?.message || 'That code was not accepted. Check the app and try again.');
+      setMfaCode('');
     } finally {
       setIsLoading(false);
     }
@@ -271,6 +332,85 @@ export default function Login() {
               </div>
             )}
 
+            {mfaChallenge ? (
+              /*
+               * The second-factor step. Rendered instead of the password form
+               * rather than beside it: the password is already accepted, and
+               * showing both invites people to retype it and start over.
+               */
+              <form className="space-y-4" onSubmit={handleMfaSubmit}>
+                <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                  <div className="text-sm text-sky-900">
+                    <p className="font-semibold">Two-factor authentication</p>
+                    <p className="mt-0.5 text-sky-800">
+                      {useRecoveryCode
+                        ? 'Enter one of the recovery codes you saved when you set this up. Each one works once.'
+                        : 'Enter the 6-digit code from your authenticator app.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="one-time-code" className={authLabelClass}>
+                    {useRecoveryCode ? 'Recovery code' : 'Authentication code'}
+                  </label>
+                  <OneTimeCodeInput
+                    value={mfaCode}
+                    onChange={setMfaCode}
+                    allowRecoveryCode={useRecoveryCode}
+                    autoFocus
+                    disabled={isLoading}
+                    placeholder={useRecoveryCode ? 'XXXXX-XXXXX' : '123456'}
+                    aria-describedby="one-time-code-hint"
+                    aria-invalid={Boolean(error)}
+                  />
+                  <p id="one-time-code-hint" className="mt-2 text-xs text-slate-500">
+                    {useRecoveryCode
+                      ? 'Using a recovery code will use it up. Generate a new set afterwards from Settings.'
+                      : 'The code changes every 30 seconds. If it is rejected, wait for the next one.'}
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  className={authPrimaryButtonClass}
+                  disabled={isLoading || mfaCode.trim().length === 0}
+                >
+                  {isLoading ? 'Verifying…' : 'Verify and sign in'}
+                  {!isLoading && <ArrowRight className="h-4 w-4" />}
+                </button>
+
+                <div className="flex flex-col gap-2 text-center text-sm">
+                  <button
+                    type="button"
+                    className="font-semibold text-sky-700 underline-offset-2 hover:underline"
+                    onClick={() => {
+                      setUseRecoveryCode((previous) => !previous);
+                      setMfaCode('');
+                      setError('');
+                    }}
+                  >
+                    {useRecoveryCode
+                      ? 'Use my authenticator app instead'
+                      : "I can't reach my authenticator app"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-slate-500 underline-offset-2 hover:underline"
+                    onClick={() => {
+                      setMfaChallenge(null);
+                      setMfaCode('');
+                      setUseRecoveryCode(false);
+                      setError('');
+                    }}
+                  >
+                    Back to sign in
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
             <div className="mb-5">
               <GoogleLoginButton type="login" />
             </div>
@@ -367,6 +507,8 @@ export default function Login() {
                 )}
               </button>
             </form>
+              </>
+            )}
       </>
     </AuthPageShell>
   );

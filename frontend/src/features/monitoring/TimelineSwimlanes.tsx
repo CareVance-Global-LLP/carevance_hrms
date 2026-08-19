@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { foreignZoneNotice } from '@/lib/timelineZoneLabel';
 import { formatDuration } from '@/lib/formatters';
 import { CLASSIFICATION_META, normalizeClassification, type Classification } from './monitoringUi';
 
@@ -25,6 +26,8 @@ interface LaneBlock {
 interface Lane {
   userId: number;
   userName: string;
+  /** IANA zone the employee works in, for labelling a lane from another office. */
+  timezone: string | null;
   blocks: LaneBlock[];
   firstMs: number;
   lastMs: number;
@@ -96,6 +99,7 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
         byUser.set(userId, {
           userId,
           userName: row?.user?.name || 'Unknown',
+          timezone: (row?.timezone as string | undefined) || null,
           blocks: [],
           firstMs: startMs,
           lastMs: endMs,
@@ -207,6 +211,19 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
                   {' · '}{formatDuration(lane.trackedSeconds)}
                   {lane.breakSeconds > 0 ? ` · ${formatDuration(lane.breakSeconds)} break` : ''}
                 </span>
+                {/*
+                  Only shown when this person's zone differs from the viewer's.
+                  The bar above is drawn on the viewer's clock so lanes stay
+                  comparable, which on its own makes a 09:00 Manila start look
+                  like 05:30 — the reading that gets somebody wrongly marked
+                  late. Their own clock is stated here alongside the city.
+                */}
+                {foreignZoneNotice(lane.timezone, timezone) ? (
+                  <span className="mt-0.5 block font-mono text-[11px] text-amber-700">
+                    {timeLabel(lane.firstMs, lane.timezone as string)} – {timeLabel(lane.lastMs, lane.timezone as string)}
+                    {' '}{foreignZoneNotice(lane.timezone, timezone)}
+                  </span>
+                ) : null}
               </button>
               <div className="relative h-6 overflow-hidden rounded-md bg-slate-100" role="img" aria-label={`${lane.userName}'s day timeline`}>
                 {lane.blocks.map((block, index) => (

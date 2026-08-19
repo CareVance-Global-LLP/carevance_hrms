@@ -64,7 +64,12 @@ export const resolveShiftTargetSeconds = (...candidates: unknown[]): number => {
   const options = isOptions(last) ? last : undefined;
   const values = options ? candidates.slice(0, -1) : candidates;
 
-  // REVERTED FOR EVIDENCE: the old inline expression.
-  const fallback = options?.fallbackSeconds ?? DEFAULT_SHIFT_TARGET_SECONDS;
-  return Number((values[0] as any) || (values[1] as any) || fallback);
+  for (const candidate of values) {
+    const seconds = toSeconds(candidate);
+    if (seconds !== null) {
+      return seconds;
+    }
+  }
+
+  return options?.fallbackSeconds ?? DEFAULT_SHIFT_TARGET_SECONDS;
 };

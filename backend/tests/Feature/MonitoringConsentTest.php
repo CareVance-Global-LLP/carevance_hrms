@@ -48,12 +48,22 @@ class MonitoringConsentTest extends TestCase
     private function publishNotice(): void
     {
         $this->actingAs($this->admin)
-            ->postJson('/api/monitoring/notice', [
-                'body' => 'We capture screen images and application activity during tracked working hours to verify billable work.',
-                'purposes' => MonitoringConsentService::DEFAULT_PURPOSES,
-                'retention_days' => 90,
-            ])
+            ->postJson('/api/monitoring/notice', $this->noticePayload())
             ->assertStatus(201);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function noticePayload(array $overrides = []): array
+    {
+        return array_merge([
+            'body' => 'We capture screen images and application activity during tracked working hours to verify billable work.',
+            'purposes' => MonitoringConsentService::DEFAULT_PURPOSES,
+            'retention_days' => 90,
+            'grievance_contact_name' => 'Priya Raman, Data Protection Officer',
+            'grievance_contact_email' => 'privacy@acme.test',
+        ], $overrides);
     }
 
     private function setPolicy(string $policy, ?string $graceEndsAt = null): void
@@ -105,12 +115,40 @@ class MonitoringConsentTest extends TestCase
     public function test_an_ordinary_employee_cannot_publish_the_notice(): void
     {
         $this->actingAs($this->employee)
-            ->postJson('/api/monitoring/notice', [
-                'body' => 'We collect nothing at all, honestly, please ignore the screenshots.',
-                'purposes' => MonitoringConsentService::DEFAULT_PURPOSES,
-                'retention_days' => 1,
-            ])
+            ->postJson('/api/monitoring/notice', $this->noticePayload())
             ->assertStatus(403);
+    }
+
+    /**
+     * The DPDP Rules oblige a consent notice to say who a complaint goes to.
+     * A notice that lists purposes but names nobody to object to discloses
+     * without offering any way to object, which is not consent.
+     */
+    public function test_a_notice_without_grievance_details_is_refused(): void
+    {
+        $payload = $this->noticePayload();
+        unset($payload['grievance_contact_name'], $payload['grievance_contact_email']);
+
+        $this->actingAs($this->admin)
+            ->postJson('/api/monitoring/notice', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['grievance_contact_name', 'grievance_contact_email']);
+    }
+
+    public function test_the_notice_tells_the_employee_who_to_complain_to_and_names_the_authority(): void
+    {
+        $this->publishNotice();
+
+        $response = $this->actingAs($this->employee)
+            ->getJson('/api/monitoring/consent')
+            ->assertOk();
+
+        $this->assertSame('Priya Raman, Data Protection Officer', $response->json('data.notice.grievance.contact_name'));
+        $this->assertSame('privacy@acme.test', $response->json('data.notice.grievance.contact_email'));
+
+        // Stated by the product rather than left to the employer's wording:
+        // the right to escalate exists whether or not they mention it.
+        $this->assertSame('Data Protection Board of India', $response->json('data.notice.grievance.authority'));
     }
 
     // -------------------------------------------------------------- consent

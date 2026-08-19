@@ -86,6 +86,11 @@ class MonitoringConsentController extends Controller
             'purposes' => ['required', 'array'],
             'purposes.*' => ['required', 'string', 'min:10', 'max:1000'],
             'retention_days' => ['required', 'integer', 'min:1', 'max:3650'],
+            // Required, not optional. The DPDP Rules oblige a consent notice
+            // to say who a complaint goes to; a notice without one discloses
+            // but offers no way to object.
+            'grievance_contact_name' => ['required', 'string', 'max:160'],
+            'grievance_contact_email' => ['required', 'email', 'max:255'],
         ]);
 
         $notice = $this->consent->publishNotice(
@@ -94,6 +99,8 @@ class MonitoringConsentController extends Controller
             $validated['purposes'],
             $validated['retention_days'],
             $request->user(),
+            $validated['grievance_contact_name'],
+            $validated['grievance_contact_email'],
         );
 
         return response()->json([

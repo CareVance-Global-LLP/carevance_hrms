@@ -25,6 +25,8 @@ class MonitoringNotice extends Model
         'body',
         'purposes',
         'retention_days',
+        'grievance_contact_name',
+        'grievance_contact_email',
         'published_at',
         'published_by_user_id',
     ];

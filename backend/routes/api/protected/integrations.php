@@ -21,4 +21,5 @@ Route::middleware('role:admin')->prefix('integrations')->group(function () {
     Route::delete('/webhooks/{id}', [IntegrationController::class, 'deleteWebhook']);
 
     Route::get('/webhook-deliveries', [IntegrationController::class, 'deliveries']);
+    Route::post('/webhook-deliveries/{id}/retry', [IntegrationController::class, 'retryDelivery']);
 });

@@ -48,6 +48,17 @@ export interface GoogleRegistrationPayload {
   timezone?: string;
 }
 
+/**
+ * The outcome of a password check.
+ *
+ * A correct password on an account with an authenticator is not a session, and
+ * the caller has to be able to tell that apart from a wrong password. Modelled
+ * as a returned result rather than a thrown error for exactly that reason.
+ */
+export type LoginResult =
+  | { mfaRequired: false }
+  | { mfaRequired: true; challenge: string };
+
 interface AuthContextType {
   user: User | null;
   organization: Organization | null;
@@ -56,7 +67,13 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   wasOfflineRestored: boolean;
-  login: (email: string, password: string, options?: { remember?: boolean }) => Promise<void>;
+  /**
+   * Resolves to whether a second factor is still needed. Returning a result
+   * rather than throwing keeps "password correct, code required" distinct
+   * from "password wrong" — the caller must be able to tell them apart.
+   */
+  login: (email: string, password: string, options?: { remember?: boolean }) => Promise<LoginResult>;
+  completeMfaChallenge: (challenge: string, code: string) => Promise<void>;
   signupOwner: (payload: OwnerSignupRequest) => Promise<{ requiresVerification: boolean; email: string }>;
   acceptInvitation: (token: string, payload: { name: string; password: string; password_confirmation: string; timezone?: string }) => Promise<{ requiresVerification: boolean; email: string }>;
   register: (name: string, email: string, password: string, options?: { role?: 'admin' | 'employee'; organizationName?: string }) => Promise<void>;
@@ -520,7 +537,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       storeAuthState('demo-token-12345', demoUser, demoOrg);
-      return;
+      return { mfaRequired: false as const };
     }
 
     const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -533,8 +550,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     const responseData = response.data as any;
+
+    /*
+     * A correct password on an account with an authenticator is only half the
+     * answer, so the server returns a short-lived challenge instead of a
+     * token. Handled before the token check below — without this branch the
+     * missing token reads as a failed login, and anyone who enrolled in
+     * two-factor could never sign in again.
+     */
+    if (responseData?.mfa_required) {
+      return { mfaRequired: true as const, challenge: String(responseData.challenge ?? '') };
+    }
+
     if (!responseData.success || !responseData.token || !responseData.user) {
       const error = new Error(responseData.message || 'Login failed') as any;
+      error.response = response;
+      throw error;
+    }
+
+    const { user: userData, token: authToken, organization: org } = responseData;
+
+    storeAuthState(authToken, userData, org);
+    void persistAuthOffline(authToken, userData, org);
+
+    return { mfaRequired: false as const };
+  };
+
+  /**
+   * Finish a sign-in that stopped at the second factor.
+   *
+   * Accepts a recovery code as well as a six-digit one — the server decides
+   * which it is, so somebody locked out of their phone is not stuck at a form
+   * that refuses to accept the thing they were told to keep.
+   */
+  const completeMfaChallenge = async (challenge: string, code: string) => {
+    const response = await authApi.verifyMfa({ challenge, code: code.trim() });
+    const responseData = response.data as any;
+
+    if (!responseData?.success || !responseData.token || !responseData.user) {
+      const error = new Error(responseData?.message || 'That code was not accepted.') as any;
       error.response = response;
       throw error;
     }
@@ -741,6 +795,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user && !!token,
         wasOfflineRestored,
         login,
+        completeMfaChallenge,
         signupOwner,
         acceptInvitation,
         register,

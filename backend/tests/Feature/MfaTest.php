@@ -290,6 +290,39 @@ class MfaTest extends TestCase
         $this->assertFalse(app(MfaService::class)->mustEnrolNow($this->admin->fresh()));
     }
 
+    /**
+     * The deploy-day regression, pinned.
+     *
+     * The grace deadline once defaulted to `organization.created_at + 14 days`.
+     * Every organisation that existed before the feature shipped was created
+     * more than fourteen days ago, so the window was already in the past and
+     * every admin, HR and payroll user was locked out of the whole API the
+     * moment the code went live.
+     */
+    public function test_an_organisation_that_has_never_set_a_deadline_blocks_nobody(): void
+    {
+        $this->setPolicy('grace');
+
+        // Deliberately old, exactly like every real tenant on the day this
+        // shipped.
+        $this->organization->forceFill(['created_at' => now()->subYears(2)])->saveQuietly();
+        $this->organization->refresh();
+
+        $this->assertNull(
+            app(MfaService::class)->graceEndsAt($this->organization),
+            'No deadline means no deadline — it must not be inferred from when the organisation was created.'
+        );
+
+        $this->assertFalse(
+            app(MfaService::class)->mustEnrolNow($this->admin->fresh()),
+            'An organisation that never chose a deadline must not have its admins locked out.'
+        );
+
+        $this->actingAs($this->admin)
+            ->getJson('/api/payroll/filings/catalogue')
+            ->assertOk();
+    }
+
     public function test_the_grace_policy_blocks_once_the_window_has_closed(): void
     {
         $this->setPolicy('grace', now()->subDay()->toIso8601String());

@@ -18,6 +18,15 @@
         </include>
     </source>
     <php>
+        <!--
+            The suite peaks around 194 MB and PHP's default is 256 MB, which is
+            close enough that the runner's own overhead tipped it over with an
+            "Allowed memory size exhausted" that looks like a leak and is not.
+            Raised with headroom rather than trimmed, because the growth is real:
+            the suite gained ~200 tests, and the audit observer now records every
+            create and update on 23 money-and-identity models.
+        -->
+        <ini name="memory_limit" value="768M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_KEY" value="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

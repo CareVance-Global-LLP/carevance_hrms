@@ -24,13 +24,43 @@ class PublicApiController extends Controller
 {
     private const MAX_PER_PAGE = 200;
 
+    /**
+     * The tenant this request belongs to, from the API key.
+     *
+     * Every query in this controller must be constrained by it. Most models
+     * are constrained automatically by BelongsToOrganization reading the pin
+     * AuthenticateApiClient set — but NOT all of them, which is the point of
+     * making it explicit here. See employees() below.
+     */
+    private function organizationId(Request $request): int
+    {
+        $client = $request->attributes->get('api_client');
+
+        // Fail closed. Reaching a controller without the middleware having run
+        // should be impossible; if it ever happens, serving nothing is the only
+        // acceptable outcome.
+        abort_if($client === null, 401, 'No API client on this request.');
+
+        return (int) $client->organization_id;
+    }
+
     public function employees(Request $request): JsonResponse
     {
         $perPage = min((int) $request->integer('per_page', 50) ?: 50, self::MAX_PER_PAGE);
 
-        // No withoutOrganizationScope anywhere: the scope is what makes this
-        // safe, and the tenant comes from the API key.
+        /*
+         * Scoped by hand, and it has to be.
+         *
+         * User is deliberately excluded from BelongsToOrganization — the trait's
+         * own scope resolves the acting user through Auth, so applying it to
+         * User would be circular. That exclusion means User::query() carries no
+         * tenant filter of any kind, and the tenant pin does nothing for it.
+         *
+         * Written without this line, this endpoint returned every employee of
+         * every customer to any valid API key. IntegrationApiTest covers it.
+         */
         $employees = User::query()
+            ->where('organization_id', $this->organizationId($request))
             ->with('employeeWorkInfo:id,user_id,designation,joining_date,reporting_manager_id')
             ->whereNull('deactivated_at')
             ->orderBy('id')
@@ -57,7 +87,12 @@ class PublicApiController extends Controller
 
         $perPage = min((int) $request->integer('per_page', 50) ?: 50, self::MAX_PER_PAGE);
 
+        // AttendanceRecord does carry BelongsToOrganization, so the pin already
+        // constrains this. Stated again anyway: on a public API surface the
+        // tenant filter should be visible in the query, not inferred from a
+        // trait three files away.
         $records = AttendanceRecord::query()
+            ->where('organization_id', $this->organizationId($request))
             ->when($validated['from'] ?? null, fn ($q, $from) => $q->whereDate('check_in_at', '>=', $from))
             ->when($validated['to'] ?? null, fn ($q, $to) => $q->whereDate('check_in_at', '<=', $to))
             ->when($validated['user_id'] ?? null, fn ($q, $userId) => $q->where('user_id', $userId))
@@ -78,6 +113,7 @@ class PublicApiController extends Controller
         $perPage = min((int) $request->integer('per_page', 50) ?: 50, self::MAX_PER_PAGE);
 
         $requests = LeaveRequest::query()
+            ->where('organization_id', $this->organizationId($request))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->orderByDesc('id')
             ->paginate($perPage);

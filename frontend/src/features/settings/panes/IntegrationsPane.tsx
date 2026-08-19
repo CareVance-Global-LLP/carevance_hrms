@@ -4,8 +4,12 @@ import { Link } from 'react-router-dom';
 import Button from '@/components/ui/Button';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { useAuth } from '@/contexts/AuthContext';
+import { hasAdminAccess } from '@/lib/permissions';
 import SettingsCard from '../components/SettingsCard';
 import SettingRow from '../components/SettingRow';
+import ApiKeysSection from '../components/ApiKeysSection';
+import WebhooksSection from '../components/WebhooksSection';
 import type { SettingsTabId } from '../types';
 
 interface IntegrationsPaneProps {
@@ -18,6 +22,7 @@ interface IntegrationsPaneProps {
  * "Ready" badges were string literals in the JSX — nothing was ever checked.
  */
 export default function IntegrationsPane({ onOpenTab }: IntegrationsPaneProps) {
+  const { user } = useAuth();
   const isDesktopConnected = Boolean(window.desktopTracker);
   const [desktopVersion, setDesktopVersion] = useState<string | null>(null);
 
@@ -42,6 +47,15 @@ export default function IntegrationsPane({ onOpenTab }: IntegrationsPaneProps) {
 
   return (
     <div className="space-y-4">
+      {/* Keys and webhooks are credentials and data destinations, so only an
+          admin sees or manages them. */}
+      {hasAdminAccess(user) && (
+        <>
+          <ApiKeysSection />
+          <WebhooksSection />
+        </>
+      )}
+
       <SettingsCard
         title="Connected to this workspace"
         description="Checked live, each time this page opens."

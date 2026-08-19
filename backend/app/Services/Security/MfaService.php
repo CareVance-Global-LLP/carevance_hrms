@@ -262,6 +262,23 @@ class MfaService
         return in_array($policy, ['off', 'grace', 'enforced'], true) ? $policy : 'grace';
     }
 
+    /**
+     * When this organisation's grace window closes, or null if none is set.
+     *
+     * Null means "no deadline", and under the `grace` policy that means nobody
+     * is blocked. That is deliberate and was learned the hard way.
+     *
+     * This previously defaulted to `organization.created_at + 14 days`, which
+     * sounds reasonable and is catastrophic: every organisation that existed
+     * before this feature shipped was created more than fourteen days ago, so
+     * the window was already in the past on deploy day and every admin, HR and
+     * payroll user was locked out of the entire API the moment the code went
+     * live — the exact outage the grace period exists to prevent.
+     *
+     * A deadline is therefore something an organisation is given deliberately:
+     * set `security.mfa_grace_ends_at`, or move the policy to `enforced`.
+     * Both are explicit acts by someone who knows their people can enrol.
+     */
     public function graceEndsAt(?Organization $organization): ?CarbonInterface
     {
         if (! $organization) {
@@ -270,18 +287,28 @@ class MfaService
 
         $raw = data_get($organization->settings, 'security.mfa_grace_ends_at');
 
-        if ($raw) {
-            try {
-                return \Carbon\Carbon::parse($raw);
-            } catch (\Throwable) {
-                // Fall through to the default below rather than throwing: a
-                // malformed date must not make the whole app unreachable.
-            }
+        if (! $raw) {
+            return null;
         }
 
-        // No window recorded yet — count from when the organisation was
-        // created, so an existing tenant is not treated as newly enrolled.
-        return $organization->created_at?->copy()->addDays(self::DEFAULT_GRACE_DAYS);
+        try {
+            return \Carbon\Carbon::parse($raw);
+        } catch (\Throwable) {
+            // A malformed date must not make the whole application
+            // unreachable. Treated as "no deadline", which blocks nobody.
+            return null;
+        }
+    }
+
+    /**
+     * A suggested deadline for an organisation turning enforcement on now.
+     *
+     * Offered to the UI so an admin sees a concrete date rather than having to
+     * invent one. Never applied automatically — see graceEndsAt().
+     */
+    public function suggestedGraceDeadline(): CarbonInterface
+    {
+        return now()->addDays(self::DEFAULT_GRACE_DAYS);
     }
 
     /**

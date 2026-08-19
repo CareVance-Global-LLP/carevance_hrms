@@ -9,6 +9,7 @@ import ProfilePane from '@/features/settings/panes/ProfilePane';
 import NotificationsPane from '@/features/settings/panes/NotificationsPane';
 import AppearancePane from '@/features/settings/panes/AppearancePane';
 import SecurityPane from '@/features/settings/panes/SecurityPane';
+import PrivacyPane from '@/features/settings/panes/PrivacyPane';
 import OrganizationPane from '@/features/settings/panes/OrganizationPane';
 import ShiftsPane from '@/features/settings/panes/ShiftsPane';
 import ProductivityPane from '@/features/settings/panes/ProductivityPane';
@@ -23,7 +24,8 @@ const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }>
   profile: { title: 'Profile', description: 'Your details, how you appear to colleagues, and the hours you work to.' },
   notifications: { title: 'Notifications', description: 'Which updates reach you, and how.' },
   appearance: { title: 'Appearance', description: 'How CareVance looks on this device.' },
-  security: { title: 'Security', description: 'Your password and how this account is signed in.' },
+  security: { title: 'Security', description: 'Two-factor authentication, your password, and who can reach this account.' },
+  privacy: { title: 'Privacy', description: 'What is collected about you at work, why, for how long, and what you have agreed to.' },
   organization: { title: 'Organization', description: 'Everything that applies to everyone in this workspace.' },
   shifts: { title: 'Shifts', description: 'The shift patterns this workspace runs, and who works which. A shift decides what a full day is worth counting down to.' },
   productivity: { title: 'Productivity', description: 'How visited domains and apps are counted in reports.' },
@@ -103,6 +105,7 @@ export default function SettingsPage() {
           {activeTab === 'notifications' && <NotificationsPane controller={controller} />}
           {activeTab === 'appearance' && <AppearancePane />}
           {activeTab === 'security' && <SecurityPane controller={controller} />}
+          {activeTab === 'privacy' && <PrivacyPane />}
           {activeTab === 'organization' && <OrganizationPane controller={controller} />}
           {activeTab === 'shifts' && <ShiftsPane />}
           {activeTab === 'productivity' && <ProductivityPane />}

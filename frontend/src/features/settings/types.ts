@@ -3,6 +3,7 @@ export type SettingsTabId =
   | 'notifications'
   | 'appearance'
   | 'security'
+  | 'privacy'
   | 'organization'
   | 'shifts'
   | 'productivity'

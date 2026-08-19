@@ -230,6 +230,62 @@ class IntegrationController extends Controller
         ]);
     }
 
+    /**
+     * Send a failed delivery again, now.
+     *
+     * A delivery log without a retry button makes the customer's only recovery
+     * "ask support" — Stripe and Svix both treat per-delivery retry as the
+     * minimum for a webhook dashboard, and they are right. Attempts reset so
+     * the retry gets a full budget rather than one last try.
+     */
+    public function retryDelivery(Request $request, int $id): JsonResponse
+    {
+        $delivery = WebhookDelivery::query()->find($id);
+
+        if (! $delivery) {
+            return $this->notFound('Delivery not found.');
+        }
+
+        if ($delivery->status === 'delivered') {
+            return response()->json([
+                'success' => false,
+                'message' => 'That delivery already succeeded.',
+                'error_code' => 'ALREADY_DELIVERED',
+            ], 422);
+        }
+
+        $endpoint = WebhookEndpoint::query()->find($delivery->webhook_endpoint_id);
+
+        if (! $endpoint) {
+            return $this->notFound('The endpoint for that delivery no longer exists.');
+        }
+
+        // Retrying into a disabled endpoint would fail immediately and count
+        // against it again. Say why instead.
+        if ($endpoint->disabled_at !== null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Re-enable the endpoint before retrying its deliveries.',
+                'error_code' => 'ENDPOINT_DISABLED',
+            ], 422);
+        }
+
+        $delivery->forceFill([
+            'status' => 'pending',
+            'attempts' => 0,
+            'error' => null,
+            'response_status' => null,
+            'next_attempt_at' => now(),
+        ])->save();
+
+        \App\Jobs\DeliverWebhook::dispatch($delivery->id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Queued for delivery.',
+        ]);
+    }
+
     private function notFound(string $message): JsonResponse
     {
         return response()->json([

@@ -4,10 +4,12 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
-import { resolveUserRoleLabel } from '@/lib/permissions';
+import { hasAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import SettingsCard from '../components/SettingsCard';
 import SettingRow from '../components/SettingRow';
 import PasswordStrength, { evaluatePassword } from '../components/PasswordStrength';
+import TwoFactorSection from '../components/TwoFactorSection';
+import BreakGlassSection from '../components/BreakGlassSection';
 import type { SettingsController } from '../useSettingsController';
 
 /** Best-effort read of the current browser. Nothing here is invented — if the
@@ -106,6 +108,17 @@ export default function SecurityPane({ controller }: { controller: SettingsContr
 
   return (
     <div className="space-y-4">
+      {/*
+        First, above the password. A second factor is the control that survives
+        the password being wrong, and burying it under the thing it protects
+        against gets the ordering backwards.
+      */}
+      <TwoFactorSection />
+
+      {/* Only an admin can allow or end support access, so only an admin is
+          shown the controls. */}
+      {hasAdminAccess(user) && <BreakGlassSection />}
+
       <SettingsCard title="Change password" description="Eight characters or more, with a mix of cases, a number and a symbol.">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <PasswordField

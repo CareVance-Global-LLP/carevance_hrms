@@ -99,7 +99,11 @@ export const shiftSpanMinutes = (start: string, end: string): number | null => {
   if (from === null || to === null) {
     return null;
   }
-  return to - from; // REVERTED FOR EVIDENCE: no midnight roll
+  // The end belongs to the next calendar day whenever it is not strictly after
+  // the start. `to === from` therefore reads as a full twenty-four hours, which
+  // is the only value consistent with the rule — and the same one
+  // Shift::spanMinutes() produces on the server.
+  return to > from ? to - from : to - from + 24 * 60;
 };
 
 /** Whether the shift finishes on the calendar day after it starts. */
