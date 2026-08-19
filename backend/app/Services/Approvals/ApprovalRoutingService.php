@@ -36,6 +36,24 @@ class ApprovalRoutingService
     }
 
     /**
+     * Memoised for the life of the request.
+     *
+     * The leave index decorates every row with its approval destination, and
+     * each decoration resolved the reviewer set from scratch — group lookups,
+     * the org-wide admin scan, and a `with('customRole')` load on all of it.
+     * A page of leave requests issued the same roles query 697 times.
+     *
+     * Safe to cache: the answer depends only on the requester and the
+     * organisation's staffing, neither of which changes inside one request.
+     *
+     * @var array<int, Collection<int, int>>
+     */
+    private array $reviewerCache = [];
+
+    /** @var array<string, Collection<int, int>> */
+    private array $adminCache = [];
+
+    /**
      * @return Collection<int, int>
      */
     public function reviewerUserIds(User $requester): Collection
@@ -44,11 +62,18 @@ class ApprovalRoutingService
             return collect();
         }
 
+        $cacheKey = (int) $requester->id;
+        if (isset($this->reviewerCache[$cacheKey])) {
+            return $this->reviewerCache[$cacheKey];
+        }
+
         $requesterLevel = $this->userHierarchyLevel($requester);
 
         // Admins can self-review (no external reviewer needed)
         if ($requesterLevel <= 10) {
-            return collect();
+            // Cached like every other outcome — an early return that skips the
+            // cache re-resolves this requester on every row of a listing.
+            return $this->reviewerCache[$cacheKey] = collect();
         }
 
         // Find direct reporting manager first (if they are the nearest superior)
@@ -63,7 +88,7 @@ class ApprovalRoutingService
             ? $this->organizationAdminIds($requester)
             : collect();
 
-        return $directManagerIds
+        $resolved = $directManagerIds
             ->concat($nearestReviewerIds)
             ->concat($adminIds)
             /*
@@ -83,6 +108,8 @@ class ApprovalRoutingService
             ->reject(fn ($id) => (int) $id === (int) $requester->id)
             ->unique()
             ->values();
+
+        return $this->reviewerCache[$cacheKey] = $resolved;
     }
 
     public function canReview(User $reviewer, User $requester): bool
@@ -298,6 +325,37 @@ class ApprovalRoutingService
      *
      * @return Collection<int, int>
      */
+    /*
+     * currentReviewerIds() is called once per row when a listing renders, and
+     * every call re-read the same reviewers and their custom roles — a page of
+     * leave requests issued the identical roles query 323 times. The reviewer
+     * set repeats heavily across rows, so levels are resolved once per distinct
+     * set of ids.
+     *
+     * @var array<string, Collection<int, array{id: int, level: int}>>
+     */
+    private array $holderLevelCache = [];
+
+    /**
+     * @param  Collection<int, int>  $ids
+     * @return Collection<int, array{id: int, level: int}>
+     */
+    private function hierarchyLevelsFor(Collection $ids): Collection
+    {
+        $key = implode(',', $ids->map(fn ($id) => (int) $id)->sort()->values()->all());
+
+        return $this->holderLevelCache[$key] ??= User::query()
+            ->whereIn('id', $ids)
+            ->with('customRole')
+            ->get(['id', 'organization_id', 'role', 'role_id'])
+            ->map(fn (User $candidate) => [
+                'id' => (int) $candidate->id,
+                'level' => $this->userHierarchyLevel($candidate),
+            ])
+            ->sortBy('level')
+            ->values();
+    }
+
     public function currentReviewerIds(User $requester, ?int $escalatedToUserId): Collection
     {
         if ($escalatedToUserId) {
@@ -309,16 +367,7 @@ class ApprovalRoutingService
             return collect();
         }
 
-        $holders = User::query()
-            ->whereIn('id', $ids)
-            ->with('customRole')
-            ->get(['id', 'organization_id', 'role', 'role_id'])
-            ->map(fn (User $candidate) => [
-                'id' => (int) $candidate->id,
-                'level' => $this->userHierarchyLevel($candidate),
-            ])
-            ->sortBy('level')
-            ->values();
+        $holders = $this->hierarchyLevelsFor($ids);
 
         if ($holders->isEmpty()) {
             return collect();
@@ -557,7 +606,10 @@ class ApprovalRoutingService
      */
     public function organizationAdminIds(User $requester): Collection
     {
-        return User::query()
+        // Same reason: an org-wide scan repeated once per decorated row.
+        $cacheKey = $requester->organization_id.':'.$requester->id;
+
+        return $this->adminCache[$cacheKey] ??= User::query()
             ->where('organization_id', $requester->organization_id)
             ->where('id', '!=', (int) $requester->id)
             ->with('customRole')

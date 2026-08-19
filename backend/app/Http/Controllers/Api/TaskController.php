@@ -59,8 +59,22 @@ class TaskController extends Controller
             return response()->json([]);
         }
 
+        /*
+         * The assignee columns are pinned rather than left to `select *`.
+         * This list is unpaginated, so every column is serialised once per
+         * task — 450 tasks meant 450 full User rows including `settings`,
+         * `password` and the Google token columns, ~85 ms of json_encode and
+         * 105 KB of payload for fields nothing reads. The set below is what the
+         * clients actually use (id, name, email, avatar) plus the columns the
+         * appended accessors resolve from: `deactivated_at` for is_active,
+         * `last_seen_at` for is_online, and `settings` + `organization_id` for
+         * effective_monitoring_interval_minutes. Dropping any of those would
+         * not fail — it would silently change the value they report.
+         */
+        $assigneeColumns = 'id,name,email,avatar,role,role_id,organization_id,last_seen_at,deactivated_at,settings';
+
         $tasks = $this->scopedTasksQuery($user)
-            ->with(['group', 'project', 'assignee', 'assignees'])
+            ->with(['group', 'project', "assignee:{$assigneeColumns}", "assignees:{$assigneeColumns}"])
             // Scoped to the requested range when one is given, so a time report
             // can ask "what was tracked in July" instead of only ever summing
             // every entry a task has ever had. With no dates this is identical

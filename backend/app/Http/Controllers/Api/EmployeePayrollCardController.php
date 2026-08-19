@@ -26,7 +26,10 @@ class EmployeePayrollCardController extends Controller
         $stateCode = $request->query('state');
 
         $query = User::query()
-            ->with(['employeeProfile', 'employeePayrollTemplate', 'payGroupAssignments.payGroup', 'groups'])
+            // salaryTemplate eager-loaded: the map below reached for it per
+            // employee, so a roster of seventeen issued 204 identical
+            // salary_templates lookups. show() already loads it this way.
+            ->with(['employeeProfile', 'employeePayrollTemplate.salaryTemplate', 'payGroupAssignments.payGroup', 'groups'])
             ->where('organization_id', $user->organization_id);
 
         if ($departmentId) {
@@ -52,9 +55,7 @@ class EmployeePayrollCardController extends Controller
             $template = $emp->employeePayrollTemplate;
             $payGroupAssignment = $emp->payGroupAssignments->first();
             $payGroup = $payGroupAssignment?->payGroup;
-            $salaryTemplate = $template?->salary_template_id
-                ? SalaryTemplate::find($template->salary_template_id)
-                : null;
+            $salaryTemplate = $template?->salaryTemplate;
             $dept = $emp->groups->first();
 
             return [
