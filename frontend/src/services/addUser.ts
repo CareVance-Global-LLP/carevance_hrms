@@ -795,11 +795,17 @@ export const addUserService = {
      * admin opened demonstrated the confusing arrangement rather than the clear
      * one. The parser still accepts `role` as an alias for files exported from
      * elsewhere; the template no longer teaches it.
+     *
+     * employee_code is included even though it is optional. It is the one
+     * column an organisation cannot reconstruct later without asking every
+     * person individually, and a bulk import is the only practical moment to
+     * carry hundreds of them across from a previous system — so leaving it out
+     * of the very file people learn the format from is how it gets missed.
      */
     const template = [
-      'email,name,access_role,job_title,departments,projects,joining_date,timezone',
-      'alex@example.com,Alex Johnson,employee,Software Engineer,"Operations|Night Shift","CareVance HRMS",2026-09-01,Asia/Kolkata',
-      'jordan@example.com,Jordan Lee,manager,Team Lead,"Operations","Implementation",2026-09-15,America/New_York',
+      'email,name,access_role,employee_code,job_title,departments,projects,joining_date,timezone',
+      'alex@example.com,Alex Johnson,employee,EMP-001,Software Engineer,"Operations|Night Shift","CareVance HRMS",2026-09-01,Asia/Kolkata',
+      'jordan@example.com,Jordan Lee,manager,EMP-002,Team Lead,"Operations","Implementation",2026-09-15,America/New_York',
     ].join('\n');
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
