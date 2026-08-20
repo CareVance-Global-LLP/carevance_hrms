@@ -74,7 +74,17 @@ class TaskController extends Controller
         $assigneeColumns = 'id,name,email,avatar,role,role_id,organization_id,last_seen_at,deactivated_at,settings';
 
         $tasks = $this->scopedTasksQuery($user)
-            ->with(['group', 'project', "assignee:{$assigneeColumns}", "assignees:{$assigneeColumns}"])
+            ->with([
+                'group',
+                'project',
+                "assignee:{$assigneeColumns}",
+                "assignees:{$assigneeColumns}",
+                // Pinned to the columns the UI reads, for the same reason the
+                // assignee columns are: this list is unpaginated, so an unpinned
+                // relation is a full row per task.
+                'creator:id,name,avatar',
+                'parent:id,number,title',
+            ])
             // Scoped to the requested range when one is given, so a time report
             // can ask "what was tracked in July" instead of only ever summing
             // every entry a task has ever had. With no dates this is identical
@@ -143,6 +153,9 @@ class TaskController extends Controller
             'group_id' => 'required|exists:groups,id',
             'project_id' => 'nullable|exists:projects,id',
             'status' => 'nullable|in:todo,in_progress,in_review,done',
+            'type' => 'nullable|in:'.implode(',', Task::TYPES),
+            'resolution' => 'nullable|in:'.implode(',', Task::RESOLUTIONS),
+            'parent_id' => 'nullable|integer|exists:tasks,id',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
             'assignee_ids' => 'nullable|array',
@@ -191,19 +204,30 @@ class TaskController extends Controller
             $assignees->push($assignee);
         }
 
+        $parent = $this->resolveParentTask($user, $request->parent_id ? (int) $request->parent_id : null);
+        if ($parent instanceof JsonResponse) {
+            return $parent;
+        }
+
         $task = Task::create([
             'title' => $request->title,
             'description' => $request->description,
             'group_id' => $group->id,
             'project_id' => $project?->id,
+            'parent_id' => $parent?->id,
             'status' => $request->status ?? 'todo',
+            'type' => $request->type ?? 'task',
             'priority' => $request->priority ?? 'medium',
             'assignee_id' => $assignee?->id,
+            // Who RAISED it, as opposed to who is doing it. Taken from the
+            // authenticated caller rather than the request body: a reporter a
+            // client can nominate is not a record of anything.
+            'created_by' => $user->id,
             'due_date' => $request->due_date,
             'estimated_time' => $request->estimated_time,
             'remind_at' => $request->remind_at,
         ]);
-        $task->assignees()->sync($assignees->pluck('id')->all());
+        $task->syncAssignees($assignees->pluck('id')->all());
 
         if ($request->filled('label_ids')) {
             $task->labels()->sync($request->input('label_ids', []));
@@ -227,7 +251,18 @@ class TaskController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $task->load(['group', 'project', 'timeEntries', 'assignee', 'assignees']);
+        $task->load([
+            'group',
+            'project',
+            'timeEntries',
+            'assignee',
+            'assignees',
+            'creator:id,name,avatar',
+            'parent:id,number,title',
+            // The detail panel renders the pieces a task breaks into, with each
+            // one's own key and status.
+            'children:id,parent_id,number,title,status',
+        ]);
         return response()->json($task);
     }
 
@@ -248,6 +283,9 @@ class TaskController extends Controller
             'group_id' => 'nullable|exists:groups,id',
             'project_id' => 'nullable|exists:projects,id',
             'status' => 'nullable|in:todo,in_progress,in_review,done',
+            'type' => 'nullable|in:'.implode(',', Task::TYPES),
+            'resolution' => 'nullable|in:'.implode(',', Task::RESOLUTIONS),
+            'parent_id' => 'nullable|integer|exists:tasks,id',
             'priority' => 'nullable|in:low,medium,high,urgent',
             'assignee_id' => 'nullable|exists:users,id',
             'assignee_ids' => 'nullable|array',
@@ -302,7 +340,41 @@ class TaskController extends Controller
             $assignees->push($assignee);
         }
 
-        $payload = $request->only(['title', 'description', 'status', 'priority', 'due_date', 'estimated_time', 'remind_at']);
+        $payload = $request->only(['title', 'description', 'status', 'type', 'priority', 'due_date', 'estimated_time', 'remind_at']);
+
+        if ($request->exists('parent_id')) {
+            $parent = $this->resolveParentTask($user, $request->parent_id ? (int) $request->parent_id : null);
+            if ($parent instanceof JsonResponse) {
+                return $parent;
+            }
+
+            if ($this->wouldFormCycle($task, $parent)) {
+                return response()->json([
+                    'message' => 'A task cannot be nested under itself or under one of its own pieces.',
+                ], 422);
+            }
+
+            $payload['parent_id'] = $parent?->id;
+        }
+
+        /*
+         * Resolution is tied to status rather than free.
+         *
+         * A resolution on an open task claims an outcome that has not happened,
+         * and a closed task with none is the "done, but done HOW?" hole this
+         * field exists to close. Clearing it on reopen matters most: without
+         * that, a task reopened after being marked `duplicate` keeps saying
+         * duplicate while sitting in progress.
+         */
+        $nextStatus = $payload['status'] ?? $task->status;
+        if ($request->exists('resolution')) {
+            $payload['resolution'] = $request->resolution ?: null;
+        }
+        if ($nextStatus !== 'done') {
+            $payload['resolution'] = null;
+        } elseif (empty($payload['resolution']) && empty($task->resolution)) {
+            $payload['resolution'] = 'fixed';
+        }
 
         if ($request->exists('group_id')) {
             $payload['group_id'] = $resolvedGroup->id;
@@ -320,7 +392,7 @@ class TaskController extends Controller
         $newAssigneeIds = $assignees->pluck('id')->all();
 
         if ($request->exists('assignee_ids') || $request->exists('assignee_id') || $request->exists('group_id')) {
-            $task->assignees()->sync($newAssigneeIds);
+            $task->syncAssignees($newAssigneeIds);
         }
 
         if ($request->exists('label_ids')) {
@@ -947,6 +1019,69 @@ class TaskController extends Controller
             ->with(['group', 'project', 'assignee', 'assignees'])
             ->where('id', $id)
             ->first();
+    }
+
+    /**
+     * The task a new or updated task hangs under.
+     *
+     * Three refusals, each of which corrupts the tree in a different way:
+     *
+     * - a parent in another organization would make the child reachable from a
+     *   tenant that does not own it;
+     * - a task cannot parent itself;
+     * - the hierarchy is ONE level deep. A parent that already has a parent is
+     *   refused, which keeps "a feature and its pieces" expressible while
+     *   ruling out arbitrarily deep trees. Depth is easy to add later and very
+     *   hard to remove once people have built structures on it, so it stays
+     *   shut until somebody asks.
+     *
+     * Returns null when no parent was requested, the Task when it is usable,
+     * and a JsonResponse the caller must return when it is not.
+     */
+    private function resolveParentTask(User $user, ?int $parentId): Task|JsonResponse|null
+    {
+        if (! $parentId) {
+            return null;
+        }
+
+        $parent = Task::query()->find($parentId);
+
+        if (! $parent) {
+            return response()->json(['message' => 'That parent task does not exist.'], 422);
+        }
+
+        if ((int) $parent->organization_id !== (int) $user->organization_id) {
+            return response()->json(['message' => 'That parent task does not exist.'], 422);
+        }
+
+        if ($parent->parent_id !== null) {
+            return response()->json([
+                'message' => 'Tasks can only be nested one level deep. Choose a top-level task as the parent.',
+            ], 422);
+        }
+
+        return $parent;
+    }
+
+    /**
+     * Refuse a parent change that would make a task its own ancestor.
+     *
+     * Separate from resolveParentTask because it is only reachable on UPDATE:
+     * a task being created has no children yet, so it cannot form a cycle.
+     */
+    private function wouldFormCycle(Task $task, ?Task $parent): bool
+    {
+        if (! $parent) {
+            return false;
+        }
+
+        if ((int) $parent->id === (int) $task->id) {
+            return true;
+        }
+
+        // One level deep means a task with children can never become a child,
+        // or its own children would end up at depth two.
+        return $task->children()->exists();
     }
 
     private function scopedTasksQuery(User $user): Builder

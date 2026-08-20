@@ -4,7 +4,7 @@ import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import type { Group, Project, Task, TaskLabel, User } from '@/types';
 import { getReadableTextColor } from '@/utils/getContrastColor';
-import { PRIORITY_OPTIONS, STATUS_OPTIONS, type TaskPriority, type TaskStatus } from './taskConstants';
+import { PRIORITY_OPTIONS, TYPE_OPTIONS, STATUS_OPTIONS, type TaskPriority, type TaskStatus } from './taskConstants';
 import { titleCase } from './taskUtils';
 
 export interface TaskFormState {
@@ -15,6 +15,8 @@ export interface TaskFormState {
   assignee_id: string;
   assignee_ids: string[];
   status: TaskStatus;
+  /** Bug / Story / Epic / Task — what kind of work this is. */
+  type: NonNullable<Task['type']>;
   priority: TaskPriority;
   due_date: string;
   estimated_time: string;
@@ -30,6 +32,7 @@ export const createTaskFormState = (groupId = '', status: TaskStatus = 'todo'): 
   assignee_id: '',
   assignee_ids: [],
   status,
+  type: 'task',
   priority: 'medium',
   due_date: '',
   estimated_time: '',
@@ -52,6 +55,7 @@ export const taskToFormState = (task: Task): TaskFormState => ({
   assignee_id: task.assignee_id ? String(task.assignee_id) : '',
   assignee_ids: task.assignees?.map((member) => String(member.id)) || (task.assignee_id ? [String(task.assignee_id)] : []),
   status: task.status,
+  type: task.type || 'task',
   priority: task.priority || 'medium',
   due_date: task.due_date?.split('T')[0] || '',
   estimated_time: task.estimated_time ? String(task.estimated_time) : '',
@@ -246,6 +250,20 @@ export default function TaskComposerModal({
                 onChange={(event) => onChange({ status: event.target.value as TaskStatus })}
               >
                 {STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </SelectInput>
+            </div>
+
+            <div>
+              <FieldLabel>Type</FieldLabel>
+              <SelectInput
+                value={form.type}
+                onChange={(event) => onChange({ type: event.target.value as NonNullable<Task['type']> })}
+              >
+                {TYPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>

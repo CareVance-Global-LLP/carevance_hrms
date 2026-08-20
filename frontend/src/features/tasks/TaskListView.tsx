@@ -14,6 +14,7 @@ import {
   sortTasks,
   titleCase,
 } from './taskUtils';
+import { TaskKey, TaskResolutionChip, TaskTypeChip } from './TaskIdentity';
 
 interface TaskListViewProps {
   tasks: Task[];
@@ -129,6 +130,8 @@ export default function TaskListView({
                         onClick={() => onOpenTask(task)}
                         className="flex w-full items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                       >
+                        <TaskKey task={task} />
+                        <TaskTypeChip task={task} />
                         <span
                           className={cn(
                             'truncate font-medium',
@@ -137,6 +140,7 @@ export default function TaskListView({
                         >
                           {task.title}
                         </span>
+                        <TaskResolutionChip task={task} />
                         {task.labels?.slice(0, 2).map((label) => (
                           <span
                             key={label.id}

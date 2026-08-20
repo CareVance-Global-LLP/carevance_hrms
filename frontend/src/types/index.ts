@@ -103,14 +103,36 @@ export interface Project {
 }
 
 // Task Types
+/** What kind of work a task is. A bug and a feature are not the same thing to report on. */
+export type TaskType = 'task' | 'bug' | 'story' | 'epic';
+
+/**
+ * How a task ENDED, which `status` cannot say — `done` alone cannot tell
+ * shipped from abandoned from duplicate. Null while the task is still open.
+ */
+export type TaskResolution = 'fixed' | 'wont_do' | 'duplicate' | 'cannot_reproduce';
+
 export interface Task {
   id: number;
+  /** Per-organization shareable identifier, e.g. `CV-14`. */
+  key?: string | null;
+  number?: number | null;
+  organization_id?: number | null;
   group_id?: number | null;
   project_id?: number | null;
+  /** The task this one is a piece of. The hierarchy is one level deep. */
+  parent_id?: number | null;
   assignee_id?: number | null;
+  /** Who raised it, as opposed to who is doing it. */
+  created_by?: number | null;
+  creator?: User | null;
+  parent?: Task | null;
+  children?: Task[];
   title: string;
   description?: string;
   status: 'todo' | 'in_progress' | 'in_review' | 'done';
+  type?: TaskType;
+  resolution?: TaskResolution | null;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   due_date?: string;
   estimated_time?: number;
