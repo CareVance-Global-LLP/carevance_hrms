@@ -4,6 +4,8 @@ namespace App\Services\Reports;
 
 use App\Services\Monitoring\ProductivityClassifier;
 use App\Services\Attendance\UserTimezoneResolver;
+use App\Services\Monitoring\TrackerPolicyResolver;
+use App\Models\User;
 use App\Support\ExternalTimestamp;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -17,8 +19,17 @@ class UsageProcessingService
         private readonly ActivityProductivityService $activityProductivityService,
         private readonly ProductivityClassifier $productivityClassifier,
         private readonly UserTimezoneResolver $userTimezoneResolver,
+        private readonly TrackerPolicyResolver $trackerPolicy,
     ) {
     }
+
+    /**
+     * Memoised per-user idle thresholds, so resolving one per log row does not
+     * re-read the organization's settings for every row of an org-wide report.
+     *
+     * @var array<int, int>
+     */
+    private array $idleThresholdCache = [];
 
     public function describeTool(?string $tool, ?string $activityType = 'app'): array
     {
@@ -1289,10 +1300,12 @@ class UsageProcessingService
 
     private function inferIdleFromActivityEvents(Collection $activeLogs, Collection $activityEvents): Collection
     {
-        $threshold = $this->resolveIdleThresholdSeconds();
         $rows = [];
 
         foreach ($activeLogs as $activeLog) {
+            // See inferIdleFromSourceSilence: resolved per row so a mixed-tenant
+            // report cannot apply one person's threshold to another's silence.
+            $threshold = $this->resolveIdleThresholdSeconds($activeLog['user_id'] ?? null);
             $activityTimes = $activityEvents
                 ->filter(fn (Carbon $timestamp) => $timestamp->getTimestamp() >= (int) ($activeLog['start_timestamp'] ?? 0) && $timestamp->getTimestamp() <= (int) ($activeLog['end_timestamp'] ?? 0))
                 ->values();
@@ -1323,18 +1336,79 @@ class UsageProcessingService
         return collect($rows)->filter()->values();
     }
 
-    private function resolveIdleThresholdSeconds(): int
+    /**
+     * How long a silence has to run before this person's time is called idle.
+     *
+     * Resolves the organization's configured "mark as idle after" — the same
+     * `idle_track_threshold_seconds` the desktop tracker obeys — rather than a
+     * fixed number.
+     *
+     * It used to return a hard 180 from config, which was not settable per
+     * organization or even by environment: one literal in a file for every
+     * tenant. So an organization that had chosen ten minutes still had these
+     * reports call three-minute gaps idle, and the setting screen described
+     * behaviour only the tracker actually followed. Inferred idle is subtracted
+     * from worked time, so the disagreement did not stop at a report — it
+     * reached what people were paid.
+     *
+     * Falls back to the config value when there is no user to resolve against,
+     * which keeps aggregate paths behaving exactly as before.
+     */
+    private function resolveIdleThresholdSeconds(int|string|null $userId = null): int
     {
-        return max(30, (int) config('usage_processing.normalization.idle_threshold_seconds', 180));
+        $configured = max(30, (int) config('usage_processing.normalization.idle_threshold_seconds', 180));
+
+        $key = (int) $userId;
+        if ($key <= 0) {
+            return $configured;
+        }
+
+        if (array_key_exists($key, $this->idleThresholdCache)) {
+            return $this->idleThresholdCache[$key];
+        }
+
+        $resolved = $configured;
+
+        /*
+         * Tolerant of having no database.
+         *
+         * summarizeIdleDurations() is documented as an in-memory overload that
+         * "takes raw arrays with no database in scope", and it reaches this
+         * method — so a lookup that throws would turn a pure calculation into
+         * something that needs a connection. Falling back to the configured
+         * default keeps every such caller working exactly as it did.
+         *
+         * Plain find(): User is deliberately outside BelongsToOrganization —
+         * its scope resolves the acting user through Auth — so there is no
+         * organization scope to step around here.
+         */
+        try {
+            $user = User::find($key);
+
+            if ($user) {
+                $threshold = (int) ($this->trackerPolicy->resolveForUser($user)['idle_track_threshold_seconds'] ?? 0);
+                if ($threshold > 0) {
+                    $resolved = max(30, $threshold);
+                }
+            }
+        } catch (Throwable) {
+            // Keep $configured. An unresolvable policy must not be able to
+            // change somebody's idle time by accident.
+        }
+
+        return $this->idleThresholdCache[$key] = $resolved;
     }
 
     private function inferIdleFromSourceSilence(Collection $activeLogs): Collection
     {
-        $threshold = $this->resolveIdleThresholdSeconds();
         $rows = [];
         $gapRows = [];
 
         foreach ($activeLogs as $activeLog) {
+            // Per row, not once for the whole collection: an org-wide report
+            // mixes people, and after this change they no longer necessarily
+            // share a threshold. Memoised, so this is one lookup per user.
+            $threshold = $this->resolveIdleThresholdSeconds($activeLog['user_id'] ?? null);
             $timestamps = collect((array) ($activeLog['source_recorded_timestamps'] ?? []))
                 ->map(fn ($timestamp) => (int) $timestamp)
                 ->filter(fn ($timestamp) => $timestamp > 0)
@@ -1376,6 +1450,13 @@ class UsageProcessingService
             if ($sortedLogs->count() < 2) {
                 continue;
             }
+
+            // Resolved again for this group. The loop above defines $threshold
+            // per row inside its own scope, so relying on it here would read
+            // whichever value that loop happened to leave behind — one person's
+            // threshold silently applied to another's silence, and no value at
+            // all when the first loop never ran.
+            $threshold = $this->resolveIdleThresholdSeconds($sortedLogs[0]['user_id'] ?? null);
 
             for ($index = 0; $index < $sortedLogs->count() - 1; $index++) {
                 $current = $sortedLogs[$index];

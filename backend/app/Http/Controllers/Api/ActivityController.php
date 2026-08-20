@@ -360,9 +360,35 @@ class ActivityController extends Controller
      * Anything that is not a URL is returned untouched — most names are a
      * window title, not an address.
      */
+    /**
+     * Undo the HTML escaping that SanitizeInput applied on the way in.
+     *
+     * SanitizeInput runs htmlspecialchars() over every request field, so a
+     * window title containing a quote is STORED as `&quot;`. Nothing then
+     * decodes it, and React escapes again when it renders — so the timeline
+     * showed a Google search as
+     * `site:linkedin.com/in/ (&quot;Business Loan&quot; OR ...)`, entities and
+     * all. The escaping is for a context this value never reaches: these names
+     * are rendered as text, never as markup.
+     *
+     * Decoded here, at the display boundary, so it repairs rows already in the
+     * database as well as new ones. Safe because every consumer re-escapes for
+     * its own context — React on render — and because this only ever turns
+     * entities back into the characters the person actually saw on screen.
+     */
+    private function decodeStoredEntities(?string $value): string
+    {
+        $value = (string) $value;
+        if ($value === '' || ! str_contains($value, '&')) {
+            return $value;
+        }
+
+        return html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    }
+
     private function stripUrlSecrets(?string $value): string
     {
-        $value = trim((string) $value);
+        $value = trim($this->decodeStoredEntities($value));
         if ($value === '' || ! preg_match('#^[a-z][a-z0-9+.-]*://#i', $value)) {
             return $value;
         }
@@ -454,6 +480,7 @@ class ActivityController extends Controller
             'time_entry_id' => $item->time_entry_id ? (int) $item->time_entry_id : null,
             'type' => (string) ($item->type ?? 'app'),
             'name' => $this->stripUrlSecrets((string) ($item->name ?? 'Unknown')),
+            'window_title' => $this->decodeStoredEntities($item->window_title ?? null) ?: null,
             'duration' => max(0, (int) ($item->duration ?? 0)),
             'recorded_at' => $item->recorded_at instanceof Carbon
                 ? (string) $this->formatApiTimestamp($item->recorded_at, $itemUserId)
