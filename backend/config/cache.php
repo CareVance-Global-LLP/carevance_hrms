@@ -22,7 +22,23 @@ return [
     | that load off the primary without requiring an existing deployment to
     | change anything.
     */
-    'default' => env('CACHE_STORE', env('REDIS_HOST') ? 'redis' : 'database'),
+    /*
+     * Deliberately NOT `env('REDIS_HOST') ? 'redis' : 'database'`.
+     *
+     * That fallback means merely HAVING Redis credentials in .env silently
+     * rewires the cache to Redis — and .env.example ships REDIS_HOST=127.0.0.1,
+     * so every deployment inherits them whether or not a Redis is running. No
+     * environment here has the phpredis extension installed, so the result was
+     * `Class "Redis" not found`, thrown from ThrottleRequests -> RateLimiter ->
+     * RedisStore before the controller was ever reached. Every throttled route
+     * 500s, which on this app means login, check-email, register and password
+     * reset: the entire way in. Observed locally 19 Aug 2026 and in the AWS
+     * deployment on 20 Aug 2026.
+     *
+     * Redis is now opt-in by naming it explicitly, which is the only form of
+     * that choice that can be reviewed.
+     */
+    'default' => env('CACHE_STORE', 'database'),
 
     /*
     |--------------------------------------------------------------------------

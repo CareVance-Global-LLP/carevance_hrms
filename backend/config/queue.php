@@ -21,7 +21,8 @@ return [
     | it payroll processing returns 202 and then never happens. /api/health
     | now reports a stalled queue so that failure is visible.
     */
-    'default' => env('QUEUE_CONNECTION', env('REDIS_HOST') ? 'redis' : 'database'),
+    // Opt-in only — see the note in config/cache.php.
+    'default' => env('QUEUE_CONNECTION', 'database'),
 
     /*
     |--------------------------------------------------------------------------
