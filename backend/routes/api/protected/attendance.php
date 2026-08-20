@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AttendanceController;
+use App\Http\Controllers\Api\AttendanceDayOutcomeController;
 use App\Http\Controllers\Api\AttendanceHolidayController;
 use App\Http\Controllers\Api\AttendanceSelfieController;
 use App\Http\Controllers\Api\AttendanceTimeEditRequestController;
@@ -14,6 +15,9 @@ Route::get('/attendance/today', [AttendanceController::class, 'today']);
 Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
 Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
 Route::get('/attendance/calendar', [AttendanceController::class, 'calendar']);
+// The calendar says what happened; this says what it COST and why. Kept apart
+// because a month of penalisation outcomes walks an exemption cycle per day.
+Route::get('/attendance/day-outcomes', [AttendanceDayOutcomeController::class, 'index']);
 Route::post('/attendance/selfie', [AttendanceSelfieController::class, 'upload']);
 Route::get('/attendance/selfies/today', [AttendanceSelfieController::class, 'todayStatus']);
 Route::get('/attendance/selfies/map', [AttendanceSelfieController::class, 'mapData'])->middleware('role:admin,manager');

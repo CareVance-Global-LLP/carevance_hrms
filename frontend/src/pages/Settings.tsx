@@ -12,6 +12,7 @@ import SecurityPane from '@/features/settings/panes/SecurityPane';
 import PrivacyPane from '@/features/settings/panes/PrivacyPane';
 import OrganizationPane from '@/features/settings/panes/OrganizationPane';
 import ShiftsPane from '@/features/settings/panes/ShiftsPane';
+import WorkingTimePane from '@/features/settings/panes/WorkingTimePane';
 import ProductivityPane from '@/features/settings/panes/ProductivityPane';
 import IntegrationsPane from '@/features/settings/panes/IntegrationsPane';
 import CustomFieldsPane from '@/features/settings/panes/CustomFieldsPane';
@@ -28,6 +29,7 @@ const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }>
   privacy: { title: 'Privacy', description: 'What is collected about you at work, why, for how long, and what you have agreed to.' },
   organization: { title: 'Organization', description: 'Everything that applies to everyone in this workspace.' },
   shifts: { title: 'Shifts', description: 'The shift patterns this workspace runs, and who works which. A shift decides what a full day is worth counting down to.' },
+  'working-time': { title: 'Working time', description: 'Weekly off, penalisation, overtime and shift allowance. Four policies, each created once and assigned to whoever it applies to — a shift decides the timings, these decide what they are worth.' },
   productivity: { title: 'Productivity', description: 'How visited domains and apps are counted in reports.' },
   integrations: { title: 'Integrations', description: 'What CareVance is connected to right now.' },
   'custom-fields': { title: 'Custom fields', description: 'Extra data you want on every employee record.' },
@@ -108,6 +110,7 @@ export default function SettingsPage() {
           {activeTab === 'privacy' && <PrivacyPane />}
           {activeTab === 'organization' && <OrganizationPane controller={controller} />}
           {activeTab === 'shifts' && <ShiftsPane />}
+          {activeTab === 'working-time' && <WorkingTimePane />}
           {activeTab === 'productivity' && <ProductivityPane />}
           {activeTab === 'integrations' && (
             <IntegrationsPane onOpenTab={handleTabChange} />

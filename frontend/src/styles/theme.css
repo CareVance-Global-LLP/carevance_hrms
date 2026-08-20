@@ -569,6 +569,33 @@
   );
 }
 
+/*
+ * The assistant panel arriving. It is anchored to a launcher in the corner, so
+ * it reads as opening out of that corner rather than appearing on top of the
+ * page — a short rise is enough to say so, and anything longer gets tiring on a
+ * surface people open dozens of times a day.
+ */
+@keyframes chat-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chat-panel-enter {
+  animation: chat-panel-enter 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel-enter {
+    animation: none;
+  }
+}
+
 body {
   background-color: rgb(var(--app-bg));
   color: rgb(var(--n-900));

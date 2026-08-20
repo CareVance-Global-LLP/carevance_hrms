@@ -6,6 +6,7 @@ export type SettingsTabId =
   | 'privacy'
   | 'organization'
   | 'shifts'
+  | 'working-time'
   | 'productivity'
   | 'integrations'
   | 'custom-fields'

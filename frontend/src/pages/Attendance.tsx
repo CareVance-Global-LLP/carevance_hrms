@@ -14,6 +14,7 @@ import FilterPanel from '@/components/dashboard/FilterPanel';
 import AttendanceRoster from '@/features/attendance/AttendanceRoster';
 import TeamPresenceBoard from '@/features/attendance/TeamPresenceBoard';
 import OvertimeWorkspace from '@/features/attendance/OvertimeWorkspace';
+import DayOutcomeLedger, { OutcomeChips, OUTCOME_TONE_CLASS } from '@/features/attendance/DayOutcomeLedger';
 import SlideOver from '@/features/employees/SlideOver';
 import LeaveBalanceCards from '@/features/leave/LeaveBalanceCards';
 import WhosOffStrip from '@/features/leave/WhosOffStrip';
@@ -34,6 +35,7 @@ import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson }
 import { formatDateTime as formatDateTimeForTimezone, formatTime as formatTimeForTimezone } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { formatDuration } from '@/lib/formatters';
+import { describeDayOutcome, type DayOutcomePayload } from '@/lib/attendanceDayOutcome';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { RequestEscalateControl } from '@/components/requests/RequestEscalateControl';
 import { Briefcase, Download, FolderKanban, Layers3, Users } from 'lucide-react';
@@ -292,6 +294,17 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [calendarDays, setCalendarDays] = useState<any[]>([]);
   const [calendarSummary, setCalendarSummary] = useState<any | null>(null);
   const [isCalendarLoading, setIsCalendarLoading] = useState(false);
+  /**
+   * What each day COST, from the penalisation and overtime engines.
+   *
+   * Fetched apart from the calendar and never awaited with it: the
+   * penalisation engine walks a whole exemption cycle per day, so the grid
+   * would sit blank behind it. The calendar paints, and the outcomes land on
+   * top when they arrive. An empty map degrades to the old, plainer cell
+   * rather than to a wrong verdict.
+   */
+  const [dayOutcomes, setDayOutcomes] = useState<DayOutcomePayload[]>([]);
+  const [isDayOutcomesLoading, setIsDayOutcomesLoading] = useState(false);
   const [holidayItems, setHolidayItems] = useState<any[]>([]);
   const [isHolidayLoading, setIsHolidayLoading] = useState(false);
   const [isHolidaySubmitting, setIsHolidaySubmitting] = useState(false);
@@ -735,6 +748,30 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     }
   };
 
+  /**
+   * A penalty is always somebody's, so this is per-person only — there is no
+   * "overall" month of outcomes to ask for, and the overall scope simply keeps
+   * the plainer calendar it has always had.
+   */
+  const fetchDayOutcomes = async () => {
+    setIsDayOutcomesLoading(true);
+    try {
+      const res = await attendanceApi.dayOutcomes({
+        month: calendarMonth,
+        user_id: isAdmin ? selectedUserId || undefined : undefined,
+      });
+
+      setDayOutcomes(res.data.days || []);
+    } catch (e) {
+      // Outcomes decorate a calendar that renders without them, so a failure
+      // here must not blank the page — it is reported and the cells stay plain.
+      console.error('Attendance day outcomes fetch failed:', e);
+      setDayOutcomes([]);
+    } finally {
+      setIsDayOutcomesLoading(false);
+    }
+  };
+
   const fetchHolidays = async () => {
     if (!isAdmin) {
       setHolidayItems([]);
@@ -1119,6 +1156,18 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   }, [calendarMonth, calendarScope, countryFilter, isAdmin, mode, selectedUserId]);
 
   useEffect(() => {
+    if (mode !== 'full') return;
+    if (calendarScope === 'overall') {
+      setDayOutcomes([]);
+      return;
+    }
+    if (isAdmin && !selectedUserId) return;
+
+    void fetchDayOutcomes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarMonth, calendarScope, isAdmin, mode, selectedUserId]);
+
+  useEffect(() => {
     if (mode !== 'full' || !isAdmin) return;
     fetchHolidays();
   }, [calendarMonth, isAdmin, mode]);
@@ -1417,6 +1466,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
     for (const d of calendarDays) map.set(d.date, d);
     return map;
   }, [calendarDays]);
+  const outcomeMap = useMemo(() => {
+    const map = new Map<string, DayOutcomePayload>();
+    for (const day of dayOutcomes) {
+      if (day?.date) map.set(String(day.date), day);
+    }
+    return map;
+  }, [dayOutcomes]);
   const holidayMapByDateAndCountry = useMemo(() => {
     const map = new Map<string, any>();
     for (const holiday of holidayItems) {
@@ -2085,6 +2141,11 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                   const ds = formatLocalDate(d);
                   const inMonth = ds.startsWith(calendarMonth);
                   const item = calendarMap.get(ds);
+                  // What the day COST, when the engines have answered for it.
+                  // The old status/colour stay as the fallback, so a month whose
+                  // outcomes have not loaded (or an org with no policies) looks
+                  // exactly as it did before rather than looking wrong.
+                  const outcome = describeDayOutcome(outcomeMap.get(ds));
                   const status = item?.status || 'none';
                   const statusLabel =
                     status === 'leave'
@@ -2097,7 +2158,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         ? ''
                         : String(status).replace('_', ' ');
 
-                  const color =
+                  const statusColor =
                     status === 'present'
                       ? 'bg-green-50 border-green-200 text-green-900'
                       : status === 'checked_in'
@@ -2109,6 +2170,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                           : status === 'holiday'
                             ? 'bg-amber-50 border-amber-200 text-amber-900'
                           : 'bg-gray-50 border-gray-200 text-gray-600';
+                  // A weekly off and a missed day used to share this grey cell.
+                  // The outcome tone is what finally tells them apart.
+                  const color = outcome.headline ? OUTCOME_TONE_CLASS[outcome.tone] : statusColor;
                   const canEditHolidayCell = isAdmin && inMonth;
                   const tooltip = item
                     ? [
@@ -2119,6 +2183,9 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         item?.holiday?.country ? `country ${formatCountryLabel(item.holiday.country)}` : null,
                         `worked ${formatDuration(item.worked_seconds || 0)}`,
                         `late ${item.late_minutes || 0}m`,
+                        // The reason is the point: "half day" with no working
+                        // behind it is unusable the moment it is disputed.
+                        outcome.reason,
                       ]
                         .filter(Boolean)
                         .join(' - ')
@@ -2155,8 +2222,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                         <div className="text-xs font-semibold">{d.getDate()}</div>
                         {item?.late_minutes > 0 ? <div className="text-[10px] font-semibold text-red-700">Late</div> : null}
                       </div>
-                      {statusLabel ? (
+                      {outcome.headline ? (
+                        <div className="mt-1 text-[10px] font-semibold leading-4">{outcome.headline}</div>
+                      ) : statusLabel ? (
                         <div className={`mt-1 text-[10px] ${status === 'holiday' ? 'font-semibold leading-4' : 'uppercase tracking-wide'}`}>{statusLabel}</div>
+                      ) : null}
+                      {outcome.chips.length > 0 ? (
+                        <OutcomeChips chips={outcome.chips.slice(0, 2)} className="mt-1" />
                       ) : null}
                       {status === 'holiday' && item?.holiday?.country ? (
                         <div className="mt-1 text-[10px] font-medium">{formatCountryLabel(item.holiday.country)}</div>
@@ -2171,6 +2243,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
           )}
         </SurfaceCard>
+
+        {calendarScope === 'selected' ? (
+          <DayOutcomeLedger days={dayOutcomes} isLoading={isDayOutcomesLoading} />
+        ) : null}
 
         <SurfaceCard className="p-4">
           <h2 className="font-semibold text-gray-900 mb-3">Monthly Summary</h2>

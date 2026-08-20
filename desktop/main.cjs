@@ -1319,11 +1319,42 @@ const createWindow = async () => {
     });
   });
 
+  /*
+   * Drop the HTTP cache only when this build has changed, never on every launch.
+   *
+   * This used to be an unconditional `clearCache()` on every packaged start
+   * against the remote APP_URL, which meant the entire renderer bundle — every
+   * JS chunk, stylesheet, font and image — was re-downloaded from
+   * carevancetracker.duckdns.org before the window could paint. That was the
+   * single largest component of "the desktop app takes too long to open", and
+   * it bought nothing: Vite emits content-hashed filenames
+   * (`assets/index-<hash>.js`), so a chunk file is immutable and can never go
+   * stale. Only index.html can, and the reload below asks the network to
+   * revalidate it.
+   *
+   * Keeping it version-keyed preserves the one case the wipe was written for —
+   * a bad or partially-cached asset surviving an app upgrade — at the cost of
+   * one slow start per release instead of one slow start per launch.
+   */
   if (app.isPackaged && IS_REMOTE_APP_URL) {
     try {
-      await mainWindow.webContents.session.clearCache();
+      const stampPath = path.join(app.getPath('userData'), 'renderer-cache-build');
+      const currentBuild = `${app.getVersion()}|${APP_URL}`;
+      const previousBuild = fs.existsSync(stampPath)
+        ? fs.readFileSync(stampPath, 'utf8').trim()
+        : '';
+
+      if (previousBuild !== currentBuild) {
+        console.log('[desktop] renderer build changed, clearing HTTP cache once', {
+          previousBuild: previousBuild || '(none)',
+          currentBuild,
+        });
+        await mainWindow.webContents.session.clearCache();
+        fs.writeFileSync(stampPath, currentBuild, 'utf8');
+      }
     } catch {
-      // Best-effort cache clearing to avoid stale chunk files after web deployments.
+      // Best-effort. A cache we failed to clear only risks a stale index.html,
+      // which the next navigation revalidates anyway — not worth blocking on.
     }
   }
 
@@ -2342,8 +2373,6 @@ ipcMain.handle('desktop:offline-get-queue-details', async () => {
 
 if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
-  setupStrongAutoStart();
-
   // Registered here rather than at module scope because nativeTheme is only
   // safe to touch after ready, same as powerMonitor below. Only fires on a real
   // OS change: under an explicit light/dark choice shouldUseDarkColors is
@@ -2362,6 +2391,38 @@ app.whenReady().then(async () => {
   powerMonitor.on('resume', () => {
     markSystemUnlocked('resumed');
   });
+
+  /*
+   * The window goes up first. Everything below this point is infrastructure the
+   * first frame does not need.
+   *
+   * It used to run the other way round: the browser-tracking bridge had to bind
+   * its HTTP listener, then sql.js had to instantiate its WASM runtime and read
+   * the whole offline database off disk, then the network monitor and sync
+   * engine had to be wired — and only then was a BrowserWindow constructed and
+   * pointed at the remote app. None of that is on the path to a painted frame,
+   * but all of it was in front of one, so the user stared at nothing while it
+   * finished. Starting the navigation first means the renderer download and the
+   * local initialisation overlap instead of queueing.
+   *
+   * Safe because nothing here is a prerequisite of the window: every offline
+   * IPC handler already answers `{ available: false }` until `offlineDb` is
+   * ready, the reload-on-reconnect timer inside createWindow null-checks
+   * `networkMonitor`, and the offline fallback page uses `localShellServer`,
+   * which is constructed at module scope. The explicit broadcast at the end
+   * pushes the real status to the renderer once it exists.
+   */
+  void createWindow();
+  initializeAutoUpdater();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+
+  // Spawns schtasks.exe and reg.exe synchronously to register the login item.
+  // That is worth a few hundred milliseconds of the NEXT boot's start-up, so it
+  // has no business being ahead of this one's window.
+  setupStrongAutoStart();
 
   const browserTrackingState = await ensureBrowserTrackingBridge().start();
   if (!browserTrackingState?.ready) {
@@ -2470,12 +2531,10 @@ app.whenReady().then(async () => {
     console.warn('[desktop] SQLite unavailable - offline mode disabled');
   }
 
-  void createWindow();
-  initializeAutoUpdater();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+  // The renderer was created before any of this existed, so it is still holding
+  // the "offline database not available" answer it got at mount. Push the real
+  // status now that there is one. No-ops safely if the window is not up yet.
+  broadcastOfflineStatus();
 });
 
 app.on('window-all-closed', () => {

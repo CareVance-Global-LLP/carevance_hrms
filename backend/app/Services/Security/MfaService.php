@@ -248,8 +248,19 @@ class MfaService
     // --------------------------------------------------------------- policy
 
     /**
-     * off | grace | enforced. Anything unrecognised reads as 'grace', which is
-     * the setting that prompts without locking anyone out.
+     * off | grace | enforced.
+     *
+     * An organisation opts in to MFA; it never opts out. Anything that is not
+     * one of the three recognised values — unset, null, or a typo — reads as
+     * 'off'.
+     *
+     * This used to fall back to 'grace', on the reasoning that grace prompts
+     * without blocking. That only holds while no deadline is set. An
+     * organisation carrying a `security.mfa_grace_ends_at` in the past but no
+     * valid `mfa_policy` would have every privileged user — admin, HR,
+     * payroll — refused by the whole API at once, without anyone having done
+     * anything that reads as switching MFA on. 'off' is the only fallback that
+     * cannot lock a tenant out of its own payroll.
      */
     public function policyFor(?Organization $organization): string
     {
@@ -259,7 +270,7 @@ class MfaService
 
         $policy = data_get($organization->settings, 'security.mfa_policy');
 
-        return in_array($policy, ['off', 'grace', 'enforced'], true) ? $policy : 'grace';
+        return in_array($policy, ['off', 'grace', 'enforced'], true) ? $policy : 'off';
     }
 
     /**

@@ -1,7 +1,12 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { armAutoStart, setWorkedBaselineSnapshot, suppressAutoStart } from '@/lib/desktopTimerSession';
+import {
+  armAutoStart,
+  DESKTOP_TIMER_IDLE_RESOLVED_EVENT,
+  setWorkedBaselineSnapshot,
+  suppressAutoStart,
+} from '@/lib/desktopTimerSession';
 import DesktopTimerDashboard from '@/pages/DesktopTimerDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
@@ -16,6 +21,11 @@ const mocks = vi.hoisted(() => ({
   updateTaskStatusMock: vi.fn(),
   todayMock: vi.fn(),
   getTasksMock: vi.fn(),
+  getProjectsMock: vi.fn(),
+  breaksTodayMock: vi.fn(),
+  breakTypesMock: vi.fn(),
+  startBreakMock: vi.fn(),
+  endBreakMock: vi.fn(),
   authUser: {
     id: 1,
     name: 'Employee User',
@@ -52,8 +62,26 @@ vi.mock('@/services/api', async () => {
       getAll: mocks.getTasksMock,
       updateStatus: mocks.updateTaskStatusMock,
     },
+    projectApi: { getAll: mocks.getProjectsMock },
   };
 });
+
+/*
+ * fetchData awaits projectApi.getAll() and breakTrackingApi.getToday() inside
+ * the same Promise.allSettled as the endpoints above. Leaving them on the real
+ * client meant every test in this file hit axios, took a connection refusal,
+ * and then sat through the client's retry backoff — which outlasts the test
+ * timeout, so the dashboard never left "Loading dashboard..." and all ten tests
+ * failed on a harness gap rather than on anything the component did.
+ */
+vi.mock('@/services/breakTrackingApi', () => ({
+  breakTrackingApi: {
+    getToday: mocks.breaksTodayMock,
+    getTypes: mocks.breakTypesMock,
+    startBreak: mocks.startBreakMock,
+    endBreak: mocks.endBreakMock,
+  },
+}));
 
 describe('DesktopTimerDashboard', () => {
   beforeEach(() => {
@@ -179,6 +207,11 @@ describe('DesktopTimerDashboard', () => {
       },
     });
 
+    mocks.getProjectsMock.mockResolvedValue({ data: [] });
+    mocks.breaksTodayMock.mockResolvedValue({ breaks: [], active_break: null, total_break_seconds: 0 });
+    mocks.breakTypesMock.mockResolvedValue([]);
+    mocks.startBreakMock.mockResolvedValue({ break: null });
+    mocks.endBreakMock.mockResolvedValue({});
     mocks.stopMock.mockResolvedValue({ data: null });
     mocks.todayMock.mockResolvedValue({ data: { time_entries: [], total_duration: 0 } });
   });
@@ -408,6 +441,84 @@ describe('DesktopTimerDashboard', () => {
     expect(localStorage.getItem('active_timer_snapshot')).toBeNull();
   });
 
+  it('shows no shift countdown rather than a full shift when nothing has loaded yet', async () => {
+    /*
+     * The laptop-restart report: "I refresh and it says a whole 8 hour shift is
+     * left, I refresh again and the proper time appears."
+     *
+     * The dashboard request fails — which is what a machine that is up before
+     * its network does — and `setIsLoading(false)` runs in a `finally`, so the
+     * spinner clears anyway. With no worked-time block and no persisted
+     * baseline, the countdown used to render `8h - 0` and present it as fact.
+     * Zero here means "nothing loaded", not "nothing worked".
+     */
+    suppressAutoStart(1);
+    localStorage.clear();
+    sessionStorage.clear();
+    suppressAutoStart(1);
+
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockRejectedValue(new Error('Network Error'));
+    mocks.attendanceTodayMock.mockReset();
+    mocks.attendanceTodayMock.mockRejectedValue(new Error('Network Error'));
+    // The recovery read fails too, so the countdown genuinely has no basis.
+    mocks.todayMock.mockReset();
+    mocks.todayMock.mockRejectedValue(new Error('Network Error'));
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    expect(await screen.findByText('Shift Remaining')).toBeInTheDocument();
+    expect(screen.queryByText('08:00:00')).not.toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('recovers the countdown from time-entries/today when the dashboard carries no worked_time', async () => {
+    // Same failure, but the smaller endpoint answers. The countdown must reach
+    // the real figure on its own rather than waiting for a manual refresh.
+    suppressAutoStart(1);
+    localStorage.clear();
+    sessionStorage.clear();
+    suppressAutoStart(1);
+
+    mocks.summaryMock.mockReset();
+    mocks.summaryMock.mockResolvedValue({
+      data: {
+        active_timer: null,
+        today_entries: [],
+        today_total_elapsed_duration: 0,
+        all_time_total_elapsed_duration: 0,
+        team_members_count: 0,
+        new_members_this_week: 0,
+        productivity_score: 0,
+        active_tasks_count: 0,
+        total_tasks_count: 0,
+      },
+    });
+    mocks.attendanceTodayMock.mockReset();
+    mocks.attendanceTodayMock.mockResolvedValue({
+      data: { shift_target_seconds: 28800, record: { worked_seconds: 0, is_checked_in: false, attendance_date: new Date().toISOString().split('T')[0] } },
+    });
+    mocks.todayMock.mockReset();
+    mocks.todayMock.mockResolvedValue({
+      data: {
+        time_entries: [],
+        total_duration: 0,
+        worked_time: {
+          worked_seconds: 3600,
+          billed_seconds: 3600,
+          remaining_seconds: 25200,
+          overtime_seconds: 0,
+          shift_target_seconds: 28800,
+        },
+      },
+    });
+
+    renderWithProviders(<DesktopTimerDashboard />);
+
+    // 8h target minus the 1h the server billed.
+    expect(await screen.findByText('07:00:00')).toBeInTheDocument();
+  });
+
   it('keeps paused shift context after reload when backend totals are not updated yet', async () => {
     const today = new Date().toISOString().split('T')[0];
     suppressAutoStart(1);
@@ -618,5 +729,134 @@ describe('DesktopTimerDashboard', () => {
     await user.click(await screen.findByRole('button', { name: /start timer/i }));
 
     expect(await screen.findByText('You are on approved leave today. Timer cannot start.')).toBeInTheDocument();
+  });
+  /*
+   * The shift countdown against a running session.
+   *
+   * `serverWorkedTime` used to be read in the mount fetch and then refreshed
+   * only when a timer STOPPED. For the whole length of a session the countdown
+   * therefore advanced on raw client wall clock, while `billed_seconds` nets out
+   * idle and unpaid breaks — so the two drifted apart by exactly the idle
+   * accumulated since mount, and any reload rebased the display onto the server
+   * figure and jumped Shift Remaining back up. Both tests below pin the reads
+   * that close that window.
+   */
+  describe('shift countdown stays on the server figure', () => {
+    // Mirrors WORKED_TIME_REFRESH_INTERVAL_MS in the component.
+    const WORKED_TIME_POLL_MS = 30 * 1000;
+
+    const runningTimer = (startTime: string) => ({
+      id: 99,
+      user_id: 1,
+      project_id: null,
+      task_id: null,
+      start_time: startTime,
+      duration: 60,
+      timer_slot: 'primary',
+      created_at: startTime,
+      updated_at: startTime,
+      task: null,
+    });
+
+    // The same route into a running session that "keeps a restored running
+    // timer after refresh" uses: a snapshot the component restores immediately,
+    // confirmed by the active-timer endpoint.
+    const withRunningTimer = () => {
+      const startTime = new Date(Date.now() - 60 * 1000).toISOString();
+
+      localStorage.setItem('active_timer_snapshot', JSON.stringify({
+        id: 99,
+        start_time: startTime,
+        duration: 60,
+        description: 'Running timer',
+        timer_slot: 'primary',
+      }));
+
+      mocks.summaryMock.mockReset();
+      mocks.summaryMock.mockResolvedValue({
+        data: {
+          active_timer: null,
+          today_entries: [],
+          today_total_elapsed_duration: 60,
+          all_time_total_elapsed_duration: 60,
+          team_members_count: 4,
+          new_members_this_week: 1,
+          productivity_score: 82,
+          active_tasks_count: 1,
+          total_tasks_count: 1,
+        },
+      });
+
+      mocks.activeMock.mockReset();
+      mocks.activeMock.mockResolvedValue({ data: runningTimer(startTime) });
+    };
+
+    const workedTimeResponse = (billedSeconds: number) => ({
+      data: {
+        time_entries: [],
+        total_duration: billedSeconds,
+        worked_time: {
+          worked_seconds: billedSeconds,
+          billed_seconds: billedSeconds,
+          shift_target_seconds: 28800,
+          remaining_seconds: 28800 - billedSeconds,
+          overtime_seconds: 0,
+        },
+      },
+    });
+
+    it('re-reads worked time on a cadence while a timer runs', async () => {
+      withRunningTimer();
+      mocks.todayMock.mockReset();
+      mocks.todayMock.mockResolvedValue(workedTimeResponse(600));
+
+      // Installed before the render, so the poll's interval is registered
+      // against the fake clock and can actually be advanced. Installing after
+      // mount leaves it on the real timer, where nothing this test does reaches
+      // it.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        renderWithProviders(<DesktopTimerDashboard />);
+
+        expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+
+        // Nothing polled worked time before the fix: `today` was reached only
+        // from the mount path and from a stop, so this stayed flat for the whole
+        // session no matter how long it ran.
+        const callsWhileRunning = mocks.todayMock.mock.calls.length;
+
+        await vi.advanceTimersByTimeAsync(WORKED_TIME_POLL_MS + 1000);
+
+        expect(mocks.todayMock.mock.calls.length).toBeGreaterThan(callsWhileRunning);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('re-reads worked time as soon as an idle stretch is answered', async () => {
+      withRunningTimer();
+      mocks.todayMock.mockReset();
+      mocks.todayMock.mockResolvedValue(workedTimeResponse(600));
+
+      renderWithProviders(<DesktopTimerDashboard />);
+
+      expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
+      const callsBeforeAnswer = mocks.todayMock.mock.calls.length;
+
+      // Discarding an idle stretch is the largest single correction the server
+      // ever makes, and the prompt that does it lives in another component. With
+      // no signal between them the countdown counted straight through the
+      // discarded time until the next reload — the "after the popup" report.
+      mocks.todayMock.mockResolvedValue(workedTimeResponse(300));
+      window.dispatchEvent(
+        new CustomEvent(DESKTOP_TIMER_IDLE_RESOLVED_EVENT, {
+          detail: { userId: 1, activityId: 7, outcome: 'discarded' },
+        }),
+      );
+
+      await waitFor(() => {
+        expect(mocks.todayMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
+      });
+    });
   });
 });

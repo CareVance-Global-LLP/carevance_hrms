@@ -41,4 +41,5 @@ Route::middleware(['api.token', 'mfa.enrolled'])->group(function () {
     require base_path('routes/api/protected/search.php');
     require base_path('routes/api/protected/security.php');
     require base_path('routes/api/protected/integrations.php');
+    require base_path('routes/api/protected/working_time.php');
 });

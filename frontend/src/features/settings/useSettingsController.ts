@@ -338,6 +338,10 @@ export function useSettingsController() {
     }
     if (canManageShifts) {
       allowed.add('shifts');
+      // Working time rides the same gate as shifts on purpose: the four
+      // policies here are the ones that used to be columns on the shift row,
+      // and whoever may edit a shift is exactly who may edit them.
+      allowed.add('working-time');
     }
     return SETTINGS_TABS.filter((tab) => allowed.has(tab.id));
   }, [canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);

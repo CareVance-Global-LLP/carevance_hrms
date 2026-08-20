@@ -37,6 +37,17 @@ final class ShiftOccurrence
         public readonly ?int $expectedSeconds = null,
         public readonly ?Shift $shift = null,
         public readonly ?EmployeeShift $assignment = null,
+        /**
+         * The date is one of this person's weekly offs.
+         *
+         * The occurrence still exists — the pattern says when the shift would
+         * run, and people do work on their days off — but expectedSeconds is
+         * zero. Deleting the occurrence instead would send an after-midnight
+         * punch from a night shift that began on the weekly off to the wrong
+         * attendance date, and would erase the fact that makes the work
+         * weekly-off overtime rather than an ordinary day.
+         */
+        public readonly bool $isWeeklyOff = false,
     ) {
     }
 
@@ -101,6 +112,7 @@ final class ShiftOccurrence
             'shift_end_at' => $this->shiftEndAt?->toIso8601String(),
             'crosses_midnight' => $this->crossesMidnight(),
             'expected_seconds' => $this->expectedSeconds,
+            'is_weekly_off' => $this->isWeeklyOff,
         ];
     }
 }

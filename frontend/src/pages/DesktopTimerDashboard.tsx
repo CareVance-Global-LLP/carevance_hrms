@@ -15,6 +15,7 @@ import {
   clearIdleAutoStopNotice,
   clearWorkedBaselineSnapshot,
   consumeIdleAutoStopNotice,
+  DESKTOP_TIMER_IDLE_RESOLVED_EVENT,
   DESKTOP_TIMER_IDLE_STOP_EVENT,
   emitDesktopTimerStarted,
   emitDesktopTimerStopped,
@@ -63,6 +64,28 @@ type TimerState =
 // auto-stop a timer on its own (idle fallback); this keeps the visible timer
 // from running away while still being cheap (one lightweight request).
 const TIMER_RECONCILE_INTERVAL_MS = 15 * 1000;
+
+/**
+ * How often the shift countdown re-reads the server's worked-time block while a
+ * timer is running.
+ *
+ * This is the whole reason "Shift Remaining" used to disagree with itself
+ * across a refresh. `serverWorkedTime` was read once, in the mount fetch, and
+ * then only ever again when a timer *stopped* — so for the entire length of a
+ * session the countdown advanced on `liveSessionSeconds - capturedSessionSeconds`,
+ * which is RAW client wall clock. `billed_seconds` is not raw: the server nets
+ * out idle and unpaid breaks. The two therefore drifted apart by exactly the
+ * idle accumulated since mount, and any reload — or any stop — rebased the
+ * display onto the server figure and jumped the countdown back up. The jump was
+ * biggest right after the idle popup, because answering it is the moment the
+ * server reclassifies a whole idle block at once.
+ *
+ * A poll bounds that divergence to one interval instead of one session. 30s is
+ * deliberately slower than the 15s reconcile: reconcile exists to stop a
+ * runaway clock and has to be quick, whereas a countdown being at most 30s
+ * optimistic is invisible, and this halves the request cost of the pair.
+ */
+const WORKED_TIME_REFRESH_INTERVAL_MS = 30 * 1000;
 
 const getStartTimeMs = (startTime?: string) => {
   if (!startTime) return NaN;
@@ -672,6 +695,87 @@ export default function DesktopTimerDashboard() {
     }
   };
 
+  /*
+   * An always-current handle on the refresh, so the poll below runs on one
+   * steady interval instead of being torn down and restarted every time the
+   * attendance date or the active timer identity changes.
+   */
+  const refreshServerWorkedTimeRef = useRef(refreshServerWorkedTime);
+  refreshServerWorkedTimeRef.current = refreshServerWorkedTime;
+
+  /*
+   * The countdown's server figure, re-read while a session is open.
+   *
+   * Nothing did this before: `serverWorkedTime` was set in the mount fetch and
+   * then only refreshed when a timer stopped, so the countdown spent the whole
+   * session extrapolating from a figure read hours earlier. See
+   * WORKED_TIME_REFRESH_INTERVAL_MS for why that made the value change on
+   * refresh.
+   */
+  useEffect(() => {
+    if (!activeTimer?.id || !userId) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      void refreshServerWorkedTimeRef.current();
+    }, WORKED_TIME_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [activeTimer?.id, userId]);
+
+  /*
+   * The same re-read, driven by events rather than the clock.
+   *
+   * Answering the idle prompt is the single largest correction the server makes
+   * in one step, and it happens in a different component — without the event
+   * the countdown kept counting straight through a discarded stretch until the
+   * next reload, which is the "after the popup" half of the report. Coming back
+   * to the window is the other cheap moment to re-sync, since a machine that
+   * was asleep or unfocused has almost certainly drifted.
+   *
+   * Throttled because Electron raises `focus` on every alt-tab, and this must
+   * not become a request per keystroke of window switching.
+   */
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    let lastRefreshMs = 0;
+    const refresh = () => {
+      const now = Date.now();
+      if (now - lastRefreshMs < WORKED_TIME_REFRESH_INTERVAL_MS) {
+        return;
+      }
+      lastRefreshMs = now;
+      void refreshServerWorkedTimeRef.current();
+    };
+
+    // An answered idle stretch has already changed the server's total, so this
+    // one bypasses the throttle.
+    const refreshNow = () => {
+      lastRefreshMs = Date.now();
+      void refreshServerWorkedTimeRef.current();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+
+    window.addEventListener(DESKTOP_TIMER_IDLE_RESOLVED_EVENT, refreshNow);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener(DESKTOP_TIMER_IDLE_RESOLVED_EVENT, refreshNow);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [userId]);
+
   const fetchData = async () => {
     // Prevent concurrent fetch calls
     if (isFetchingRef.current) {
@@ -942,6 +1046,19 @@ export default function DesktopTimerDashboard() {
 
       if (workedTime) {
         applyServerWorkedTime(workedTime, syncedSessionSeconds, syncedTimerId);
+      } else {
+        /*
+         * The dashboard normally carries the block, so getting here means that
+         * request failed or answered without one — most often right after a
+         * laptop restart, when the app is up before the network is.
+         *
+         * Recover on our own rather than leaving the countdown blank until the
+         * person happens to refresh. `/time-entries/today` computes worked time
+         * on every call and is a much smaller request than the dashboard, so it
+         * is the better thing to be retrying at exactly the moment the network
+         * is marginal.
+         */
+        void refreshServerWorkedTime();
       }
 
       setTodayTotal(resolvedWorkedSeconds);
@@ -1757,18 +1874,49 @@ export default function DesktopTimerDashboard() {
       ? serverWorkedTime.capturedSessionSeconds
       : 0;
 
+  /*
+   * Whether there is a countdown to show at all.
+   *
+   * This used to fall back to `effectiveWorkedSeconds` when no server block had
+   * arrived, and that fallback is what the "it says a whole 8 hour shift is
+   * left, then I refresh again and the proper time appears" report was. At
+   * mount the local figure is zero, so the fallback rendered `8h - 0` — a
+   * confident, wrong, full shift. It showed up after a laptop restart because
+   * that is when the first dashboard request is most likely to fail (the
+   * machine is up before the network is), and `setIsLoading(false)` runs in a
+   * `finally`, so a FAILED load still gets past the spinner and paints the
+   * guess. A second refresh then succeeded and the real figure replaced it.
+   *
+   * A countdown nobody has the number for is not eight hours; it is unknown,
+   * and it renders as "—".
+   *
+   * The local figure is still used when it is CARRYING something — a reload
+   * mid-shift restores `workedBaseSeconds` from the persisted baseline, which
+   * was itself a server `billed_seconds` when it was written, so it is a real
+   * prior reading rather than an invention. Zero is the case that has to be
+   * refused: zero is not "no time worked", it is "nothing has been loaded yet",
+   * and the two are indistinguishable here precisely because nothing has been
+   * loaded. Distinguishing them is the server's job, one request away.
+   */
+  const hasServerCountdown = serverWorkedTime !== null;
+  const hasCountdownBasis = hasServerCountdown || effectiveWorkedSeconds > 0;
+
   const countdown = shiftCountdown({
     shiftTargetSeconds: serverWorkedTime?.shiftTargetSeconds ?? shiftTargetSeconds,
-    // Without the server block we fall back to the locally accumulated figure,
-    // which already carries the running session — so there is nothing further
-    // to advance and both session terms are zero.
+    // Without the server block, the locally accumulated figure — which already
+    // carries the running session, so both session terms below stay zero.
     serverWorkedSeconds: serverWorkedTime ? serverWorkedTime.billedSeconds : effectiveWorkedSeconds,
     capturedSessionSeconds: serverWorkedTime ? capturedSessionSeconds : 0,
     liveSessionSeconds: serverWorkedTime && activeTimer ? liveDuration : 0,
-    floorWorkedSeconds: workedHighWaterRef.current.seconds,
+    // The floor is a high-water mark over SERVER figures. Seeding it while the
+    // server has not spoken would let a guess become the floor, and a floor is
+    // a max() the next real reading cannot pull back down.
+    floorWorkedSeconds: hasCountdownBasis ? workedHighWaterRef.current.seconds : 0,
   });
 
-  workedHighWaterRef.current = { date: countdownDate, seconds: countdown.workedSeconds };
+  if (hasCountdownBasis) {
+    workedHighWaterRef.current = { date: countdownDate, seconds: countdown.workedSeconds };
+  }
 
   const remainingShiftSeconds = countdown.remainingSeconds;
   const overtimeSeconds = countdown.overtimeSeconds;
@@ -1979,7 +2127,12 @@ export default function DesktopTimerDashboard() {
                 </span>
                 <div>
                   <p className="text-sm text-slate-500">Shift Remaining</p>
-                  <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(remainingShiftSeconds)}</p>
+                  {/* "—" until the server's figure lands: a full shift shown
+                      because we do not know yet is worse than showing that we
+                      do not know. See hasCountdownBasis. */}
+                  <p className="mt-0.5 text-lg font-semibold text-slate-950">
+                    {hasCountdownBasis ? formatTime(remainingShiftSeconds) : '—'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center justify-center gap-3 py-2.5 sm:px-4">
@@ -1988,7 +2141,9 @@ export default function DesktopTimerDashboard() {
                 </span>
                 <div>
                   <p className="text-sm text-slate-500">Overtime Timer</p>
-                  <p className="mt-0.5 text-lg font-semibold text-slate-950">{formatTime(overtimeSeconds)}</p>
+                  <p className="mt-0.5 text-lg font-semibold text-slate-950">
+                    {hasCountdownBasis ? formatTime(overtimeSeconds) : '—'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center justify-center gap-3 py-2.5 sm:pl-8">

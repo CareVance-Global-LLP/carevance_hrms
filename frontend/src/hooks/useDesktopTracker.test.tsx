@@ -2,7 +2,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DESKTOP_TIMER_IDLE_STOP_EVENT } from '@/lib/desktopTimerSession';
 import { idleTrackThresholdSeconds } from '@/lib/runtimeConfig';
-import { useDesktopTracker } from '@/hooks/useDesktopTracker';
+import { resolveDesktopSessionSignature, useDesktopTracker } from '@/hooks/useDesktopTracker';
 
 const mocks = vi.hoisted(() => ({
   activeMock: vi.fn(),
@@ -586,6 +586,113 @@ describe('useDesktopTracker', () => {
       activity_kind: 'website',
       tool_type: 'website',
     }));
+  });
+
+  describe('session identity for a browser', () => {
+    /*
+     * The "durations are wrong" report, tested on the function that decides it.
+     *
+     * In a browser the window title tracks page STATE, not identity — unread
+     * counts, loading placeholders, notification badges — and it used to be
+     * part of the session signature, so every flicker closed one session and
+     * opened another. Measured in the timeline on 19 Aug 2026: one continuous
+     * stretch of Gmail on `mail.google.com/mail/u/0/#inbox` stored as four
+     * sessions of 2s, 1s, 1s and 3s, differing only by the title going
+     * "Inbox (3) …" -> "Gmail" -> "Inbox (4) …" as mail arrived. Durations were
+     * not so much under-counted as shredded, each shard too short to read as
+     * real work.
+     */
+    const gmail = (title: string) => ({
+      app: 'Google Chrome',
+      title,
+      url: null,
+      inferred_url: 'https://mail.google.com/mail/u/0/#inbox',
+      inferred_url_source: 'document' as const,
+      inferred_url_confidence: 100,
+      captured_at: '2026-04-21T09:00:00.000Z',
+    });
+
+    it('is unchanged while the title churns on one page', () => {
+      const first = resolveDesktopSessionSignature(gmail('Inbox (3) - someone@gmail.com - Gmail'));
+
+      expect(resolveDesktopSessionSignature(gmail('Gmail'))).toBe(first);
+      expect(resolveDesktopSessionSignature(gmail('Inbox (4) - someone@gmail.com - Gmail'))).toBe(first);
+    });
+
+    it('changes when the browser actually navigates', () => {
+      // Dropping the title has to leave something strictly more precise behind,
+      // or two genuinely different pages would merge into one row.
+      const inbox = resolveDesktopSessionSignature(gmail('Gmail'));
+      const sent = resolveDesktopSessionSignature({
+        ...gmail('Gmail'),
+        inferred_url: 'https://mail.google.com/mail/u/0/#sent',
+      });
+
+      expect(sent).not.toBe(inbox);
+    });
+
+    it('still separates non-browser windows by title', () => {
+      // Outside a browser the title is the only thing distinguishing one piece
+      // of work from another, so it stays part of the identity there.
+      const base = {
+        app: 'Visual Studio Code',
+        url: null,
+        inferred_url: null,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      };
+
+      expect(resolveDesktopSessionSignature({ ...base, title: 'a.ts - project' }))
+        .not.toBe(resolveDesktopSessionSignature({ ...base, title: 'b.ts - project' }));
+    });
+
+    it('still separates browser windows by title when no URL could be read', () => {
+      // A browser on a blank tab has no URL to be identified by, so the title
+      // is all there is and must keep working.
+      const base = {
+        app: 'Google Chrome',
+        url: null,
+        inferred_url: null,
+        captured_at: '2026-04-21T09:00:00.000Z',
+      };
+
+      expect(resolveDesktopSessionSignature({ ...base, title: 'New Tab' }))
+        .not.toBe(resolveDesktopSessionSignature({ ...base, title: 'Settings' }));
+    });
+  });
+
+  it('opens no further sessions while a browser title churns on one page', async () => {
+    // The same rule end to end. Counted after the session is established, so
+    // the harness settling on its active time entry cannot be mistaken for the
+    // fragmentation this guards against.
+    render(<TrackerHarness />);
+
+    const gmailCreates = () => mocks.createActivitySessionMock.mock.calls
+      .map(([payload]: [any]) => payload)
+      .filter((payload) => String(payload?.url || '').includes('mail.google.com'));
+
+    const fire = async (title: string, second: number) => {
+      await act(async () => {
+        foregroundWindowListeners[0]?.({
+          app: 'Google Chrome',
+          title,
+          url: null,
+          inferred_url: 'https://mail.google.com/mail/u/0/#inbox',
+          inferred_url_source: 'document',
+          inferred_url_confidence: 100,
+          captured_at: `2026-04-21T09:00:0${second}.000Z`,
+        });
+      });
+    };
+
+    await fire('Inbox (3) - someone@gmail.com - Gmail', 0);
+    await fire('Gmail', 1);
+    const established = gmailCreates().length;
+
+    await fire('Inbox (4) - someone@gmail.com - Gmail', 2);
+    await fire('Inbox (5) - someone@gmail.com - Gmail', 3);
+    await fire('Inbox (6) - someone@gmail.com - Gmail', 4);
+
+    expect(gmailCreates()).toHaveLength(established);
   });
 
   it('keeps a browser with no readable URL as an app session', async () => {

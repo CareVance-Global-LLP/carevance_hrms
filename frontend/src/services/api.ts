@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { clearAuthStorage, getStoredAuthValue } from '@/lib/authStorage';
+import type { DayOutcomePayload } from '@/lib/attendanceDayOutcome';
 import type { 
   LoginRequest, 
   RegisterRequest, 
@@ -1811,6 +1812,24 @@ export const attendanceApi = {
       };
     }>('/attendance/calendar', { params }),
 
+  /**
+   * What each day of the month COST, and why — the penalisation and overtime
+   * engines' output for one person.
+   *
+   * Separate from `calendar` on purpose: the penalisation engine walks a whole
+   * exemption cycle per day, so this is an order of magnitude more work than
+   * the calendar it decorates. Fetch it after, and let the calendar paint
+   * without waiting. One person at a time; there is no "overall" scope, because
+   * a penalty is always somebody's.
+   */
+  dayOutcomes: (params?: { month?: string; user_id?: number }) =>
+    api.get<{
+      month: string;
+      user_id: number;
+      timezone: string;
+      days: DayOutcomePayload[];
+    }>('/attendance/day-outcomes', { params }),
+
   summary: (params?: { start_date?: string; end_date?: string; q?: string }) =>
     api.get<{
       start_date: string;
@@ -2098,8 +2117,11 @@ export const chatApi = {
 };
 
 export const aiChatApi = {
+  // `sources` names the screens the reply's figures were read from — collected
+  // server-side from the tools that actually ran, so each one is a real record
+  // the reader can go and check. Empty when the answer needed no tool.
   chat: (data: { message: string; history?: Array<{ role: string; content: string }>; context?: 'admin' | 'landing' }) =>
-    api.post<{ reply: string }>('/ai/chat', data),
+    api.post<{ reply: string; sources: Array<{ label: string; route: string }> }>('/ai/chat', data),
 };
 
 export const notificationApi = {

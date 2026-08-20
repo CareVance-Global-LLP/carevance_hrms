@@ -1,31 +1,24 @@
-export interface QuickAction {
-  label: string;
-  adminOnly?: boolean;
-  managerOnly?: boolean;
-  employeeOnly?: boolean;
-}
-
-export const QUICK_ACTIONS: QuickAction[] = [
-  { label: 'How do I submit a leave request?' },
-  { label: 'Where can I see my attendance and time?' },
-  { label: 'How do I track my time / start the timer?' },
-  { label: 'How do I view my payslip?' },
-  { label: 'How many approvals are pending?', adminOnly: true },
-  { label: "Who hasn't clocked in today?", adminOnly: true },
-  { label: "What's the payroll status this cycle?", adminOnly: true },
-  { label: "How's my team doing today?", managerOnly: true },
+/**
+ * Openers for the admin assistant.
+ *
+ * Each one maps onto a tool in App\Services\Ai\AiToolRegistry, so every chip
+ * returns a live figure with a source link rather than a paragraph of
+ * navigation advice. That is the point of showing them: they demonstrate the
+ * assistant reads real data. A chip with no tool behind it teaches the opposite
+ * lesson on first click — if you add one, add its tool too.
+ *
+ * The role-filtering that used to live here went with the employee-facing
+ * bubble: the assistant is admin-only now, so there is one audience and one
+ * list.
+ */
+export const ADMIN_QUICK_ACTIONS: string[] = [
+  "What's waiting for my approval?",
+  "Who hasn't clocked in today?",
+  "Who's on leave today?",
+  'What is our headcount right now?',
+  'Where is payroll this cycle?',
+  "Who can't be paid yet?",
 ];
-
-export function getQuickActionsForRole(role: string | undefined): string[] {
-  const isAdmin = role === 'admin' || role === 'super_admin';
-  const isManager = role === 'manager' || isAdmin;
-
-  return QUICK_ACTIONS.filter((action) => {
-    if (action.adminOnly && !isAdmin) return false;
-    if (action.managerOnly && !isManager) return false;
-    return true;
-  }).map((a) => a.label);
-}
 
 // Reference knowledge base used for the AI assistant quick-action chips.
 // The authoritative system prompt lives in the backend AiChatService; this is a

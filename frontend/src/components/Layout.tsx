@@ -18,7 +18,7 @@ import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import IdleReturnPrompt from '@/components/desktop/IdleReturnPrompt';
 import IdleStopWarning from '@/components/desktop/IdleStopWarning';
-import AIHelpBubble from '@/components/AIHelpBubble';
+import AdminChatBubble from '@/components/AdminChatBubble';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import StatusBadge from '@/components/ui/StatusBadge';
 import BrandLogo from '@/components/branding/BrandLogo';
@@ -913,7 +913,7 @@ export default function Layout() {
             <Outlet />
           </div>
         </main>
-        <AIHelpBubble userRole={user?.role} />
+        {isStrictAdminView && <AdminChatBubble />}
         {commandBar}
         <IdleReturnPrompt />
         <IdleStopWarning />
@@ -1091,7 +1091,7 @@ export default function Layout() {
           <WorkspaceRenewalBanner />
           <Outlet />
         </main>
-        <AIHelpBubble />
+        {isStrictAdminView && <AdminChatBubble />}
         {commandBar}
         <IdleReturnPrompt />
         <IdleStopWarning />

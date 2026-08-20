@@ -25,6 +25,7 @@ use App\Services\Reports\IdleValidationService;
 use App\Services\Reports\ReportPayloadBuilder;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\Attendance\UserTimezoneResolver;
+use App\Services\Attendance\WeeklyOffCalendar;
 use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
@@ -3214,13 +3215,56 @@ class ReportController extends Controller
             $leavesByUser = $allLeaves->groupBy(fn ($leave) => (int) $leave->user_id);
         }
 
+        // WHICH DAYS WERE ACTUALLY OWED.
+        //
+        // Everything above this line decides a working day with
+        // Carbon::isWeekend() — a hardcoded Saturday and Sunday. That is wrong
+        // in both directions for most of this market: a six-day week had every
+        // missed Saturday silently excused, and anybody with a mid-week or
+        // rotating off was reported absent every week for working exactly the
+        // days they were told to.
+        //
+        // The real answer comes from WeeklyOffPolicy, batched into two queries
+        // because this range defaults to a whole year across every visible
+        // employee. When an organization has configured no policy at all the
+        // Saturday/Sunday assumption stands rather than becoming "works seven
+        // days a week", which would mark everybody absent twice a week — the
+        // same "policy wins when present, the old default otherwise" rule the
+        // shift columns follow.
+        //
+        // The legacy keys (days_present, working_days_in_range,
+        // attendance_rate) are left exactly as they were. The schedule-aware
+        // figures arrive alongside them under their own names so no existing
+        // reader changes meaning underneath itself.
+        $weeklyOffCalendar = WeeklyOffCalendar::load(
+            (int) $currentUser->organization_id,
+            $userIds->all(),
+            $startDate->toDateString(),
+            $endDate->toDateString(),
+        );
+
+        $holidayDatesByCountry = $this->holidayDatesByCountry(
+            (int) $currentUser->organization_id,
+            $startDate,
+            $endDate,
+        );
+
+        // A day that has not happened has not been missed. The default range
+        // runs to the end of the year, so without this every remaining day of
+        // the year is reported as an absence.
+        $todayString = Carbon::now()->toDateString();
+
         $rows = $users->map(function (User $user) use (
             $startDate,
             $endDate,
             $calendarDaysCount,
             $workingDaysCount,
+            $allDatesInRange,
             $workingDates,
             $weekendDates,
+            $weeklyOffCalendar,
+            $holidayDatesByCountry,
+            $todayString,
             $activeTimeEntryUserIds,
             $onBreakUserIdsForStatus,
             $openAttendanceUserIds,
@@ -3245,9 +3289,62 @@ class ReportController extends Controller
                 ->unique()
                 ->values();
 
-            $absentDates = $workingDates
-                ->filter(fn (string $date) => !$presentDates->contains($date))
+            // ---------------------------------------------------------
+            // What this person was actually owed, and what they missed.
+            // ---------------------------------------------------------
+            $userId = (int) $user->id;
+            $rangeDates = $allDatesInRange->all();
+
+            $weeklyOffSource = $weeklyOffCalendar->hasPolicyFor($userId, $rangeDates)
+                ? WeeklyOffCalendar::SOURCE_POLICY
+                : WeeklyOffCalendar::SOURCE_CALENDAR_WEEKEND;
+
+            $weeklyOffDates = $weeklyOffSource === WeeklyOffCalendar::SOURCE_POLICY
+                ? collect($weeklyOffCalendar->offDates($userId, $rangeDates))
+                : $weekendDates->values();
+            $weeklyOffLookup = $weeklyOffDates->flip();
+
+            $country = AttendanceHoliday::countryForSettings($user->settings);
+            $holidayDates = collect($rangeDates)
+                ->filter(fn (string $date) => isset($holidayDatesByCountry['ALL'][$date])
+                    || isset($holidayDatesByCountry[$country][$date]))
+                // A holiday landing on a weekly off was already not owed. It is
+                // counted once, as the off day, so the two never sum past the
+                // number of days in the range.
+                ->reject(fn (string $date) => $weeklyOffLookup->has($date))
                 ->values();
+            $holidayLookup = $holidayDates->flip();
+
+            $expectedDates = collect($rangeDates)
+                ->reject(fn (string $date) => $weeklyOffLookup->has($date) || $holidayLookup->has($date))
+                ->values();
+
+            // Leave is taken unfiltered here, unlike $approvedLeaveDates below,
+            // which drops weekends. In a six-day week a Saturday is a real
+            // leave day, and dropping it would put the day straight back into
+            // the absence list.
+            $leaveLookup = $userLeaves
+                ->flatMap(fn ($leave) => collect(CarbonPeriod::create($leave->start_date, $leave->end_date))
+                    ->map(fn ($date) => $date->toDateString()))
+                ->unique()
+                ->values()
+                ->flip();
+
+            $scheduledPresentDates = $expectedDates
+                ->filter(fn (string $date) => (bool) $recordByDate->get($date)?->check_in_at)
+                ->values();
+            $scheduledPresentLookup = $scheduledPresentDates->flip();
+
+            $absentDates = $expectedDates
+                // A day that has not finished has not been missed.
+                ->filter(fn (string $date) => $date <= $todayString)
+                ->reject(fn (string $date) => $scheduledPresentLookup->has($date) || $leaveLookup->has($date))
+                ->values();
+
+            $expectedDays = $expectedDates->count();
+            $scheduledAttendanceRate = $expectedDays > 0
+                ? (float) round(($scheduledPresentDates->count() / $expectedDays) * 100, 2)
+                : 0.0;
 
             $workedSeconds = (int) $records->sum(fn (AttendanceRecord $record) => $this->calculateAttendanceWorkedSeconds($record));
             $daysPresent = $presentDates->count();
@@ -3289,6 +3386,20 @@ class ReportController extends Controller
                 'leave_dates' => $approvedLeaveDates,
                 'absent_dates' => $absentDates,
                 'weekend_dates' => $weekendDates,
+
+                // The schedule-aware view. `weekly_off_source` is the honest
+                // part: a reader can tell whether a real policy answered or
+                // whether this is still the Saturday/Sunday guess, instead of
+                // having to assume.
+                'weekly_off_source' => $weeklyOffSource,
+                'weekly_off_dates' => $weeklyOffDates,
+                'weekly_off_days' => $weeklyOffDates->count(),
+                'holiday_dates' => $holidayDates,
+                'holiday_days' => $holidayDates->count(),
+                'expected_days' => $expectedDays,
+                'scheduled_days_present' => $scheduledPresentDates->count(),
+                'absent_days' => $absentDates->count(),
+                'scheduled_attendance_rate' => $scheduledAttendanceRate,
             ];
         })->values();
 
@@ -3300,6 +3411,32 @@ class ReportController extends Controller
             'working_days' => $workingDates->count(),
             'data' => $rows,
         ]);
+    }
+
+    /**
+     * Every holiday in the range, keyed by country and then by date.
+     *
+     * One query for the whole roster. The country key is kept rather than
+     * flattened because two people in the same organization can sit under
+     * different holiday calendars, and folding them together would give an
+     * Indian employee a day off that only the UK list carries.
+     *
+     * @return array<string, array<string, true>>
+     */
+    private function holidayDatesByCountry(int $organizationId, Carbon $startDate, Carbon $endDate): array
+    {
+        $byCountry = [];
+
+        AttendanceHoliday::query()
+            ->where('organization_id', $organizationId)
+            ->whereBetween('holiday_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->get(['holiday_date', 'country'])
+            ->each(function (AttendanceHoliday $holiday) use (&$byCountry) {
+                $country = AttendanceHoliday::normalizeCountry((string) $holiday->country);
+                $byCountry[$country][Carbon::parse($holiday->holiday_date)->toDateString()] = true;
+            });
+
+        return $byCountry;
     }
 
     public function employeeInsights(Request $request)

@@ -379,9 +379,39 @@ const resolveForegroundCapturedAt = (payload: DesktopForegroundWindowPayload) =>
   return capturedAt || new Date().toISOString();
 };
 
-const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload) => (
-  [
-    String(payload.app || '').trim().toLowerCase(),
+/**
+ * What makes two foreground readings the SAME session.
+ *
+ * The window title is deliberately absent once a browser URL is known.
+ *
+ * In a browser the title tracks page STATE, not page identity: unread counts,
+ * loading placeholders and notification badges all rewrite it while the person
+ * sits on one page. Including it split a single visit into a row per flicker.
+ * Measured in the timeline on 19 Aug 2026 — one continuous stretch of Gmail on
+ * `mail.google.com/mail/u/0/#inbox` was stored as four sessions of 2s, 1s, 1s
+ * and 3s, whose only difference was the title going "Inbox (3) …" -> "Gmail"
+ * -> "Inbox (4) …" as mail arrived. That is what "the time is wrong" was:
+ * durations are not under-counted so much as shredded, and each shard is too
+ * short to read as real work.
+ *
+ * The URL is the better identity anyway, and it is strictly more precise than
+ * the title it replaces: a real navigation changes it, so genuinely different
+ * pages still separate. Where no URL could be resolved — a non-browser window,
+ * or a browser on a blank tab — the title is all there is and still counts.
+ */
+export const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload) => {
+  const app = String(payload.app || '').trim().toLowerCase();
+  const browserUrl = resolveBrowserUrlForContext({
+    context: payload,
+    isBrowser: isBrowserAppName(payload.app),
+  });
+
+  if (browserUrl.url) {
+    return [app, 'url', browserUrl.url.trim().toLowerCase()].join('|');
+  }
+
+  return [
+    app,
     String(payload.title || '').trim().toLowerCase(),
     String(payload.url || '').trim().toLowerCase(),
     /*
@@ -391,8 +421,8 @@ const resolveDesktopSessionSignature = (payload: DesktopForegroundWindowPayload)
      * be treated as the same session and keep the first page's URL for both.
      */
     String(payload.inferred_url || '').trim().toLowerCase(),
-  ].join('|')
-);
+  ].join('|');
+};
 
 const EXPLORER_APP_KEYWORDS = ['explorer.exe', 'windows explorer', 'file explorer'];
 

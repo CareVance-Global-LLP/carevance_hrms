@@ -11,6 +11,7 @@ import {
   Lock,
   Palette,
   Sparkles,
+  Timer,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -84,6 +85,13 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     group: 'workspace',
     icon: AlarmClock,
     keywords: 'shift roster rota night shift timing start end break grace overnight assign employee schedule working hours target overtime',
+  },
+  {
+    id: 'working-time',
+    name: 'Working time',
+    group: 'workspace',
+    icon: Timer,
+    keywords: 'weekly off saturday sunday alternate 2nd 4th second fourth week pattern penalisation penalization grace late arrival exemption cycle half day ladder no show lop loss of pay leave deduction overtime ot comp off compensatory multiplier rounding threshold approval shift allowance night premium differential weekend premium policy assign effective date',
   },
   {
     id: 'productivity',

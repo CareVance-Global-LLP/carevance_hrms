@@ -1,8 +1,9 @@
 {
-  "appUrl": "https://carevancetracker.duckdns.org",
+  "appUrl": "http://localhost:5173",
   "update": {
-    "provider": "generic",
-    "url": "https://carevancetracker.duckdns.org/updates/"
+    "provider": "github",
+    "owner": "Igrisssssss",
+    "repo": "carevance_hrms"
   },
   "browserTracking": {
     "chromeStoreUrl": null,

@@ -158,16 +158,34 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 Real, and deliberately not yet built:
 
-- **Ten filing generators reference blade views that do not exist** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. Those generators fail on every run; the batch now reports them by name instead of dying. Writing the templates is real statutory work, not a stub.
-- **No MFA and no SSO/SAML.** Google OAuth is the only federated option; a grep for `two_factor`/`totp`/`mfa`/`saml` returns nothing. This is the gate on any enterprise deal.
-- **No legal-entity layer.** One organization = one PAN/TAN/PF code.
+> **Keep this list honest in both directions.** It was audited on 19 Aug 2026
+> and three entries were found to be describing work that had since been built
+> — effective-dated compensation, shift definitions and mobile approvals. A
+> stale gap list is not harmless: technical buyers read it and believe it, and
+> it cost real marks in a customer evaluation for features that already
+> shipped. When you close a gap, delete the line in the same commit.
+
+- **Ten filing generators have no blade view** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. `FilingGeneratorRegistry` resolves availability from the filesystem, so these are now reported as *unavailable* rather than attempted and failed — writing a template is the whole act of shipping its filing. This is real statutory work, not a stub.
+- **No SSO/SAML and no SCIM.** MFA now exists (TOTP + recovery codes, see `MfaService`), but Google OAuth is still the only federated option. This is the gate on any deal above ~500 seats.
+- **No legal-entity layer.** One organization = one PAN/TAN/PF code. Most Indian mid-market groups run two to four entities, so this disqualifies the product before a demo rather than merely losing marks.
 - **No offer letter, e-signature or background verification.**
 - **No recruitment/ATS, engagement surveys, or HR helpdesk.** No job, candidate, interview or offer models exist. This is most of what a Keka comparison turns on.
-- **No effective-dated compensation**, so retro/arrears across a revision is approximate.
-- **Leave is a flat annual quota**, held as JSON in `organizations.settings` (`LeavePolicyService`). No accrual schedule, no pro-rating for mid-year joiners, no configurable leave year, no per-type carry-forward caps.
-- **Mobile is employee-only** — no tasks, projects, chat, performance or resignation. No manager approvals, which is the most-used mobile workflow in every competing product.
-- **0 policies.** Authorization is inline in controllers.
+- **Leave is a flat annual quota**, held as JSON in `organizations.settings` (`LeavePolicyService`). No accrual schedule, no pro-rating for mid-year joiners, no configurable leave year, no per-type carry-forward caps. Every customer has mid-year joiners, so this one is universal.
+- **No date-based rostering.** Shift *definitions* exist and are real — `Shift` carries night-shift windows, differentials, overtime multipliers and grace periods, and `employee_shifts` assigns them. What is missing is the calendar: rotation patterns, published rosters by date, week-off calendars and swap requests.
+- **No biometric device ingestion.** eSSL, ZKTeco and Matrix punch devices are on the wall of most Indian offices and none of them can talk to this.
+- **No accounting export.** `GlMappingConfig` exists with nothing to export to — no Tally, no Zoho Books.
+- **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.
+- **0 Laravel policies.** Authorization is inline in controllers, though the `Role`/`Permission` schema and `hasPermission()` are real and maker-checker now covers the full payroll chain.
 - **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.
+- **One error boundary for the whole app.** See `frontend/src/main.tsx`.
+
+### Not gaps — these were on this list and are built
+
+Kept visible rather than deleted, because they were wrongly believed missing:
+
+- **Effective-dated compensation is implemented.** `Services/Payroll/CompensationTimeline` resolves what somebody earned on any given day from accepted revision letters, and `PayrollAutoProcessService` calls `blendedAnnualCtcForMonth()`. A mid-month revision blends correctly and a back-dated one diffs against a real prior rate — arrears are not "approximate".
+- **Mobile has manager approvals.** `mobile-app/app/approval-inbox/`, plus team, notification publishing, comp-off, regularisation and selfie attendance across 18 screens.
+- **Shift definitions exist** — see the rostering entry above for what actually remains.
 
 ### The queue, and the worker you must actually run
 

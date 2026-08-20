@@ -977,6 +977,19 @@ class UsageProcessingService
             'time_entry_id' => (int) data_get($log, 'time_entry_id', 0),
             'type' => $type,
             'raw_name' => $rawName,
+            /*
+             * Carried so a consumer can still recognise a window after the
+             * display name has been resolved away from it.
+             *
+             * A website row is named after its SITE, so the CareVance workspace
+             * opened in a browser now arrives here called
+             * "carevancetracker.duckdns.org" rather than "CareVance HRMS
+             * Workspace". ActivityController::isCareVanceWorkspaceRow hides the
+             * tracker's own UI from the timeline and had only `raw_name` and
+             * `label` to test, so that rename made every workspace row visible
+             * again. The title never stopped saying what the window is.
+             */
+            'window_title' => trim((string) data_get($log, 'window_title', '')),
             'label' => $label,
             'tool_type' => $candidateToolType === 'website' && $label !== ''
                 ? 'website'
@@ -1111,6 +1124,8 @@ class UsageProcessingService
                     'time_entry_id' => (int) ($winner['time_entry_id'] ?? 0),
                     'type' => (string) ($winner['type'] ?? 'app'),
                     'raw_name' => (string) ($winner['raw_name'] ?? ''),
+                    // Fourth rebuild; see mergeMetadata.
+                    'window_title' => (string) ($winner['window_title'] ?? ''),
                     'label' => (string) ($winner['label'] ?? 'unknown'),
                     'tool_type' => (string) ($winner['tool_type'] ?? 'software'),
                     'start_at' => ExternalTimestamp::fromTimestamp($segmentStart),
@@ -1235,6 +1250,10 @@ class UsageProcessingService
                     'time_entry_id' => (int) ($activeLog['time_entry_id'] ?? 0),
                     'type' => (string) ($activeLog['type'] ?? 'app'),
                     'raw_name' => (string) ($activeLog['raw_name'] ?? ''),
+                    // Third place this row gets rebuilt from a fixed key list;
+                    // see mergeMetadata for why the title has to survive all of
+                    // them rather than only the first.
+                    'window_title' => (string) ($activeLog['window_title'] ?? ''),
                     'label' => (string) ($activeLog['label'] ?? 'unknown'),
                     'tool_type' => (string) ($activeLog['tool_type'] ?? 'software'),
                     'start_at' => ExternalTimestamp::fromTimestamp($segment['start']),
@@ -1614,6 +1633,13 @@ class UsageProcessingService
             'raw_name' => strlen((string) ($secondary['raw_name'] ?? '')) > strlen((string) ($primary['raw_name'] ?? ''))
                 ? (string) ($secondary['raw_name'] ?? '')
                 : (string) ($primary['raw_name'] ?? ''),
+            // Carried for the same reason raw_name is: this rebuilds the row
+            // from an explicit key list, so anything not named here is dropped
+            // the moment two rows merge. A window title that survives a single
+            // row but vanishes on merge is worse than one that never existed —
+            // it makes a consumer of it correct only until somebody browses the
+            // same site twice.
+            'window_title' => (string) ($primary['window_title'] ?? $secondary['window_title'] ?? ''),
             'label' => (string) ($primary['label'] ?? 'unknown'),
             'tool_type' => (string) ($primary['tool_type'] ?? 'software'),
             'recorded_at' => $recordedAt,

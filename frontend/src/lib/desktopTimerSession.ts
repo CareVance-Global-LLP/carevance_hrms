@@ -18,6 +18,16 @@ export const DESKTOP_TIMER_IDLE_RETURN_EVENT = 'desktop-timer:idle-return';
 export const DESKTOP_TIMER_IDLE_WARNING_EVENT = 'desktop-timer:idle-stop-warning';
 export const DESKTOP_TIMER_STARTED_EVENT = 'desktop-timer:started';
 export const DESKTOP_TIMER_STOPPED_EVENT = 'desktop-timer:stopped';
+/**
+ * An idle stretch has just been kept or discarded on the server.
+ *
+ * The prompt that resolves idle lives in its own component, so without this the
+ * dashboard had no way to learn that the server's worked total had just moved.
+ * Discarding a stretch is the single largest correction the server ever makes
+ * in one step, and the countdown kept advancing past it until the next reload —
+ * which is what "shift remaining is different after the popup" was.
+ */
+export const DESKTOP_TIMER_IDLE_RESOLVED_EVENT = 'desktop-timer:idle-resolved';
 
 export type DesktopTimerIdleStopDetail = {
   userId: number;
@@ -42,6 +52,13 @@ export type DesktopTimerIdleWarningDetail = {
 export type DesktopTimerSessionDetail = {
   userId: number;
   entryId?: number | null;
+};
+
+export type DesktopTimerIdleResolvedDetail = {
+  userId: number;
+  /** The idle activity row that was answered. */
+  activityId: number;
+  outcome: 'kept' | 'discarded';
 };
 
 export const canUseDesktopAutoStart = () =>
@@ -262,6 +279,15 @@ export const emitDesktopTimerStarted = (detail: DesktopTimerSessionDetail) => {
 
 export const emitDesktopTimerStopped = (detail: DesktopTimerSessionDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerSessionDetail>(DESKTOP_TIMER_STOPPED_EVENT, { detail }));
+};
+
+/**
+ * Announce that an idle stretch was kept or discarded, so the countdown can
+ * re-read worked time instead of waiting for a reload to notice.
+ */
+export const emitDesktopIdleResolved = (detail: DesktopTimerIdleResolvedDetail) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent<DesktopTimerIdleResolvedDetail>(DESKTOP_TIMER_IDLE_RESOLVED_EVENT, { detail }));
 };
 
 export const clearDesktopTimerSession = () => {

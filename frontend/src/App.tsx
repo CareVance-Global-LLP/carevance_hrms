@@ -5,6 +5,7 @@ import { canAccess, hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAc
 import { usePlan } from '@/hooks/usePlan';
 import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isLikelyMobile } from '@/lib/mobile';
+import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 
 const lazyWithChunkRetry = <T extends { default: React.ComponentType<any> }>(
   importer: () => Promise<T>
@@ -328,7 +329,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/mobile/dashboard" replace />;
   }
 
-  return <>{children}</>;
+  /*
+   * One boundary per page, keyed on the path.
+   *
+   * Every authenticated screen passes through here, so this is the one place
+   * that has to know about it. Previously the only boundary was at the root,
+   * which meant a render error on any single page replaced the whole
+   * application — sidebar, navigation and all — and the user could not even
+   * click away from the broken screen.
+   */
+  return (
+    <RouteErrorBoundary resetKey={location.pathname}>
+      {children}
+    </RouteErrorBoundary>
+  );
 }
 
 function PublicRoute({ children, allowAuthenticated }: { children: React.ReactNode; allowAuthenticated?: boolean }) {

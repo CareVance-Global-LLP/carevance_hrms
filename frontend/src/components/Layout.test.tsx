@@ -822,3 +822,79 @@ describe('Layout navigation', () => {
     openSpy.mockRestore();
   });
 });
+
+/*
+ * The assistant reads organisation-wide attendance, payroll and headcount, so
+ * it is an administrative surface. It used to mount unconditionally for every
+ * signed-in user — role was consulted only to pick which suggestion chips to
+ * show, never to decide whether the bubble appeared at all.
+ *
+ * The gate is hasStrictAdminAccess(): super_admin (0) and admin (10), custom
+ * roles included via hierarchy_level. AiChatController enforces the same rule
+ * server-side; this is the half that stops a manager from ever seeing it.
+ */
+describe('Layout AI assistant visibility', () => {
+  const setRole = (role: string, hierarchyLevel?: number) => {
+    authState.value = {
+      ...authState.value,
+      user: {
+        id: 1,
+        name: 'Someone',
+        email: 'someone@example.com',
+        role,
+        organization_id: 1,
+        is_active: true,
+        created_at: '',
+        updated_at: '',
+        ...(hierarchyLevel === undefined ? {} : { hierarchy_level: hierarchyLevel }),
+      },
+    };
+  };
+
+  const assistantButton = () => screen.queryByRole('button', { name: /assistant/i });
+
+  it('offers the assistant to an admin', async () => {
+    setRole('admin');
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await screen.findByRole('main');
+    expect(assistantButton()).toBeInTheDocument();
+  });
+
+  it('offers the assistant to a super admin', async () => {
+    setRole('super_admin');
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await screen.findByRole('main');
+    expect(assistantButton()).toBeInTheDocument();
+  });
+
+  it('hides the assistant from an employee', async () => {
+    setRole('employee');
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await screen.findByRole('main');
+    expect(assistantButton()).not.toBeInTheDocument();
+  });
+
+  it('hides the assistant from a manager', async () => {
+    setRole('manager');
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await screen.findByRole('main');
+    expect(assistantButton()).not.toBeInTheDocument();
+  });
+
+  /*
+   * A custom role carries its own hierarchy_level, which outranks the role
+   * string. An org that builds an "Ops Lead" role at level 30 must not get the
+   * assistant just because someone named the role something admin-sounding.
+   */
+  it('hides the assistant from a custom role below admin level', async () => {
+    setRole('admin', 30);
+    renderWithProviders(<Layout />, { route: '/dashboard' });
+
+    await screen.findByRole('main');
+    expect(assistantButton()).not.toBeInTheDocument();
+  });
+});

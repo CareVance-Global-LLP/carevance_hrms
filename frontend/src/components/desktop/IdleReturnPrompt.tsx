@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/Toast';
 import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import {
   DESKTOP_TIMER_IDLE_RETURN_EVENT,
+  emitDesktopIdleResolved,
   type DesktopTimerIdleReturnDetail,
 } from '@/lib/desktopTimerSession';
 import { isNativeIdlePopupAvailable } from '@/lib/idlePopupBridge';
@@ -146,8 +147,18 @@ export default function IdleReturnPrompt() {
       if (!pending?.activityId) return;
 
       void (async () => {
+        const outcome = action === 'keep' ? 'kept' : 'discarded';
         try {
-          await activityApi.resolveIdle(pending.activityId, action === 'keep' ? 'kept' : 'discarded');
+          await activityApi.resolveIdle(pending.activityId, outcome);
+          // The server's worked total has just moved. Tell the dashboard, which
+          // otherwise keeps counting past a discarded stretch until a reload.
+          if (user?.id) {
+            emitDesktopIdleResolved({
+              userId: user.id,
+              activityId: pending.activityId,
+              outcome: outcome === 'kept' ? 'kept' : 'discarded',
+            });
+          }
         } catch (error) {
           reportSilentError('idle-return-prompt-native', error);
         } finally {
@@ -159,7 +170,10 @@ export default function IdleReturnPrompt() {
     return () => {
       if (typeof dispose === 'function') dispose();
     };
-  }, []);
+    // user.id is a dependency because the resolved-event carries it; with an
+    // empty list the handler would capture the null user from the first render
+    // and the dashboard would never hear about a popup answer.
+  }, [user?.id]);
 
   // Focus the safe option, so Enter takes the conservative path.
   useEffect(() => {
@@ -176,6 +190,11 @@ export default function IdleReturnPrompt() {
         if (stopTimer) {
           await timeEntryApi.stop({ timer_slot: 'primary' });
         }
+        // See the native path above: the countdown has to re-read worked time
+        // now, not at the next reload.
+        if (user?.id) {
+          emitDesktopIdleResolved({ userId: user.id, activityId: prompt.activityId, outcome: action });
+        }
       } catch (error) {
         // Never trap someone behind a dialog they cannot dismiss. The idle row
         // stays unresolved and the server keeps its own record either way.
@@ -185,7 +204,7 @@ export default function IdleReturnPrompt() {
         setPrompt(null);
       }
     },
-    [prompt, busy]
+    [prompt, busy, user?.id]
   );
 
   if (!prompt) return null;

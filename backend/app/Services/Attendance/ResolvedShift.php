@@ -18,6 +18,14 @@ use Carbon\Carbon;
  * expectedSeconds is nullable on purpose. Null means "we know when this person
  * starts but not how long they work", which is a different fact from "they work
  * eight hours", and only the caller is entitled to turn one into the other.
+ * Zero is a third, equally distinct fact: hours are known, and none are owed.
+ *
+ * isWeeklyOff is why zero exists. A weekly off does not delete the instance —
+ * the pattern still says when the shift would run, and people do work on their
+ * days off — it only means no hours are EXPECTED. Keeping the window is what
+ * lets a night shift beginning at 22:00 on a weekly off still claim the punches
+ * that land after midnight, and what lets that work be recognised as
+ * weekly-off overtime rather than an ordinary day.
  */
 final class ResolvedShift
 {
@@ -29,7 +37,31 @@ final class ResolvedShift
         public readonly ?Carbon $startsAt = null,
         public readonly ?Carbon $endsAt = null,
         public readonly ?int $expectedSeconds = null,
+        public readonly bool $isWeeklyOff = false,
     ) {
+    }
+
+    /**
+     * The same instance, marked as falling on a weekly off.
+     *
+     * Everything about the pattern survives; only the expectation is zeroed.
+     */
+    public function onWeeklyOff(): self
+    {
+        if ($this->isWeeklyOff) {
+            return $this;
+        }
+
+        return new self(
+            attendanceDate: $this->attendanceDate,
+            source: $this->source,
+            shift: $this->shift,
+            assignment: $this->assignment,
+            startsAt: $this->startsAt,
+            endsAt: $this->endsAt,
+            expectedSeconds: 0,
+            isWeeklyOff: true,
+        );
     }
 
     public function crossesMidnight(): bool
@@ -54,6 +86,7 @@ final class ResolvedShift
             'ends_at' => $this->endsAt?->toIso8601String(),
             'crosses_midnight' => $this->crossesMidnight(),
             'expected_seconds' => $this->expectedSeconds,
+            'is_weekly_off' => $this->isWeeklyOff,
         ];
     }
 }

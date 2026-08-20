@@ -86,21 +86,28 @@ class RootErrorBoundary extends React.Component<RootErrorBoundaryProps, RootErro
   }
 }
 
+/**
+ * Reports uncaught runtime errors. Deliberately does NOT unmount the app.
+ *
+ * This used to replace the entire application with a crash screen on any
+ * window `error` or `unhandledrejection`. That sounds cautious and is the
+ * opposite: an aborted fetch on navigation, a browser extension, a stray
+ * rejection from a third-party script — none of which affect a working page —
+ * all produced a full-screen "App crashed at runtime" with the raw message
+ * shown to the user, and threw away whatever they were doing.
+ *
+ * Genuine render failures are caught by RootErrorBoundary above and by
+ * RouteErrorBoundary per page, which are the mechanisms that can actually tell
+ * a broken UI from a noisy one. This just makes sure nothing is silent.
+ */
 function RuntimeGuard({ children }: { children: React.ReactNode }) {
-  const [fatalError, setFatalError] = useState<string | null>(null)
-
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
-      const message = event.error?.message || event.message || 'Unknown runtime error'
       console.error('[root] runtime error', event.error || event.message)
-      setFatalError(message)
     }
 
     const onUnhandledRejection = (event: PromiseRejectionEvent) => {
-      const reason = event.reason
-      const message = reason?.message || String(reason || 'Unhandled promise rejection')
-      console.error('[root] unhandled rejection', reason)
-      setFatalError(message)
+      console.error('[root] unhandled rejection', event.reason)
     }
 
     window.addEventListener('error', onError)
@@ -111,25 +118,6 @@ function RuntimeGuard({ children }: { children: React.ReactNode }) {
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
     }
   }, [])
-
-  if (fatalError) {
-    return (
-      <div className="min-h-screen bg-slate-100 px-4 py-8 text-slate-900">
-        <div className="mx-auto max-w-3xl rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
-          <h1 className="text-xl font-semibold">App crashed at runtime</h1>
-          <p className="mt-2 text-sm text-slate-700">An unhandled runtime error occurred after startup.</p>
-          <p className="mt-4 rounded-md bg-slate-100 p-3 font-mono text-xs text-slate-800">{fatalError}</p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            className="mt-4 rounded-md bg-surface-inverse px-4 py-2 text-sm font-medium text-on-inverse"
-          >
-            Reload app
-          </button>
-        </div>
-      </div>
-    )
-  }
 
   return <>{children}</>
 }

@@ -33,6 +33,7 @@ import { DATE_RANGE_PRESET_OPTIONS, deriveDateRangeFromPreset, detectDateRangePr
 import { coercePositiveNumber, readSessionStorageJson, writeSessionStorageJson } from '@/lib/filterPersistence';
 import { matchesSearchFilter } from '@/lib/searchSuggestions';
 import { getWorkingDuration } from '@/lib/timeBreakdown';
+import { summariseAttendanceRow, totalAttendanceRows } from '@/lib/attendanceReportRows';
 import { useChartTheme } from '@/hooks/useChartTheme';
 import ReportTile from '@/features/reports/ReportTile';
 import { formatRecentAge, readRecentReports, rememberReport } from '@/features/reports/recentReports';
@@ -908,30 +909,28 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     const presentCount = attendanceRows.filter((row: any) => 
       row.is_working || row.check_in_at || row.days_present > 0
     ).length;
-    const presentDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.days_present || 0), 0);
-    const leaveDays = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.leave_days || 0), 0);
     const workedSeconds = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.worked_seconds || 0), 0);
     const breakSeconds = attendanceRows.reduce((sum: number, row: any) => sum + Number(row.total_break_seconds || 0), 0);
-    const expectedDays = attendanceRows.reduce(
-      (sum: number, row: any) => sum + Number(row.calendar_days_in_range || row.working_days_in_range || 0),
-      0
-    );
-    const absentDays = Math.max(0, expectedDays - presentDays - leaveDays);
     const currentWorking = attendanceRows.filter((row: any) => row.is_working).length;
-    const averageAttendanceRate = attendanceRows.length
-      ? attendanceRows.reduce((sum: number, row: any) => sum + Number(row.attendance_rate || 0), 0) / attendanceRows.length
-      : 0;
+    // Owed / present / off / missed all come from one helper now. This block
+    // used to spell out `calendar_days_in_range - days_present - leave_days`,
+    // which counts every weekly off as a day somebody failed to show up.
+    const schedule = totalAttendanceRows(attendanceRows);
+
     return {
-      presentDays,
+      presentDays: schedule.presentDays,
       presentCount,
-      leaveDays,
-      absentDays,
+      leaveDays: schedule.leaveDays,
+      absentDays: schedule.absentDays,
+      weeklyOffDays: schedule.weeklyOffDays,
+      holidayDays: schedule.holidayDays,
+      schedulePolicyBacked: schedule.everyRowIsSchedulePolicyBacked,
       workedSeconds,
       breakSeconds,
       employees: attendanceRows.length,
-      expectedDays,
+      expectedDays: schedule.expectedDays,
       currentWorking,
-      averageAttendanceRate,
+      averageAttendanceRate: schedule.averageAttendanceRate,
     };
   }, [attendanceRows, mode]);
   const attendanceDepartmentRows = useMemo(() => {
@@ -950,9 +949,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
     attendanceRows.forEach((row: any) => {
       const department = resolveAttendanceDepartment(row);
-      const expectedDays = Number(row.calendar_days_in_range || row.working_days_in_range || 0);
-      const presentDays = Number(row.days_present || 0);
-      const leaveDays = Number(row.leave_days || 0);
+      const { expectedDays, presentDays, leaveDays, absentDays } = summariseAttendanceRow(row);
       const existing = groupedRows.get(department) || {
         department,
         employees: 0,
@@ -968,7 +965,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
       existing.employees += 1;
       existing.presentDays += presentDays;
       existing.leaveDays += leaveDays;
-      existing.absentDays += Math.max(0, expectedDays - presentDays - leaveDays);
+      existing.absentDays += absentDays;
       existing.workedSeconds += Number(row.worked_seconds || 0);
       existing.breakSeconds += Number(row.total_break_seconds || 0);
       existing.expectedDays += expectedDays;
@@ -982,15 +979,21 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
     if (mode !== 'attendance') return [];
     return [...attendanceRows]
       .map((row: any) => {
-        const expectedDays = Number(row.calendar_days_in_range || row.working_days_in_range || 0);
-        const absentDays = Math.max(0, expectedDays - Number(row.days_present || 0) - Number(row.leave_days || 0));
+        // Both figures are now against days OWED. Judged against calendar days
+        // the risk score treated a weekly off as a miss, so somebody with
+        // perfect attendance in a 31-day month scored nine absences and a 71%
+        // rate — under the 80% cut, and listed here as an exception.
+        const { absentDays, attendanceRate, weeklyOffDays, expectedDays } = summariseAttendanceRow(row);
         return {
           ...row,
           absent_days: absentDays,
-          risk_score: absentDays * 10 + Math.max(0, 75 - Number(row.attendance_rate || 0)),
+          weekly_off_days: weeklyOffDays,
+          expected_days: expectedDays,
+          scheduled_attendance_rate: attendanceRate,
+          risk_score: absentDays * 10 + Math.max(0, 75 - attendanceRate),
         };
       })
-      .filter((row: any) => row.absent_days > 0 || Number(row.attendance_rate || 0) < 80)
+      .filter((row: any) => row.absent_days > 0 || Number(row.scheduled_attendance_rate || 0) < 80)
       .sort((left: any, right: any) => Number(right.risk_score || 0) - Number(left.risk_score || 0))
       .slice(0, 8);
   }, [attendanceRows, mode]);
@@ -2085,10 +2088,22 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             <MetricCard label="Employees" value={attendanceTotals.employees} hint="Employees in range" icon={Users} accent="sky" />
             <MetricCard label="Present Days" value={attendanceTotals.presentDays} hint="Total present days" icon={CalendarDays} accent="emerald" />
             <MetricCard label="Leave Days" value={attendanceTotals.leaveDays} hint="Approved leave in range" icon={ListFilter} accent="amber" />
-            <MetricCard label="Absent Days" value={attendanceTotals.absentDays} hint="Expected days not covered by presence or leave" icon={AlertTriangle} accent="rose" />
+            {/* A weekly off is a day nobody was owed. It gets its own card so
+                it can never again be read off the Absent Days figure, which is
+                exactly where it used to end up. */}
+            <MetricCard
+              label="Weekly Offs"
+              value={attendanceTotals.weeklyOffDays}
+              hint={attendanceTotals.schedulePolicyBacked
+                ? 'Days off under each employee’s weekly-off policy'
+                : 'Saturday and Sunday — no weekly-off policy is configured yet'}
+              icon={CalendarDays}
+              accent="slate"
+            />
+            <MetricCard label="Absent Days" value={attendanceTotals.absentDays} hint="Rostered days that finished with no presence and no leave" icon={AlertTriangle} accent="rose" />
             <MetricCard label="Worked Time" value={formatDuration(attendanceTotals.workedSeconds)} hint="Tracked attendance time" icon={TimerReset} accent="violet" />
             <MetricCard label="Break Time" value={formatDuration(attendanceTotals.breakSeconds)} hint="Total break time in range" icon={TimerReset} accent="amber" />
-            <MetricCard label="Avg Attendance" value={formatPercent(attendanceTotals.averageAttendanceRate)} hint="Average attendance rate in this scope" icon={Gauge} accent="slate" />
+            <MetricCard label="Avg Attendance" value={formatPercent(attendanceTotals.averageAttendanceRate)} hint="Present days as a share of days rostered" icon={Gauge} accent="slate" />
           </div>
 
           <SurfaceCard className="p-5">
@@ -2356,7 +2371,11 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
                 { key: 'employee', header: 'Employee', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
                 { key: 'department', header: 'Department', render: (row: any) => resolveAttendanceDepartment(row) },
                 { key: 'absent', header: 'Absent', render: (row: any) => row.absent_days },
-                { key: 'rate', header: 'Rate', render: (row: any) => `${row.attendance_rate}%` },
+                { key: 'weekly_off', header: 'Weekly Off', render: (row: any) => row.weekly_off_days },
+                // The scheduled rate, not the calendar one — an employee is
+                // listed here on this number, and the calendar rate marked
+                // every weekly off against them.
+                { key: 'rate', header: 'Rate', render: (row: any) => formatPercent(row.scheduled_attendance_rate) },
                 { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(row.worked_seconds || 0) },
                 { key: 'break', header: 'Break Time', render: (row: any) => formatDuration(row.total_break_seconds || 0) },
               ]}
@@ -2371,9 +2390,14 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             headerAction={renderPanelRefreshButton()}
             columns={[
               { key: 'employee', header: 'Employee', render: (row: any) => <div><p className="font-medium text-slate-950">{row.user?.name}</p><p className="text-xs text-slate-500">{row.user?.email}</p></div> },
-              { key: 'present', header: 'Present', render: (row: any) => `${row.days_present} / ${row.calendar_days_in_range || row.working_days_in_range}` },
+              // Out of days ROSTERED, not out of days on the calendar. The old
+              // denominator counted every weekly off as a day this person was
+              // expected in, so nobody could ever reach 100%.
+              { key: 'present', header: 'Present', render: (row: any) => `${row.days_present} / ${summariseAttendanceRow(row).expectedDays}` },
               { key: 'leave', header: 'Leave', render: (row: any) => row.leave_days },
-              { key: 'attendance_rate', header: 'Attendance %', render: (row: any) => `${row.attendance_rate}%` },
+              { key: 'weekly_off', header: 'Weekly Off', render: (row: any) => summariseAttendanceRow(row).weeklyOffDays },
+              { key: 'absent', header: 'Absent', render: (row: any) => summariseAttendanceRow(row).absentDays },
+              { key: 'attendance_rate', header: 'Attendance %', render: (row: any) => formatPercent(summariseAttendanceRow(row).attendanceRate) },
                { key: 'worked', header: 'Work Time', render: (row: any) => formatDuration(row.worked_seconds) },
                { key: 'break', header: 'Break Time', render: (row: any) => formatDuration(row.total_break_seconds || 0) },
                { key: 'status', header: 'Status', render: (row: any) => (row.is_working ? 'Working' : 'Offline') },

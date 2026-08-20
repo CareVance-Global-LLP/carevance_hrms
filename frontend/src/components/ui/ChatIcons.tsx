@@ -1,53 +1,77 @@
-interface SparkleIconProps {
+interface SparkleMarkProps {
   size?: number;
   className?: string;
 }
 
-export function SparkleIcon({ size = 56, className = '' }: SparkleIconProps) {
+/**
+ * The assistant's mark: a four-point star, drawn in currentColor.
+ *
+ * It used to arrive baked into a circle filled with a literal #5D969D, which
+ * meant the one piece of brand furniture in the assistant could not follow a
+ * theme change — and nested awkwardly when the tile around it was already a
+ * rounded square. The mark is now just the star; the surface under it is the
+ * tile's job.
+ */
+export function SparkleMark({ size = 24, className = '' }: SparkleMarkProps) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 56 56"
       fill="none"
+      aria-hidden="true"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
     >
-      <circle cx="28" cy="28" r="26" fill="#5D969D" />
       <path
-        d="M28 10 Q30 28 46 28 Q28 30 28 46 Q26 28 10 28 Q28 26 28 10 Z"
-        fill="white"
+        d="M28 6 Q30.5 25.5 50 28 Q30.5 30.5 28 50 Q25.5 30.5 6 28 Q25.5 25.5 28 6 Z"
+        fill="currentColor"
       />
     </svg>
   );
 }
 
-interface DefaultBotAvatarProps {
+interface SparkleTileProps {
+  size?: number;
+  radius?: string;
   className?: string;
+  testId?: string;
 }
 
-export function DefaultBotAvatar({ className = '' }: DefaultBotAvatarProps) {
+/**
+ * The mark on its brand ground. One tile at three sizes — the launcher, the
+ * panel header, and the avatar beside every reply — so the thing you tap and
+ * the thing that answers you are visibly the same object.
+ *
+ * `cta-band` rather than a brand-ramp utility: the ramp inverts, so
+ * `from-primary-500` turns pale in dark mode and takes the white mark with it.
+ * See the .cta-band comment in styles/theme.css.
+ */
+export function SparkleTile({ size = 40, radius = 'rounded-xl', className = '', testId }: SparkleTileProps) {
   return (
-    <div
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius)] bg-emerald-50 ${className}`}
+    <span
+      data-testid={testId}
+      className={`cta-band inline-flex shrink-0 items-center justify-center ${radius} text-white ${className}`}
+      style={{ width: size, height: size }}
     >
-      <SparkleIcon size={16} />
-    </div>
+      <SparkleMark size={Math.round(size * 0.58)} />
+    </span>
   );
 }
 
-interface LandingBotAvatarProps {
+interface BotAvatarProps {
   className?: string;
 }
 
-export function LandingBotAvatar({ className = '' }: LandingBotAvatarProps) {
-  return (
-    <div
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[var(--radius)] bg-accent-100 ${className}`}
-    >
-      <SparkleIcon size={16} />
-    </div>
-  );
+/**
+ * The assistant's face, in the app and on the marketing pages alike.
+ *
+ * This was two components — DefaultBotAvatar tinted bg-emerald-50 and
+ * LandingBotAvatar tinted bg-accent-100 — which made the same assistant look
+ * like two different products depending on which page you met it on.
+ */
+export function BotAvatar({ className = '' }: BotAvatarProps) {
+  return <SparkleTile size={24} radius="rounded-lg" className={className} testId="chat-bot-avatar" />;
 }
 
 interface HeadsetIconProps {

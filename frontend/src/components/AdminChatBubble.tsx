@@ -1,11 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { aiChatApi } from '@/services/api';
-import { SparkleIcon, DefaultBotAvatar } from '@/components/ui/ChatIcons';
-import { getQuickActionsForRole } from '@/lib/aiKnowledge';
+import { SparkleMark, SparkleTile, BotAvatar } from '@/components/ui/ChatIcons';
+import {
+  CHAT_ASSISTANT_BUBBLE_CLASS,
+  CHAT_ASSISTANT_NAME,
+  CHAT_EYEBROW_CLASS,
+  CHAT_TRANSCRIPT_CLASS,
+  CHAT_CHIP_CLASS,
+  CHAT_DISCLAIMER,
+  CHAT_DOT_CLASS,
+  CHAT_FOOTER_CLASS,
+  CHAT_HEADER_CLASS,
+  CHAT_INPUT_CLASS,
+  CHAT_LAUNCHER_CLASS,
+  CHAT_PANEL_CLASS,
+  CHAT_SEND_CLASS,
+  CHAT_SUPPORT,
+  CHAT_USER_BUBBLE_CLASS,
+} from '@/components/ui/chatChrome';
+import { useAnyDialogOpen } from '@/components/ui/dialog';
+import { ADMIN_QUICK_ACTIONS } from '@/lib/aiKnowledge';
 
 type ChatRole = 'user' | 'assistant';
-type ChatMessage = { role: ChatRole; content: string };
+
+/**
+ * Where a figure in this reply came from. Assembled server-side from the tools
+ * that actually ran (see AiToolRegistry), never parsed out of the model's
+ * prose — a citation the model writes is a citation the model can invent.
+ */
+type ChatSource = { label: string; route: string };
+
+type ChatMessage = { role: ChatRole; content: string; sources?: ChatSource[] };
 
 const FOLLOW_UP_MAP: Record<string, string[]> = {
   clocked: ['Send them a reminder', 'View attendance log'],
@@ -23,7 +50,18 @@ function getFollowUps(reply: string): string[] {
   return FOLLOW_UP_MAP.default;
 }
 
-const SUPPORT = { email: 'support@carevance.com', phone: '+91 800-123-4567' };
+/** Names the job, so the header is not two lines saying the same thing. */
+const SUBTITLE = 'Reads your live workspace data';
+
+/*
+ * The opener earns the first question. It used to restate the panel title and
+ * then list the topics that the chips underneath already list. What an admin
+ * cannot tell by looking is the part worth saying: these are real figures, and
+ * each one comes back with the record it was read from.
+ */
+const GREETING =
+  'Ask me about approvals, attendance, headcount or payroll. Every figure I give you links back to the record it came from.';
+
 const STORAGE_KEY = 'carevance-chat-position';
 const ICON_SIZE = 56;
 const DRAG_THRESHOLD = 5;
@@ -72,9 +110,10 @@ export default function AdminChatBubble() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: "Hi, I'm your admin assistant. Ask about approvals, attendance, or payroll status." },
+    { role: 'assistant', content: GREETING },
   ]);
-  const quickActions = useMemo(() => getQuickActionsForRole('admin'), []);
+  const quickActions = ADMIN_QUICK_ACTIONS;
+  const dialogOpen = useAnyDialogOpen();
 
   const [pos, setPos] = useState<{ left: number; top: number }>(() => loadPosition() ?? getDefaultPosition());
   const [isDragging, setIsDragging] = useState(false);
@@ -172,11 +211,14 @@ export default function AdminChatBubble() {
     setIsLoading(true);
     try {
       const res = await aiChatApi.chat({ message: content, history, context: 'admin' });
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: res.data.reply, sources: res.data.sources ?? [] },
+      ]);
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: "I'm having trouble connecting. Please try again or contact support at " + SUPPORT.email },
+        { role: 'assistant', content: "I'm having trouble connecting. Please try again or contact support at " + CHAT_SUPPORT.email },
       ]);
     } finally {
       setIsLoading(false);
@@ -185,84 +227,120 @@ export default function AdminChatBubble() {
 
   const followUps = messages.length > 1 && !isLoading ? getFollowUps(messages[messages.length - 1]?.content ?? '') : [];
 
+  /*
+   * Step aside for modal surfaces. The bubble is pinned at z-[100] and dialogs
+   * start at z-index 50, so it sat on top of the footer of every Modal and
+   * SlideOver — the corner that holds the primary button. It covered "Save
+   * settings" on the employee settings drawer. Unmounting rather than dimming
+   * also keeps it out of the dialog's focus trap.
+   */
+  if (dialogOpen) return null;
+
   return (
     <>
       {!isOpen && (
         <button
           type="button"
-          aria-label="Open Admin Assistant"
+          aria-label="Open CareVance Assistant"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          className="fixed z-[100] flex items-center justify-center rounded-full select-none touch-none"
-          style={{ left: pos.left, top: pos.top, width: ICON_SIZE, height: ICON_SIZE }}
+          className={CHAT_LAUNCHER_CLASS}
+          // Position is the one thing this launcher does not share: it is
+          // draggable, so its corner is wherever the admin last left it.
+          style={{ left: pos.left, top: pos.top }}
         >
-          <SparkleIcon size={ICON_SIZE} className="drop-shadow-lg drop-shadow-teal-500/30" />
+          <SparkleMark size={26} />
         </button>
       )}
 
       {isOpen && (
         <div
           data-chatbot-panel
+          data-testid="chat-panel"
           ref={panelRef}
-          className="fixed z-[100] flex w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl max-md:inset-0 max-md:rounded-none sm:w-[360px]"
+          className={`${CHAT_PANEL_CLASS} w-full sm:w-[360px]`}
           style={
             viewport.w < MOBILE_BREAKPOINT
               ? { maxHeight: '100vh' }
               : { left: panelPos?.left, top: panelPos?.top, maxHeight: 'min(480px, calc(100vh - 40px))' }
           }
         >
-          <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
+          <div data-testid="chat-header" className={CHAT_HEADER_CLASS}>
             <div className="flex items-center gap-2.5">
-              <SparkleIcon size={30} />
+              <SparkleTile size={34} radius="rounded-lg" />
               <div>
-                <p className="text-sm font-semibold">Admin assistant</p>
-                <p className="text-xs text-white/85">Online</p>
+                <p className="text-sm font-semibold">{CHAT_ASSISTANT_NAME}</p>
+                <p className="text-[11px] leading-tight text-white/70">{SUBTITLE}</p>
               </div>
             </div>
-            <button type="button" onClick={() => setIsOpen(false)} className="rounded-full p-1 hover:bg-white/20">
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              aria-label="Close assistant"
+              className="-mr-1 rounded-lg p-1.5 text-white/70 transition hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div ref={scrollRef} className="flex-1 space-y-2.5 overflow-y-auto bg-slate-50/50 p-3" style={{ maxHeight: '300px' }}>
+          <div ref={scrollRef} className={CHAT_TRANSCRIPT_CLASS} style={{ maxHeight: '300px' }}>
             {messages.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.role === 'assistant' && <DefaultBotAvatar className="mr-1.5 mt-0.5" />}
-                <div
-                  className={`max-w-[75%] rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white text-slate-700 border border-slate-100 shadow-sm'
-                  }`}
-                >
-                  {msg.content}
+                {msg.role === 'assistant' && <BotAvatar className="mr-2 mt-0.5" />}
+                <div className="flex max-w-[78%] flex-col gap-1.5">
+                  <div className={msg.role === 'user' ? CHAT_USER_BUBBLE_CLASS : CHAT_ASSISTANT_BUBBLE_CLASS}>
+                    {msg.content}
+                  </div>
+
+                  {/*
+                    * Every figure the assistant states is one click from the
+                    * record it was read from. Rendered only when a tool
+                    * actually ran — an answer from the assistant's own
+                    * knowledge has nothing to point at, and a "Sources" label
+                    * over an empty list would imply otherwise.
+                    */}
+                  {msg.role === 'assistant' && (msg.sources?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className={CHAT_EYEBROW_CLASS}>Source</span>
+                      {msg.sources!.map((source) => (
+                        <Link
+                          key={source.route}
+                          to={source.route}
+                          onClick={() => setIsOpen(false)}
+                          className={`${CHAT_CHIP_CLASS} px-2 py-0.5`}
+                        >
+                          {source.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <DefaultBotAvatar className="mr-1.5 mt-0.5" />
-                <div className="flex items-center gap-1 rounded-xl border border-slate-100 bg-white px-3 py-2.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0s' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0.15s' }} />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-blue-600" style={{ animationDelay: '0.3s' }} />
+                <BotAvatar className="mr-2 mt-0.5" />
+                <div className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-black/5 bg-surface-raised px-3 py-3 shadow-sm">
+                  <span className={CHAT_DOT_CLASS} style={{ animationDelay: '0s' }} />
+                  <span className={CHAT_DOT_CLASS} style={{ animationDelay: '0.15s' }} />
+                  <span className={CHAT_DOT_CLASS} style={{ animationDelay: '0.3s' }} />
                 </div>
               </div>
             )}
           </div>
 
           {messages.length <= 1 && (
-            <div className="border-t border-slate-100 bg-white px-3 pt-2 pb-1.5">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Quick questions</p>
-              <div className="flex flex-wrap gap-1">
+            <div className={`${CHAT_FOOTER_CLASS} px-3 pt-2.5 pb-2`}>
+              <p className={`mb-2 ${CHAT_EYEBROW_CLASS}`}>Quick questions</p>
+              <div className="flex flex-wrap gap-1.5">
                 {quickActions.map((q) => (
                   <button
                     key={q}
                     type="button"
                     disabled={isLoading}
                     onClick={() => void send(q)}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-blue-600 hover:bg-blue-600/10 hover:text-emerald-700 disabled:opacity-50"
+                    className={CHAT_CHIP_CLASS}
                   >
                     {q}
                   </button>
@@ -272,14 +350,14 @@ export default function AdminChatBubble() {
           )}
 
           {followUps.length > 0 && messages.length > 1 && !isLoading && (
-            <div className="border-t border-slate-100 bg-white px-3 pt-2 pb-1.5">
-              <div className="flex flex-wrap gap-1">
+            <div className={`${CHAT_FOOTER_CLASS} px-3 pt-2.5 pb-2`}>
+              <div className="flex flex-wrap gap-1.5">
                 {followUps.map((q) => (
                   <button
                     key={q}
                     type="button"
                     onClick={() => void send(q)}
-                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-blue-600 hover:bg-blue-600/10 hover:text-emerald-700"
+                    className={CHAT_CHIP_CLASS}
                   >
                     {q}
                   </button>
@@ -288,8 +366,8 @@ export default function AdminChatBubble() {
             </div>
           )}
 
-          <div className="border-t border-slate-100 bg-white p-2.5">
-            <div className="flex items-center gap-1.5">
+          <div className={`${CHAT_FOOTER_CLASS} px-3 pb-2.5 pt-2.5`}>
+            <div className="flex items-center gap-2">
               <input
                 ref={inputRef}
                 type="text"
@@ -301,19 +379,20 @@ export default function AdminChatBubble() {
                     void send(input);
                   }
                 }}
-                placeholder="Ask anything..."
-                className="min-h-[2rem] flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none transition focus:border-blue-600 focus:bg-white"
+                placeholder="Ask about approvals, attendance, payroll…"
+                className={CHAT_INPUT_CLASS}
               />
               <button
                 type="button"
                 onClick={() => void send(input)}
                 disabled={isLoading || !input.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white disabled:opacity-50"
+                aria-label="Send message"
+                className={CHAT_SEND_CLASS}
               >
-                <Send className="h-3.5 w-3.5" />
+                <Send className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-1.5 text-center text-[10px] text-slate-300">AI may be inaccurate. Verify important info.</p>
+            <p className="mt-2 text-center text-[10px] text-slate-400">{CHAT_DISCLAIMER}</p>
           </div>
         </div>
       )}

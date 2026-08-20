@@ -608,8 +608,35 @@ class ActivityFeedService
         };
     }
 
+    /**
+     * What the timeline calls this session.
+     *
+     * A website session is named after the SITE, never the browser. The desktop
+     * agent fills `display_name` from the foreground process, which for any
+     * browser is the browser — so preferring it unconditionally meant every
+     * website visit in the timeline read "Google Chrome" no matter which site
+     * it was. Reported 19 Aug 2026 as "I used so many websites like insta and
+     * facebook and it shows Google Chrome only"; confirmed in the data, where
+     * five consecutive Gmail sessions all carried
+     * `display_name = 'Google Chrome'` while `normalized_domain` held
+     * `mail.google.com` all along.
+     *
+     * The domain is therefore read from the row that already has it rather than
+     * asking the agent to send a better name, which also means every session
+     * already recorded is named correctly from now on without a re-import.
+     */
     private function resolveSessionName(ActivitySession $session): string
     {
+        if ($this->resolveSessionType($session) === 'url') {
+            $site = trim((string) ($session->normalized_domain ?: $session->normalized_label));
+
+            // 'unknown-site' is the normalizer's own placeholder for a URL it
+            // could not read a host out of; the browser name beats that.
+            if ($site !== '' && $site !== 'unknown-site') {
+                return $site;
+            }
+        }
+
         return (string) (
             $session->display_name
             ?: $session->app_name

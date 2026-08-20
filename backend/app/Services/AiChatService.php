@@ -3,24 +3,26 @@
 namespace App\Services;
 
 use App\Models\AiChatLog;
-use App\Models\AttendanceRecord;
-use App\Models\EmployeeWorkInfo;
-use App\Models\LeaveRequest;
-use App\Models\PayrollItem;
-use App\Models\PayrollMonthlyRun;
 use App\Models\User;
+use App\Services\Ai\AiToolRegistry;
 use App\Support\RoleLabel;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class AiChatService
 {
-    public function chat(string $message, array $history, ?User $user = null, ?string $context = null): string
+    public function __construct(private readonly AiToolRegistry $tools)
+    {
+    }
+
+    /**
+     * @return array{reply: string, sources: list<array{label: string, route: string}>}
+     */
+    public function chat(string $message, array $history, ?User $user = null, ?string $context = null): array
     {
         $providers = $this->providers();
         if (empty($providers)) {
-            return 'The AI assistant is not configured yet. Please ask your administrator to add an AI API key, or check the Help section (Settings → Help).';
+            return $this->plainReply('The AI assistant is not configured yet. Please ask your administrator to add an AI API key, or check the Help section (Settings → Help).');
         }
 
         // The landing/sales bot serves public visitors: use a marketing-focused prompt and no data tools.
@@ -29,8 +31,7 @@ class AiChatService
             $tools = [];
         } else {
             $systemPrompt = $this->systemPrompt($user);
-            // Build available tools based on user role
-            $tools = $this->availableTools($user);
+            $tools = $this->tools->definitionsFor($user);
         }
 
         $baseMessages = [['role' => 'system', 'content' => $systemPrompt]];
@@ -57,23 +58,38 @@ class AiChatService
                     break 2; // Not enough time left for another attempt.
                 }
 
-                $reply = $this->attemptModel($baseUrl, $apiKey, $model, $baseMessages, $tools, $user, $message, (int) floor($remaining));
-                if ($reply !== null) {
-                    return $reply;
+                $result = $this->attemptModel($baseUrl, $apiKey, $model, $baseMessages, $tools, $user, $message, (int) floor($remaining));
+                if ($result !== null) {
+                    return $result;
                 }
             }
         }
 
-        return 'I am having trouble reaching the AI service right now. Please try again later, or check the Help section (Settings → Help).';
+        return $this->plainReply('I am having trouble reaching the AI service right now. Please try again later, or check the Help section (Settings → Help).');
     }
 
     /**
-     * Attempt a single model on a single provider. Returns the reply string on success, or null on failure.
+     * A reply with nothing behind it: no tool ran, so there is no record to
+     * cite. Never fabricate a source to fill the gap — an uncitable answer the
+     * reader knows is uncitable is the honest outcome.
+     *
+     * @return array{reply: string, sources: list<array{label: string, route: string}>}
      */
-    private function attemptModel(string $baseUrl, string $apiKey, string $model, array $baseMessages, array $tools, ?User $user, string $message, int $timeout = 15): ?string
+    private function plainReply(string $reply): array
+    {
+        return ['reply' => $reply, 'sources' => []];
+    }
+
+    /**
+     * Attempt a single model on a single provider.
+     *
+     * @return array{reply: string, sources: list<array{label: string, route: string}>}|null  null on failure
+     */
+    private function attemptModel(string $baseUrl, string $apiKey, string $model, array $baseMessages, array $tools, ?User $user, string $message, int $timeout = 15): ?array
     {
         $messages = $baseMessages;
         $toolCallsUsed = [];
+        $sources = [];
 
         try {
             $payload = [
@@ -102,12 +118,13 @@ class AiChatService
                         $fnArgs = json_decode(data_get($tc, 'function.arguments', '{}'), true) ?? [];
                         $toolCallsUsed[] = $fnName;
 
-                        $toolResult = $this->executeTool($fnName, $fnArgs, $user);
+                        $toolResult = $this->tools->execute($fnName, $fnArgs, $user);
+                        $sources = $this->mergeSources($sources, $toolResult->sources);
 
                         $messages[] = [
                             'role' => 'tool',
                             'tool_call_id' => data_get($tc, 'id', ''),
-                            'content' => $toolResult,
+                            'content' => $toolResult->toJson(),
                         ];
                     }
 
@@ -124,7 +141,7 @@ class AiChatService
                         if (is_string($followContent) && trim($followContent) !== '') {
                             $reply = trim($followContent);
                             $this->logConversation($user, $message, $reply, $toolCallsUsed);
-                            return $reply;
+                            return ['reply' => $reply, 'sources' => $sources];
                         }
                     }
                 }
@@ -133,7 +150,7 @@ class AiChatService
                 if (is_string($content) && trim($content) !== '') {
                     $reply = trim($content);
                     $this->logConversation($user, $message, $reply, $toolCallsUsed);
-                    return $reply;
+                    return ['reply' => $reply, 'sources' => $sources];
                 }
             }
 
@@ -152,6 +169,31 @@ class AiChatService
         }
 
         return null;
+    }
+
+    /**
+     * Append sources, keeping first-seen order and dropping repeats.
+     *
+     * The model routinely calls the same tool twice in one turn, and several
+     * tools legitimately point at the same screen. Either way the reader should
+     * see one chip per destination.
+     *
+     * @param  list<array{label: string, route: string}>  $existing
+     * @param  list<array{label: string, route: string}>  $incoming
+     * @return list<array{label: string, route: string}>
+     */
+    private function mergeSources(array $existing, array $incoming): array
+    {
+        $seen = array_column($existing, 'route');
+
+        foreach ($incoming as $source) {
+            if (! in_array($source['route'], $seen, true)) {
+                $existing[] = $source;
+                $seen[] = $source['route'];
+            }
+        }
+
+        return $existing;
     }
 
     /**
@@ -213,241 +255,6 @@ class AiChatService
         return $providers;
     }
 
-    /**
-     * Build the list of function tools the model can call, scoped to the user's role.
-     */
-    private function availableTools(?User $user): array
-    {
-        if (! $user) {
-            return [];
-        }
-
-        $tools = [];
-        $role = $user->role;
-
-        // All authenticated users can check their own leave balance
-        $tools[] = $this->toolDef('getLeaveBalance', 'Get the logged-in employee\'s leave balance by category (paid, sick, birthday, unpaid).', []);
-
-        // Managers and admins can see pending approvals and team status
-        if (in_array($role, ['admin', 'super_admin', 'manager'], true)) {
-            $tools[] = $this->toolDef('getPendingApprovalsCount', 'Count of leave and time-edit requests pending this reviewer\'s approval.', []);
-            $tools[] = $this->toolDef('getMyTeamStatus', 'Today\'s attendance and leave status for the manager\'s direct reports.', []);
-        }
-
-        // Admins and super_admins can see org-wide data
-        if (in_array($role, ['admin', 'super_admin'], true)) {
-            $tools[] = $this->toolDef('getTodayAttendanceSummary', 'Summary of who is clocked in, late, or absent across the organisation today.', []);
-            $tools[] = $this->toolDef('getPayrollCycleStatus', 'Current payroll cycle status — percentage processed and any blockers.', []);
-        }
-
-        return $tools;
-    }
-
-    private function toolDef(string $name, string $description, array $parameters): array
-    {
-        return [
-            'type' => 'function',
-            'function' => [
-                'name' => $name,
-                'description' => $description,
-                'parameters' => [
-                    'type' => 'object',
-                    // Force an object ({}) instead of an array ([]) when there are no properties,
-                    // otherwise strict providers (e.g. Gemini) reject the schema.
-                    'properties' => empty($parameters) ? new \stdClass() : $parameters,
-                    'required' => array_values(array_keys(array_filter($parameters, fn ($p) => $p['required'] ?? false))),
-                ],
-            ],
-        ];
-    }
-
-    /**
-     * Execute a tool call. Each tool runs its own authorization check.
-     */
-    private function executeTool(string $name, array $args, ?User $user): string
-    {
-        if (! $user) {
-            return 'User not authenticated.';
-        }
-
-        return match ($name) {
-            'getLeaveBalance' => $this->getLeaveBalance($user),
-            'getPendingApprovalsCount' => $this->getPendingApprovalsCount($user),
-            'getTodayAttendanceSummary' => $this->getTodayAttendanceSummary($user),
-            'getPayrollCycleStatus' => $this->getPayrollCycleStatus($user),
-            'getMyTeamStatus' => $this->getMyTeamStatus($user),
-            default => 'Unknown function.',
-        };
-    }
-
-    private function getLeaveBalance(User $user): string
-    {
-        $orgId = $user->organization_id;
-        if (! $orgId) {
-            return 'No organisation found for your account.';
-        }
-
-        $categories = ['paid', 'sick', 'birthday', 'unpaid'];
-        $balance = [];
-
-        foreach ($categories as $cat) {
-            $approved = LeaveRequest::where('user_id', $user->id)
-                ->where('organization_id', $orgId)
-                ->where('leave_category', $cat)
-                ->where('status', 'approved')
-                ->count();
-            $balance[$cat] = ['approved_requests' => $approved];
-        }
-
-        return json_encode($balance);
-    }
-
-    private function getPendingApprovalsCount(User $user): string
-    {
-        $role = $user->role;
-        if (! in_array($role, ['admin', 'super_admin', 'manager'], true)) {
-            return 'You do not have access to approval data. This is something your admin or manager can check.';
-        }
-
-        $orgId = $user->organization_id;
-        if (! $orgId) {
-            return 'No organisation found.';
-        }
-
-        $leavePending = LeaveRequest::where('organization_id', $orgId)
-            ->where('status', 'pending')
-            ->when($role === 'manager', function ($q) use ($user) {
-                $directReports = EmployeeWorkInfo::where('reporting_manager_id', $user->id)
-                    ->pluck('user_id');
-                $q->whereIn('user_id', $directReports->push($user->id));
-            })
-            ->count();
-
-        return json_encode(['pending_leave_requests' => $leavePending]);
-    }
-
-    private function getTodayAttendanceSummary(User $user): string
-    {
-        if (! in_array($user->role, ['admin', 'super_admin'], true)) {
-            return 'You do not have access to organisation-wide attendance data. This is something your admin can check.';
-        }
-
-        $orgId = $user->organization_id;
-        if (! $orgId) {
-            return 'No organisation found.';
-        }
-
-        $today = now()->toDateString();
-        $records = AttendanceRecord::where('organization_id', $orgId)
-            ->where('attendance_date', $today)
-            ->get();
-
-        $clockedIn = $records->where('status', '!=', 'absent')->count();
-        $late = $records->where('late_minutes', '>', 0)->count();
-        $absent = $records->where('status', 'absent')->count();
-        $totalEmployees = DB::table('users')
-            ->where('organization_id', $orgId)
-            ->whereNull('deleted_at')
-            ->count();
-
-        return json_encode([
-            'total_employees' => $totalEmployees,
-            'clocked_in' => $clockedIn,
-            'late' => $late,
-            'absent' => $absent,
-        ]);
-    }
-
-    private function getPayrollCycleStatus(User $user): string
-    {
-        if (! in_array($user->role, ['admin', 'super_admin'], true)) {
-            return 'You do not have access to payroll data. This is something your admin can check.';
-        }
-
-        $orgId = $user->organization_id;
-        if (! $orgId) {
-            return 'No organisation found.';
-        }
-
-        $currentMonth = now()->format('Y-m');
-        $run = PayrollMonthlyRun::where('organization_id', $orgId)
-            ->where('month_year', $currentMonth)
-            ->first();
-
-        if (! $run) {
-            return json_encode(['status' => 'no_run', 'message' => 'No payroll run found for this month.']);
-        }
-
-        $totalEmployees = DB::table('users')
-            ->where('organization_id', $orgId)
-            ->whereNull('deleted_at')
-            ->count();
-
-        $processed = PayrollItem::where('payroll_run_id', $run->id)
-            ->where('payment_status', 'paid')
-            ->count();
-
-        $percentage = $totalEmployees > 0 ? round(($processed / $totalEmployees) * 100) : 0;
-
-        return json_encode([
-            'status' => $run->status,
-            'month' => $currentMonth,
-            'percentage_processed' => $percentage,
-            'processed' => $processed,
-            'total_employees' => $totalEmployees,
-        ]);
-    }
-
-    private function getMyTeamStatus(User $user): string
-    {
-        if (! in_array($user->role, ['admin', 'super_admin', 'manager'], true)) {
-            return 'You do not have access to team data. This is something your manager or admin can check.';
-        }
-
-        $orgId = $user->organization_id;
-        if (! $orgId) {
-            return 'No organisation found.';
-        }
-
-        $directReports = EmployeeWorkInfo::where('reporting_manager_id', $user->id)
-            ->pluck('user_id');
-
-        if ($directReports->isEmpty()) {
-            return json_encode(['message' => 'You have no direct reports.']);
-        }
-
-        $today = now()->toDateString();
-
-        $attendance = AttendanceRecord::where('organization_id', $orgId)
-            ->where('attendance_date', $today)
-            ->whereIn('user_id', $directReports)
-            ->get()
-            ->keyBy('user_id');
-
-        $todayLeaves = LeaveRequest::where('organization_id', $orgId)
-            ->where('start_date', '<=', $today)
-            ->where('end_date', '>=', $today)
-            ->where('status', 'approved')
-            ->whereIn('user_id', $directReports)
-            ->pluck('user_id', 'user_id')
-            ->toArray();
-
-        $result = [];
-        $reportNames = User::whereIn('id', $directReports)->pluck('name', 'id');
-
-        foreach ($directReports as $empId) {
-            $att = $attendance->get($empId);
-            $result[] = [
-                'name' => $reportNames[$empId] ?? "User #{$empId}",
-                'status' => in_array($empId, $todayLeaves)
-                    ? 'on_leave'
-                    : ($att ? ($att->status === 'absent' ? 'absent' : 'present') : 'no_record'),
-            ];
-        }
-
-        return json_encode($result);
-    }
-
     private function logConversation(?User $user, string $message, string $reply, array $toolCallsUsed): void
     {
         if (! $user) {
@@ -475,8 +282,14 @@ class AiChatService
             $roleContext = "\n\nThe user is logged in as: {$roleLabel}.";
         }
 
-        return "You are CareVance Assistant, a friendly and knowledgeable AI guide for the CareVance HRMS (Human Resource Management System) web and desktop app. "
-            . "Your goal is to solve the user's problem on the first reply.\n\n"
+        return "You are CareVance Assistant, the administrator's assistant inside the CareVance HRMS (Human Resource Management System) web and desktop app. "
+            . "Everyone you talk to is an admin or super admin of their own organisation. "
+            . "Your goal is to solve their problem on the first reply.\n\n"
+            . "USING YOUR TOOLS (this is what makes you useful):\n"
+            . "- When the question is about a real figure — approvals waiting, who is in or out today, headcount, payroll progress, who cannot be paid — CALL THE TOOL. Do not answer from memory and do not tell them which screen to go and count it on.\n"
+            . "- NEVER invent, estimate or round a number you did not get from a tool. If no tool covers the question, say what you do not have rather than guessing.\n"
+            . "- State the figure plainly and briefly. Do NOT append a 'source' or a link yourself — the app attaches the record links to your reply automatically, so writing your own duplicates them.\n"
+            . "- Tools read the caller's own organisation only. You cannot see any other company's data.\n\n"
             . "RESPONSE STYLE (follow strictly):\n"
             . "- Be SHORT. Aim for 2-5 lines. Lead with the direct answer, then only the exact steps needed.\n"
             . "- For a 'how do I…' question, give a single compact numbered list with the exact path (e.g. 'Settings → Organization'). No filler sentences.\n"

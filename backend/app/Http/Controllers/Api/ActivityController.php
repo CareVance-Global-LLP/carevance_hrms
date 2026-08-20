@@ -294,7 +294,9 @@ class ActivityController extends Controller
                     'user_id' => (int) ($row['user_id'] ?? 0),
                     'time_entry_id' => (int) ($row['time_entry_id'] ?? 0),
                     'type' => (string) ($row['type'] ?? 'app'),
-                    'name' => $rawName !== '' ? $rawName : ($label !== '' ? $label : 'Unknown'),
+                    // Sanitised: a processed row is named from the raw name, which
+                    // for a website row is the address it was captured at.
+                    'name' => $this->stripUrlSecrets($rawName !== '' ? $rawName : ($label !== '' ? $label : 'Unknown')),
                     'duration' => (int) ($row['duration'] ?? 0),
                     'recorded_at' => $this->formatApiTimestamp($recordedAt, $rowUserId),
                     'normalized_label' => $label !== '' ? $label : null,
@@ -337,6 +339,47 @@ class ActivityController extends Controller
             ->values();
     }
 
+    /**
+     * Strip the parts of a URL that carry secrets rather than describe a page.
+     *
+     * The mirror of `stripUrlSecrets` in the desktop agent's
+     * normalize-captured-url.cjs, applied here at the point of DISPLAY because
+     * the agent-side rule only protects rows written after it shipped
+     * (17 Aug 2026). Rows recorded before it are still in the database and were
+     * still being rendered in full: read out of this install 20 Aug 2026, the
+     * timeline was showing two complete OAuth callbacks — a live `code`, plus
+     * `state` — to every admin who opened the page.
+     *
+     * A query string is where single-use credentials live and nothing in a
+     * productivity report needs it; the path already says which page somebody
+     * was on. The fragment is kept, because hash routing puts the real page
+     * there (`#/me/attendance`), unless it carries `key=value` pairs, which is
+     * how the OAuth implicit flow returns `access_token`. Userinfo goes too:
+     * `https://user:password@host` must never reach a report.
+     *
+     * Anything that is not a URL is returned untouched — most names are a
+     * window title, not an address.
+     */
+    private function stripUrlSecrets(?string $value): string
+    {
+        $value = trim((string) $value);
+        if ($value === '' || ! preg_match('#^[a-z][a-z0-9+.-]*://#i', $value)) {
+            return $value;
+        }
+
+        $parts = parse_url($value);
+        if ($parts === false || empty($parts['scheme']) || empty($parts['host'])) {
+            return $value;
+        }
+
+        $host = $parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
+        $fragment = isset($parts['fragment']) && ! str_contains($parts['fragment'], '=')
+            ? '#'.$parts['fragment']
+            : '';
+
+        return $parts['scheme'].'://'.$host.($parts['path'] ?? '').$fragment;
+    }
+
     private function isCareVanceWorkspaceRow(array $row): bool
     {
         // Idle records must always be visible in the timeline even if their
@@ -349,8 +392,22 @@ class ActivityController extends Controller
 
         $label = strtolower(trim((string) ($row['label'] ?? '')));
         $rawName = strtolower(trim((string) ($row['raw_name'] ?? '')));
+        /*
+         * The window title is checked as well as the name, because the name is
+         * no longer guaranteed to mention the product.
+         *
+         * A website row is named after its SITE now, so the workspace opened in
+         * a browser reaches here as "carevancetracker.duckdns.org" — which
+         * matches neither test above, and every workspace row reappeared in the
+         * timeline. The title still says "CareVance HRMS Workspace", which is
+         * the same evidence this rule was always relying on, just read from the
+         * field that still carries it.
+         */
+        $windowTitle = strtolower(trim((string) ($row['window_title'] ?? '')));
 
-        return $label === 'carevance' || str_contains($rawName, 'carevance hrms');
+        return $label === 'carevance'
+            || str_contains($rawName, 'carevance hrms')
+            || str_contains($windowTitle, 'carevance hrms');
     }
 
     /**
@@ -396,7 +453,7 @@ class ActivityController extends Controller
             'user_id' => (int) ($item->user_id ?? 0),
             'time_entry_id' => $item->time_entry_id ? (int) $item->time_entry_id : null,
             'type' => (string) ($item->type ?? 'app'),
-            'name' => (string) ($item->name ?? 'Unknown'),
+            'name' => $this->stripUrlSecrets((string) ($item->name ?? 'Unknown')),
             'duration' => max(0, (int) ($item->duration ?? 0)),
             'recorded_at' => $item->recorded_at instanceof Carbon
                 ? (string) $this->formatApiTimestamp($item->recorded_at, $itemUserId)
@@ -409,7 +466,10 @@ class ActivityController extends Controller
             'classification_reason' => $item->classification_reason ?? null,
             'app_name' => $item->app_name ?? null,
             'window_title' => $item->window_title ?? null,
-            'url' => $item->url ?? null,
+            // `?? null` rather than a `=== null` test: not every feed item even
+            // declares the property, and reading an undefined one is a fatal
+            // here, not a null.
+            'url' => ($item->url ?? null) === null ? null : $this->stripUrlSecrets((string) $item->url),
             'started_at' => $startedAt instanceof Carbon
                 ? $this->formatApiTimestamp($startedAt, $itemUserId)
                 : null,

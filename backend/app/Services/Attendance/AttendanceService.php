@@ -1025,6 +1025,13 @@ class AttendanceService
      * someone — and for a day its shift does not run, so the config default
      * stays as the fallback rather than being replaced by a zero that would
      * mark every Sunday as an instantly completed shift.
+     *
+     * An explicit ZERO is the one exception, and it means something the null
+     * does not: the employee is on a weekly-off policy that names this date as
+     * a day off. That is a complete answer, not a missing one, and falling
+     * through to eight hours there would tell somebody they owed a full day on
+     * their day off. Only a configured weekly off can produce it — an
+     * organization with no policy never sees a zero and is unaffected.
      */
     public function shiftTargetSecondsFor(?User $user, Carbon|string|null $date = null): int
     {
@@ -1032,7 +1039,7 @@ class AttendanceService
             ? app(ShiftResolver::class)->expectedSecondsFor($user, $date)
             : null;
 
-        if ($resolved !== null && $resolved > 0) {
+        if ($resolved !== null && $resolved >= 0) {
             return $resolved;
         }
 

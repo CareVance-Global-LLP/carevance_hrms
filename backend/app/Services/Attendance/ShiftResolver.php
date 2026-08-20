@@ -44,6 +44,36 @@ use Illuminate\Database\Eloquent\Builder;
  * no-op when nothing is authenticated, so a scheduled command or a queued job
  * asking about one employee would otherwise be free to match another tenant's
  * assignment row.
+ *
+ * WEEKLY OFFS, AND WHY THEY DO NOT DELETE THE SHIFT
+ * ------------------------------------------------
+ * Two different things can say "not today", and they are not the same thing:
+ *
+ *   shifts.applicable_days   a property of the PATTERN — which days this shift
+ *                            ever runs on. Empty means every day.
+ *   WeeklyOffPolicy          a property of the PERSON — which days they are
+ *                            off. Empty means nothing is off.
+ *
+ * A date has to pass both, but they produce different SHAPES of answer, and
+ * that asymmetry is the precedence decision:
+ *
+ *   - A day the pattern does not run has no instance at all. resolve() returns
+ *     null, exactly as it did before weekly offs existed. There is nothing to
+ *     describe: the shift genuinely is not scheduled.
+ *   - A weekly off KEEPS the instance and zeroes expectedSeconds. The shift is
+ *     still the shift; only the expectation is nil.
+ *
+ * Keeping it is load-bearing twice over. Work on a weekly off is ordinary —
+ * it is the reason Weekly Off is one of the three independent overtime scopes —
+ * and a night shift that begins at 22:00 on a weekly off must still claim the
+ * punches that land after midnight, which attendanceDateFor() can only do by
+ * looking at the previous date's occurrence window. Returning null on a weekly
+ * off would silently move half of that night onto the next day.
+ *
+ * So: policy wins over the shift's own columns wherever both speak, and where
+ * the policy says "off" the answer is zero hours rather than no shift. An
+ * organization with no weekly-off policy configured is untouched by every line
+ * of this — isWeeklyOff is false and nothing else changes.
  */
 class ShiftResolver
 {
@@ -65,8 +95,10 @@ class ShiftResolver
      */
     public const OVERRUN_TOLERANCE_MINUTES = 120;
 
-    public function __construct(private readonly UserTimezoneResolver $timezones)
-    {
+    public function __construct(
+        private readonly UserTimezoneResolver $timezones,
+        private readonly WeeklyOffResolver $weeklyOffs,
+    ) {
     }
 
     public function resolve(?User $user, Carbon|string|null $date = null): ?ResolvedShift
@@ -77,25 +109,60 @@ class ShiftResolver
 
         $on = $this->normalizeDate($date);
 
+        $resolved = null;
+
         $assignment = $this->assignmentFor($user, $on);
         if ($assignment) {
             $shift = $this->shiftFor($user, (int) $assignment->shift_id);
 
             if ($shift) {
-                return $this->instance($shift, $on, self::SOURCE_ASSIGNMENT, $assignment);
+                $resolved = $this->instance($shift, $on, self::SOURCE_ASSIGNMENT, $assignment);
             }
         }
 
-        return $this->fromWorkInfo($user, $on);
+        $resolved ??= $this->fromWorkInfo($user, $on);
+
+        if ($resolved === null) {
+            return null;
+        }
+
+        // The pattern stands; only the expectation changes. See the class
+        // docblock for why this is not a null.
+        return $this->weeklyOffs->isWeeklyOff($user, $on)
+            ? $resolved->onWeeklyOff()
+            : $resolved;
     }
 
     /**
-     * The shift length in seconds, or null when nothing usable is configured.
-     * The caller supplies the default — see the class docblock.
+     * The work seconds expected of this person on this date.
+     *
+     * Three distinct answers, and collapsing any two of them is a bug:
+     *
+     *   null  nothing usable is configured. The caller supplies the default —
+     *         see the class docblock.
+     *   0     a weekly off. Known, and none are owed.
+     *   n     the shift length less its unpaid break.
+     *
+     * Zero is answered even when no shift pattern exists at all: an
+     * organization that has assigned a weekly-off policy has said this date is
+     * off, and that is a complete answer on its own.
      */
     public function expectedSecondsFor(?User $user, Carbon|string|null $date = null): ?int
     {
+        if ($user && $user->organization_id && $this->weeklyOffs->isWeeklyOff($user, $date)) {
+            return 0;
+        }
+
         return $this->resolve($user, $date)?->expectedSeconds;
+    }
+
+    /**
+     * Is this date one of the person's weekly offs? Exposed here so callers
+     * already holding a ShiftResolver do not need a second dependency.
+     */
+    public function isWeeklyOff(?User $user, Carbon|string|null $date = null): bool
+    {
+        return $this->weeklyOffs->isWeeklyOff($user, $date);
     }
 
     /**
@@ -147,6 +214,7 @@ class ShiftResolver
             expectedSeconds: $resolved->expectedSeconds,
             shift: $resolved->shift,
             assignment: $resolved->assignment,
+            isWeeklyOff: $resolved->isWeeklyOff,
         );
     }
 
