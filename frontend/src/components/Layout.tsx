@@ -7,7 +7,7 @@ import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { usePlan } from '@/hooks/usePlan';
-import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasPayrollAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
@@ -80,6 +80,7 @@ export default function Layout() {
   const seenNotificationIdsRef = useRef<Set<number>>(new Set());
   const isInitialLoadRef = useRef(true);
   const isAdminView = hasAdminAccess(user);
+  const isPayrollAdminView = hasPayrollAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isSuperAdminView = hasSuperAdminAccess(user);
   const isEmployeeOrManagerView = hasEmployeeOrManagerAccess(user);
@@ -233,6 +234,7 @@ export default function Layout() {
         .filter((group) => {
           if (group.planFeature && !hasFeature(group.planFeature)) return false;
           if (group.permission && !canAccess(user, group.permission)) return false;
+          if (group.payrollAdminOnly) return isPayrollAdminView;
           if (group.strictAdminOnly) return isStrictAdminView;
           if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
@@ -247,6 +249,7 @@ export default function Layout() {
             if (item.permission && !canAccess(user, item.permission)) return false;
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
+            if (item.payrollAdminOnly) return isPayrollAdminView;
             if (item.strictAdminOnly) return isStrictAdminView;
             if (item.superAdminOnly) return isSuperAdminView;
             if (item.adminOnly) return isAdminView;

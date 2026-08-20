@@ -41,6 +41,8 @@ export type NavLinkItem = {
   section?: string;
   unreadCount?: number;
   adminOnly?: boolean;
+  /** Admin, HR and payroll_manager only — mirrors the API's `role:payroll`. */
+  payrollAdminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
@@ -59,6 +61,8 @@ export type NavGroup = {
   icon: LucideIcon;
   unreadCount?: number;
   adminOnly?: boolean;
+  /** Admin, HR and payroll_manager only — mirrors the API's `role:payroll`. */
+  payrollAdminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
