@@ -19,6 +19,7 @@ import SettingRow from '@/features/settings/components/SettingRow';
 import { CalendarCheck, Clock, Download, ListChecks, MailPlus, SlidersHorizontal, UserPlus, Users, Wallet } from 'lucide-react';
 import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
+import { LIST_MAX_BODY_HEIGHT } from '@/lib/pagination';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'working_first';
@@ -68,6 +69,7 @@ function DataTable<T>({
   emptyMessage,
   headerAction,
   bodyClassName = '',
+  scrollBody = false,
 }: {
   title: string;
   description?: string;
@@ -76,6 +78,13 @@ function DataTable<T>({
   emptyMessage: string;
   headerAction?: ReactNode;
   bodyClassName?: string;
+  /**
+   * Cap the height and pin the header so the pager below stays on screen.
+   * Mirrors the prop of the same name on components/dashboard/DataTable — this
+   * file carries its own near-identical copy of that component, so the two have
+   * to be kept in step by hand until one of them is deleted.
+   */
+  scrollBody?: boolean;
 }) {
   return (
     <SurfaceCard className="overflow-hidden">
@@ -86,9 +95,9 @@ function DataTable<T>({
         </div>
         {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
       </div>
-      <div className={`overflow-x-auto ${bodyClassName}`.trim()}>
+      <div className={`overflow-x-auto ${scrollBody ? `${LIST_MAX_BODY_HEIGHT} overflow-y-auto` : ''} ${bodyClassName}`.replace(/\s+/g, ' ').trim()}>
         <table className="min-w-full text-left text-xs">
-          <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className={`bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 ${scrollBody ? 'sticky top-0 z-10' : ''}`.trim()}>
             <tr>
               {columns.map((column) => (
                 <th key={column.key} className={`px-4 py-3 font-medium ${column.className || ''}`.trim()}>{column.header}</th>
@@ -1206,6 +1215,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               <MetricCard label="Pending Invites" value={invitations.filter((item: any) => item.status === 'pending').length} hint="Tracked from the invitation system" icon={MailPlus} accent="amber" />
             </div>
             <DataTable
+              scrollBody
               title="Pending Invitations"
               description="Secure invites waiting to be accepted."
               rows={invitations}
@@ -1275,6 +1285,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               ]}
             />
             <DataTable
+              scrollBody
               title="Current Members"
               description="Active organization members available from the current backend."
               rows={members}

@@ -16,8 +16,9 @@ import AnnouncementRow from '@/features/announcements/AnnouncementRow';
 import ComposeDrawer, { emptyCompose, type ComposeState } from '@/features/announcements/ComposeDrawer';
 import PollPanel from '@/features/announcements/PollPanel';
 import type { DeliveryStat } from '@/features/announcements/announcementUtils';
+import { LIST_PAGE_SIZE } from '@/lib/pagination';
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = LIST_PAGE_SIZE;
 
 /**
  * Announcements — what the nav has always called this page, and what people

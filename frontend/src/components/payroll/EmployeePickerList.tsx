@@ -12,6 +12,7 @@ import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/dialog/Modal';
 
 import type { AllEmployee } from '@/types';
+import { LIST_PAGE_SIZE } from '@/lib/pagination';
 
 interface EmployeePickerListProps {
   isOpen: boolean;
@@ -29,7 +30,7 @@ interface EmployeePickerListProps {
   extraColumns?: (emp: AllEmployee) => React.ReactNode;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = LIST_PAGE_SIZE;
 
 export default function EmployeePickerList({
   isOpen,

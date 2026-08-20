@@ -10,6 +10,7 @@ import { TextInput } from '@/components/ui/FormField';
 import type { ProductivityClassificationItem } from '@/types';
 import SettingsCard from '../components/SettingsCard';
 import SegmentedControl from '../components/SegmentedControl';
+import { LIST_PAGE_SIZE } from '@/lib/pagination';
 
 type Classification = 'productive' | 'neutral' | 'unproductive';
 
@@ -50,7 +51,7 @@ export default function ProductivityPane() {
         classification: filter || undefined,
         days: Number(days),
         page,
-        per_page: 25,
+        per_page: LIST_PAGE_SIZE,
       });
       setItems(res.data.data || []);
       setMeta(res.data.meta || {});

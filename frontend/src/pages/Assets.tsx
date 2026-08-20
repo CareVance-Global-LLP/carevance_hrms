@@ -24,8 +24,9 @@ import { useComposeAction } from '@/hooks/useComposeAction';
 import { COMPOSE_KEYS } from '@/lib/commandRegistry';
 import type { Asset, AssetStatus } from '@/types/assets';
 import { cn } from '@/utils/cn';
+import { LIST_PAGE_SIZE } from '@/lib/pagination';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = LIST_PAGE_SIZE;
 
 interface Column {
   key: AssetSortKey | null;

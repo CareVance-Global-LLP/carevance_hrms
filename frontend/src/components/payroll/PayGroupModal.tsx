@@ -18,6 +18,7 @@ import { payrollApi, getApiErrorMessage } from '@/services/api';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/dialog/Modal';
 import type { AllEmployee } from '@/types';
+import { LIST_PAGE_SIZE } from '@/lib/pagination';
 
 interface PayGroupModalProps {
   isOpen: boolean;
@@ -26,7 +27,7 @@ interface PayGroupModalProps {
   onCreated: (payGroupId: number, payGroupName: string) => void;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = LIST_PAGE_SIZE;
 
 interface EmployeesPage {
   employees: AllEmployee[];

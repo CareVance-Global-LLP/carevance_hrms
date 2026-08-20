@@ -179,7 +179,10 @@ type PersistedReportsWorkspaceFilters = {
   selectedGroupId: number | '';
 };
 
+import { LIST_PAGE_SIZE } from '@/lib/pagination';
+
 const REPORTS_WORKSPACE_FILTER_STORAGE_KEY = 'reports-workspace-filters';
+
 const getReportsWorkspaceFilterStorageKey = (mode: ReportsWorkspaceMode) => `${REPORTS_WORKSPACE_FILTER_STORAGE_KEY}:${mode}`;
 const defaultDateRange = deriveDateRangeFromPreset('today');
 
@@ -834,7 +837,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           group_ids: effectiveSelectedGroupId ? [Number(effectiveSelectedGroupId)] : undefined,
           skip_activity: shouldSkipActivity ? 1 : undefined,
           page: mode === 'hours-tracked' ? hoursPage : undefined,
-          per_page: mode === 'hours-tracked' ? 25 : undefined,
+          per_page: mode === 'hours-tracked' ? LIST_PAGE_SIZE : undefined,
         });
         return response.data;
       }
@@ -879,7 +882,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           type: timelineTypeFilter || undefined,
           classification: timelineClassFilter || undefined,
           page: timelinePage,
-          per_page: 50,
+          per_page: LIST_PAGE_SIZE,
         });
         return response.data;
       }
@@ -2346,6 +2349,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <DataTable
+              scrollBody
               title="Department Attendance Detail"
               description="Department-level rollup for org or group attendance reporting."
               rows={attendanceDepartmentRows}
@@ -2363,6 +2367,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
             />
 
             <DataTable
+              scrollBody
               title="Attendance Exceptions"
               description="Employees that need attention because absences or attendance percentage are outside expected range."
               rows={attendanceExceptionRows}
@@ -2383,6 +2388,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           </div>
 
           <DataTable
+            scrollBody
             title="Attendance Breakdown"
             description="Presence, leave, attendance rate, and current work state per employee."
             rows={attendanceRows}
@@ -2426,6 +2432,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
           <div className="space-y-4">
             <DataTable
+              scrollBody
               title={mode === 'productivity' ? 'Employee Productivity' : 'Employee Hours'}
               description="Per-user totals, idle share, and latest activity."
               rows={byUser}
@@ -2576,6 +2583,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
           {projectsEmployeeNameSearch ? (
             <DataTable
+              scrollBody
               title="Employee Work Focus"
               description="Assigned task and completion stats for the current employee search."
               rows={employeeFocusRows}
@@ -2628,6 +2636,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
 
           {selectedTaskOverviewRow ? (
             <DataTable
+              scrollBody
               title="Selected Task Details"
               description="Current task status, assignee, group, and tracked duration for the selected task."
               rows={[selectedTaskOverviewRow]}
@@ -2664,6 +2673,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           ) : null}
 
           <DataTable
+            scrollBody
             title="Task Overview"
             description="Task status, assignees, group coverage, and tracked duration."
             rows={hasSelectedTask && selectedTaskOverviewRow ? [selectedTaskOverviewRow] : taskAllocationRows}
@@ -2790,6 +2800,7 @@ export default function ReportsWorkspace({ mode }: { mode: ReportsWorkspaceMode 
           ) : (
             <div className="space-y-3">
               <DataTable
+                scrollBody
                 title="Activity Timeline"
                 description="App, website, and idle events, newest first. Use the chips above to narrow by kind or classification."
                 rows={timelineRows.slice().sort((a: any, b: any) => +new Date(b.recorded_at) - +new Date(a.recorded_at))}
