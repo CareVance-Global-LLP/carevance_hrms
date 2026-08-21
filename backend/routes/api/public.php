@@ -123,3 +123,23 @@ Route::middleware('throttle:30,1')->group(function () {
     Route::post('/auth/saml/callback', [\App\Http\Controllers\Api\SamlAuthController::class, 'callback']);
     Route::get('/auth/saml/metadata', [\App\Http\Controllers\Api\SamlAuthController::class, 'metadata']);
 });
+
+/**
+ * Signing an offer letter.
+ *
+ * Unauthenticated by necessity: a candidate is not a user of this system, and
+ * making somebody create an account to accept a job is a step at which offers
+ * are lost. The token in the URL IS the credential - 32 random bytes, stored
+ * only as a hash, cleared the moment it is used.
+ *
+ * Throttled hard. These routes render a PDF on every document view, and the
+ * token is the only thing standing between a caller and an acceptance, so
+ * brute-forcing it must be expensive. Thirty attempts a minute is generous for
+ * one candidate reading one letter and useless for anybody guessing.
+ */
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('/offers/sign/{token}', [\App\Http\Controllers\Api\OfferSigningController::class, 'show']);
+    Route::get('/offers/sign/{token}/document', [\App\Http\Controllers\Api\OfferSigningController::class, 'document']);
+    Route::post('/offers/sign/{token}', [\App\Http\Controllers\Api\OfferSigningController::class, 'sign']);
+    Route::post('/offers/sign/{token}/decline', [\App\Http\Controllers\Api\OfferSigningController::class, 'decline']);
+});
