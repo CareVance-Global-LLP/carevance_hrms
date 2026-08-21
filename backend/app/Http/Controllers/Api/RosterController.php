@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\RosterDay;
+use App\Models\EmployeeShiftRotation;
 use App\Models\Shift;
 use App\Models\ShiftRotation;
+use App\Models\ShiftRotationStep;
 use App\Models\ShiftSwapRequest;
 use App\Models\User;
 use App\Services\Attendance\RosterService;
@@ -13,6 +15,7 @@ use App\Services\Attendance\ShiftSwapService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
@@ -123,6 +126,139 @@ class RosterController extends Controller
                 ->orderBy('name')
                 ->get(),
         ]);
+    }
+
+    /**
+     * Create or replace a rotation pattern.
+     *
+     * The steps are replaced wholesale rather than patched. A rotation is a
+     * sequence and its meaning is positional — editing step 3 of a five-day
+     * cycle in isolation is how somebody ends up with two rest days on the
+     * trot they never asked for. Sending the whole shape makes the change
+     * reviewable in one place.
+     */
+    public function saveRotation(Request $request, ?ShiftRotation $shiftRotation = null): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:120',
+            'description' => 'nullable|string|max:255',
+            'cycle_length_days' => 'required|integer|min:1|max:60',
+            'steps' => 'required|array|min:1|max:60',
+            // Null is a REST DAY and is a real answer, not a missing one.
+            'steps.*.shift_id' => 'nullable|integer',
+            'is_active' => 'sometimes|boolean',
+        ]);
+
+        if (count($validated['steps']) > $validated['cycle_length_days']) {
+            return response()->json([
+                'message' => 'There are more steps than days in the cycle.',
+            ], 422);
+        }
+
+        $organizationId = $request->user()->organization_id;
+
+        $shiftIds = collect($validated['steps'])->pluck('shift_id')->filter()->unique();
+
+        if ($shiftIds->isNotEmpty()) {
+            $known = Shift::query()
+                ->where('organization_id', $organizationId)
+                ->whereIn('id', $shiftIds)
+                ->count();
+
+            if ($known !== $shiftIds->count()) {
+                return response()->json(['message' => 'One of those shifts is not in this workspace.'], 422);
+            }
+        }
+
+        $rotation = DB::transaction(function () use ($shiftRotation, $validated, $organizationId) {
+            $rotation = $shiftRotation ?: new ShiftRotation();
+
+            $rotation->fill([
+                'organization_id' => $organizationId,
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'cycle_length_days' => $validated['cycle_length_days'],
+                'is_active' => $validated['is_active'] ?? true,
+            ])->save();
+
+            $rotation->steps()->delete();
+
+            foreach (array_values($validated['steps']) as $position => $step) {
+                ShiftRotationStep::query()->create([
+                    'organization_id' => $organizationId,
+                    'shift_rotation_id' => $rotation->id,
+                    'position' => $position,
+                    'shift_id' => $step['shift_id'] ?? null,
+                ]);
+            }
+
+            return $rotation;
+        });
+
+        return response()->json(['data' => $rotation->fresh('steps')], $shiftRotation ? 200 : 201);
+    }
+
+    /**
+     * Put people on a rotation.
+     *
+     * Each person gets their own offset, because two people on the same
+     * five-on-two-off rota are normally staggered so the site stays covered.
+     * Assigning everybody at offset zero means they all rest together, which is
+     * the opposite of what a rota is for.
+     */
+    public function assignRotation(Request $request, ShiftRotation $shiftRotation): JsonResponse
+    {
+        if (! $this->owns($request, $shiftRotation->organization_id)) {
+            return response()->json(['message' => 'Not found.'], 404);
+        }
+
+        $validated = $request->validate([
+            'assignments' => 'required|array|min:1|max:500',
+            'assignments.*.user_id' => 'required|integer',
+            'assignments.*.start_offset' => 'sometimes|integer|min:0|max:60',
+            'effective_from' => 'required|date',
+        ]);
+
+        $organizationId = $request->user()->organization_id;
+        $userIds = collect($validated['assignments'])->pluck('user_id')->unique();
+
+        $known = User::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $userIds)
+            ->pluck('id');
+
+        if ($known->count() !== $userIds->count()) {
+            return response()->json(['message' => 'One of those people is not in this workspace.'], 422);
+        }
+
+        $from = Carbon::parse($validated['effective_from'])->toDateString();
+
+        DB::transaction(function () use ($validated, $shiftRotation, $organizationId, $from) {
+            foreach ($validated['assignments'] as $assignment) {
+                /*
+                 * A previous assignment is CLOSED rather than deleted. What
+                 * somebody was rostered on last month is a record, and every
+                 * other effective-dated resolver in this codebase reads the
+                 * window rather than the latest row.
+                 */
+                EmployeeShiftRotation::query()
+                    ->where('user_id', $assignment['user_id'])
+                    ->where('is_active', true)
+                    ->whereNull('effective_to')
+                    ->update(['effective_to' => Carbon::parse($from)->subDay()->toDateString()]);
+
+                EmployeeShiftRotation::query()->create([
+                    'organization_id' => $organizationId,
+                    'user_id' => $assignment['user_id'],
+                    'shift_rotation_id' => $shiftRotation->id,
+                    'effective_from' => $from,
+                    'start_offset' => $assignment['start_offset'] ?? 0,
+                    'is_active' => true,
+                ]);
+            }
+        });
+
+        return response()->json(['data' => $shiftRotation->fresh('steps')]);
     }
 
     /** Build the rota for a range. Writes drafts; publishes nothing. */

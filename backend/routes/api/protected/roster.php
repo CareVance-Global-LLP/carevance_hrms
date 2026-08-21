@@ -26,4 +26,7 @@ Route::middleware('role:manager')->group(function () {
     Route::post('/roster/generate', [RosterController::class, 'generate']);
     Route::post('/roster/publish', [RosterController::class, 'publish']);
     Route::post('/roster/day', [RosterController::class, 'setDay']);
+    Route::post('/roster/rotations', [RosterController::class, 'saveRotation']);
+    Route::match(['put', 'patch'], '/roster/rotations/{shiftRotation}', [RosterController::class, 'saveRotation']);
+    Route::post('/roster/rotations/{shiftRotation}/assign', [RosterController::class, 'assignRotation']);
 });

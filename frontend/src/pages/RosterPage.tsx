@@ -1,12 +1,15 @@
 import { useId, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarRange, Send } from 'lucide-react';
+import { CalendarRange, Repeat, Send } from 'lucide-react';
 import PageHeader from '@/components/dashboard/PageHeader';
 import Button from '@/components/ui/Button';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import { PageLoadingState } from '@/components/ui/PageState';
 import { rosterApi } from '@/services/api';
 import type { RosterDay } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
+import RotationEditor from '@/features/roster/RotationEditor';
+import SwapPanel from '@/features/roster/SwapPanel';
 
 /**
  * The rota, as a grid: people down, days across.
@@ -25,6 +28,7 @@ const DAY_LABEL = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'n
 export default function RosterPage() {
   const queryClient = useQueryClient();
   const fieldId = useId();
+  const { user } = useAuth();
 
   const [from, setFrom] = useState(() => startOfWeek());
   const [to, setTo] = useState(() => addDays(startOfWeek(), 13));
@@ -34,6 +38,29 @@ export default function RosterPage() {
   const query = useQuery({
     queryKey: ['roster', from, to],
     queryFn: async () => (await rosterApi.days({ from, to })).data,
+  });
+
+  const generate = useMutation({
+    mutationFn: async () => {
+      const people = Array.from(new Set(days.map((day) => day.user_id)));
+      return rosterApi.generate({ user_ids: people, from, to });
+    },
+    onSuccess: (response) => {
+      setError('');
+      const { created, updated, skipped_manual: manual, skipped_past: past } = response.data.data;
+      /*
+       * The skipped counts are surfaced, not swallowed. "We built 120 days and
+       * left 3 alone because somebody had set them by hand" is the sentence a
+       * manager needs; a bare success count hides the one thing worth checking.
+       */
+      setNotice(
+        `Built ${created + updated} ${created + updated === 1 ? 'day' : 'days'}`
+        + (manual > 0 ? ` · left ${manual} you had set by hand` : '')
+        + (past > 0 ? ` · skipped ${past} already past` : ''),
+      );
+      queryClient.invalidateQueries({ queryKey: ['roster'] });
+    },
+    onError: (err: any) => setError(err?.response?.data?.message || 'Could not build that rota.'),
   });
 
   const publish = useMutation({
@@ -93,13 +120,23 @@ export default function RosterPage() {
         description="Who is working which shift, on which day. A day only reaches the team once it is published."
         actions={
           canManage ? (
-            <Button
-              iconLeft={<Send className="h-4 w-4" />}
-              disabled={publish.isPending || draftCount === 0}
-              onClick={() => publish.mutate()}
-            >
-              {publish.isPending ? 'Publishing…' : `Publish ${draftCount || ''}`.trim()}
-            </Button>
+            <span className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                iconLeft={<Repeat className="h-4 w-4" />}
+                disabled={generate.isPending || days.length === 0}
+                onClick={() => generate.mutate()}
+              >
+                {generate.isPending ? 'Building…' : 'Rebuild from patterns'}
+              </Button>
+              <Button
+                iconLeft={<Send className="h-4 w-4" />}
+                disabled={publish.isPending || draftCount === 0}
+                onClick={() => publish.mutate()}
+              >
+                {publish.isPending ? 'Publishing…' : `Publish ${draftCount || ''}`.trim()}
+              </Button>
+            </span>
           ) : undefined
         }
       />
@@ -165,6 +202,11 @@ export default function RosterPage() {
           </table>
         </div>
       )}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {canManage ? <RotationEditor /> : null}
+        <SwapPanel canManage={canManage} currentUserId={user?.id} />
+      </div>
 
       <p className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
         <CalendarRange className="h-3.5 w-3.5" />

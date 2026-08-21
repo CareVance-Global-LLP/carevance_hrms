@@ -12,12 +12,25 @@ vi.mock('@/services/api', () => ({
     publish: (...args: unknown[]) => publish(...args),
     coverage: vi.fn(),
     rotations: vi.fn(),
+    generate: vi.fn(),
+    saveRotation: vi.fn(),
+    assignRotation: vi.fn(),
     setDay: vi.fn(),
     swaps: vi.fn(),
     requestSwap: vi.fn(),
     respondToSwap: vi.fn(),
   },
 }));
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 7, name: 'Kajal', role: 'manager', organization_id: 1 } }),
+}));
+
+// The rota page composes two panels that fetch on their own. They have their
+// own tests; here they are stubbed so a grid assertion cannot fail for
+// something a sibling panel did.
+vi.mock('@/features/roster/RotationEditor', () => ({ default: () => null }));
+vi.mock('@/features/roster/SwapPanel', () => ({ default: () => null }));
 
 import RosterPage from './RosterPage';
 

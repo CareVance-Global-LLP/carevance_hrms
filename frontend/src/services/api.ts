@@ -1737,6 +1737,22 @@ export const rosterApi = {
   setDay: (payload: { user_id: number; date: string; shift_id: number | null; note?: string }) =>
     api.post<{ data: RosterDay }>('/roster/day', payload),
 
+  saveRotation: (payload: {
+    id?: number;
+    name: string;
+    description?: string | null;
+    cycle_length_days: number;
+    steps: Array<{ shift_id: number | null }>;
+  }) =>
+    payload.id
+      ? api.put<{ data: RosterRotation }>(`/roster/rotations/${payload.id}`, payload)
+      : api.post<{ data: RosterRotation }>('/roster/rotations', payload),
+
+  assignRotation: (id: number, payload: {
+    assignments: Array<{ user_id: number; start_offset?: number }>;
+    effective_from: string;
+  }) => api.post<{ data: RosterRotation }>(`/roster/rotations/${id}/assign`, payload),
+
   swaps: (params?: { status?: string }) =>
     api.get<PaginatedResponse<ShiftSwapRequest>>('/roster/swaps', { params }),
 
