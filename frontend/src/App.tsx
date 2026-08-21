@@ -97,6 +97,9 @@ const OperationsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/Oper
 const TaxComplianceTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/TaxComplianceTab'));
 const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/ReportsTab'));
 const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollReportsPage'));
+const OvertimeRegisterPage = lazyWithChunkRetry(() => import('@/pages/OvertimeRegisterPage'));
+const RecruitmentPage = lazyWithChunkRetry(() => import('@/pages/RecruitmentPage'));
+const OfferSigningPage = lazyWithChunkRetry(() => import('@/pages/OfferSigningPage'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const PayGroupSettings = lazyWithChunkRetry(() => import('@/pages/payroll/PayGroupSettings'));
 // Payroll Setup (page-based onboarding)
@@ -628,6 +631,17 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/*
+            * The candidate's signing page.
+            *
+            * Bare, with NO PublicRoute wrapper: PublicRoute redirects an
+            * already-signed-in user to the dashboard, and a recruiter checking
+            * their own link would be bounced away from the page they were
+            * trying to look at. The token in the URL is the only credential
+            * this page has or needs.
+            */}
+          <Route path="/offer/:token" element={<OfferSigningPage />} />
+
           <Route
             path="/login"
             element={
@@ -758,6 +772,19 @@ function App() {
               <Route path="reports" element={<PayrollReportsPage />} />
             </Route>
             {/* Pay Group Settings - standalone page for configuring pay group state and statutory details */}
+            {/*
+              * The statutory overtime register. Behind PayrollAdminRoute to
+              * match the API's own `role:payroll` gate exactly - it carries
+              * every colleague's hourly rate, so a line manager must not reach
+              * a screen the server would refuse anyway.
+              */}
+            {/*
+              * Hiring. AdminRoute is `< 100`, which is exactly the
+              * `role:manager` gate the API uses — a hiring manager runs their
+              * own pipeline without going through HR.
+              */}
+            <Route path="hiring" element={<AdminRoute><RecruitmentPage /></AdminRoute>} />
+            <Route path="reports/overtime-register" element={<PayrollAdminRoute><OvertimeRegisterPage /></PayrollAdminRoute>} />
             <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayGroupSettingsRoute /></PayrollAdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/pay-group-settings/:payGroupId" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayGroupSettingsRoute /></PayrollAdminRoute></PlanFeatureRoute>} />
             {/* Standalone Unassigned Employees screen (not a tab) */}

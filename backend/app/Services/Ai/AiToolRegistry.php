@@ -322,7 +322,7 @@ class AiToolRegistry
          * counted approved leave REQUESTS and called the count a balance, so
          * two half-days and a fortnight both scored 1.
          */
-        $snapshot = $this->leavePolicyService->buildBalanceSnapshotForUser(
+        $snapshot = $this->leavePolicyService->buildLedgerBalanceSnapshotForUser(
             $subject,
             $this->leavePolicyService->resolvePolicyCategories($subject->organization),
         );

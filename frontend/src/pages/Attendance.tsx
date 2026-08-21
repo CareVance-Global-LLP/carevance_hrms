@@ -17,6 +17,7 @@ import OvertimeWorkspace from '@/features/attendance/OvertimeWorkspace';
 import DayOutcomeLedger, { OutcomeChips, OUTCOME_TONE_CLASS } from '@/features/attendance/DayOutcomeLedger';
 import SlideOver from '@/features/employees/SlideOver';
 import LeaveBalanceCards from '@/features/leave/LeaveBalanceCards';
+import LeaveLedgerDrawer from '@/features/leave/LeaveLedgerDrawer';
 import WhosOffStrip from '@/features/leave/WhosOffStrip';
 import LeaveRequestDrawer from '@/features/leave/LeaveRequestDrawer';
 import LeaveRequestsPanel from '@/features/leave/LeaveRequestsPanel';
@@ -318,6 +319,8 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [isLeaveLoading, setIsLeaveLoading] = useState(false);
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false);
   const [leaveDrawerOpen, setLeaveDrawerOpen] = useState(false);
+  // Which balance card was opened for its breakdown, if any.
+  const [ledgerCode, setLedgerCode] = useState<string | null>(null);
   // "Apply for leave" in the command bar lands here with the drawer already open.
   useComposeAction(COMPOSE_KEYS.leaveRequest, () => setLeaveDrawerOpen(true));
   // Holidays for the request-cost preview and the who's-off strip; kept apart
@@ -1610,7 +1613,17 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
           isLoading={isLeaveBalanceLoading}
           onRefresh={fetchLeaveBalances}
           colorOf={leaveColorOf}
+          onExplain={user?.id ? (code) => setLedgerCode(code) : undefined}
         />
+
+        {user?.id ? (
+          <LeaveLedgerDrawer
+            open={ledgerCode !== null}
+            userId={user.id}
+            focusCode={ledgerCode}
+            onClose={() => setLedgerCode(null)}
+          />
+        ) : null}
 
         <WhosOffStrip requests={filteredLeaveRequests} holidays={leaveHolidayMap} colorOf={leaveColorOf} />
 

@@ -341,6 +341,19 @@ export function useSettingsController() {
     if (isStrictAdminUser) {
       allowed.add('organization');
       allowed.add('billing');
+      /*
+       * Same gate as the API's `role:admin` on these routes, and for the same
+       * reason: a registered serial number can post attendance into this
+       * tenant, and claiming a device id decides whose day a reading becomes.
+       */
+      allowed.add('biometric-devices');
+      /*
+       * Same gate again, and the sharpest reason for it: a connection decides
+       * which certificate is trusted to assert who anybody here is, so whoever
+       * can write one can point it at a provider they control and sign in as
+       * the payroll administrator.
+       */
+      allowed.add('single-sign-on');
       if (import.meta.env.DEV) {
         allowed.add('development');
       }
@@ -358,6 +371,9 @@ export function useSettingsController() {
       // policies here are the ones that used to be columns on the shift row,
       // and whoever may edit a shift is exactly who may edit them.
       allowed.add('working-time');
+      // Leave sits with the other working-rule policies: whoever may set a
+      // shift is who may set how leave is earned.
+      allowed.add('leave-types');
     }
     return SETTINGS_TABS.filter((tab) => allowed.has(tab.id));
   }, [canManagePayroll, canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);

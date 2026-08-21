@@ -153,7 +153,7 @@ class LeaveRequestController extends Controller
 
         $currentUser->loadMissing('organization');
         $policyCategories = $this->leavePolicyService->resolvePolicyCategories($currentUser->organization);
-        $selfBalance = $this->leavePolicyService->buildBalanceSnapshotForUser($currentUser, $policyCategories);
+        $selfBalance = $this->leavePolicyService->buildLedgerBalanceSnapshotForUser($currentUser, $policyCategories);
 
         $teamBalances = collect();
         if ($this->canManage($currentUser)) {
@@ -199,7 +199,7 @@ class LeaveRequestController extends Controller
                             ]
                             : null,
                     ],
-                    'balance' => $this->leavePolicyService->buildBalanceSnapshotForUser($teamUser, $policyCategories),
+                    'balance' => $this->leavePolicyService->buildLedgerBalanceSnapshotForUser($teamUser, $policyCategories),
                 ];
             })->values();
         }
@@ -266,7 +266,7 @@ class LeaveRequestController extends Controller
 
         // Check leave balance for non-unpaid categories
         if ($leaveCategory !== 'unpaid') {
-            $balanceSnapshot = $this->leavePolicyService->buildBalanceSnapshotForUser($currentUser, $policyCategories);
+            $balanceSnapshot = $this->leavePolicyService->buildLedgerBalanceSnapshotForUser($currentUser, $policyCategories);
             $categoryBalance = collect($balanceSnapshot['categories'] ?? [])
                 ->firstWhere('code', $leaveCategory);
 
