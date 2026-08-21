@@ -13,10 +13,28 @@ use Illuminate\Support\Collection;
 class LeavePolicyService
 {
     /**
+     * The kinds of leave this organization offers.
+     *
+     * Answers two questions that MUST agree: which types somebody may request,
+     * and which types a balance is reported for. They were briefly resolved from
+     * two different stores — request options from the JSON in
+     * `organizations.settings.leave_policy`, balances from `leave_types` — so
+     * editing either screen changed one and not the other, and a type could be
+     * requestable with no balance or hold a balance nobody could request.
+     *
+     * `leave_types` wins wherever rows exist, which after the 20 Aug 2026
+     * migration backfill is every organization. The JSON is read only as a
+     * fallback for a tenant somehow created without rows, and is no longer
+     * editable from the web UI.
+     *
      * @return array<int, array{code:string,name:string,annual_quota:float}>
      */
     public function resolvePolicyCategories(?Organization $organization): array
     {
+        if ($organization && ($fromTypes = $this->categoriesFromLeaveTypes($organization)) !== []) {
+            return $fromTypes;
+        }
+
         $settings = is_array($organization?->settings) ? $organization->settings : [];
         $rawCategories = $settings['leave_policy']['categories'] ?? [];
 
@@ -55,6 +73,36 @@ class LeavePolicyService
         }
 
         return $normalized->all();
+    }
+
+    /**
+     * The configured types, as request options.
+     *
+     * `annual_quota` here is the CONFIGURED entitlement for a full year, not
+     * what has accrued so far — this feeds the request form and the legacy
+     * balance snapshot, both of which mean "how much you get in a year". The
+     * ledger snapshot computes accrued-to-date separately from the rows.
+     *
+     * @return array<int, array{code:string,name:string,annual_quota:float}>
+     */
+    private function categoriesFromLeaveTypes(Organization $organization): array
+    {
+        return LeaveType::query()
+            ->where('organization_id', $organization->id)
+            ->where('is_active', true)
+            // Unpaid is not an entitlement and has no ledger; it is what a
+            // request falls back to once a quota is exhausted.
+            ->where('code', '!=', 'unpaid')
+            ->orderBy('position')
+            ->orderBy('name')
+            ->get(['code', 'name', 'annual_quota'])
+            ->map(fn (LeaveType $type) => [
+                'code' => strtolower((string) $type->code),
+                'name' => (string) $type->name,
+                'annual_quota' => (float) $type->annual_quota,
+            ])
+            ->values()
+            ->all();
     }
 
     public function normalizeRequestedCategory(string $category, array $policyCategories): string

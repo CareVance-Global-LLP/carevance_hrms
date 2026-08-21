@@ -212,4 +212,68 @@ class LeaveLedgerSwitchoverTest extends TestCase
             'the amendment appended a row instead of correcting one',
         );
     }
+
+    /**
+     * One question, one answer.
+     *
+     * Which types somebody may REQUEST and which types they hold a BALANCE in
+     * must resolve from the same place. They briefly did not: request options
+     * came from the JSON in `organizations.settings.leave_policy`, balances came
+     * from `leave_types`, and two settings screens edited one each.
+     *
+     * The damage was not cosmetic. `normalizeRequestedCategory()` falls back to
+     * `paid` for a code it does not recognise, so a request for sick leave —
+     * offered by the balance screen, absent from the JSON — was silently
+     * recorded and deducted as paid leave.
+     */
+    public function test_request_options_resolve_from_the_same_types_as_balances(): void
+    {
+        // The JSON deliberately disagrees with the rows, which is what an
+        // organization looked like after editing the old second editor.
+        $this->organization->forceFill([
+            'settings' => [
+                'leave_policy' => [
+                    'categories' => [
+                        ['code' => 'birthday', 'name' => 'Birthday Leave', 'annual_quota' => 1],
+                    ],
+                ],
+            ],
+        ])->save();
+
+        $policyService = app(LeavePolicyService::class);
+
+        $offered = collect($policyService->resolvePolicyCategories($this->organization->fresh()))
+            ->pluck('code')
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame(['paid', 'sick'], $offered, 'request options did not come from leave_types');
+        $this->assertNotContains('birthday', $offered, 'the stale JSON is still being read over the rows');
+
+        // And the code survives the round trip rather than being rewritten to
+        // paid, which is the failure an employee would actually notice.
+        $this->assertSame(
+            'sick',
+            $policyService->normalizeRequestedCategory('sick', $policyService->resolvePolicyCategories($this->organization->fresh())),
+        );
+    }
+
+    public function test_leave_can_accrue_twice_a_year(): void
+    {
+        /*
+         * Half-yearly exists because Keka offers it and a buyer comparing side
+         * by side reads a missing option as a missing feature. Worth a test
+         * because the schedule list is enforced by a CHECK constraint that
+         * lives in a migration, so the model and the database can disagree
+         * without anything failing until a real deployment.
+         */
+        $type = LeaveType::query()->where('organization_id', $this->organization->id)
+            ->where('code', 'paid')
+            ->firstOrFail();
+
+        $type->update(['accrual_frequency' => 'half_yearly', 'annual_quota' => 12]);
+
+        $this->assertSame(2, $type->fresh()->periodsPerYear());
+    }
 }

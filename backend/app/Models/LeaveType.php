@@ -18,7 +18,13 @@ class LeaveType extends Model
 {
     use BelongsToOrganization;
 
-    public const FREQUENCIES = ['annual', 'monthly', 'quarterly'];
+    public const FREQUENCIES = ['annual', 'monthly', 'quarterly', 'half_yearly'];
+
+    /** When in its period an accrual lands. */
+    public const TIMINGS = ['period_start', 'period_end'];
+
+    /** What happens to an unused balance when the leave year closes. */
+    public const YEAR_END_ACTIONS = ['carry_forward', 'reset', 'encash'];
 
     protected $fillable = [
         'organization_id',
@@ -26,9 +32,12 @@ class LeaveType extends Model
         'name',
         'annual_quota',
         'accrual_frequency',
+        'accrual_timing',
+        'year_end_action',
         'pro_rate_on_join',
         'joining_cutoff_day',
         'probation_annual_quota',
+        'notice_period_annual_quota',
         'carry_forward_cap',
         'carry_forward_expiry_months',
         'is_encashable',
@@ -40,6 +49,7 @@ class LeaveType extends Model
     protected $casts = [
         'annual_quota' => 'decimal:2',
         'probation_annual_quota' => 'decimal:2',
+        'notice_period_annual_quota' => 'decimal:2',
         'carry_forward_cap' => 'decimal:2',
         'pro_rate_on_join' => 'boolean',
         'is_encashable' => 'boolean',
@@ -61,6 +71,7 @@ class LeaveType extends Model
         return match ($this->accrual_frequency) {
             'monthly' => 12,
             'quarterly' => 4,
+            'half_yearly' => 2,
             default => 1,
         };
     }
@@ -72,12 +83,32 @@ class LeaveType extends Model
      * treating unset as zero would silently stop accrual for every new joiner
      * the moment this column existed.
      */
-    public function annualQuotaFor(bool $onProbation): float
+    public function annualQuotaFor(bool $onProbation, bool $onNotice = false): float
     {
+        /*
+         * Notice outranks probation. Somebody can be both - a short probation
+         * and a resignation inside it - and the notice rate is the one an
+         * employer sets deliberately to stop leave being run down on the way
+         * out, so it is the one that must win.
+         *
+         * NULL means "the normal rate" in both cases, never zero. Treating
+         * unset as zero would silently stop accrual for everybody the moment
+         * these columns existed.
+         */
+        if ($onNotice && $this->notice_period_annual_quota !== null) {
+            return (float) $this->notice_period_annual_quota;
+        }
+
         if ($onProbation && $this->probation_annual_quota !== null) {
             return (float) $this->probation_annual_quota;
         }
 
         return (float) $this->annual_quota;
+    }
+
+    /** Does an accrual land at the end of its period rather than the start? */
+    public function accruesAtPeriodEnd(): bool
+    {
+        return $this->accrual_timing === 'period_end';
     }
 }

@@ -7,6 +7,7 @@ use App\Models\LeaveType;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Works out how much leave somebody has earned, and writes it to the ledger.
@@ -75,12 +76,20 @@ class LeaveAccrualService
     }
 
     /**
-     * The accrual periods of the current leave year that have already STARTED.
+     * The accrual periods of the current leave year that have already arrived.
      *
-     * Accrual is credited at the start of its period, which is what "you get a
-     * day and a half a month" means to the person receiving it. Crediting at the
-     * end would mean somebody who joined on the 1st could take nothing until
-     * the 31st.
+     * What "arrived" means is the policy's choice:
+     *
+     *   period_start  the period has begun. This is what "you get a day and a
+     *                 half a month" means to the person receiving it, and it is
+     *                 the default.
+     *   period_end    the period has CLOSED. Somebody who joined on the 1st can
+     *                 take nothing until the 31st - restrictive, and exactly
+     *                 why some employers choose it.
+     *
+     * Getting this backwards hands out a year of leave nobody has earned yet,
+     * so the comparison is against the boundary the policy names rather than
+     * against the period generally.
      *
      * @return array<int, array{0: Carbon, 1: Carbon}>
      */
@@ -96,7 +105,9 @@ class LeaveAccrualService
             $start = $cycleStart->copy()->addMonths($index * $monthsPerPeriod);
             $end = $start->copy()->addMonths($monthsPerPeriod)->subDay();
 
-            if ($start->greaterThan($asOf)) {
+            $arrivesOn = $type->accruesAtPeriodEnd() ? $end : $start;
+
+            if ($arrivesOn->greaterThan($asOf)) {
                 break;
             }
 
@@ -116,7 +127,10 @@ class LeaveAccrualService
      */
     private function unitsForPeriod(User $user, LeaveType $type, Carbon $joined, Carbon $periodStart, Carbon $periodEnd): float
     {
-        $annual = $type->annualQuotaFor($this->onProbationDuring($user, $periodEnd));
+        $annual = $type->annualQuotaFor(
+            $this->onProbationDuring($user, $periodEnd),
+            $this->onNoticeDuring($user, $periodEnd),
+        );
         if ($annual <= 0) {
             return 0.0;
         }
@@ -157,12 +171,20 @@ class LeaveAccrualService
 
         $created = false;
 
-        DB::transaction(function () use ($user, $type, $units, $periodStart, $cycleStart, &$created) {
+        DB::transaction(function () use ($user, $type, $units, $periodStart, $periodEnd, $cycleStart, &$created) {
+            /*
+             * Dated when the credit LANDS, not when its period opened. The
+             * uniqueness key is (user, type, effective_on), so this also keeps
+             * a policy switched from period_start to period_end from writing a
+             * second row for a period it has already paid.
+             */
+            $effectiveOn = $type->accruesAtPeriodEnd() ? $periodEnd : $periodStart;
+
             $entry = LeaveLedgerEntry::query()->firstOrNew([
                 'user_id' => $user->id,
                 'leave_type_id' => $type->id,
                 'kind' => 'accrual',
-                'effective_on' => $periodStart->toDateString(),
+                'effective_on' => $effectiveOn->toDateString(),
             ]);
 
             if ($entry->exists) {
@@ -175,7 +197,7 @@ class LeaveAccrualService
                 'cycle_start' => $cycleStart->toDateString(),
                 'cycle_end' => $cycleStart->copy()->addYear()->subDay()->toDateString(),
                 'source' => 'accrual_run',
-                'note' => sprintf('%s accrual for %s', ucfirst($type->accrual_frequency), $periodStart->format('M Y')),
+                'note' => sprintf('%s accrual for %s', ucfirst(str_replace('_', ' ', $type->accrual_frequency)), $periodStart->format('M Y')),
             ])->save();
 
             $created = true;
@@ -243,6 +265,44 @@ class LeaveAccrualService
      * probation period — an unknown probation must not silently reduce
      * everyone's accrual to the probation rate.
      */
+
+    /**
+     * Was this person serving notice when the period closed?
+     *
+     * Read from `employee_exits`, which carries the notice window explicitly.
+     * Anything after `notice_start_date` counts, including past the last
+     * working day - somebody whose exit is being processed is not accruing
+     * their way to a bigger settlement.
+     *
+     * A withdrawn resignation must not leave somebody on the notice rate
+     * forever, so only a LIVE exit row is read. Missing or malformed data means
+     * "not on notice": the normal rate is the safe answer, because the failure
+     * mode of guessing wrong the other way is silently under-accruing somebody
+     * who never resigned.
+     */
+    private function onNoticeDuring(User $user, Carbon $date): bool
+    {
+        try {
+            $noticeStart = DB::table('employee_exits')
+                ->where('user_id', $user->id)
+                ->whereNotNull('notice_start_date')
+                ->when(
+                    Schema::hasColumn('employee_exits', 'status'),
+                    fn ($query) => $query->whereNotIn('status', ['withdrawn', 'cancelled', 'rejected']),
+                )
+                ->orderByDesc('notice_start_date')
+                ->value('notice_start_date');
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (! $noticeStart) {
+            return false;
+        }
+
+        return ! $date->lessThan(Carbon::parse($noticeStart)->startOfDay());
+    }
+
     private function onProbationDuring(User $user, Carbon $date): bool
     {
         $joined = $this->joiningDate($user);
