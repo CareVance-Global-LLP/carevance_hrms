@@ -5,6 +5,12 @@ use Illuminate\Support\Facades\Route;
 require base_path('routes/api/public.php');
 
 /*
+ * Punch-device ingestion. Outside the api.token group because a wall terminal
+ * cannot hold a token - see the file for what stands in for authentication.
+ */
+require base_path('routes/api/biometric.php');
+
+/*
  * The customer-facing read API, authenticated by API key rather than by a
  * user session. Registered outside the api.token group on purpose — see the
  * file for why the two auth mechanisms stay separate.
