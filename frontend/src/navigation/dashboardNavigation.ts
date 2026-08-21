@@ -29,6 +29,7 @@ import {
   SquareKanban,
   UserMinus,
   UserPlus,
+  Briefcase,
   Users,
   Wallet,
   Waypoints,
@@ -90,6 +91,8 @@ export const topNavigation: NavGroup[] = [
     label: 'People',
     icon: Users,
     items: [
+      // Kept in step with condensedNavigation.ts.
+      { label: 'Hiring', to: '/hiring', icon: Briefcase, adminOnly: true },
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       // Kept in step with condensedNavigation.ts, which defines the same rail.
       { label: 'Invitations', to: '/employees/invitations', icon: MailPlus, adminOnly: true },
