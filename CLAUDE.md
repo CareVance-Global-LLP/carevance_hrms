@@ -154,6 +154,36 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 ---
 
+### SCIM provisioning
+
+SAML let somebody sign IN; this is the half that takes access away. Endpoints
+live at `/api/scim/v2/Users` — the prefix is the standard's, not ours.
+
+- **The bearer token IS the authentication.** An IdP cannot hold a session or do
+  OAuth against us; RFC 7644 specifies bearer auth and that is what Entra and
+  Okta send. Generated from a CSPRNG, stored ONLY as a SHA-256 hash, `$hidden`,
+  revocable, and shown exactly once.
+- **Deactivating REVOKES personal access tokens**, not just a flag. A flag alone
+  leaves a leaver's existing token reading payroll on Monday — the precise
+  failure SCIM is bought to prevent.
+- **DELETE means deactivate, never erase.** SCIM's DELETE says "no longer in the
+  directory"; payslips, attendance and the leave ledger are records the
+  organization must keep, and an IdP admin ticking a box must not destroy them.
+- **People are matched by `externalId`, never by email.** People change their
+  surname; matching on email silently creates a second account and deprovisions
+  neither. An email match ADOPTS the existing account and stamps the externalId
+  so later syncs use the reliable key.
+- **BOTH PATCH shapes are handled.** Okta sends
+  `{"op":"replace","path":"active","value":false}`; Entra sends
+  `{"op":"replace","value":{"active":false}}`. Both mean deprovision, and
+  supporting one is how half your customers find leavers keep their access.
+- **An unsupported filter is refused, not ignored.** Returning the whole
+  directory for a filter we did not parse is how an IdP concludes everybody
+  already exists and provisions nobody.
+- The response envelopes (`schemas`, `totalResults`, `Resources`, `scimType`)
+  are the RFC's. IdPs parse them strictly and report "provisioning failed" with
+  no detail when they are wrong.
+
 ### Accounting export
 
 `PayrollJournalService` turns a run into double-entry; `AccountingExportService`
@@ -266,7 +296,7 @@ Real, and deliberately not yet built:
 > shipped. When you close a gap, delete the line in the same commit.
 
 - **Ten filing generators have no blade view** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. `FilingGeneratorRegistry` resolves availability from the filesystem, so these are now reported as *unavailable* rather than attempted and failed — writing a template is the whole act of shipping its filing. This is real statutory work, not a stub.
-- **No SCIM.** SAML 2.0 now exists (see below), so people can *sign in* through Entra, Okta or Google — but nothing provisions or, more importantly, deprovisions them automatically. Somebody disabled in the IdP keeps their CareVance account until an admin deactivates it by hand; SAML refuses their login, but their data access via an existing token is not revoked by the IdP. This is the remaining half of the enterprise identity story.
+- **SCIM has no admin UI.** Provisioning and deprovisioning work (see below) and a token can be issued through the API, but there is no screen to do it from — an admin currently needs somebody to call the endpoint for them. Group/role provisioning (`/Groups`) is also unimplemented: people sync, the roles they should get do not.
 - **No offer letter, e-signature or background verification.**
 - **Recruitment has no careers page, and BGV has no vendor integration.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, a signed offer letter with an audit trail, and consent-gated background verification all exist (see below). What is missing is a public careers page or job board a candidate can browse and apply from, and an actual connection to AuthBridge, IDfy or similar — the BGV schema is vendor-agnostic and today a human records the findings. No engagement surveys or HR helpdesk either.
 - **Rostering has no UI yet.** Rotation patterns, published rosters by date, coverage and swap requests all exist (see below) and `ShiftResolver` reads them. What is missing is a screen: today a rota is built through the service, not by a manager dragging shifts around a calendar.

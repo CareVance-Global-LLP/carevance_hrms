@@ -143,3 +143,26 @@ Route::middleware('throttle:30,1')->group(function () {
     Route::post('/offers/sign/{token}', [\App\Http\Controllers\Api\OfferSigningController::class, 'sign']);
     Route::post('/offers/sign/{token}/decline', [\App\Http\Controllers\Api\OfferSigningController::class, 'decline']);
 });
+
+/**
+ * SCIM 2.0 provisioning.
+ *
+ * Outside the normal auth stack by necessity: an identity provider cannot hold
+ * a session or do an OAuth dance against us, so RFC 7644 specifies bearer-token
+ * auth and that is what Entra and Okta send. The token IS the authentication -
+ * hashed at rest, revocable, and resolved by ScimProvisioningService.
+ *
+ * The /scim/v2 prefix is not ours to choose; it is what the standard says and
+ * what every IdP's setup screen expects to be given.
+ *
+ * Throttled, because the bearer token is the only thing between a caller and
+ * the ability to create and deactivate users across a tenant.
+ */
+Route::prefix('scim/v2')->middleware('throttle:300,1')->group(function () {
+    Route::get('/Users', [\App\Http\Controllers\Api\ScimController::class, 'index']);
+    Route::post('/Users', [\App\Http\Controllers\Api\ScimController::class, 'store']);
+    Route::get('/Users/{id}', [\App\Http\Controllers\Api\ScimController::class, 'show']);
+    Route::put('/Users/{id}', [\App\Http\Controllers\Api\ScimController::class, 'update']);
+    Route::patch('/Users/{id}', [\App\Http\Controllers\Api\ScimController::class, 'patch']);
+    Route::delete('/Users/{id}', [\App\Http\Controllers\Api\ScimController::class, 'destroy']);
+});

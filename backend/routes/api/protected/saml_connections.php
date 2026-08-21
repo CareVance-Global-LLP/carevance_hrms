@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\SamlConnectionController;
+use App\Http\Controllers\Api\ScimTokenController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -19,4 +20,18 @@ Route::middleware('role:admin')->group(function () {
     Route::post('/saml-connections', [SamlConnectionController::class, 'store']);
     Route::match(['put', 'patch'], '/saml-connections/{samlConnection}', [SamlConnectionController::class, 'update']);
     Route::delete('/saml-connections/{samlConnection}', [SamlConnectionController::class, 'destroy']);
+});
+
+/**
+ * SCIM tokens.
+ *
+ * Alongside the SAML routes because they are two halves of one story: signing
+ * in, and being provisioned. Admin-only for the sharpest reason in the product
+ * - whoever holds one of these can create and deactivate users across the whole
+ * tenant.
+ */
+Route::middleware('role:admin')->group(function () {
+    Route::get('/scim-tokens', [ScimTokenController::class, 'index']);
+    Route::post('/scim-tokens', [ScimTokenController::class, 'store']);
+    Route::post('/scim-tokens/{scimToken}/revoke', [ScimTokenController::class, 'revoke']);
 });

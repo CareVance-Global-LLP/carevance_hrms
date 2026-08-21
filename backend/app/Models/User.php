@@ -272,6 +272,10 @@ class User extends Authenticatable
         'google_refresh_token',
         'trial_used_at',
         'trial_ended_at',
+    
+        'scim_external_id',
+        'is_scim_managed',
+        'scim_synced_at',
     ];
 
     /**
@@ -304,6 +308,8 @@ class User extends Authenticatable
             'trial_used_at' => 'datetime',
             'trial_ended_at' => 'datetime',
             'deactivated_at' => 'datetime',
+            'is_scim_managed' => 'boolean',
+            'scim_synced_at' => 'datetime',
         ];
     }
 
