@@ -15,7 +15,10 @@ class PayrollFiling extends Model
     protected $table = 'payroll_filings';
 
     protected $fillable = [
-        'organization_id', 'type', 'period_type', 'period_month', 'period_quarter',
+        'organization_id',
+        // The company that filed it. Null for a single-entity organization.
+        'legal_entity_id',
+        'type', 'period_type', 'period_month', 'period_quarter',
         'period_year', 'status', 'compliance_status', 'portal_status', 'file_path', 'original_filename',
         'acknowledgment_number', 'generated_at', 'submitted_at', 'approved_at',
         'filed_at', 'acknowledged_at', 'generated_by', 'submitted_by', 'approved_by',
