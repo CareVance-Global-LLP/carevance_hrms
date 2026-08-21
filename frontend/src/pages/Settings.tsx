@@ -10,6 +10,7 @@ import NotificationsPane from '@/features/settings/panes/NotificationsPane';
 import AppearancePane from '@/features/settings/panes/AppearancePane';
 import SecurityPane from '@/features/settings/panes/SecurityPane';
 import PrivacyPane from '@/features/settings/panes/PrivacyPane';
+import LegalEntitiesPane from '@/features/settings/panes/LegalEntitiesPane';
 import OrganizationPane from '@/features/settings/panes/OrganizationPane';
 import ShiftsPane from '@/features/settings/panes/ShiftsPane';
 import WorkingTimePane from '@/features/settings/panes/WorkingTimePane';
@@ -27,6 +28,7 @@ const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }>
   appearance: { title: 'Appearance', description: 'How CareVance looks on this device.' },
   security: { title: 'Security', description: 'Two-factor authentication, your password, and who can reach this account.' },
   privacy: { title: 'Privacy', description: 'What is collected about you at work, why, for how long, and what you have agreed to.' },
+  'legal-entities': { title: 'Legal entities', description: 'The companies inside this workspace. Each files its own PF, ESI and TDS returns under its own PAN and TAN.' },
   organization: { title: 'Organization', description: 'Everything that applies to everyone in this workspace.' },
   shifts: { title: 'Shifts', description: 'The shift patterns this workspace runs, and who works which. A shift decides what a full day is worth counting down to.' },
   'working-time': { title: 'Working time', description: 'Weekly off, penalisation, overtime and shift allowance. Four policies, each created once and assigned to whoever it applies to — a shift decides the timings, these decide what they are worth.' },
@@ -108,6 +110,7 @@ export default function SettingsPage() {
           {activeTab === 'appearance' && <AppearancePane />}
           {activeTab === 'security' && <SecurityPane controller={controller} />}
           {activeTab === 'privacy' && <PrivacyPane />}
+          {activeTab === 'legal-entities' && <LegalEntitiesPane />}
           {activeTab === 'organization' && <OrganizationPane controller={controller} />}
           {activeTab === 'shifts' && <ShiftsPane />}
           {activeTab === 'working-time' && <WorkingTimePane />}

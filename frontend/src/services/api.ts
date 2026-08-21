@@ -91,8 +91,7 @@ import type {
   UpdateFilingDetailsPayload,
   IndianState,
   PollItem,
-  PollResultsResponse,
-} from '@/types';
+  PollResultsResponse, LegalEntity } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 // Define API error response structure
@@ -1483,6 +1482,29 @@ export const screenshotApi = {
 };
 
 // Activity API
+/**
+ * The companies inside an organization.
+ *
+ * Reading is open to managers; every write is payroll-admin only, because an
+ * entity's PAN and TAN decide which statutory return every employee under it
+ * appears on.
+ */
+export const legalEntityApi = {
+  list: () =>
+    api.get<{ data: LegalEntity[]; unassigned_count: number }>('/legal-entities'),
+
+  create: (payload: Partial<LegalEntity>) =>
+    api.post<{ data: LegalEntity }>('/legal-entities', payload),
+
+  update: (id: number, payload: Partial<LegalEntity>) =>
+    api.put<{ data: LegalEntity }>(`/legal-entities/${id}`, payload),
+
+  remove: (id: number) => api.delete<{ message: string }>(`/legal-entities/${id}`),
+
+  assignEmployees: (id: number, userIds: number[]) =>
+    api.post<{ message: string; moved: number }>(`/legal-entities/${id}/employees`, { user_ids: userIds }),
+};
+
 export const activityApi = {
   /**
    * Record what an idle stretch actually was. Only the person it belongs to

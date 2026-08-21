@@ -4,6 +4,7 @@ import {
   Briefcase,
   Building,
   CreditCard,
+  Landmark,
   Eye,
   FileSpreadsheet,
   LifeBuoy,
@@ -71,6 +72,13 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     group: 'you',
     icon: Eye,
     keywords: 'monitoring consent notice screenshot activity location selfie tracking withdraw dpdp data protection grievance retention what is collected about me surveillance',
+  },
+  {
+    id: 'legal-entities',
+    name: 'Legal entities',
+    group: 'workspace',
+    icon: Landmark,
+    keywords: 'company entity pan tan pf esi code subsidiary group multiple companies statutory registration filing establishment cin gstin',
   },
   {
     id: 'organization',

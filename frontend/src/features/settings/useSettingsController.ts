@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, canAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasPayrollAdminAccess, hasStrictAdminAccess, isEmployeeUser, canAccess } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { validateIdleThresholds } from './idlePolicy';
@@ -305,6 +305,13 @@ export function useSettingsController() {
    * manager, which is the mismatch that makes people think a feature is broken.
    */
   const canManageShifts = canManageSettings || hasAdminAccess(user);
+  /*
+   * Mirrors the API's `role:payroll` — hierarchy level <= 20, i.e. admin, hr
+   * and payroll_manager. Deliberately not the general settings gate: an
+   * entity's PAN and TAN decide which return every employee under it appears
+   * on, so this is the authority to run payroll, not to rename a workspace.
+   */
+  const canManagePayroll = hasPayrollAdminAccess(user);
 
   const visibleTabs = useMemo(() => {
     /*
@@ -322,6 +329,15 @@ export function useSettingsController() {
       'privacy',
       'help',
     ]);
+    if (canManagePayroll) {
+      /*
+       * The same gate as the administrative payroll area, not the general
+       * settings one: an entity's PAN and TAN decide which statutory return
+       * every employee under it appears on, which is the authority to run
+       * payroll rather than the authority to change a workspace name.
+       */
+      allowed.add('legal-entities');
+    }
     if (isStrictAdminUser) {
       allowed.add('organization');
       allowed.add('billing');
@@ -344,7 +360,7 @@ export function useSettingsController() {
       allowed.add('working-time');
     }
     return SETTINGS_TABS.filter((tab) => allowed.has(tab.id));
-  }, [canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);
+  }, [canManagePayroll, canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);
 
   const allowedTabIds = useMemo(() => new Set(visibleTabs.map((tab) => tab.id)), [visibleTabs]);
 

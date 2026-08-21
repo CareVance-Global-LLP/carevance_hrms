@@ -2003,3 +2003,30 @@ export interface FormulaValidateResult {
   errors?: string[];
   parsed?: string;
 }
+
+/**
+ * A company inside the organization: the thing that holds a PAN and files
+ * returns. One organization can contain several, which is how Indian groups
+ * running two to four entities are represented.
+ */
+export interface LegalEntity {
+  id: number;
+  organization_id: number;
+  name: string;
+  legal_name?: string | null;
+  pan?: string | null;
+  tan?: string | null;
+  pf_establishment_code?: string | null;
+  esi_code?: string | null;
+  lwf_code?: string | null;
+  cin?: string | null;
+  gstin?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  /** Where employees with no explicit entity are filed. Exactly one per organization. */
+  is_primary: boolean;
+  is_active: boolean;
+  users_count?: number;
+}
