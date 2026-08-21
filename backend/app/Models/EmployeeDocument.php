@@ -27,6 +27,10 @@ class EmployeeDocument extends Model
         'meta',
         'part',
         'financial_year',
+        // Whether the person this document is about may see it. False by
+        // default: a record can hold a warning letter or a background check as
+        // easily as an offer letter, and nothing here distinguishes them.
+        'visible_to_employee',
     ];
 
     protected function casts(): array
@@ -35,6 +39,7 @@ class EmployeeDocument extends Model
             'uploaded_at' => 'datetime',
             'file_size' => 'integer',
             'meta' => 'array',
+            'visible_to_employee' => 'boolean',
         ];
     }
 

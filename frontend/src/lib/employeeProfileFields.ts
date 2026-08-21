@@ -57,11 +57,19 @@ const bankAccountsOf = (user: any): any[] =>
 const educationsOf = (user: any): any[] =>
   user?.employee_educations ?? user?.employeeEducations ?? user?.educations ?? [];
 
-/** A government ID of a given kind, matched the way the backend matches it. */
+/**
+ * A government ID of a given kind, matched the way the backend matches it.
+ *
+ * Returns the ROW, not its `id_number`. Completeness only asks whether the fact
+ * is on file, and the roster (`/api/users`) deliberately ships `id_type` without
+ * the number — carrying it put every employee's PAN and Aadhaar into a list
+ * payload, and made the endpoint 500 outright when one row failed to decrypt.
+ * `bank_account` has always proven presence this way; this now matches it.
+ */
 const governmentIdOfType = (user: any, type: string) =>
   governmentIdsOf(user).find((id: any) =>
     String(id?.id_type ?? '').toLowerCase().includes(type)
-  )?.id_number;
+  );
 
 const profileField = (key: string) => (user: any) => profileOf(user)[key];
 const workField = (key: string) => (user: any) => workInfoOf(user)[key];
@@ -146,6 +154,16 @@ export const PROFILE_FIELDS: ReadonlyArray<ProfileField> = [
   },
 ];
 
+/**
+ * The field groups the first-login onboarding form actually collects.
+ *
+ * PAN, Aadhaar and a bank account are employee-owned too, but they live in
+ * Settings > Profile rather than on that form. Counting them there meant its
+ * progress bar could never reach 100% however much the joiner filled in — the
+ * exact complaint the owner scope was added to prevent, one level deeper.
+ */
+export const ONBOARDING_GROUPS: FieldGroup[] = ['identity', 'contact', 'address', 'emergency'];
+
 const isPresent = (value: unknown): boolean => {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim() !== '';
@@ -171,11 +189,14 @@ export interface ProfileCompleteness {
  */
 export function profileCompleteness(
   user: any,
-  scope?: { owner?: FieldOwner; payrollOnly?: boolean }
+  scope?: { owner?: FieldOwner; payrollOnly?: boolean; group?: FieldGroup[] }
 ): ProfileCompleteness {
   const fields = PROFILE_FIELDS.filter((field) => {
     if (scope?.owner && field.owner !== scope.owner) return false;
     if (scope?.payrollOnly && !field.requiredForPayroll) return false;
+    // Limits the answer to the groups a given form actually renders, so a
+    // screen is never held responsible for a field it does not show.
+    if (scope?.group && !scope.group.includes(field.group)) return false;
     return true;
   });
 

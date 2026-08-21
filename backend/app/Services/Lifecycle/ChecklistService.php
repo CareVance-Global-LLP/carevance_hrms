@@ -6,6 +6,7 @@ use App\Models\AssetAssignment;
 use App\Models\ChecklistItem;
 use App\Models\ChecklistTemplate;
 use App\Models\ChecklistTemplateItem;
+use App\Models\EmployeeDocument;
 use App\Models\EmployeeExit;
 use App\Models\OnboardingJourney;
 use App\Models\User;
@@ -165,6 +166,29 @@ class ChecklistService
                 'notes' => $notes ?? $item->notes,
             ]);
         });
+
+        return $item->fresh();
+    }
+
+    /**
+     * Complete an item because the document it was waiting for arrived.
+     *
+     * Separate from `complete()` because this one also links the evidence: the
+     * item records WHICH upload satisfied it, so a later reviewer can open the
+     * file rather than taking the tick on trust.
+     *
+     * `completed_by` is the uploader, whoever that was. An employee uploading
+     * their own PAN card and an admin uploading it on their behalf both tick
+     * the same item, and the audit trail says which of them actually did it.
+     */
+    public function completeFromDocument(ChecklistItem $item, User $actor, EmployeeDocument $document): ChecklistItem
+    {
+        $item->update([
+            'status' => ChecklistItem::STATUS_DONE,
+            'completed_at' => now(),
+            'completed_by' => $actor->id,
+            'employee_document_id' => $document->id,
+        ]);
 
         return $item->fresh();
     }

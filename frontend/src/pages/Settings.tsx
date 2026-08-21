@@ -6,6 +6,7 @@ import { useSettingsController } from '@/features/settings/useSettingsController
 import SettingsRail from '@/features/settings/components/SettingsRail';
 import SaveDock from '@/features/settings/components/SaveDock';
 import ProfilePane from '@/features/settings/panes/ProfilePane';
+import AssetsPane from '@/features/settings/panes/AssetsPane';
 import NotificationsPane from '@/features/settings/panes/NotificationsPane';
 import AppearancePane from '@/features/settings/panes/AppearancePane';
 import SecurityPane from '@/features/settings/panes/SecurityPane';
@@ -23,6 +24,7 @@ import type { SettingsTabId } from '@/features/settings/types';
 
 const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }> = {
   profile: { title: 'Profile', description: 'Your details, how you appear to colleagues, and the hours you work to.' },
+  assets: { title: 'Assets', description: 'Company equipment issued to you, and when you took it.' },
   notifications: { title: 'Notifications', description: 'Which updates reach you, and how.' },
   appearance: { title: 'Appearance', description: 'How CareVance looks on this device.' },
   security: { title: 'Security', description: 'Two-factor authentication, your password, and who can reach this account.' },
@@ -104,6 +106,7 @@ export default function SettingsPage() {
           </div>
 
           {activeTab === 'profile' && <ProfilePane controller={controller} />}
+          {activeTab === 'assets' && <AssetsPane controller={controller} />}
           {activeTab === 'notifications' && <NotificationsPane controller={controller} />}
           {activeTab === 'appearance' && <AppearancePane />}
           {activeTab === 'security' && <SecurityPane controller={controller} />}

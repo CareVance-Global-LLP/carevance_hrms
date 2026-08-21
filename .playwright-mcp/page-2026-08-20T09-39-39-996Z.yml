@@ -1,0 +1,750 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - link "Skip to content" [ref=e3] [cursor=pointer]:
+      - /url: "#main"
+    - navigation "Primary" [ref=e5]:
+      - link "CareVance home" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: CareVance
+      - generic [ref=e13]:
+        - button "Product" [ref=e15]
+        - button "Solutions" [ref=e19]
+        - link "Pricing" [ref=e22] [cursor=pointer]:
+          - /url: /pricing
+        - button "Free tools" [ref=e24]
+        - button "Resources" [ref=e28]
+      - generic [ref=e31]:
+        - button "Switch theme" [ref=e32]
+        - link "Sign in" [ref=e34] [cursor=pointer]:
+          - /url: https://app.carevance.com/login
+        - link "See it live — 2 min" [ref=e35] [cursor=pointer]:
+          - /url: /product#tour
+        - link "Book a demo" [ref=e36] [cursor=pointer]:
+          - /url: /contact?intent=demo
+        - button "Open menu" [ref=e37]
+  - main [ref=e39]:
+    - generic [ref=e41]:
+      - generic [ref=e42]:
+        - paragraph [ref=e43]: HR & payroll, built for India
+        - heading "The hours are the payslip." [level=1] [ref=e44]
+        - paragraph [ref=e45]: CareVance tracks the work, computes the payroll, and files the compliance — in one unbroken system. No exports. No reconciliation. No third tool.
+        - generic [ref=e46]:
+          - link "Book a 20-minute demo" [ref=e47] [cursor=pointer]:
+            - /url: /contact?intent=demo
+          - link "Take the 2-minute tour" [ref=e48] [cursor=pointer]:
+            - /url: /product#tour
+        - paragraph [ref=e49]: 14-day free trial · no credit card · web, mobile, desktop tracker and browser extension
+      - generic [ref=e51]:
+        - list [ref=e53]:
+          - listitem [ref=e54]:
+            - generic [ref=e55]:
+              - generic [ref=e56]:
+                - text: "1"
+                - paragraph [ref=e57]: Tracked
+              - paragraph [ref=e58]: 7h 42m
+              - paragraph [ref=e59]: Mon 18 Aug
+              - paragraph [ref=e60]: 94% active · 18m idle rewound
+          - listitem [ref=e61]:
+            - generic [ref=e62]:
+              - generic [ref=e63]:
+                - text: "2"
+                - paragraph [ref=e64]: Attendance
+              - paragraph [ref=e65]: 22/22
+              - paragraph [ref=e66]: Aug 2026
+              - paragraph [ref=e67]: 169h 24m · 0 LOP days
+          - listitem [ref=e68]:
+            - generic [ref=e69]:
+              - generic [ref=e70]:
+                - text: "3"
+                - paragraph [ref=e71]: Payroll run
+              - paragraph [ref=e72]: 1,15,891
+              - paragraph [ref=e73]: Priya Nair
+              - paragraph [ref=e74]: gross, from the synced attendance
+          - listitem [ref=e75]:
+            - generic [ref=e76]:
+              - generic [ref=e77]:
+                - text: "4"
+                - paragraph [ref=e78]: Statutory
+              - paragraph [ref=e79]: 8,704
+              - paragraph [ref=e80]: PF · PT · TDS
+              - paragraph [ref=e81]: ESI nil — gross above ₹21,000
+          - listitem [ref=e82]:
+            - generic [ref=e83]:
+              - generic [ref=e84]:
+                - text: "5"
+                - paragraph [ref=e85]: Payslip
+              - paragraph [ref=e86]: 1,07,187
+              - paragraph [ref=e87]: Priya Nair
+              - paragraph [ref=e88]: net pay, paid by bank file
+        - paragraph [ref=e89]: One employee, one month, one number — carried from a tracked minute to a paid payslip. No export, no reconciliation, no second system.
+    - region "What is built" [ref=e90]:
+      - generic [ref=e91]:
+        - generic [ref=e92]:
+          - generic [ref=e93]:
+            - term [ref=e94]: states & UTs with PT slabs
+            - definition [ref=e95]:
+              - generic "37" [ref=e96]
+              - text: states & UTs with PT slabs
+          - generic [ref=e97]:
+            - term [ref=e98]: statutory returns generated
+            - definition [ref=e99]:
+              - generic "13" [ref=e100]
+              - text: statutory returns generated
+          - generic [ref=e101]:
+            - term [ref=e102]: apps in the suite
+            - definition [ref=e103]:
+              - generic "4" [ref=e104]
+              - text: apps in the suite
+          - generic [ref=e105]:
+            - term [ref=e106]: payroll endpoints alone
+            - definition [ref=e107]:
+              - generic "215" [ref=e108]
+              - text: payroll endpoints alone
+        - paragraph [ref=e109]:
+          - text: Counted from the codebase, not estimated.
+          - link "How we count" [ref=e110] [cursor=pointer]:
+            - /url: /methodology
+    - generic [ref=e112]:
+      - generic [ref=e113]:
+        - paragraph [ref=e114]: The actual problem
+        - heading "Your tracker doesn’t talk to your HRMS. Your HRMS doesn’t talk to your payroll." [level=2] [ref=e115]
+        - paragraph [ref=e116]: So someone exports a CSV every month and hopes. For most companies this size the real competitor isn’t a rival platform — it’s five disconnected tools and a spreadsheet holding them together.
+      - generic [ref=e117]:
+        - generic [ref=e118]:
+          - paragraph [ref=e119]: Without CareVance
+          - list [ref=e120]:
+            - listitem [ref=e121]: A tracker from one vendor. An HRMS from another. Payroll from a third.
+            - listitem [ref=e124]: Someone exports a CSV on the 25th and hopes the columns still line up.
+            - listitem [ref=e127]: Attendance disputes are settled from memory, because the evidence is in a different tool.
+            - listitem [ref=e130]: A salary component is changed, and nobody can say later what it cost or who approved it.
+            - listitem [ref=e133]: The statutory return disagrees with what was actually deducted, and you find out at filing.
+        - generic [ref=e136]:
+          - paragraph [ref=e137]: With CareVance
+          - list [ref=e138]:
+            - listitem [ref=e139]: One system owns the tracker, the attendance record and the payroll run.
+            - listitem [ref=e142]: Attendance syncs into the run through an endpoint you can inspect before you trust it.
+            - listitem [ref=e145]: The screenshot, the activity classification and the hour it produced are the same record.
+            - listitem [ref=e148]: Every override carries the engine value beside the applied one, and an append-only audit.
+            - listitem [ref=e151]: ESI stays locked for the contribution period, so the return and the deduction agree.
+    - generic [ref=e154]:
+      - generic [ref=e156]:
+        - paragraph [ref=e157]: The unbroken chain
+        - heading "Seven stages. One system. No export step anywhere in it." [level=2] [ref=e158]
+        - paragraph [ref=e159]: Every competitor in this market stitches a tracker to an HRMS to a payroll engine across three vendors. Here is what it looks like when one product owns the whole chain — the same employee, the same month, all the way through.
+      - group "The seven stages, scroll horizontally" [ref=e160]:
+        - article [ref=e161]:
+          - generic [ref=e162]: "1"
+          - heading "The tracker captures the work" [level=3] [ref=e163]
+          - paragraph [ref=e164]: A desktop app takes screenshots, reads OS-level idle, and queues everything to disk when the network drops. Idle time is rewound to the last real activity, so a late stop never bills the gap.
+          - generic [ref=e166]:
+            - paragraph [ref=e168]: CareVance Tracker
+            - generic [ref=e169]:
+              - generic [ref=e170]:
+                - generic [ref=e171]:
+                  - paragraph [ref=e172]: Mon 18 Aug
+                  - paragraph [ref=e173]: 7h 42m
+                - generic [ref=e174]: 94% active
+              - list [ref=e175]:
+                - listitem [ref=e176]: 09:12VS Codescreenshot
+                - listitem [ref=e177]: 11:40Figmascreenshot
+                - listitem [ref=e178]: 14:05Slackscreenshot
+                - listitem [ref=e179]: 16:28VS Codescreenshot
+              - paragraph [ref=e180]:
+                - generic [ref=e181]: 18m idle
+                - text: rewound to the last real activity — recorded, not billed.
+        - article [ref=e182]:
+          - generic [ref=e183]: "2"
+          - heading "Activity becomes attendance" [level=3] [ref=e184]
+          - paragraph [ref=e185]: Sessions are classified against configurable productivity rules, then resolved against the employee’s shift and timezone into an attendance record with hours, LOP and regularisations.
+          - generic [ref=e187]:
+            - paragraph [ref=e189]: Attendance · Aug 2026
+            - generic [ref=e190]:
+              - generic [ref=e191]:
+                - paragraph [ref=e192]: 22/22
+                - paragraph [ref=e193]: days present
+              - generic [ref=e194]:
+                - generic [ref=e195]:
+                  - term [ref=e196]: Hours
+                  - definition [ref=e197]: 169h 24m
+                - generic [ref=e198]:
+                  - term [ref=e199]: Loss of pay
+                  - definition [ref=e200]: 0 days
+                - generic [ref=e201]:
+                  - term [ref=e202]: Shift
+                  - definition [ref=e203]: General · 09:30–18:30 IST
+              - paragraph [ref=e204]: Synced to the Aug 2026 payroll run — no export.
+        - article [ref=e205]:
+          - generic [ref=e206]: "3"
+          - heading "Attendance syncs into the run" [level=3] [ref=e207]
+          - paragraph [ref=e208]: One endpoint, per run or per employee, with a status you can inspect before you trust it. This is the join every competitor makes you do with a CSV.
+          - generic [ref=e210]:
+            - paragraph [ref=e212]: Attendance sync · status
+            - generic [ref=e213]:
+              - paragraph [ref=e218]: 42 of 42 employees synced
+              - generic [ref=e219]:
+                - generic [ref=e220]:
+                  - term [ref=e221]: Source
+                  - definition [ref=e222]: Attendance records · Aug 2026
+                - generic [ref=e223]:
+                  - term [ref=e224]: Paid days
+                  - definition [ref=e225]: "22"
+                - generic [ref=e226]:
+                  - term [ref=e227]: Loss of pay
+                  - definition [ref=e228]: 0 days
+                - generic [ref=e229]:
+                  - term [ref=e230]: Basis for gross
+                  - definition [ref=e231]: ₹1,15,891.20
+              - paragraph [ref=e232]: "POST /payroll/runs/{runId}/sync-attendance"
+        - article [ref=e233]:
+          - generic [ref=e234]: "4"
+          - heading "The engine computes the pay" [level=3] [ref=e235]
+          - paragraph [ref=e236]: CTC to components through a configurable structure, with a residual component absorbing the remainder so the total returns to CTC exactly — to the paisa.
+          - generic [ref=e238]:
+            - generic [ref=e239]:
+              - paragraph [ref=e240]: Payroll run · August 2026
+              - text: Approved
+            - table [ref=e241]:
+              - rowgroup [ref=e242]:
+                - row [ref=e243]:
+                  - columnheader "Employee" [ref=e244]
+                  - columnheader "Gross ₹" [ref=e245]
+                  - columnheader "Net ₹" [ref=e246]
+              - rowgroup [ref=e247]:
+                - row [ref=e248]:
+                  - cell "Priya NairCV-0142 · Engineering" [ref=e249]:
+                    - text: Priya Nair
+                    - generic [ref=e250]: CV-0142 · Engineering
+                  - cell "1,15,891" [ref=e251]
+                  - cell "1,07,187" [ref=e252]
+                - row [ref=e253]:
+                  - cell "Arjun DeshpandeCV-0088 · Engineering" [ref=e254]:
+                    - text: Arjun Deshpande
+                    - generic [ref=e255]: CV-0088 · Engineering
+                  - cell "92,450" [ref=e256]
+                  - cell "86,121" [ref=e257]
+                - row [ref=e258]:
+                  - cell "Fatima SheikhCV-0211 · Finance" [ref=e259]:
+                    - text: Fatima Sheikh
+                    - generic [ref=e260]: CV-0211 · Finance
+                  - cell "74,300" [ref=e261]
+                  - cell "69,884" [ref=e262]
+                - row [ref=e263]:
+                  - cell "Rohit VermaCV-0305 · Operations" [ref=e264]:
+                    - text: Rohit Verma
+                    - generic [ref=e265]: CV-0305 · Operations
+                  - cell "41,200" [ref=e266]
+                  - cell "38,947Excluded from disbursement — bank details missing" [ref=e267]:
+                    - text: 38,947
+                    - generic "Excluded from disbursement — bank details missing"
+                - row [ref=e268]:
+                  - cell "Ananya IyerCV-0117 · Design" [ref=e269]:
+                    - text: Ananya Iyer
+                    - generic [ref=e270]: CV-0117 · Design
+                  - cell "68,900" [ref=e271]
+                  - cell "64,512" [ref=e272]
+            - paragraph [ref=e273]: 1 person excluded from the bank file — bank details missing. Returned as an exclusion, never dropped.
+        - article [ref=e274]:
+          - generic [ref=e275]: "5"
+          - heading "Statutory is applied, not bolted on" [level=3] [ref=e276]
+          - paragraph [ref=e277]: PF at the ₹15,000 ceiling, ESI locked for the contribution period, professional tax by state, TDS cumulative across the year on either regime.
+          - generic [ref=e279]:
+            - paragraph [ref=e281]: Statutory · this run
+            - list [ref=e282]:
+              - listitem [ref=e283]:
+                - generic [ref=e284]:
+                  - paragraph [ref=e285]: Provident Fund
+                  - paragraph [ref=e286]: 12% of ₹15,000 ceiling
+                - paragraph [ref=e287]: ₹1,800.00
+              - listitem [ref=e288]:
+                - generic [ref=e289]:
+                  - paragraph [ref=e290]: Employee State Insurance
+                  - paragraph [ref=e291]: gross above ₹21,000
+                - paragraph [ref=e292]: —
+              - listitem [ref=e293]:
+                - generic [ref=e294]:
+                  - paragraph [ref=e295]: Professional Tax
+                  - paragraph [ref=e296]: Maharashtra
+                - paragraph [ref=e297]: ₹200.00
+              - listitem [ref=e298]:
+                - generic [ref=e299]:
+                  - paragraph [ref=e300]: TDS
+                  - paragraph [ref=e301]: new regime, cumulative
+                - paragraph [ref=e302]: ₹6,704.03
+            - generic [ref=e303]:
+              - paragraph [ref=e304]: Total deductions
+              - paragraph [ref=e305]: ₹8,704.03
+        - article [ref=e306]:
+          - generic [ref=e307]: "6"
+          - heading "Returns and the bank file are generated" [level=3] [ref=e308]
+          - paragraph [ref=e309]: Real EPFO ECR and NSDL formats. The bank file is a NEFT/RTGS batch that records every line, and returns unpayable people as exclusions rather than dropping them.
+          - generic [ref=e311]:
+            - paragraph [ref=e313]: Statutory filings · this period
+            - list [ref=e314]:
+              - listitem [ref=e315]: PF ECRText
+              - listitem [ref=e316]: ESI ChallanCSV
+              - listitem [ref=e317]: Form 24QFVU
+              - listitem [ref=e318]: PT Return — MaharashtraCSV
+              - listitem [ref=e319]: LWF ReturnCSV
+              - listitem [ref=e320]: Form 16PDF
+              - listitem [ref=e321]: Form 12BAPDF
+            - paragraph [ref=e322]: Availability is resolved against the filesystem — the product cannot list a return it is unable to write.
+        - article [ref=e323]:
+          - generic [ref=e324]: "7"
+          - heading "The payslip is the same record" [level=3] [ref=e325]
+          - paragraph [ref=e326]: Every figure traces back through the version that produced it, the override that moved it, and the person who approved that override.
+          - generic [ref=e328]:
+            - paragraph [ref=e330]: Payslip · Aug 2026
+            - generic [ref=e331]:
+              - generic [ref=e332]:
+                - text: PN
+                - generic [ref=e333]:
+                  - paragraph [ref=e334]: Priya Nair
+                  - paragraph [ref=e335]: CV-0142 · Senior Engineer
+              - generic [ref=e336]:
+                - generic [ref=e337]:
+                  - term [ref=e338]: Basic
+                  - definition [ref=e339]: 48,000.00
+                - generic [ref=e340]:
+                  - term [ref=e341]: House Rent Allowance
+                  - definition [ref=e342]: 24,000.00
+                - generic [ref=e343]:
+                  - term [ref=e344]: Conveyance Allowance
+                  - definition [ref=e345]: 1,600.00
+                - generic [ref=e346]:
+                  - term [ref=e347]: Special Allowanceresidual
+                  - definition [ref=e348]: 42,291.20
+                - generic [ref=e349]:
+                  - term [ref=e350]: Gross
+                  - definition [ref=e351]: 1,15,891.20
+                - generic [ref=e352]:
+                  - term [ref=e353]: Deductions
+                  - definition [ref=e354]: −8,704.03
+            - generic [ref=e355]:
+              - paragraph [ref=e356]: Net pay
+              - paragraph [ref=e357]: ₹1,07,187.17
+    - generic [ref=e359]:
+      - generic [ref=e360]:
+        - paragraph [ref=e361]: What is inside
+        - heading "Five modules that already share one database." [level=2] [ref=e362]
+      - generic [ref=e364]:
+        - tablist "Product capabilities" [ref=e365]:
+          - tab "Payroll" [selected] [ref=e366]
+          - tab "Time & attendance" [ref=e367]
+          - tab "Compliance" [ref=e368]
+          - tab "People" [ref=e369]
+          - tab "Reports" [ref=e370]
+        - tabpanel "Payroll" [ref=e372]:
+          - generic [ref=e373]:
+            - heading "Indian payroll, and the arithmetic to prove it." [level=3] [ref=e374]
+            - paragraph [ref=e375]: A run moves through draft, locked, approved, released and disbursed — each stage stamped with who did it and when. Processing is queued with a progress handle you can poll, and a second start while one is in flight is refused rather than allowed to race.
+            - list [ref=e376]:
+              - listitem [ref=e377]: Salary structures built from formula, slab and lookup components
+              - listitem [ref=e380]: Every payroll item versioned, with per-employee locks
+              - listitem [ref=e383]: Arrears, LOP, pro-rating, notice recovery and F&F in the engine
+              - listitem [ref=e386]: Negative net pay is surfaced for validation, never clamped to zero
+          - generic [ref=e390]:
+            - generic [ref=e391]:
+              - paragraph [ref=e393]: Run status
+              - list [ref=e394]:
+                - listitem [ref=e395]:
+                  - generic [ref=e396]: Draft
+                  - text: then
+                - listitem [ref=e397]:
+                  - generic [ref=e398]: Locked
+                  - text: then
+                - listitem [ref=e399]:
+                  - generic [ref=e400]: Approved
+                  - text: then
+                - listitem [ref=e401]:
+                  - generic [ref=e402]: Released
+                  - text: then
+                - listitem [ref=e403]:
+                  - generic [ref=e404]: Disbursed
+            - generic [ref=e405]:
+              - generic [ref=e406]:
+                - paragraph [ref=e407]: Payroll run · August 2026
+                - text: Approved
+              - table [ref=e408]:
+                - rowgroup [ref=e409]:
+                  - row [ref=e410]:
+                    - columnheader "Employee" [ref=e411]
+                    - columnheader "Gross ₹" [ref=e412]
+                    - columnheader "Net ₹" [ref=e413]
+                - rowgroup [ref=e414]:
+                  - row [ref=e415]:
+                    - cell "Priya NairCV-0142 · Engineering" [ref=e416]:
+                      - text: Priya Nair
+                      - generic [ref=e417]: CV-0142 · Engineering
+                    - cell "1,15,891" [ref=e418]
+                    - cell "1,07,187" [ref=e419]
+                  - row [ref=e420]:
+                    - cell "Arjun DeshpandeCV-0088 · Engineering" [ref=e421]:
+                      - text: Arjun Deshpande
+                      - generic [ref=e422]: CV-0088 · Engineering
+                    - cell "92,450" [ref=e423]
+                    - cell "86,121" [ref=e424]
+                  - row [ref=e425]:
+                    - cell "Fatima SheikhCV-0211 · Finance" [ref=e426]:
+                      - text: Fatima Sheikh
+                      - generic [ref=e427]: CV-0211 · Finance
+                    - cell "74,300" [ref=e428]
+                    - cell "69,884" [ref=e429]
+                  - row [ref=e430]:
+                    - cell "Rohit VermaCV-0305 · Operations" [ref=e431]:
+                      - text: Rohit Verma
+                      - generic [ref=e432]: CV-0305 · Operations
+                    - cell "41,200" [ref=e433]
+                    - cell "38,947Excluded from disbursement — bank details missing" [ref=e434]:
+                      - text: 38,947
+                      - generic "Excluded from disbursement — bank details missing"
+                  - row [ref=e435]:
+                    - cell "Ananya IyerCV-0117 · Design" [ref=e436]:
+                      - text: Ananya Iyer
+                      - generic [ref=e437]: CV-0117 · Design
+                    - cell "68,900" [ref=e438]
+                    - cell "64,512" [ref=e439]
+              - paragraph [ref=e440]: 1 person excluded from the bank file — bank details missing. Returned as an exclusion, never dropped.
+    - generic [ref=e443]:
+      - generic [ref=e444]:
+        - paragraph [ref=e445]: Explainability
+        - heading "Every rupee on the payslip can name the rule that put it there." [level=2] [ref=e446]
+        - paragraph [ref=e447]:
+          - text: Competitors show you
+          - emphasis [ref=e448]: what
+          - text: changed. The override register shows you
+          - emphasis [ref=e449]: why
+          - text: ": the applied value sits beside the value the engine would have produced, and the difference is attributed to the override that caused it."
+        - generic [ref=e450]:
+          - paragraph [ref=e451]:
+            - text: Raising Basic by ₹1 does not cost ₹1. It costs
+            - generic [ref=e452]: ₹1.668
+            - text: .
+          - paragraph [ref=e453]: HRA is derived from Basic. Employer PF and the gratuity provision sit inside the CTC envelope. Four quantities move together, so an admin who types “Basic 60,000” expecting Special Allowance to fall by ₹12,000 watches it fall by ₹20,016. The product shows that before you commit, rather than after.
+        - paragraph [ref=e454]:
+          - text: And when a value genuinely cannot balance, it is
+          - strong [ref=e455]: refused at entry
+          - text: — with the maximum that would work, named to the paisa. Not accepted now and rejected weeks later at finalisation, when the fix is expensive and the payroll calendar is already against you.
+        - list [ref=e456]:
+          - listitem [ref=e457]: "Maker-checker: proposed by one person, approved by another."
+          - listitem [ref=e460]: Append-only audit trail on every override.
+          - listitem [ref=e463]: CSV round-trip with a validate step before commit.
+      - generic [ref=e466]:
+        - generic [ref=e467]:
+          - generic [ref=e468]:
+            - paragraph [ref=e469]: Override register
+            - text: Awaiting approval
+          - generic [ref=e470]:
+            - generic [ref=e471]:
+              - paragraph [ref=e472]: Component
+              - paragraph [ref=e473]: Basic
+              - paragraph [ref=e474]: Applied value
+              - paragraph [ref=e475]: ₹60,000
+              - paragraph [ref=e476]: Engine value
+              - paragraph [ref=e477]: ₹48,000
+            - generic [ref=e478]:
+              - paragraph [ref=e479]: Amplification · 1.668×
+              - paragraph [ref=e480]: Raising Basic by ₹12,000 costs ₹20,016. HRA is derived from Basic, and employer PF and the gratuity provision sit inside the CTC envelope — four figures move together.
+              - paragraph [ref=e481]:
+                - text: Special Allowance
+                - generic [ref=e482]: 42,291.20 → 22,275.20
+        - generic [ref=e483]:
+          - paragraph [ref=e485]: Override · refused at entry
+          - generic [ref=e486]:
+            - generic [ref=e487]:
+              - paragraph [ref=e488]: Requested Basic
+              - paragraph [ref=e489]: ₹78,000
+            - generic [ref=e490]:
+              - paragraph [ref=e491]: Cannot be applied
+              - paragraph [ref=e495]: Special Allowance cannot absorb this. The most Basic can be, at this CTC, is ₹73,352.04.
+              - paragraph [ref=e496]: Special Allowance would fall to -₹7,749.40. A negative residual is refused here, at the screen, not weeks later at finalisation.
+    - generic [ref=e498]:
+      - generic [ref=e499]:
+        - paragraph [ref=e500]: Built for every seat
+        - heading "HRMS is a committee purchase. Everyone in the room gets a reason." [level=2] [ref=e501]
+      - generic [ref=e502]:
+        - generic [ref=e503]:
+          - heading "Founder" [level=3] [ref=e504]
+          - paragraph [ref=e505]: One number for what people actually cost, and a burn-rate view that does not require asking finance. Payroll stops being a monthly act of faith.
+        - generic [ref=e506]:
+          - heading "Finance" [level=3] [ref=e507]
+          - paragraph [ref=e508]: A payroll register, a statutory register, GL mapping and cost centres. Differences, duplicates and negative-cost reports before the money moves, not after.
+        - generic [ref=e509]:
+          - heading "HR & payroll admin" [level=3] [ref=e510]
+          - paragraph [ref=e511]: The run lifecycle as a real stepper, a pre-run checklist that blocks, and overrides that refuse impossible values while you are still looking at the screen.
+        - generic [ref=e512]:
+          - heading "Manager" [level=3] [ref=e513]
+          - paragraph [ref=e514]: Approvals for leave, time edits and expenses — on the phone, with the ability to forward a request to whoever should actually decide it.
+        - generic [ref=e515]:
+          - heading "Employee" [level=3] [ref=e516]
+          - paragraph [ref=e517]: Payslips, tax declarations with proof upload, an old-versus-new regime simulator, loans, reimbursements and their own onboarding checklist.
+    - generic [ref=e519]:
+      - generic [ref=e520]:
+        - paragraph [ref=e521]: India-deep, not India-available
+        - heading "Anyone can say “statutory compliance”. Here are the rules, by name." [level=2] [ref=e522]
+        - paragraph [ref=e523]: Specificity is the only honest trust device available to a company with no logo wall. If you have run Indian payroll, one of these four will tell you whether we have.
+      - generic [ref=e524]:
+        - generic [ref=e525]:
+          - heading "ESI stays locked for the contribution period" [level=3] [ref=e526]
+          - paragraph [ref=e527]: Coverage is fixed for a whole period — 1 April to 30 September, 1 October to 31 March. Someone covered at the start stays covered to the end, even if a raise takes them past ₹21,000 in month three. Test a payroll tool on this one rule; most drop the employee the instant they cross.
+        - generic [ref=e528]:
+          - heading "PF at the ceiling, with the EPS split" [level=3] [ref=e529]
+          - paragraph [ref=e530]: Twelve percent each side of ₹15,000, and the employer’s half divided EPS 8.33% / EPF 3.67% rather than treated as one number. Above-ceiling handling and VPF are configurable, not assumed.
+        - generic [ref=e531]:
+          - heading "Professional tax is state-levied, and some states levy none" [level=3] [ref=e532]
+          - paragraph [ref=e533]: Thirty-seven states and union territories, month-aware — Maharashtra’s ₹300 February is modelled. A state with no PT returns ₹0, and is never quietly defaulted to a neighbour’s slab.
+        - generic [ref=e534]:
+          - heading "TDS is cumulative, on either regime" [level=3] [ref=e535]
+          - paragraph [ref=e536]: Not a flat twelfth of an annual guess. Old and new regime, FY-keyed slabs, surcharge bands with contiguous boundaries, and 4% cess — with a simulator employees can run themselves.
+      - paragraph [ref=e538]:
+        - strong [ref=e539]: And what is not there.
+        - text: Thirteen statutory returns generate today. Ten further declaration forms are registered and reported as unavailable, because their templates have not been written — that is real statutory work, and the product says so rather than failing at the moment you click.
+        - link "The full list" [ref=e540] [cursor=pointer]:
+          - /url: /product/compliance
+    - generic [ref=e543]:
+      - generic [ref=e544]:
+        - paragraph [ref=e545]: Security
+        - heading "You are about to hand a stranger your salary data." [level=2] [ref=e546]
+        - paragraph [ref=e547]: So here is exactly what is true today, and what is not. There are no badges on this page, because we have not earned any yet.
+        - list [ref=e548]:
+          - listitem [ref=e549]:
+            - paragraph [ref=e550]: Tenant isolation is structural
+            - paragraph [ref=e551]:
+              - generic "97" [ref=e552]
+              - text: models apply an organisation scope at the ORM layer and stamp the tenant on create. Reading across tenants requires explicitly writing so — which makes it greppable in review.
+          - listitem [ref=e553]:
+            - paragraph [ref=e554]: And a test fails the build if it lapses
+            - paragraph [ref=e555]: A model that owns tenant data but forgets the scope breaks CI. Isolation is enforced by the test suite, not by a reviewer remembering.
+          - listitem [ref=e556]:
+            - paragraph [ref=e557]: Two-factor authentication, enforceable
+            - paragraph [ref=e558]: TOTP with recovery codes, a per-organisation policy of off, grace or enforced, and mandatory enrolment for privileged roles.
+          - listitem [ref=e559]:
+            - paragraph [ref=e560]: Monitoring runs on notice and consent
+            - paragraph [ref=e561]: Screenshots, activity, geofenced punches and selfies all pass one gate. Notices are versioned and never edited; consent is per capture type and can be withdrawn. Under the DPDP Act that liability is the employer’s — so the tools to manage it ship with the tracker.
+        - generic [ref=e562]:
+          - paragraph [ref=e563]: Not yet true
+          - paragraph [ref=e564]: No SOC 2 report and no ISO 27001 certificate. No SSO or SAML — Google OAuth is the only federated sign-in. We would rather you read that here than discover it in procurement.
+        - link "Read the full security page" [ref=e565] [cursor=pointer]:
+          - /url: /security
+      - generic [ref=e567]:
+        - paragraph [ref=e569]: Monitoring notice · v3
+        - generic [ref=e570]:
+          - paragraph [ref=e571]: This workspace captures screenshots, application activity and location at punch-in, to verify hours worked and compute pay.
+          - list [ref=e572]:
+            - listitem [ref=e573]: Screenshots
+            - listitem [ref=e577]: Application & URL activity
+            - listitem [ref=e581]: Location at punch-in
+            - listitem [ref=e585]: Attendance selfies
+          - paragraph [ref=e589]: Consent is recorded per capture type and can be withdrawn. Notices are versioned and never edited in place.
+    - generic [ref=e591]:
+      - generic [ref=e592]:
+        - paragraph [ref=e593]: Pricing
+        - heading "Published, because most of this market hides it." [level=2] [ref=e594]
+        - paragraph [ref=e595]: 14-day free trial, no credit card. Prices exclude 18% GST.
+      - generic [ref=e596]:
+        - generic [ref=e597]:
+          - heading "Tracking" [level=3] [ref=e598]
+          - paragraph [ref=e599]: ₹399 / user / month
+          - paragraph [ref=e600]: Evidence of work, attendance, leave and approvals. Priced per person, minimum 10.
+          - list [ref=e601]:
+            - listitem [ref=e602]: Desktop tracker & browser extension
+            - listitem [ref=e605]: Attendance, leave, overtime
+            - listitem [ref=e608]: Projects, tasks and approvals
+        - generic [ref=e611]:
+          - text: Most bought
+          - heading "Payroll + Tracking" [level=3] [ref=e612]
+          - paragraph [ref=e613]: ₹3,999 / month
+          - paragraph [ref=e614]: Everything above, plus the payroll engine, statutory and filings. Includes 50 seats.
+          - list [ref=e615]:
+            - listitem [ref=e616]: Full payroll run lifecycle
+            - listitem [ref=e619]: PF, ESI, PT, TDS and 13 returns
+            - listitem [ref=e622]: Bank files, payslips and Form 16
+        - generic [ref=e625]:
+          - heading "Enterprise" [level=3] [ref=e626]
+          - paragraph [ref=e627]: Custom
+          - paragraph [ref=e628]: Custom integrations and commercial terms, agreed in writing rather than implied.
+          - list [ref=e629]:
+            - listitem [ref=e630]: Custom integrations
+            - listitem [ref=e633]: Commercial terms by agreement
+      - generic [ref=e636]:
+        - link "See full pricing & calculator" [ref=e637] [cursor=pointer]:
+          - /url: /pricing
+        - paragraph [ref=e638]: Minimum 10 seats on per-user plans. Workspace plans include 50.
+    - generic [ref=e640]:
+      - generic [ref=e641]:
+        - paragraph [ref=e642]: Switching
+        - heading "The objection is never the product. It is the migration." [level=2] [ref=e643]
+        - paragraph [ref=e644]: So here is the actual shape of it. The parallel run in week two is the part that matters — you should not have to trust a payroll engine you have not audited against your own numbers.
+      - list [ref=e645]:
+        - listitem [ref=e646]:
+          - generic [ref=e647]:
+            - text: "1"
+            - paragraph [ref=e648]: Week 1
+          - heading "Your people and your structure" [level=3] [ref=e649]
+          - paragraph [ref=e650]: Import employees by CSV, with government ID and bank-detail validation running as you go. Define salary components and the structure they hang off — or start from a template and edit it.
+        - listitem [ref=e651]:
+          - generic [ref=e652]:
+            - text: "2"
+            - paragraph [ref=e653]: Week 2
+          - heading "A parallel run against your current payroll" [level=3] [ref=e654]
+          - paragraph [ref=e655]: Process the month in CareVance without paying from it, then use the differences report against your existing output. Every component that disagrees is listed, with the reason.
+        - listitem [ref=e656]:
+          - generic [ref=e657]:
+            - text: "3"
+            - paragraph [ref=e658]: Week 4
+          - heading "Go live, with the tracker following" [level=3] [ref=e659]
+          - paragraph [ref=e660]: Run payroll for real, generate the returns and the bank file. Roll the desktop tracker out afterwards — the payroll works without it, and it makes attendance better once it is on.
+    - generic [ref=e662]:
+      - paragraph [ref=e663]: Questions
+      - heading "Six real objections." [level=2] [ref=e664]
+      - generic [ref=e665]:
+        - group [ref=e666]:
+          - generic "Do I have to use the desktop tracker to run payroll?" [ref=e667]
+        - group [ref=e670]:
+          - generic "Is the employee monitoring legal, and how do employees feel about it?" [ref=e671]
+        - group [ref=e674]:
+          - generic "Which statutory returns can you actually produce?" [ref=e675]
+        - group [ref=e678]:
+          - generic "What is not built yet?" [ref=e679]
+        - group [ref=e682]:
+          - generic "How does pricing work if I have fewer than 50 employees?" [ref=e683]
+        - group [ref=e686]:
+          - generic "Can I audit the payroll engine before trusting it with real money?" [ref=e687]
+    - generic [ref=e691]:
+      - heading "See a real payroll run, end to end." [level=2] [ref=e692]
+      - paragraph [ref=e693]: Twenty minutes with someone who can answer engine questions, or two minutes on your own first. Both paths land in the same place.
+      - generic [ref=e694]:
+        - link "Book a 20-minute demo" [ref=e695] [cursor=pointer]:
+          - /url: /contact?intent=demo
+        - link "Take the 2-minute tour" [ref=e696] [cursor=pointer]:
+          - /url: /product#tour
+      - paragraph [ref=e697]: 14-day free trial · no credit card · 4 apps included
+  - contentinfo [ref=e698]:
+    - generic [ref=e699]:
+      - generic [ref=e700]:
+        - generic [ref=e701]:
+          - generic [ref=e702]: CareVance
+          - paragraph [ref=e708]: Indian HR and payroll where the evidence of work and the payslip are the same system.
+          - paragraph [ref=e709]:
+            - link "sales@carevance.com" [ref=e710] [cursor=pointer]:
+              - /url: mailto:sales@carevance.com
+        - generic [ref=e711]:
+          - generic [ref=e712]:
+            - paragraph [ref=e713]: Product
+            - list [ref=e714]:
+              - listitem [ref=e715]:
+                - link "Platform overview" [ref=e716] [cursor=pointer]:
+                  - /url: /product
+              - listitem [ref=e717]:
+                - link "Payroll" [ref=e718] [cursor=pointer]:
+                  - /url: /product/payroll
+              - listitem [ref=e719]:
+                - link "Time & attendance" [ref=e720] [cursor=pointer]:
+                  - /url: /product/time-attendance
+              - listitem [ref=e721]:
+                - link "Compliance & filings" [ref=e722] [cursor=pointer]:
+                  - /url: /product/compliance
+              - listitem [ref=e723]:
+                - link "Core HR" [ref=e724] [cursor=pointer]:
+                  - /url: /product/core-hr
+              - listitem [ref=e725]:
+                - link "Reports & controls" [ref=e726] [cursor=pointer]:
+                  - /url: /product/reports
+              - listitem [ref=e727]:
+                - link "Leave" [ref=e728] [cursor=pointer]:
+                  - /url: /product/leave
+              - listitem [ref=e729]:
+                - link "Performance" [ref=e730] [cursor=pointer]:
+                  - /url: /product/performance
+              - listitem [ref=e731]:
+                - link "Expenses & FBP" [ref=e732] [cursor=pointer]:
+                  - /url: /product/expenses-fbp
+              - listitem [ref=e733]:
+                - link "Mobile & desktop apps" [ref=e734] [cursor=pointer]:
+                  - /url: /product/mobile
+          - generic [ref=e735]:
+            - paragraph [ref=e736]: Solutions
+            - list [ref=e737]:
+              - listitem [ref=e738]:
+                - link "Staffing agencies" [ref=e739] [cursor=pointer]:
+                  - /url: /solutions/staffing-agencies
+              - listitem [ref=e740]:
+                - link "IT services" [ref=e741] [cursor=pointer]:
+                  - /url: /solutions/it-services
+              - listitem [ref=e742]:
+                - link "Small business" [ref=e743] [cursor=pointer]:
+                  - /url: /solutions/small-business
+              - listitem [ref=e744]:
+                - link "vs. spreadsheet payroll" [ref=e745] [cursor=pointer]:
+                  - /url: /compare/spreadsheet-payroll
+              - listitem [ref=e746]:
+                - link "Keka alternative" [ref=e747] [cursor=pointer]:
+                  - /url: /compare/keka-alternative
+              - listitem [ref=e748]:
+                - link "greytHR alternative" [ref=e749] [cursor=pointer]:
+                  - /url: /compare/greythr-alternative
+              - listitem [ref=e750]:
+                - link "Pricing" [ref=e751] [cursor=pointer]:
+                  - /url: /pricing
+          - generic [ref=e752]:
+            - paragraph [ref=e753]: Free tools
+            - list [ref=e754]:
+              - listitem [ref=e755]:
+                - link "Salary breakup calculator" [ref=e756] [cursor=pointer]:
+                  - /url: /tools/salary-breakup-calculator
+              - listitem [ref=e757]:
+                - link "Take-home salary calculator" [ref=e758] [cursor=pointer]:
+                  - /url: /tools/take-home-salary-calculator
+              - listitem [ref=e759]:
+                - link "Gratuity calculator" [ref=e760] [cursor=pointer]:
+                  - /url: /tools/gratuity-calculator
+              - listitem [ref=e761]:
+                - link "HRA exemption calculator" [ref=e762] [cursor=pointer]:
+                  - /url: /tools/hra-exemption-calculator
+              - listitem [ref=e763]:
+                - link "Professional tax by state" [ref=e764] [cursor=pointer]:
+                  - /url: /tools/professional-tax-by-state
+          - generic [ref=e765]:
+            - paragraph [ref=e766]: Company
+            - list [ref=e767]:
+              - listitem [ref=e768]:
+                - link "Why CareVance" [ref=e769] [cursor=pointer]:
+                  - /url: /why-carevance
+              - listitem [ref=e770]:
+                - link "Security" [ref=e771] [cursor=pointer]:
+                  - /url: /security
+              - listitem [ref=e772]:
+                - link "How we count" [ref=e773] [cursor=pointer]:
+                  - /url: /methodology
+              - listitem [ref=e774]:
+                - link "Guides" [ref=e775] [cursor=pointer]:
+                  - /url: /resources
+              - listitem [ref=e776]:
+                - link "Changelog" [ref=e777] [cursor=pointer]:
+                  - /url: /changelog
+              - listitem [ref=e778]:
+                - link "About" [ref=e779] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e780]:
+                - link "Contact" [ref=e781] [cursor=pointer]:
+                  - /url: /contact
+              - listitem [ref=e782]:
+                - link "Careers" [ref=e783] [cursor=pointer]:
+                  - /url: /careers
+      - generic [ref=e784]:
+        - paragraph [ref=e785]:
+          - text: Every figure on this site is counted from the CareVance codebase, not estimated.
+          - link "See how we count" [ref=e786] [cursor=pointer]:
+            - /url: /methodology
+          - text: . We publish no customer counts, review scores or certification badges, because we have not earned them yet. Prices exclude 18% GST.
+        - generic [ref=e787]:
+          - paragraph [ref=e788]: © 2026 CareVance. All rights reserved.
+          - list [ref=e789]:
+            - listitem [ref=e790]:
+              - link "Privacy policy" [ref=e791] [cursor=pointer]:
+                - /url: /legal/privacy
+            - listitem [ref=e792]:
+              - link "Terms of service" [ref=e793] [cursor=pointer]:
+                - /url: /legal/terms
+            - listitem [ref=e794]:
+              - link "Data processing addendum" [ref=e795] [cursor=pointer]:
+                - /url: /legal/dpa

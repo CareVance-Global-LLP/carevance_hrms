@@ -16,6 +16,14 @@ interface CustomSelectProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  /**
+   * Accessible name for the trigger.
+   *
+   * Without one a screen reader announces only the selected option, which is
+   * ambiguous the moment several of these sit in one row or table — "Employee"
+   * says nothing about whose access level it is.
+   */
+  ariaLabel?: string;
   dropDirection?: 'auto' | 'up' | 'down';
 }
 
@@ -27,6 +35,7 @@ export default function CustomSelect({
   disabled = false,
   className,
   id,
+  ariaLabel,
   dropDirection = 'auto',
 }: CustomSelectProps) {
   const [open, setOpen] = useState(false);
@@ -112,6 +121,7 @@ export default function CustomSelect({
         ref={buttonRef}
         id={id}
         disabled={disabled}
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}

@@ -12,6 +12,7 @@ import {
   Palette,
   Sparkles,
   Timer,
+  Package,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -42,7 +43,19 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     name: 'Profile',
     group: 'you',
     icon: User,
-    keywords: 'name email avatar photo picture personal details address city state pin emergency contact timezone gender birthday phone assets',
+    keywords: 'name email avatar photo picture personal details address city state pin emergency contact timezone gender birthday phone bank account number ifsc upi pan aadhaar government id kyc documents upload',
+  },
+  {
+    id: 'assets',
+    name: 'Assets',
+    group: 'you',
+    icon: Package,
+    /*
+     * Deliberately overlapping with the main sidebar's Assets entry, which is
+     * the admin register. Someone searching "laptop" here wants the one they
+     * are holding; the register is reached from the sidebar, not from settings.
+     */
+    keywords: 'assets equipment laptop device hardware assigned issued kit allocation company property',
   },
   {
     id: 'notifications',

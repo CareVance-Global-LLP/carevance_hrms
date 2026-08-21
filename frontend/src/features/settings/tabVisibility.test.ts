@@ -74,6 +74,19 @@ describe('settings tab wiring', () => {
     }
   });
 
+  it('assets is available to every employee, not just administrators', () => {
+    // Everyone is issued kit. Gating the list of what YOU are holding behind an
+    // admin permission would leave the only people who need it unable to see
+    // it — and the main sidebar's Assets entry, which IS gated, is a different
+    // thing entirely: that one is the organisation-wide register.
+    const baseSet = controllerSource.slice(
+      controllerSource.indexOf('const allowed = new Set<SettingsTabId>('),
+      controllerSource.indexOf('if (isStrictAdminUser)'),
+    );
+
+    expect(baseSet).toContain("'assets'");
+  });
+
   it('privacy is available to every employee, not just administrators', () => {
     // The obligation to tell someone what is collected about them is owed to
     // that person. A disclosure behind an admin gate is not a disclosure.

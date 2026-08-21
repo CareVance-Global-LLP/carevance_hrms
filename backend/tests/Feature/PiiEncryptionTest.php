@@ -57,6 +57,103 @@ class PiiEncryptionTest extends TestCase
         ]);
     }
 
+    // ---------------------------------------------------- the self-service path
+
+    /**
+     * A bank account the employee entered themselves is encrypted too.
+     *
+     * The self-service route is a second write path into the same column, and a
+     * path that skipped the cast would be invisible until a dump was read. It
+     * goes through EmployeeWorkspaceService exactly as the admin path does,
+     * which is what this pins.
+     */
+    public function test_a_self_declared_bank_account_is_encrypted_at_rest(): void
+    {
+        $this->actingAs($this->employee)->postJson('/api/me/bank-accounts', [
+            'bank_name' => 'HDFC Bank',
+            'account_number' => '50100123456789',
+            'ifsc_swift' => 'HDFC0001234',
+        ])->assertCreated();
+
+        $account = EmployeeBankAccount::query()->where('user_id', $this->employee->id)->firstOrFail();
+        $raw = DB::table('employee_bank_accounts')->where('id', $account->id)->first();
+
+        $this->assertStringNotContainsString('50100123456789', (string) $raw->account_number);
+        $this->assertSame('50100123456789', $account->account_number);
+        // The blind index has to move with it, or a duplicate-account check
+        // silently stops matching anything the employee entered.
+        $this->assertSame(BlindIndex::of('50100123456789'), $raw->account_number_bidx);
+    }
+
+    // ------------------------------------------------- the roster and PII
+
+    /**
+     * The employee roster must not carry government ID numbers.
+     *
+     * `/api/users` eager-loads government ids only to answer "is a PAN on
+     * file". It used to select `id_number` alongside, which put every
+     * employee's PAN and Aadhaar into a plain list payload — read by anyone who
+     * can see the roster, including a manager who has no business with them.
+     */
+    public function test_the_user_roster_does_not_expose_government_id_numbers(): void
+    {
+        $admin = User::factory()->create([
+            'organization_id' => $this->organization->id,
+            'role' => 'admin',
+        ]);
+
+        EmployeeGovernmentId::create([
+            'organization_id' => $this->organization->id,
+            'user_id' => $this->employee->id,
+            'id_type' => 'PAN',
+            'id_number' => 'ABCDE1234F',
+        ]);
+
+        $response = $this->actingAs($admin)->getJson('/api/users');
+
+        $response->assertOk();
+        $this->assertStringNotContainsString('ABCDE1234F', $response->getContent());
+
+        // The row still ships, or completeness cannot tell PAN is on file.
+        $rows = collect($response->json())
+            ->flatMap(fn ($user) => $user['employee_government_ids'] ?? []);
+
+        $this->assertNotEmpty($rows, 'The roster must still report that a PAN row exists.');
+        $this->assertSame('PAN', $rows->first()['id_type']);
+        $this->assertArrayNotHasKey('id_number', $rows->first());
+    }
+
+    /**
+     * One unreadable row must not take down the whole list.
+     *
+     * A value that will not decrypt — written before the encryption migration
+     * ran, or carried across from a dump taken under a different APP_KEY —
+     * threw DecryptException out of `toArray()`, so the entire employee roster
+     * returned 500 over a column it never needed to read.
+     */
+    public function test_an_undecryptable_government_id_does_not_break_the_roster(): void
+    {
+        $admin = User::factory()->create([
+            'organization_id' => $this->organization->id,
+            'role' => 'admin',
+        ]);
+
+        $record = EmployeeGovernmentId::create([
+            'organization_id' => $this->organization->id,
+            'user_id' => $this->employee->id,
+            'id_type' => 'PAN',
+            'id_number' => 'ABCDE1234F',
+        ]);
+
+        // Plaintext sitting in a column the model casts as `encrypted` — the
+        // exact state a database has before the phase-one migration runs.
+        DB::table('employee_government_ids')
+            ->where('id', $record->id)
+            ->update(['id_number' => 'ABCDE1234F']);
+
+        $this->actingAs($admin)->getJson('/api/users')->assertOk();
+    }
+
     // -------------------------------------------------------------- coverage
 
     public function test_every_declared_pii_column_has_both_a_cast_and_an_index(): void

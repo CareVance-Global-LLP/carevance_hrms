@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\EmployeeDocument;
 use App\Models\User;
 use App\Services\Employees\EmployeeWorkspaceService;
+use App\Services\Organization\EmployeeScopeResolver;
 use Illuminate\Http\Request;
 
 class EmployeeWorkspaceController extends Controller
@@ -13,6 +14,7 @@ class EmployeeWorkspaceController extends Controller
     public function __construct(
         private readonly EmployeeWorkspaceService $employeeWorkspaceService,
         private readonly \App\Services\Validation\IndianIdValidationService $validationService,
+        private readonly EmployeeScopeResolver $scopeResolver,
     ) {
     }
 
@@ -187,6 +189,17 @@ class EmployeeWorkspaceController extends Controller
                 'category' => 'government_id_proof',
                 'review_status' => $data['status'] ?? 'pending',
                 'notes' => $data['notes'] ?? null,
+                // A proof of the employee's OWN PAN or bank account is
+                // evidence of a fact they supplied, not something HR wrote
+                // about them — so who typed it in does not decide whether they
+                // may look at it. Leaving this false rendered eye and download
+                // buttons on their own row for a file the API then refused.
+                'visible_to_employee' => true,
+                // Carried on the document because this runs BEFORE the
+                // employee_government_ids row that will point back at it, and
+                // the checklist matcher needs to know a PAN card from an
+                // Aadhaar at exactly this moment.
+                'meta' => ['id_type' => $data['id_type'] ?? null],
             ], $request->file('proof_file'));
             $data['employee_document_id'] = $document->id;
         }
@@ -268,6 +281,12 @@ class EmployeeWorkspaceController extends Controller
                 'category' => 'bank_proof',
                 'review_status' => $data['verification_status'] ?? 'pending',
                 'notes' => $data['notes'] ?? null,
+                // A proof of the employee's OWN PAN or bank account is
+                // evidence of a fact they supplied, not something HR wrote
+                // about them — so who typed it in does not decide whether they
+                // may look at it. Leaving this false rendered eye and download
+                // buttons on their own row for a file the API then refused.
+                'visible_to_employee' => true,
             ], $request->file('proof_file'));
             $data['employee_document_id'] = $document->id;
         }
@@ -377,6 +396,10 @@ class EmployeeWorkspaceController extends Controller
             'category' => 'required|string|max:80',
             'review_status' => 'nullable|in:pending,verified,rejected',
             'notes' => 'nullable|string',
+            // Off unless HR says otherwise. An offer letter or a Form 16 is
+            // meant for the employee; a warning letter on the same record is
+            // not, and the row itself cannot tell them apart.
+            'visible_to_employee' => 'nullable|boolean',
             'file' => 'required|file|max:15360',
         ]);
 
@@ -437,32 +460,12 @@ class EmployeeWorkspaceController extends Controller
 
     private function canManage(User $user): bool
     {
-        return $user->getHierarchyLevel() < 100;
+        return $this->scopeResolver->canManageAnyone($user);
     }
 
     private function canManageEmployee(User $actor, User $employee): bool
     {
-        if (!$this->canManage($actor)) {
-            return false;
-        }
-
-        $actorLevel = $actor->getHierarchyLevel();
-        $employeeLevel = $employee->getHierarchyLevel();
-
-        if ($actorLevel <= 10) {
-            return true;
-        }
-
-        if ($employeeLevel <= $actorLevel) {
-            return false;
-        }
-
-        $groupIds = $actor->groups()->pluck('groups.id')->all();
-        if (empty($groupIds)) {
-            return false;
-        }
-
-        return $employee->groups()->whereIn('groups.id', $groupIds)->exists();
+        return $this->scopeResolver->canActOn($actor, $employee);
     }
 
     private function canEditProfile(User $actor, User $employee): bool

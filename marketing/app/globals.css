@@ -1,0 +1,359 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/*
+ * Dark mode resolves from an attribute on <html>, not from the media query.
+ *
+ * app/layout.tsx stamps `data-theme` before first paint — reading the stored
+ * choice, falling back to the OS preference. That is the product's own approach
+ * (theme.css: "system is resolved in JS and written out as this attribute") and
+ * it buys two things a bare media query cannot: a toggle that can override the
+ * OS, and no flash of the wrong theme on load.
+ *
+ * tokens.css still carries a `prefers-color-scheme` block as the no-JS fallback,
+ * so the colours are right even if this variant never matches.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  /* ── Brand teal. Note: the product's `blue-*` IS this ramp. ── */
+  --color-brand-50: rgb(var(--brand-50));
+  --color-brand-100: rgb(var(--brand-100));
+  --color-brand-200: rgb(var(--brand-200));
+  --color-brand-300: rgb(var(--brand-300));
+  --color-brand-400: rgb(var(--brand-400));
+  --color-brand-500: rgb(var(--brand-500));
+  --color-brand-600: rgb(var(--brand-600));
+  --color-brand-700: rgb(var(--brand-700));
+  --color-brand-800: rgb(var(--brand-800));
+  --color-brand-900: rgb(var(--brand-900));
+  --color-brand-950: rgb(var(--brand-950));
+
+  /* ── Gold accent. One emphasis per viewport, at most. ── */
+  --color-accent-50: rgb(var(--accent-50));
+  --color-accent-100: rgb(var(--accent-100));
+  --color-accent-200: rgb(var(--accent-200));
+  --color-accent-300: rgb(var(--accent-300));
+  --color-accent-400: rgb(var(--accent-400));
+  --color-accent-500: rgb(var(--accent-500));
+  --color-accent-600: rgb(var(--accent-600));
+  --color-accent-700: rgb(var(--accent-700));
+  --color-accent-800: rgb(var(--accent-800));
+  --color-accent-900: rgb(var(--accent-900));
+
+  /* ── Neutral ramp. INVERTS in dark: n-50 is the darkest surface there. ── */
+  --color-n-50: rgb(var(--n-50));
+  --color-n-100: rgb(var(--n-100));
+  --color-n-200: rgb(var(--n-200));
+  --color-n-300: rgb(var(--n-300));
+  --color-n-400: rgb(var(--n-400));
+  --color-n-500: rgb(var(--n-500));
+  --color-n-600: rgb(var(--n-600));
+  --color-n-700: rgb(var(--n-700));
+  --color-n-800: rgb(var(--n-800));
+  --color-n-900: rgb(var(--n-900));
+  --color-n-950: rgb(var(--n-950));
+
+  /* ── Surfaces and roles ── */
+  --color-app: rgb(var(--app-bg));
+  --color-card: rgb(var(--surface-card));
+  --color-raised: rgb(var(--surface-raised));
+  --color-sunken: rgb(var(--surface-sunken));
+  --color-inverse: rgb(var(--surface-inverse));
+  --color-on-inverse: rgb(var(--on-inverse));
+  --color-on-brand: rgb(var(--on-brand));
+  --color-line: rgb(var(--border-strong));
+  --color-ring: rgb(var(--ring));
+
+  /* ── Semantic status ── */
+  --color-success-50: rgb(var(--success-50));
+  --color-success-100: rgb(var(--success-100));
+  --color-success-500: rgb(var(--success-500));
+  --color-success-700: rgb(var(--success-700));
+  --color-warning-50: rgb(var(--warning-50));
+  --color-warning-100: rgb(var(--warning-100));
+  --color-warning-500: rgb(var(--warning-500));
+  --color-warning-700: rgb(var(--warning-700));
+  --color-danger-50: rgb(var(--danger-50));
+  --color-danger-100: rgb(var(--danger-100));
+  --color-danger-500: rgb(var(--danger-500));
+  --color-danger-700: rgb(var(--danger-700));
+  --color-info-50: rgb(var(--info-50));
+  --color-info-100: rgb(var(--info-100));
+  --color-info-500: rgb(var(--info-500));
+  --color-info-700: rgb(var(--info-700));
+
+  /* Emerald + rose are the only stock palettes the site borrows: they carry
+     "productive / unproductive" and "credit / deduction" in the product UI
+     recreations, where inventing new hues would misrepresent the screens. */
+  --color-emerald-50: rgb(var(--emerald-50));
+  --color-emerald-100: rgb(var(--emerald-100));
+  --color-emerald-500: rgb(var(--emerald-500));
+  --color-emerald-700: rgb(var(--emerald-700));
+  --color-rose-50: rgb(var(--rose-50));
+  --color-rose-100: rgb(var(--rose-100));
+  --color-rose-500: rgb(var(--rose-500));
+  --color-rose-700: rgb(var(--rose-700));
+  --color-amber-50: rgb(var(--amber-50));
+  --color-amber-100: rgb(var(--amber-100));
+  --color-amber-500: rgb(var(--amber-500));
+  --color-amber-700: rgb(var(--amber-700));
+
+  /* ── Type. Both faces are self-hosted by next/font in app/fonts.ts. ── */
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-manrope), ui-sans-serif,
+    system-ui, sans-serif;
+
+  /* The app's scale. The site may go larger for hero type (see --text-hero)
+     but keeps these tracking and weight relationships. */
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 1rem;
+  --text-caption--letter-spacing: 0.08em;
+  --text-caption--font-weight: 600;
+  --text-section: 1rem;
+  --text-section--line-height: 1.5rem;
+  --text-section--font-weight: 600;
+  --text-data: 1.5rem;
+  --text-data--line-height: 2rem;
+  --text-data--letter-spacing: -0.01em;
+  --text-data--font-weight: 700;
+  --text-display: 1.75rem;
+  --text-display--line-height: 2.1rem;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 700;
+  --text-hero: clamp(2.5rem, 6vw, 4.5rem);
+  --text-hero--line-height: 1.04;
+  --text-hero--letter-spacing: -0.035em;
+  --text-hero--font-weight: 700;
+  --text-title: clamp(1.875rem, 3.4vw, 2.75rem);
+  --text-title--line-height: 1.12;
+  --text-title--letter-spacing: -0.025em;
+  --text-title--font-weight: 700;
+
+  /* ── Surface. Nothing rounder than xl — no pill cards. ── */
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 6px rgba(15, 23, 42, 0.04);
+  --shadow-card-hover: 0 14px 30px -14px rgba(93, 150, 157, 0.25),
+    0 8px 16px -12px rgba(15, 23, 42, 0.15);
+  --shadow-modal: 0 20px 50px -20px rgba(15, 23, 42, 0.3),
+    0 10px 24px -16px rgba(15, 23, 42, 0.2);
+
+  /* ── The one motion curve. Everything else is a duration. ── */
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /*
+   * The only literal colours in this codebase, and they are literal for a
+   * reason that theme.css cannot express.
+   *
+   * Both ramps in tokens.css INVERT between themes — that is what makes
+   * `bg-card` and `text-n-900` correct in light and dark without a single
+   * `dark:` utility. But two surfaces must stay dark in BOTH themes: the
+   * desktop-tracker window (it is a dark utility app, and letting it flip would
+   * turn the one screen that proves "this runs on your machine" into another
+   * white card) and any full-bleed slab carrying white type.
+   *
+   * There is no inverting token that can hold "dark in both themes", so these
+   * are defined once, here, and referenced everywhere else. The product does
+   * the same thing for the same reason — see .surface-fixed-dark in
+   * frontend/src/styles/theme.css.
+   */
+  --color-fixed-dark: #131b21;
+  --color-fixed-dark-ink: #e6edf0;
+}
+
+@layer base {
+  /*
+   * The app's body wash, carried to the site. Fixed rather than scrolling so a
+   * long marketing page does not drag a visible gradient seam down the screen.
+   */
+  body {
+    background-color: rgb(var(--app-bg));
+    color: rgb(var(--n-900));
+    background-image:
+      radial-gradient(circle at 20% -10%, rgba(93, 150, 157, 0.08), transparent 30%),
+      radial-gradient(circle at 80% -20%, rgba(227, 168, 66, 0.05), transparent 35%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* In dark the same two washes read as haze over a near-black page; deepen
+     the teal and drop the gold, which is the one that turns muddy. */
+  [data-theme="dark"] body {
+    background-image:
+      radial-gradient(circle at 20% -10%, rgba(93, 150, 157, 0.13), transparent 32%),
+      radial-gradient(circle at 80% -20%, rgba(227, 168, 66, 0.04), transparent 35%);
+  }
+
+  * {
+    border-color: rgb(var(--n-200));
+  }
+
+  /*
+   * One focus ring for the whole site. `:focus-visible` rather than `:focus` so
+   * a mouse click on a card does not leave a ring behind, but every keyboard
+   * arrival is unmistakable — this is an acceptance criterion, not a nicety.
+   */
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+  }
+
+  ::selection {
+    background-color: rgb(var(--brand-200));
+    color: rgb(var(--n-900));
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Anchored sections must not land under the fixed navbar. */
+    scroll-padding-top: 6rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    /*
+     * The global off switch. Every motion primitive ALSO checks the preference
+     * in JS so it can skip the work entirely rather than run an invisible
+     * animation, but this catches anything that slips through — including CSS
+     * transitions written later by someone who forgot.
+     */
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /*
+   * A slab that must stay deep in BOTH themes. `bg-brand-800` cannot express
+   * this: the brand ramp inverts, so the band turns pale in dark mode while the
+   * white type on it stays white. Same reasoning as the product's .cta-band.
+   */
+  .band-deep {
+    /*
+     * Runs from --cta-via, NOT --cta-from.
+     *
+     * Measured: white text on --cta-from (#5D969D) is 3.33:1, which fails AA
+     * for body copy — and a gradient is only as accessible as its lightest
+     * point, because the reader does not get to choose where the sentence
+     * lands. Starting at --cta-via (#3D656B) puts the worst case at 6.3:1 with
+     * pure white and 4.7:1 at the 80% alpha the supporting copy uses.
+     */
+    background-image: linear-gradient(
+      to bottom right,
+      rgb(var(--cta-via)) 0%,
+      rgb(var(--cta-to)) 100%
+    );
+    color: var(--color-fixed-dark-ink);
+  }
+
+  /* Chrome that is dark in both themes: the desktop-tracker mock's window bar. */
+  .surface-fixed-dark {
+    background-color: var(--color-fixed-dark);
+    color: var(--color-fixed-dark-ink);
+  }
+
+  /* Hairline that survives the neutral ramp inverting. */
+  .hairline {
+    border: 1px solid rgb(var(--n-200));
+  }
+
+  /* Numbers in a table must not jitter as they count or change. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /*
+   * Menu and drawer entrance.
+   *
+   * CSS rather than AnimatePresence, because the navbar lives in the root layout
+   * — anything it imports is in the initial bundle of every page, and an
+   * animation library is far too much weight for one 180ms fade. The trade is
+   * that there is no exit animation; a menu that vanishes on close is the
+   * normal, expected behaviour anyway.
+   */
+  .menu-in {
+    animation: menu-in 180ms var(--ease-out-soft) both;
+  }
+
+  /* Motion 5 — the tab panel's entrance. Cross-fade plus an 8px slide. */
+  .panel-in {
+    animation: panel-in 280ms var(--ease-out-soft) both;
+  }
+
+  @keyframes panel-in {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /*
+   * Motion 2 — Stagger. Children reveal at --stagger-step intervals once the
+   * container is marked shown. The index is capped in JS at 8, because past
+   * that the last child arrives long after the reader's eye reached it.
+   */
+  [data-stagger] [data-stagger-item] {
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 500ms var(--ease-out-soft),
+      transform 500ms var(--ease-out-soft);
+    transition-delay: calc(var(--stagger-index, 0) * var(--stagger-step, 60ms));
+  }
+
+  [data-stagger="shown"] [data-stagger-item] {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * The global off switch, restated for the CSS-driven motions above.
+ *
+ * The base layer already zeroes transition and animation durations under
+ * `prefers-reduced-motion`, but a zeroed transition still leaves the staggered
+ * children at opacity 0 if the observer never fires. These make the end state
+ * unconditional.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .menu-in,
+  .panel-in {
+    animation: none;
+  }
+
+  [data-stagger] [data-stagger-item] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}

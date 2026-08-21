@@ -215,3 +215,88 @@ describe('AddUserDrawer — email recipients', () => {
     });
   });
 });
+
+describe('AddUserDrawer — a batch that is not all the same', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadDefaults.mockReturnValue({ groupIds: [], remember: false });
+    mocks.fetchGroups.mockResolvedValue([
+      { id: 1, name: 'Operations', description: '3 members' },
+      { id: 2, name: 'Sales', description: '1 member' },
+    ]);
+    mocks.fetchProjects.mockResolvedValue([]);
+    mocks.billingCurrent.mockResolvedValue({ data: { seats: { max: 25, used: 13, remaining: 12 } } });
+    mocks.inviteByEmail.mockResolvedValue({ invitedCount: 2, failed: [], deferredAssignments: [] });
+  });
+
+  const goToEmail = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: /invite by email/i }));
+    return screen.findByPlaceholderText(/type or paste email/i);
+  };
+
+  it('sends two departments and two access levels in one go', async () => {
+    // This is the loop the table exists to close: two joiners in different
+    // departments used to be two separate trips through the whole form.
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const input = await goToEmail(user);
+    await user.type(input, 'asha@acme.in{Enter}');
+    await user.type(input, 'ravi@acme.in{Enter}');
+
+    await user.click(await screen.findByRole('button', { name: 'Department for ravi@acme.in' }));
+    await user.click(await screen.findByRole('option', { name: 'Sales' }));
+
+    await user.click(screen.getByRole('button', { name: 'Access level for ravi@acme.in' }));
+    await user.click(await screen.findByRole('option', { name: 'Manager' }));
+
+    await user.type(screen.getByRole('textbox', { name: 'Employee code for asha@acme.in' }), 'EMP-001');
+
+    await user.click(screen.getByRole('button', { name: /send 2 invites/i }));
+
+    await waitFor(() => expect(mocks.inviteByEmail).toHaveBeenCalledTimes(1));
+    expect(mocks.inviteByEmail.mock.calls[0][0]).toMatchObject({
+      emails: ['asha@acme.in', 'ravi@acme.in'],
+      role: 'employee',
+      overridesByEmail: { 'ravi@acme.in': { groupId: 2, role: 'manager' } },
+      employeeCodeByEmail: { 'asha@acme.in': 'EMP-001' },
+    });
+  });
+
+  it('shows the override on the chip so it cannot contradict the row below', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const input = await goToEmail(user);
+    await user.type(input, 'ravi@acme.in{Enter}');
+
+    await user.click(await screen.findByRole('button', { name: 'Access level for ravi@acme.in' }));
+    await user.click(await screen.findByRole('option', { name: 'Admin' }));
+
+    // Anchored on the chip's own remove button, because the address is also
+    // rendered in the table row and the select below reads 'Admin' as well.
+    await waitFor(() => {
+      const chip = screen.getByRole('button', { name: /remove ravi@acme\.in/i }).closest('span');
+      expect(chip).toHaveTextContent('Admin');
+    });
+  });
+
+  it('clears the overrides once the batch has been sent', async () => {
+    // A stale override would silently apply to whoever is invited next.
+    const user = userEvent.setup();
+    renderDrawer();
+
+    const input = await goToEmail(user);
+    await user.type(input, 'asha@acme.in{Enter}');
+    await user.click(await screen.findByRole('button', { name: 'Department for asha@acme.in' }));
+    await user.click(await screen.findByRole('option', { name: 'Sales' }));
+    await user.click(screen.getByRole('button', { name: /send invite/i }));
+
+    await waitFor(() => expect(mocks.inviteByEmail).toHaveBeenCalled());
+
+    await user.type(await screen.findByPlaceholderText(/type or paste email/i), 'later@acme.in{Enter}');
+
+    expect(await screen.findByRole('button', { name: 'Department for later@acme.in' }))
+      .toHaveTextContent('Use default');
+  });
+});

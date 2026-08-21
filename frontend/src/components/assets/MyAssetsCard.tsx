@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { Package } from 'lucide-react';
 import { assetsApi } from '@/services/assetsApi';
 
 const formatDate = (value: string | null): string => {
@@ -23,23 +22,17 @@ export default function MyAssetsCard({ userId }: MyAssetsCardProps) {
   const assets = assetsQuery.data ?? [];
 
   return (
-    <div className="border-t border-slate-200 pt-5">
-      <div className="flex items-center gap-2">
-        <Package className="h-5 w-5 text-primary-600" />
-        <h3 className="text-base font-semibold text-slate-900">My Assets</h3>
-      </div>
-      <p className="mt-1 text-sm text-slate-500">Company assets currently assigned to you.</p>
-
+    <div>
       {assetsQuery.isLoading ? (
-        <p className="mt-4 text-sm text-slate-500">Loading your assets...</p>
+        <p className="text-sm text-slate-500">Loading your assets...</p>
       ) : assetsQuery.isError ? (
-        <p className="mt-4 text-sm text-rose-600">Could not load your assets. Please try again later.</p>
+        <p className="text-sm text-rose-600">Could not load your assets. Please try again later.</p>
       ) : assets.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-sm text-slate-500">No assets are currently assigned to you.</p>
         </div>
       ) : (
-        <div className="mt-4 overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">

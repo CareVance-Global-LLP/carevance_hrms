@@ -110,6 +110,132 @@ describe('inviteByEmail batching', () => {
   });
 });
 
+describe('inviteByEmail per-recipient overrides', () => {
+  it('sends one request per department instead of forcing a second run', async () => {
+    // The whole point of the overrides table: five joiners across three
+    // departments used to mean three separate trips through the form.
+    createMock.mockResolvedValue(okResponse(1) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      groupIds: [1],
+      emails: ['ops@test.com', 'sales@test.com', 'finance@test.com'],
+      overridesByEmail: {
+        'sales@test.com': { groupId: 2 },
+        'finance@test.com': { groupId: 3 },
+      },
+    });
+
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls.map(([body]) => [body.emails, body.department_ids])).toEqual([
+      [['ops@test.com'], [1]],
+      [['sales@test.com'], [2]],
+      [['finance@test.com'], [3]],
+    ]);
+  });
+
+  it('replaces the batch departments rather than adding to them', async () => {
+    // `/invitations` writes exactly the group_ids it is given, so merging would
+    // leave someone moved to Sales still sitting in the batch default.
+    createMock.mockResolvedValue(okResponse(1) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      groupIds: [1, 4],
+      emails: ['a@test.com'],
+      overridesByEmail: { 'a@test.com': { groupId: 9 } },
+    });
+
+    expect(createMock.mock.calls[0][0].department_ids).toEqual([9]);
+  });
+
+  it('still sends one request when everybody takes the defaults', async () => {
+    createMock.mockResolvedValue(okResponse(3) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      groupIds: [1],
+      jobTitle: 'Support',
+      emails: ['a@test.com', 'b@test.com', 'c@test.com'],
+      overridesByEmail: {},
+    });
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries a per-recipient job title and joining date on their own request', async () => {
+    createMock.mockResolvedValue(okResponse(1) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      emails: ['a@test.com', 'b@test.com'],
+      jobTitle: 'Support Analyst',
+      joiningDate: '2026-09-01',
+      overridesByEmail: {
+        'b@test.com': { jobTitle: 'Team Lead', joiningDate: '2026-10-01' },
+      },
+    });
+
+    expect(createMock.mock.calls[0][0]).toMatchObject({
+      emails: ['a@test.com'],
+      job_title: 'Support Analyst',
+      joining_date: '2026-09-01',
+    });
+    expect(createMock.mock.calls[1][0]).toMatchObject({
+      emails: ['b@test.com'],
+      job_title: 'Team Lead',
+      joining_date: '2026-10-01',
+    });
+  });
+
+  it('drops the custom role only for the recipient who overrode their access level', async () => {
+    createMock.mockResolvedValue(okResponse(1) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      roleId: 42,
+      emails: ['keeps@test.com', 'overrides@test.com'],
+      overridesByEmail: { 'overrides@test.com': { role: 'manager' } },
+    });
+
+    expect(createMock.mock.calls[0][0]).toMatchObject({ role: 'employee', role_id: 42 });
+    expect(createMock.mock.calls[1][0]).toMatchObject({ role: 'manager' });
+    expect(createMock.mock.calls[1][0]).not.toHaveProperty('role_id');
+  });
+
+  it('narrows employee codes to the request that is actually inviting that person', async () => {
+    // A code sent alongside a request that does not include its owner would be
+    // reserved against the wrong batch.
+    createMock.mockResolvedValue(okResponse(1) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      groupIds: [1],
+      emails: ['ops@test.com', 'sales@test.com'],
+      overridesByEmail: { 'sales@test.com': { groupId: 2 } },
+      employeeCodeByEmail: { 'ops@test.com': 'EMP-001', 'sales@test.com': 'EMP-002' },
+    });
+
+    expect(createMock.mock.calls[0][0].employee_codes).toEqual({ 'ops@test.com': 'EMP-001' });
+    expect(createMock.mock.calls[1][0].employee_codes).toEqual({ 'sales@test.com': 'EMP-002' });
+  });
+
+  it('still chunks at the API ceiling within a single override group', async () => {
+    const emails = Array.from({ length: 60 }, (_, index) => `bulk${index}@test.com`);
+    createMock
+      .mockResolvedValueOnce(okResponse(EMAIL_BATCH_LIMIT) as any)
+      .mockResolvedValueOnce(okResponse(10) as any);
+
+    await addUserService.inviteByEmail({
+      ...basePayload,
+      emails,
+      overridesByEmail: { 'bulk0@test.com': { groupId: null } },
+    });
+
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('fetchGroups when react-query calls it unbound', () => {
   it('does not depend on `this`', async () => {
     // It is handed to useQuery as a bare reference, so `this` is undefined

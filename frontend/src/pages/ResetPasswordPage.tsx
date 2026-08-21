@@ -9,6 +9,7 @@ import AuthPageShell, {
   type AuthShowcaseFeature,
 } from '@/components/auth/AuthPageShell';
 import { authApi } from '@/services/api';
+import PasswordStrength, { evaluatePassword } from '@/features/settings/components/PasswordStrength';
 
 const FEATURES: AuthShowcaseFeature[] = [
   {
@@ -85,6 +86,13 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    // Do not send something the server will certainly refuse; the rules are
+    // listed under the field, so the joiner has already been told.
+    if (evaluatePassword(password).score < 4) {
+      setValidationError('Your password does not meet the requirements listed below the field.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -99,7 +107,22 @@ export default function ResetPasswordPage() {
       setPassword('');
       setPasswordConfirmation('');
     } catch (requestError: any) {
-      setValidationError(requestError?.response?.data?.message || 'Unable to reset your password right now.');
+      /*
+       * Field errors first. Laravel puts the useful part in `errors` — the
+       * breach-check rejection above all — while `message` is the generic
+       * summary. Reading only the summary is how "your data is invalid" reached
+       * users with nothing to act on.
+       */
+      const fieldErrors = requestError?.response?.data?.errors;
+      const firstFieldError = fieldErrors
+        ? Object.values(fieldErrors).flat().find(Boolean)
+        : null;
+
+      setValidationError(
+        (typeof firstFieldError === 'string' ? firstFieldError : '')
+        || requestError?.response?.data?.message
+        || 'Unable to reset your password right now.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -181,6 +204,7 @@ export default function ResetPasswordPage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            <PasswordStrength value={password} />
           </div>
 
           <div>

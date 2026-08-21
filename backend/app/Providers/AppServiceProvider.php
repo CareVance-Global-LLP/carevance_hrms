@@ -83,8 +83,18 @@ class AppServiceProvider extends ServiceProvider
          * the suite creates users with passwords like "password123" in dozens
          * of places, and rewriting all of them buys nothing.
          *
-         * Consequence worth knowing: the strict rule is not exercised by the
-         * tests. If you change it, verify it by hand against a real request.
+         * Consequence worth knowing: the strict rule is not reachable through a
+         * request in the test suite, because this closure short-circuits before
+         * it. PasswordPolicyTest therefore asserts the production rule directly
+         * against `productionRules()` rather than by posting to an endpoint.
+         *
+         * The minimum is 8, not 12. That was a deliberate call and it is the
+         * one part of this policy that is weaker than the guidance for a system
+         * holding payroll and PII — an 8-character password is materially
+         * cheaper to attack offline. What keeps it defensible is that ONLY the
+         * length was relaxed: every other rule below still applies, so
+         * "Abcd12!x" passes and "password" does not. Raising it back is a
+         * one-character edit here and nothing else.
          *
          * Existing weak passwords keep working — login only checks the hash.
          * This gates what can be *set* from here on.
@@ -94,12 +104,7 @@ class AppServiceProvider extends ServiceProvider
                 return Password::min(8);
             }
 
-            return Password::min(12)
-                ->letters()
-                ->mixedCase()
-                ->numbers()
-                ->symbols()
-                ->uncompromised();
+            return self::productionRules();
         });
 
         RateLimiter::for('auth.login', function (Request $request) {
@@ -248,5 +253,24 @@ class AppServiceProvider extends ServiceProvider
                 Limit::perMinute((int) env('RATE_LIMIT_BUG_REPORT_IP_PER_MINUTE', 10))->by($request->ip()),
             ];
         });
+    }
+
+    /**
+     * The rule set production actually enforces.
+     *
+     * Named and static so it can be asserted directly. `Password::defaults()`
+     * short-circuits to a bare `min(8)` outside production — deliberately, so
+     * the suite runs offline and fast — which means no request-level test can
+     * ever reach these rules. Without this seam the strict policy would be
+     * entirely uncovered, which is what the comment in boot() used to concede.
+     */
+    public static function productionRules(): Password
+    {
+        return Password::min(8)
+            ->letters()
+            ->mixedCase()
+            ->numbers()
+            ->symbols()
+            ->uncompromised();
     }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Loader2, UserPlus } from 'lucide-react';
@@ -14,6 +14,7 @@ import GroupMultiSelect from '@/components/add-user/GroupMultiSelect';
 import InviteLinkPanel from '@/components/add-user/InviteLinkPanel';
 import CsvUploadPanel from '@/components/add-user/CsvUploadPanel';
 import CustomAddUserPanel from '@/components/add-user/CustomAddUserPanel';
+import RecipientDetailsTable, { ROLE_LABELS } from '@/components/add-user/RecipientDetailsTable';
 import { useCsvInviteRoute } from '@/components/add-user/useCsvInviteRoute';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
@@ -21,6 +22,8 @@ import {
   addUserService,
   AdditionalInviteSettings,
   InviteUserRole,
+  maxJoiningDate,
+  RecipientOverride,
 } from '@/services/addUser';
 
 
@@ -56,21 +59,6 @@ const extractInviteError = (error: any, fallback: string) => {
 };
 
 const browserTimezone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
-
-/**
- * Furthest joining date the invite forms accept, as `YYYY-MM-DD`.
- *
- * Built from local parts, not `toISOString()`, which converts to UTC first and
- * returns yesterday in IST before 05:30. Matches the two-year ceiling the API
- * and the Create User wizard both enforce.
- */
-const maxJoiningDate = (() => {
-  const date = new Date();
-  date.setFullYear(date.getFullYear() + 2);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
-})();
 
 const defaultSettings: AdditionalInviteSettings = {
   // Inherit the organization default unless the inviter explicitly picks one.
@@ -165,6 +153,15 @@ export default function AddUserDrawer({
   const [linkEmployeeCode, setLinkEmployeeCode] = useState('');
   const [employeeCodeByEmail, setEmployeeCodeByEmail] = useState<Record<string, string>>({});
   /*
+   * Per-recipient overrides of the batch defaults, keyed by lower-cased email.
+   *
+   * Only the people who differ are in here, so "everybody the same" stays an
+   * empty map and `inviteByEmail` still collapses to a single request. Employee
+   * codes stay in their own map above because they travel as their own
+   * `employee_codes` key on the request rather than deciding its shape.
+   */
+  const [overridesByEmail, setOverridesByEmail] = useState<Record<string, RecipientOverride>>({});
+  /*
    * Shared by all three invite tabs.
    *
    * Without a joining date the onboarding checklist anchors on whenever the
@@ -174,6 +171,15 @@ export default function AddUserDrawer({
   const [joiningDate, setJoiningDate] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [expiresInHours, setExpiresInHours] = useState<number>(72);
+  /*
+   * Ids for the three batch-level fields. Their <label>s carried no htmlFor, so
+   * they were decoration: a screen reader reached each input and announced
+   * "edit text, blank". Now that a per-recipient "Job title for <email>" sits
+   * directly below, an unnamed batch field is also genuinely ambiguous.
+   */
+  const batchJoiningDateId = useId();
+  const batchJobTitleId = useId();
+  const batchExpiryId = useId();
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
 
   const groupsQuery = useQuery({
@@ -298,8 +304,28 @@ export default function AddUserDrawer({
     }
   }, [allowedRoles, role]);
 
-  useEffect(() => {
+  /*
+   * Payroll visibility only means anything for an admin or a manager, so it is
+   * cleared when nobody in the batch is one.
+   *
+   * Keyed off every RESOLVED recipient, not off the batch default alone. With
+   * per-recipient access levels the old `role !== 'employee'` check stripped the
+   * setting from a manager invited alongside four employees, because the batch
+   * default was still 'employee'.
+   */
+  const batchIsAllEmployees = useMemo(() => {
     if (role !== 'employee') {
+      return false;
+    }
+
+    return emails.every((email) => {
+      const overridden = overridesByEmail[email.trim().toLowerCase()]?.role;
+      return !overridden || overridden === 'employee';
+    });
+  }, [emails, overridesByEmail, role]);
+
+  useEffect(() => {
+    if (!batchIsAllEmployees) {
       return;
     }
 
@@ -308,7 +334,7 @@ export default function AddUserDrawer({
         ? { ...current, payrollVisibility: false }
         : current
     ));
-  }, [role]);
+  }, [batchIsAllEmployees]);
 
   const protectedEmailSet = useMemo(() => {
     const next = new Set<string>();
@@ -340,6 +366,47 @@ export default function AddUserDrawer({
 
   const departmentNameFor = (id: number) =>
     (groupsQuery.data || []).find((group) => group.id === id)?.name ?? `#${id}`;
+
+  /*
+   * What each chip should announce. Only overridden recipients appear, so the
+   * chip and the table row below it can never disagree.
+   */
+  const roleLabelByEmail = useMemo(() => {
+    const labels: Record<string, string> = {};
+
+    Object.entries(overridesByEmail).forEach(([email, override]) => {
+      if (override.role) {
+        labels[email] = ROLE_LABELS[override.role];
+      }
+    });
+
+    return labels;
+  }, [overridesByEmail]);
+
+  /** Merge a patch into one recipient's override, dropping keys it clears. */
+  const applyOverride = (email: string, patch: RecipientOverride) => {
+    const key = email.trim().toLowerCase();
+
+    setOverridesByEmail((current) => {
+      const next = { ...(current[key] || {}), ...patch };
+
+      // An empty value means "back to the batch default", so the key comes off
+      // rather than being sent as '' and splitting the batch on a blank.
+      (Object.keys(next) as Array<keyof RecipientOverride>).forEach((field) => {
+        const value = next[field];
+        if (value === undefined || value === null || value === '') {
+          delete next[field];
+        }
+      });
+
+      if (Object.keys(next).length === 0) {
+        const { [key]: _dropped, ...rest } = current;
+        return rest;
+      }
+
+      return { ...current, [key]: next };
+    });
+  };
 
   /**
    * Hand the skipped rows back as a CSV.
@@ -374,6 +441,7 @@ export default function AddUserDrawer({
         role,
         roleId,
         employeeCodeByEmail,
+        overridesByEmail,
         groupIds: selectedGroupIds,
         projectIds: selectedProjectIds,
         settings,
@@ -393,6 +461,8 @@ export default function AddUserDrawer({
       });
       setEmails([]);
       setInvalidEmails([]);
+      setEmployeeCodeByEmail({});
+      setOverridesByEmail({});
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['admin-dashboard-users'] }),
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
@@ -565,25 +635,49 @@ export default function AddUserDrawer({
                   invalidEmails={invalidEmails}
                   onChange={(next) => {
                     setEmails(next);
-                    // Drop overrides for anyone no longer in the list.
+                    // Drop everything held against anyone no longer in the list.
                     const keep = new Set(next.map((item) => item.toLowerCase()));
                     // Codes are dropped with their recipient too — a stale code
                     // left in the map would be reserved for someone who is no
-                    // longer being invited.
+                    // longer being invited. The rest of the override goes with
+                    // it for the same reason: a re-added address must not
+                    // silently inherit a department the admin cannot see.
                     setEmployeeCodeByEmail((current) =>
+                      Object.fromEntries(Object.entries(current).filter(([key]) => keep.has(key))),
+                    );
+                    setOverridesByEmail((current) =>
                       Object.fromEntries(Object.entries(current).filter(([key]) => keep.has(key))),
                     );
                   }}
                   onInvalidChange={setInvalidEmails}
                   roleLabel={accessLevelLabel}
-                  employeeCodeByEmail={employeeCodeByEmail}
-                  onEmployeeCodeChange={(email, code) =>
-                    setEmployeeCodeByEmail((current) => ({ ...current, [email.toLowerCase()]: code }))
-                  }
+                  roleLabelByEmail={roleLabelByEmail}
                 />
                 {duplicateEmailMessage ? (
                   <FeedbackBanner tone="error" message={duplicateEmailMessage} />
                 ) : null}
+                {/*
+                  The per-person table. Everything above it is a default; this
+                  is where a batch of five joiners across three departments
+                  stops being three separate trips through the form.
+                */}
+                <RecipientDetailsTable
+                  emails={emails}
+                  overrides={overridesByEmail}
+                  onOverrideChange={applyOverride}
+                  employeeCodeByEmail={employeeCodeByEmail}
+                  onEmployeeCodeChange={(email, code) =>
+                    setEmployeeCodeByEmail((current) => ({ ...current, [email.trim().toLowerCase()]: code }))
+                  }
+                  departments={groupsQuery.data || []}
+                  departmentsLoading={groupsQuery.isLoading}
+                  allowedRoles={allowedRoles}
+                  defaultGroupIds={selectedGroupIds}
+                  defaultJobTitle={jobTitle}
+                  defaultJoiningDate={joiningDate}
+                  defaultRole={role}
+                  customRoleName={roleId ? accessLevelLabel : null}
+                />
                 <div className="h-px bg-slate-200" />
               </>
             ) : null}
@@ -652,10 +746,20 @@ export default function AddUserDrawer({
             */}
             {activeTab !== 'csv' && activeTab !== 'custom' ? (
               <>
+                {activeTab === 'email' && emails.length > 1 ? (
+                  <div>
+                    <p className="text-sm font-semibold text-slate-950">Defaults for everyone</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Anything set here applies to all {emails.length} recipients. Override individual
+                      people in the table above.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div>
-                    <FieldLabel hint="optional">Joining date</FieldLabel>
+                    <FieldLabel hint="optional" htmlFor={batchJoiningDateId}>Joining date</FieldLabel>
                     <input
+                      id={batchJoiningDateId}
                       type="date"
                       value={joiningDate}
                       max={maxJoiningDate}
@@ -667,19 +771,25 @@ export default function AddUserDrawer({
                     </p>
                   </div>
                   <div>
-                    <FieldLabel hint="optional">Job title</FieldLabel>
+                    <FieldLabel hint="optional" htmlFor={batchJobTitleId}>Job title</FieldLabel>
                     <input
+                      id={batchJobTitleId}
                       type="text"
                       value={jobTitle}
                       onChange={(event) => setJobTitle(event.target.value)}
                       placeholder="e.g., Support Analyst"
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                     />
-                    <p className="mt-1 text-xs text-slate-500">Saved as their designation.</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {activeTab === 'email' && emails.length > 1
+                        ? 'Saved as their designation, unless a row overrides it.'
+                        : 'Saved as their designation.'}
+                    </p>
                   </div>
                   <div>
-                    <FieldLabel>Invite expires</FieldLabel>
+                    <FieldLabel htmlFor={batchExpiryId}>Invite expires</FieldLabel>
                     <SelectInput
+                      id={batchExpiryId}
                       value={String(expiresInHours)}
                       onChange={(event) => setExpiresInHours(Number(event.target.value))}
                     >
@@ -787,7 +897,7 @@ export default function AddUserDrawer({
                       <ToggleInput
                         checked={settings.payrollVisibility}
                         onChange={(checked) => setSettings((current) => ({ ...current, payrollVisibility: checked }))}
-                        disabled={role === 'employee'}
+                        disabled={batchIsAllEmployees}
                       />
                     </div>
                   </div>

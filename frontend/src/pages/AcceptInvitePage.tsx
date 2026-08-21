@@ -25,6 +25,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { analytics } from '@/lib/analytics';
 import { detectTimeZone } from '@/lib/timezones';
 import { roleLabel } from '@/utils/roleLabel';
+import PasswordStrength, { evaluatePassword } from '@/features/settings/components/PasswordStrength';
 
 const parseError = (error: any) => {
   const fieldErrors = error?.response?.data?.errors;
@@ -103,6 +104,17 @@ export default function AcceptInvitePage() {
 
     if (password !== passwordConfirmation) {
       setSubmitError('Passwords do not match.');
+      return;
+    }
+
+    /*
+     * Stop here rather than posting something the server will certainly refuse.
+     * This page used to send whatever was typed and let the joiner discover the
+     * policy from the response — which is how somebody setting their very first
+     * password learned the rules only by failing.
+     */
+    if (evaluatePassword(password).score < 4) {
+      setSubmitError('Your password does not meet the requirements listed below the field.');
       return;
     }
 
@@ -259,6 +271,12 @@ export default function AcceptInvitePage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
+            {/*
+              The rules, stated before they are enforced. This box previously
+              carried no hint at all, so a joiner's first act in the product was
+              being refused for a reason nobody had told them.
+            */}
+            <PasswordStrength value={password} />
           </div>
 
           <div>

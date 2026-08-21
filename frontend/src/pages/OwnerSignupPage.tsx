@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { analytics } from '@/lib/analytics';
 import { apiUrl } from '@/lib/runtimeConfig';
 import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
+import PasswordStrength, { evaluatePassword } from '@/features/settings/components/PasswordStrength';
 import {
   calculateTotal,
   getPlanPrice,
@@ -265,6 +266,19 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
     if (!isGoogleMode && password !== passwordConfirmation) {
       setError('Passwords do not match.');
       setFieldErrors({ password_confirmation: ['Passwords do not match.'] });
+      return;
+    }
+
+    /*
+     * Skipped in Google mode, where there is no password to check. Otherwise
+     * stop before a request the server will certainly refuse — the rules are
+     * listed under the field, so the person has already been told.
+     */
+    if (!isGoogleMode && evaluatePassword(password).score < 4) {
+      setError('Your password does not meet the requirements listed below the field.');
+      setFieldErrors({
+        password: ['Check the requirements listed under this field.'],
+      });
       return;
     }
 
@@ -576,6 +590,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     </button>
                   </div>
                   {fieldErrors.password ? <p className="mt-2 text-sm text-red-600">{fieldErrors.password[0]}</p> : null}
+                  <PasswordStrength value={password} />
                 </div>
 
                 <div>

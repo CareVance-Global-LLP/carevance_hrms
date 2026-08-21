@@ -9,19 +9,49 @@ export default async function globalSetup(config: FullConfig) {
   const browser = await chromium.launch();
   const page = await browser.newPage();
 
+  /*
+   * Credentials come from the environment.
+   *
+   * They used to be hardcoded to a single developer's account, which does not
+   * exist in every database the suite is pointed at -- and when it is absent
+   * the failure is a 30-second waitForURL timeout in global setup, so EVERY
+   * spec fails at once with a message that says nothing about the cause.
+   */
+  const email = process.env.E2E_EMAIL;
+  const password = process.env.E2E_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error(
+      'Playwright needs an account to sign in as. Set E2E_EMAIL and E2E_PASSWORD '
+      + '(an admin in the organisation you are testing) before running the suite.',
+    );
+  }
+
   await page.goto('http://localhost:5173/login');
   await page.waitForLoadState('domcontentloaded');
 
-  await page.fill('#email', 'ayushborwal004@gmail.com');
-  await page.fill('#password', '12345678');
+  await page.fill('#email', email);
+  await page.fill('#password', password);
   await page.click('form button[type="submit"]');
 
-  await page.waitForURL((url) =>
-    url.pathname === '/dashboard' ||
-    url.pathname === '/super-admin' ||
-    url.pathname === '/onboarding/profile',
-    { timeout: 30000 }
-  );
+  try {
+    await page.waitForURL((url) =>
+      url.pathname === '/dashboard' ||
+      url.pathname === '/super-admin' ||
+      url.pathname === '/onboarding/profile',
+      { timeout: 30000 }
+    );
+  } catch {
+    // Say what actually went wrong. A bad password, an account that is not in
+    // this database, and an MFA challenge all present as "still on /login",
+    // and a bare timeout sends people looking at the specs instead.
+    const visible = await page.locator('body').innerText().catch(() => '');
+    throw new Error(
+      `Could not sign in as ${email}. Still on ${new URL(page.url()).pathname}. `
+      + `Check the account exists in this database, the password is right, and that MFA `
+      + `is not enforced for it.\n\nPage said: ${visible.slice(0, 300)}`,
+    );
+  }
 
   await page.waitForLoadState('networkidle');
 

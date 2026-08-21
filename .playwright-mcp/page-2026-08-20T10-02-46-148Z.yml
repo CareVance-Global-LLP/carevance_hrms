@@ -1,0 +1,905 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - link "Skip to content" [ref=e3] [cursor=pointer]:
+      - /url: "#main"
+    - navigation "Primary" [ref=e5]:
+      - link "CareVance home" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: CareVance
+      - button "Open menu" [ref=e15]
+  - main [ref=e18]:
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - paragraph [ref=e22]: Pricing
+        - heading "Published in full, including the parts that are awkward." [level=1] [ref=e23]
+        - paragraph [ref=e24]: Most vendors in this market do not show you a number until you have spoken to sales. Here is every price, a calculator that computes your real per-employee cost at your headcount, and a plain list of what we have not built.
+      - generic [ref=e26]:
+        - generic [ref=e28]:
+          - generic [ref=e29]:
+            - generic [ref=e30]:
+              - generic [ref=e31]: How many employees?
+              - status [ref=e32]: "25"
+            - slider "How many employees?" [ref=e33] [cursor=pointer]: "3"
+            - generic [ref=e34]:
+              - generic [ref=e35]: "10"
+              - generic [ref=e36]: "100"
+              - generic [ref=e37]: 1,000
+          - group "Billing" [ref=e38]:
+            - generic [ref=e40]:
+              - button "Monthly" [ref=e41]
+              - button "Annual−10%" [pressed] [ref=e42]
+            - paragraph [ref=e43]: The 10% annual discount applies to per-user tracking plans. Workspace plans are billed at the same monthly rate either way.
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - generic [ref=e47]:
+              - heading "Basic" [level=3] [ref=e48]
+              - paragraph [ref=e49]: Tracking only
+            - paragraph [ref=e50]: Evidence of work, attendance and leave — priced per person.
+            - generic [ref=e51]:
+              - paragraph [ref=e52]: ₹8,975/month
+              - paragraph [ref=e53]: ₹359 per employee, per month
+              - paragraph [ref=e54]: ₹359 × 25 seats
+            - generic [ref=e55]:
+              - link "Start free trial" [ref=e56] [cursor=pointer]:
+                - /url: https://app.carevance.com/signup
+              - paragraph [ref=e57]: 14-day trial · no card
+          - generic [ref=e58]:
+            - generic [ref=e59]:
+              - generic [ref=e60]:
+                - heading "Advance" [level=3] [ref=e61]
+                - paragraph [ref=e62]: Tracking only
+              - generic [ref=e63]: Most popular
+            - paragraph [ref=e64]: Adds activity classification, idle handling, breaks and chat.
+            - generic [ref=e65]:
+              - paragraph [ref=e66]: ₹13,475/month
+              - paragraph [ref=e67]: ₹539 per employee, per month
+              - paragraph [ref=e68]: ₹539 × 25 seats
+            - link "Get started" [ref=e70] [cursor=pointer]:
+              - /url: https://app.carevance.com/signup
+          - generic [ref=e71]:
+            - generic [ref=e73]:
+              - heading "Basic" [level=3] [ref=e74]
+              - paragraph [ref=e75]: Payroll + tracking
+            - paragraph [ref=e76]: "The full chain: tracked hours become the payroll run, statutory and bank file."
+            - generic [ref=e77]:
+              - paragraph [ref=e78]: ₹3,999/month
+              - paragraph [ref=e79]: ₹160 per employee, per month
+              - paragraph [ref=e80]: ₹3,999 base · 50 seats included
+              - paragraph [ref=e81]: At 25 employees you are paying for 25 seats you do not have. This plan gets cheaper per person up to 50.
+            - generic [ref=e82]:
+              - link "Start free trial" [ref=e83] [cursor=pointer]:
+                - /url: https://app.carevance.com/signup
+              - paragraph [ref=e84]: 14-day trial · no card
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]:
+                - heading "Professional" [level=3] [ref=e88]
+                - paragraph [ref=e89]: Payroll + tracking
+              - generic [ref=e90]: Full suite
+            - paragraph [ref=e91]: Adds custom roles, performance, asset tracking and advanced reporting.
+            - generic [ref=e92]:
+              - paragraph [ref=e93]: ₹5,999/month
+              - paragraph [ref=e94]: ₹240 per employee, per month
+              - paragraph [ref=e95]: ₹5,999 base · 50 seats included
+              - paragraph [ref=e96]: At 25 employees you are paying for 25 seats you do not have. This plan gets cheaper per person up to 50.
+            - link "Get started" [ref=e98] [cursor=pointer]:
+              - /url: https://app.carevance.com/signup
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]:
+                - heading "Enterprise" [level=3] [ref=e102]
+                - paragraph [ref=e103]: Custom
+              - generic [ref=e104]: Custom
+            - paragraph [ref=e105]: Custom integrations and commercial terms, agreed in writing.
+            - paragraph [ref=e107]: Custom
+            - link "Contact sales" [ref=e109] [cursor=pointer]:
+              - /url: /contact?intent=enterprise
+        - paragraph [ref=e110]: All figures exclude 18% GST. Per-user plans have a 10-seat minimum. 14-day free trial on Basic Tracking and Basic Payroll, no credit card required.
+    - generic [ref=e112]:
+      - generic [ref=e113]:
+        - paragraph [ref=e114]: Compare
+        - heading "What is in each plan" [level=2] [ref=e115]
+        - paragraph [ref=e116]: Every row below is a capability that exists in the product today. Where a plain tick would overstate things, there is a footnote saying so.
+      - table [ref=e118]:
+        - caption [ref=e119]: Feature comparison across the four CareVance plans
+        - rowgroup [ref=e120]:
+          - row [ref=e121]:
+            - columnheader "Capability" [ref=e122]
+            - columnheader "Basic Tracking" [ref=e123]:
+              - generic [ref=e124]: Basic
+              - generic [ref=e125]: Tracking
+            - columnheader "Advance Tracking" [ref=e126]:
+              - generic [ref=e127]: Advance
+              - generic [ref=e128]: Tracking
+            - columnheader "Basic Payroll" [ref=e129]:
+              - generic [ref=e130]: Basic
+              - generic [ref=e131]: Payroll
+            - columnheader "Professional Payroll" [ref=e132]:
+              - generic [ref=e133]: Professional
+              - generic [ref=e134]: Payroll
+        - rowgroup [ref=e135]:
+          - row [ref=e136]:
+            - columnheader "Evidence of work" [ref=e137]
+          - row [ref=e138]:
+            - rowheader "Desktop tracker with screenshots" [ref=e139]
+            - cell [ref=e140]:
+              - 'img "Included: Desktop tracker with screenshots, Basic Tracking" [ref=e141]'
+            - cell [ref=e143]:
+              - 'img "Included: Desktop tracker with screenshots, Advance Tracking" [ref=e144]'
+            - cell [ref=e146]:
+              - 'img "Included: Desktop tracker with screenshots, Basic Payroll" [ref=e147]'
+            - cell [ref=e149]:
+              - 'img "Included: Desktop tracker with screenshots, Professional Payroll" [ref=e150]'
+          - row [ref=e152]:
+            - rowheader "Offline capture queue" [ref=e153]
+            - cell [ref=e154]:
+              - 'img "Included: Offline capture queue, Basic Tracking" [ref=e155]'
+            - cell [ref=e157]:
+              - 'img "Included: Offline capture queue, Advance Tracking" [ref=e158]'
+            - cell [ref=e160]:
+              - 'img "Included: Offline capture queue, Basic Payroll" [ref=e161]'
+            - cell [ref=e163]:
+              - 'img "Included: Offline capture queue, Professional Payroll" [ref=e164]'
+          - row [ref=e166]:
+            - rowheader "Timeline & timesheets" [ref=e167]
+            - cell [ref=e168]:
+              - 'img "Included: Timeline & timesheets, Basic Tracking" [ref=e169]'
+            - cell [ref=e171]:
+              - 'img "Included: Timeline & timesheets, Advance Tracking" [ref=e172]'
+            - cell [ref=e174]:
+              - 'img "Included: Timeline & timesheets, Basic Payroll" [ref=e175]'
+            - cell [ref=e177]:
+              - 'img "Included: Timeline & timesheets, Professional Payroll" [ref=e178]'
+          - row [ref=e180]:
+            - rowheader "Browser extension (URL context)" [ref=e181]
+            - cell [ref=e182]:
+              - 'img "Not included: Browser extension (URL context), Basic Tracking" [ref=e183]'
+            - cell [ref=e184]:
+              - 'img "Included: Browser extension (URL context), Advance Tracking" [ref=e185]'
+            - cell [ref=e187]:
+              - 'img "Not included: Browser extension (URL context), Basic Payroll" [ref=e188]'
+            - cell [ref=e189]:
+              - 'img "Not included: Browser extension (URL context), Professional Payroll" [ref=e190]'
+          - row [ref=e191]:
+            - rowheader "Activity & productivity classification" [ref=e192]
+            - cell [ref=e193]:
+              - 'img "Not included: Activity & productivity classification, Basic Tracking" [ref=e194]'
+            - cell [ref=e195]:
+              - 'img "Included: Activity & productivity classification, Advance Tracking" [ref=e196]'
+            - cell [ref=e198]:
+              - 'img "Not included: Activity & productivity classification, Basic Payroll" [ref=e199]'
+            - cell [ref=e200]:
+              - 'img "Not included: Activity & productivity classification, Professional Payroll" [ref=e201]'
+          - row [ref=e202]:
+            - rowheader "Idle detection and rewind" [ref=e203]
+            - cell [ref=e204]:
+              - 'img "Not included: Idle detection and rewind, Basic Tracking" [ref=e205]'
+            - cell [ref=e206]:
+              - 'img "Included: Idle detection and rewind, Advance Tracking" [ref=e207]'
+            - cell [ref=e209]:
+              - 'img "Not included: Idle detection and rewind, Basic Payroll" [ref=e210]'
+            - cell [ref=e211]:
+              - 'img "Not included: Idle detection and rewind, Professional Payroll" [ref=e212]'
+          - row [ref=e213]:
+            - rowheader "Application & web usage tracking" [ref=e214]
+            - cell [ref=e215]:
+              - 'img "Not included: Application & web usage tracking, Basic Tracking" [ref=e216]'
+            - cell [ref=e217]:
+              - 'img "Included: Application & web usage tracking, Advance Tracking" [ref=e218]'
+            - cell [ref=e220]:
+              - 'img "Not included: Application & web usage tracking, Basic Payroll" [ref=e221]'
+            - cell [ref=e222]:
+              - 'img "Not included: Application & web usage tracking, Professional Payroll" [ref=e223]'
+          - row [ref=e224]:
+            - rowheader "Break tracking" [ref=e225]
+            - cell [ref=e226]:
+              - 'img "Not included: Break tracking, Basic Tracking" [ref=e227]'
+            - cell [ref=e228]:
+              - 'img "Included: Break tracking, Advance Tracking" [ref=e229]'
+            - cell [ref=e231]:
+              - 'img "Not included: Break tracking, Basic Payroll" [ref=e232]'
+            - cell [ref=e233]:
+              - 'img "Not included: Break tracking, Professional Payroll" [ref=e234]'
+          - row [ref=e235]:
+            - columnheader "Attendance & leave" [ref=e236]
+          - row [ref=e237]:
+            - rowheader "Attendance, check-in / check-out" [ref=e238]
+            - cell [ref=e239]:
+              - 'img "Included: Attendance, check-in / check-out, Basic Tracking" [ref=e240]'
+            - cell [ref=e242]:
+              - 'img "Included: Attendance, check-in / check-out, Advance Tracking" [ref=e243]'
+            - cell [ref=e245]:
+              - 'img "Included: Attendance, check-in / check-out, Basic Payroll" [ref=e246]'
+            - cell [ref=e248]:
+              - 'img "Included: Attendance, check-in / check-out, Professional Payroll" [ref=e249]'
+          - row [ref=e251]:
+            - rowheader "Leave requests & approvals" [ref=e252]
+            - cell [ref=e253]:
+              - 'img "Included: Leave requests & approvals, Basic Tracking" [ref=e254]'
+            - cell [ref=e256]:
+              - 'img "Included: Leave requests & approvals, Advance Tracking" [ref=e257]'
+            - cell [ref=e259]:
+              - 'img "Included: Leave requests & approvals, Basic Payroll" [ref=e260]'
+            - cell [ref=e262]:
+              - 'img "Included: Leave requests & approvals, Professional Payroll" [ref=e263]'
+          - row [ref=e265]:
+            - rowheader "Leave balances Flat annual quota. No accrual schedule or mid-year pro-rating." [ref=e266]:
+              - text: Leave balances
+              - generic [ref=e267]: Flat annual quota. No accrual schedule or mid-year pro-rating.
+            - cell [ref=e268]:
+              - 'img "Included: Leave balances, Basic Tracking" [ref=e269]'
+            - cell [ref=e271]:
+              - 'img "Included: Leave balances, Advance Tracking" [ref=e272]'
+            - cell [ref=e274]:
+              - 'img "Included: Leave balances, Basic Payroll" [ref=e275]'
+            - cell [ref=e277]:
+              - 'img "Included: Leave balances, Professional Payroll" [ref=e278]'
+          - row [ref=e280]:
+            - rowheader "Overtime rules" [ref=e281]
+            - cell [ref=e282]:
+              - 'img "Included: Overtime rules, Basic Tracking" [ref=e283]'
+            - cell [ref=e285]:
+              - 'img "Included: Overtime rules, Advance Tracking" [ref=e286]'
+            - cell [ref=e288]:
+              - 'img "Included: Overtime rules, Basic Payroll" [ref=e289]'
+            - cell [ref=e291]:
+              - 'img "Included: Overtime rules, Professional Payroll" [ref=e292]'
+          - row [ref=e294]:
+            - rowheader "Approval routing & forwarding" [ref=e295]
+            - cell [ref=e296]:
+              - 'img "Included: Approval routing & forwarding, Basic Tracking" [ref=e297]'
+            - cell [ref=e299]:
+              - 'img "Included: Approval routing & forwarding, Advance Tracking" [ref=e300]'
+            - cell [ref=e302]:
+              - 'img "Included: Approval routing & forwarding, Basic Payroll" [ref=e303]'
+            - cell [ref=e305]:
+              - 'img "Included: Approval routing & forwarding, Professional Payroll" [ref=e306]'
+          - row [ref=e308]:
+            - rowheader "Shifts & shift allowance rules" [ref=e309]
+            - cell [ref=e310]:
+              - 'img "Not included: Shifts & shift allowance rules, Basic Tracking" [ref=e311]'
+            - cell [ref=e312]:
+              - 'img "Not included: Shifts & shift allowance rules, Advance Tracking" [ref=e313]'
+            - cell [ref=e314]:
+              - 'img "Included: Shifts & shift allowance rules, Basic Payroll" [ref=e315]'
+            - cell [ref=e317]:
+              - 'img "Included: Shifts & shift allowance rules, Professional Payroll" [ref=e318]'
+          - row [ref=e320]:
+            - rowheader "Geofenced punch & attendance selfies" [ref=e321]
+            - cell [ref=e322]:
+              - 'img "Not included: Geofenced punch & attendance selfies, Basic Tracking" [ref=e323]'
+            - cell [ref=e324]:
+              - 'img "Not included: Geofenced punch & attendance selfies, Advance Tracking" [ref=e325]'
+            - cell [ref=e326]:
+              - 'img "Included: Geofenced punch & attendance selfies, Basic Payroll" [ref=e327]'
+            - cell [ref=e329]:
+              - 'img "Included: Geofenced punch & attendance selfies, Professional Payroll" [ref=e330]'
+          - row [ref=e332]:
+            - rowheader "Comp-off balances" [ref=e333]
+            - cell [ref=e334]:
+              - 'img "Not included: Comp-off balances, Basic Tracking" [ref=e335]'
+            - cell [ref=e336]:
+              - 'img "Not included: Comp-off balances, Advance Tracking" [ref=e337]'
+            - cell [ref=e338]:
+              - 'img "Included: Comp-off balances, Basic Payroll" [ref=e339]'
+            - cell [ref=e341]:
+              - 'img "Included: Comp-off balances, Professional Payroll" [ref=e342]'
+          - row [ref=e344]:
+            - columnheader "Payroll" [ref=e345]
+          - row [ref=e346]:
+            - rowheader "Payroll run lifecycle (draft → disbursed)" [ref=e347]
+            - cell [ref=e348]:
+              - 'img "Not included: Payroll run lifecycle (draft → disbursed), Basic Tracking" [ref=e349]'
+            - cell [ref=e350]:
+              - 'img "Not included: Payroll run lifecycle (draft → disbursed), Advance Tracking" [ref=e351]'
+            - cell [ref=e352]:
+              - 'img "Included: Payroll run lifecycle (draft → disbursed), Basic Payroll" [ref=e353]'
+            - cell [ref=e355]:
+              - 'img "Included: Payroll run lifecycle (draft → disbursed), Professional Payroll" [ref=e356]'
+          - row [ref=e358]:
+            - 'rowheader "Salary structures: formula, slab, lookup" [ref=e359]'
+            - cell [ref=e360]:
+              - 'img "Not included: Salary structures: formula, slab, lookup, Basic Tracking" [ref=e361]'
+            - cell [ref=e362]:
+              - 'img "Not included: Salary structures: formula, slab, lookup, Advance Tracking" [ref=e363]'
+            - cell [ref=e364]:
+              - 'img "Included: Salary structures: formula, slab, lookup, Basic Payroll" [ref=e365]'
+            - cell [ref=e367]:
+              - 'img "Included: Salary structures: formula, slab, lookup, Professional Payroll" [ref=e368]'
+          - row [ref=e370]:
+            - rowheader "Attendance sync into the run" [ref=e371]
+            - cell [ref=e372]:
+              - 'img "Not included: Attendance sync into the run, Basic Tracking" [ref=e373]'
+            - cell [ref=e374]:
+              - 'img "Not included: Attendance sync into the run, Advance Tracking" [ref=e375]'
+            - cell [ref=e376]:
+              - 'img "Included: Attendance sync into the run, Basic Payroll" [ref=e377]'
+            - cell [ref=e379]:
+              - 'img "Included: Attendance sync into the run, Professional Payroll" [ref=e380]'
+          - row [ref=e382]:
+            - rowheader "Governed overrides with maker-checker" [ref=e383]
+            - cell [ref=e384]:
+              - 'img "Not included: Governed overrides with maker-checker, Basic Tracking" [ref=e385]'
+            - cell [ref=e386]:
+              - 'img "Not included: Governed overrides with maker-checker, Advance Tracking" [ref=e387]'
+            - cell [ref=e388]:
+              - 'img "Included: Governed overrides with maker-checker, Basic Payroll" [ref=e389]'
+            - cell [ref=e391]:
+              - 'img "Included: Governed overrides with maker-checker, Professional Payroll" [ref=e392]'
+          - row [ref=e394]:
+            - rowheader "Override CSV round-trip with validation" [ref=e395]
+            - cell [ref=e396]:
+              - 'img "Not included: Override CSV round-trip with validation, Basic Tracking" [ref=e397]'
+            - cell [ref=e398]:
+              - 'img "Not included: Override CSV round-trip with validation, Advance Tracking" [ref=e399]'
+            - cell [ref=e400]:
+              - 'img "Included: Override CSV round-trip with validation, Basic Payroll" [ref=e401]'
+            - cell [ref=e403]:
+              - 'img "Included: Override CSV round-trip with validation, Professional Payroll" [ref=e404]'
+          - row [ref=e406]:
+            - rowheader "Arrears, LOP, pro-rating, notice recovery" [ref=e407]
+            - cell [ref=e408]:
+              - 'img "Not included: Arrears, LOP, pro-rating, notice recovery, Basic Tracking" [ref=e409]'
+            - cell [ref=e410]:
+              - 'img "Not included: Arrears, LOP, pro-rating, notice recovery, Advance Tracking" [ref=e411]'
+            - cell [ref=e412]:
+              - 'img "Included: Arrears, LOP, pro-rating, notice recovery, Basic Payroll" [ref=e413]'
+            - cell [ref=e415]:
+              - 'img "Included: Arrears, LOP, pro-rating, notice recovery, Professional Payroll" [ref=e416]'
+          - row [ref=e418]:
+            - rowheader "Off-cycle and on-demand runs" [ref=e419]
+            - cell [ref=e420]:
+              - 'img "Not included: Off-cycle and on-demand runs, Basic Tracking" [ref=e421]'
+            - cell [ref=e422]:
+              - 'img "Not included: Off-cycle and on-demand runs, Advance Tracking" [ref=e423]'
+            - cell [ref=e424]:
+              - 'img "Included: Off-cycle and on-demand runs, Basic Payroll" [ref=e425]'
+            - cell [ref=e427]:
+              - 'img "Included: Off-cycle and on-demand runs, Professional Payroll" [ref=e428]'
+          - row [ref=e430]:
+            - rowheader "Full & final settlement" [ref=e431]
+            - cell [ref=e432]:
+              - 'img "Not included: Full & final settlement, Basic Tracking" [ref=e433]'
+            - cell [ref=e434]:
+              - 'img "Not included: Full & final settlement, Advance Tracking" [ref=e435]'
+            - cell [ref=e436]:
+              - 'img "Included: Full & final settlement, Basic Payroll" [ref=e437]'
+            - cell [ref=e439]:
+              - 'img "Included: Full & final settlement, Professional Payroll" [ref=e440]'
+          - row [ref=e442]:
+            - columnheader "Statutory & filings" [ref=e443]
+          - row [ref=e444]:
+            - rowheader "PF, ESI, PT, TDS, LWF, gratuity" [ref=e445]
+            - cell [ref=e446]:
+              - 'img "Not included: PF, ESI, PT, TDS, LWF, gratuity, Basic Tracking" [ref=e447]'
+            - cell [ref=e448]:
+              - 'img "Not included: PF, ESI, PT, TDS, LWF, gratuity, Advance Tracking" [ref=e449]'
+            - cell [ref=e450]:
+              - 'img "Included: PF, ESI, PT, TDS, LWF, gratuity, Basic Payroll" [ref=e451]'
+            - cell [ref=e453]:
+              - 'img "Included: PF, ESI, PT, TDS, LWF, gratuity, Professional Payroll" [ref=e454]'
+          - row [ref=e456]:
+            - rowheader "Professional tax across 37 states & UTs" [ref=e457]
+            - cell [ref=e458]:
+              - 'img "Not included: Professional tax across 37 states & UTs, Basic Tracking" [ref=e459]'
+            - cell [ref=e460]:
+              - 'img "Not included: Professional tax across 37 states & UTs, Advance Tracking" [ref=e461]'
+            - cell [ref=e462]:
+              - 'img "Included: Professional tax across 37 states & UTs, Basic Payroll" [ref=e463]'
+            - cell [ref=e465]:
+              - 'img "Included: Professional tax across 37 states & UTs, Professional Payroll" [ref=e466]'
+          - row [ref=e468]:
+            - rowheader "ESI contribution-period lock-in" [ref=e469]
+            - cell [ref=e470]:
+              - 'img "Not included: ESI contribution-period lock-in, Basic Tracking" [ref=e471]'
+            - cell [ref=e472]:
+              - 'img "Not included: ESI contribution-period lock-in, Advance Tracking" [ref=e473]'
+            - cell [ref=e474]:
+              - 'img "Included: ESI contribution-period lock-in, Basic Payroll" [ref=e475]'
+            - cell [ref=e477]:
+              - 'img "Included: ESI contribution-period lock-in, Professional Payroll" [ref=e478]'
+          - row [ref=e480]:
+            - rowheader "Statutory returns (PF ECR, 24Q, Form 16…) 13 returns generate today. 10 declaration forms are registered but unavailable." [ref=e481]:
+              - text: Statutory returns (PF ECR, 24Q, Form 16…)
+              - generic [ref=e482]: 13 returns generate today. 10 declaration forms are registered but unavailable.
+            - cell [ref=e483]:
+              - 'img "Not included: Statutory returns (PF ECR, 24Q, Form 16…), Basic Tracking" [ref=e484]'
+            - cell [ref=e485]:
+              - 'img "Not included: Statutory returns (PF ECR, 24Q, Form 16…), Advance Tracking" [ref=e486]'
+            - cell [ref=e487]:
+              - 'img "Included: Statutory returns (PF ECR, 24Q, Form 16…), Basic Payroll" [ref=e488]'
+            - cell [ref=e490]:
+              - 'img "Included: Statutory returns (PF ECR, 24Q, Form 16…), Professional Payroll" [ref=e491]'
+          - row [ref=e493]:
+            - rowheader "Employee tax declarations & proof review" [ref=e494]
+            - cell [ref=e495]:
+              - 'img "Not included: Employee tax declarations & proof review, Basic Tracking" [ref=e496]'
+            - cell [ref=e497]:
+              - 'img "Not included: Employee tax declarations & proof review, Advance Tracking" [ref=e498]'
+            - cell [ref=e499]:
+              - 'img "Included: Employee tax declarations & proof review, Basic Payroll" [ref=e500]'
+            - cell [ref=e502]:
+              - 'img "Included: Employee tax declarations & proof review, Professional Payroll" [ref=e503]'
+          - row [ref=e505]:
+            - rowheader "Old vs new regime simulator" [ref=e506]
+            - cell [ref=e507]:
+              - 'img "Not included: Old vs new regime simulator, Basic Tracking" [ref=e508]'
+            - cell [ref=e509]:
+              - 'img "Not included: Old vs new regime simulator, Advance Tracking" [ref=e510]'
+            - cell [ref=e511]:
+              - 'img "Included: Old vs new regime simulator, Basic Payroll" [ref=e512]'
+            - cell [ref=e514]:
+              - 'img "Included: Old vs new regime simulator, Professional Payroll" [ref=e515]'
+          - row [ref=e517]:
+            - columnheader "Money movement" [ref=e518]
+          - row [ref=e519]:
+            - rowheader "NEFT / RTGS bank file" [ref=e520]
+            - cell [ref=e521]:
+              - 'img "Not included: NEFT / RTGS bank file, Basic Tracking" [ref=e522]'
+            - cell [ref=e523]:
+              - 'img "Not included: NEFT / RTGS bank file, Advance Tracking" [ref=e524]'
+            - cell [ref=e525]:
+              - 'img "Included: NEFT / RTGS bank file, Basic Payroll" [ref=e526]'
+            - cell [ref=e528]:
+              - 'img "Included: NEFT / RTGS bank file, Professional Payroll" [ref=e529]'
+          - row [ref=e531]:
+            - rowheader "Exclusions returned, never dropped" [ref=e532]
+            - cell [ref=e533]:
+              - 'img "Not included: Exclusions returned, never dropped, Basic Tracking" [ref=e534]'
+            - cell [ref=e535]:
+              - 'img "Not included: Exclusions returned, never dropped, Advance Tracking" [ref=e536]'
+            - cell [ref=e537]:
+              - 'img "Included: Exclusions returned, never dropped, Basic Payroll" [ref=e538]'
+            - cell [ref=e540]:
+              - 'img "Included: Exclusions returned, never dropped, Professional Payroll" [ref=e541]'
+          - row [ref=e543]:
+            - rowheader "UTR recording & reconciliation" [ref=e544]
+            - cell [ref=e545]:
+              - 'img "Not included: UTR recording & reconciliation, Basic Tracking" [ref=e546]'
+            - cell [ref=e547]:
+              - 'img "Not included: UTR recording & reconciliation, Advance Tracking" [ref=e548]'
+            - cell [ref=e549]:
+              - 'img "Included: UTR recording & reconciliation, Basic Payroll" [ref=e550]'
+            - cell [ref=e552]:
+              - 'img "Included: UTR recording & reconciliation, Professional Payroll" [ref=e553]'
+          - row [ref=e555]:
+            - rowheader "Payment reversals & stop-payment flags" [ref=e556]
+            - cell [ref=e557]:
+              - 'img "Not included: Payment reversals & stop-payment flags, Basic Tracking" [ref=e558]'
+            - cell [ref=e559]:
+              - 'img "Not included: Payment reversals & stop-payment flags, Advance Tracking" [ref=e560]'
+            - cell [ref=e561]:
+              - 'img "Included: Payment reversals & stop-payment flags, Basic Payroll" [ref=e562]'
+            - cell [ref=e564]:
+              - 'img "Included: Payment reversals & stop-payment flags, Professional Payroll" [ref=e565]'
+          - row [ref=e567]:
+            - rowheader "Loans & salary advance recovery" [ref=e568]
+            - cell [ref=e569]:
+              - 'img "Not included: Loans & salary advance recovery, Basic Tracking" [ref=e570]'
+            - cell [ref=e571]:
+              - 'img "Not included: Loans & salary advance recovery, Advance Tracking" [ref=e572]'
+            - cell [ref=e573]:
+              - 'img "Included: Loans & salary advance recovery, Basic Payroll" [ref=e574]'
+            - cell [ref=e576]:
+              - 'img "Included: Loans & salary advance recovery, Professional Payroll" [ref=e577]'
+          - row [ref=e579]:
+            - rowheader "Reimbursements (two-stage approval)" [ref=e580]
+            - cell [ref=e581]:
+              - 'img "Not included: Reimbursements (two-stage approval), Basic Tracking" [ref=e582]'
+            - cell [ref=e583]:
+              - 'img "Not included: Reimbursements (two-stage approval), Advance Tracking" [ref=e584]'
+            - cell [ref=e585]:
+              - 'img "Included: Reimbursements (two-stage approval), Basic Payroll" [ref=e586]'
+            - cell [ref=e588]:
+              - 'img "Included: Reimbursements (two-stage approval), Professional Payroll" [ref=e589]'
+          - row [ref=e591]:
+            - rowheader "Flexible Benefit Plan (FBP)" [ref=e592]
+            - cell [ref=e593]:
+              - 'img "Not included: Flexible Benefit Plan (FBP), Basic Tracking" [ref=e594]'
+            - cell [ref=e595]:
+              - 'img "Not included: Flexible Benefit Plan (FBP), Advance Tracking" [ref=e596]'
+            - cell [ref=e597]:
+              - 'img "Included: Flexible Benefit Plan (FBP), Basic Payroll" [ref=e598]'
+            - cell [ref=e600]:
+              - 'img "Included: Flexible Benefit Plan (FBP), Professional Payroll" [ref=e601]'
+          - row [ref=e603]:
+            - columnheader "Core HR" [ref=e604]
+          - row [ref=e605]:
+            - rowheader "Employee records, documents, government IDs" [ref=e606]
+            - cell [ref=e607]:
+              - 'img "Not included: Employee records, documents, government IDs, Basic Tracking" [ref=e608]'
+            - cell [ref=e609]:
+              - 'img "Not included: Employee records, documents, government IDs, Advance Tracking" [ref=e610]'
+            - cell [ref=e611]:
+              - 'img "Included: Employee records, documents, government IDs, Basic Payroll" [ref=e612]'
+            - cell [ref=e614]:
+              - 'img "Included: Employee records, documents, government IDs, Professional Payroll" [ref=e615]'
+          - row [ref=e617]:
+            - rowheader "Onboarding journeys (18-step checklist)" [ref=e618]
+            - cell [ref=e619]:
+              - 'img "Not included: Onboarding journeys (18-step checklist), Basic Tracking" [ref=e620]'
+            - cell [ref=e621]:
+              - 'img "Not included: Onboarding journeys (18-step checklist), Advance Tracking" [ref=e622]'
+            - cell [ref=e623]:
+              - 'img "Included: Onboarding journeys (18-step checklist), Basic Payroll" [ref=e624]'
+            - cell [ref=e626]:
+              - 'img "Included: Onboarding journeys (18-step checklist), Professional Payroll" [ref=e627]'
+          - row [ref=e629]:
+            - rowheader "Resignation & exit lifecycle" [ref=e630]
+            - cell [ref=e631]:
+              - 'img "Not included: Resignation & exit lifecycle, Basic Tracking" [ref=e632]'
+            - cell [ref=e633]:
+              - 'img "Not included: Resignation & exit lifecycle, Advance Tracking" [ref=e634]'
+            - cell [ref=e635]:
+              - 'img "Included: Resignation & exit lifecycle, Basic Payroll" [ref=e636]'
+            - cell [ref=e638]:
+              - 'img "Included: Resignation & exit lifecycle, Professional Payroll" [ref=e639]'
+          - row [ref=e641]:
+            - rowheader "Org structure, departments, teams" [ref=e642]
+            - cell [ref=e643]:
+              - 'img "Not included: Org structure, departments, teams, Basic Tracking" [ref=e644]'
+            - cell [ref=e645]:
+              - 'img "Not included: Org structure, departments, teams, Advance Tracking" [ref=e646]'
+            - cell [ref=e647]:
+              - 'img "Included: Org structure, departments, teams, Basic Payroll" [ref=e648]'
+            - cell [ref=e650]:
+              - 'img "Included: Org structure, departments, teams, Professional Payroll" [ref=e651]'
+          - row [ref=e653]:
+            - rowheader "Standard access roles" [ref=e654]
+            - cell [ref=e655]:
+              - 'img "Not included: Standard access roles, Basic Tracking" [ref=e656]'
+            - cell [ref=e657]:
+              - 'img "Not included: Standard access roles, Advance Tracking" [ref=e658]'
+            - cell [ref=e659]:
+              - 'img "Included: Standard access roles, Basic Payroll" [ref=e660]'
+            - cell [ref=e662]:
+              - 'img "Included: Standard access roles, Professional Payroll" [ref=e663]'
+          - row [ref=e665]:
+            - rowheader "Custom roles & permissions" [ref=e666]
+            - cell [ref=e667]:
+              - 'img "Not included: Custom roles & permissions, Basic Tracking" [ref=e668]'
+            - cell [ref=e669]:
+              - 'img "Not included: Custom roles & permissions, Advance Tracking" [ref=e670]'
+            - cell [ref=e671]:
+              - 'img "Not included: Custom roles & permissions, Basic Payroll" [ref=e672]'
+            - cell [ref=e673]:
+              - 'img "Included: Custom roles & permissions, Professional Payroll" [ref=e674]'
+          - row [ref=e676]:
+            - rowheader "Performance goals, reviews, 360" [ref=e677]
+            - cell [ref=e678]:
+              - 'img "Not included: Performance goals, reviews, 360, Basic Tracking" [ref=e679]'
+            - cell [ref=e680]:
+              - 'img "Not included: Performance goals, reviews, 360, Advance Tracking" [ref=e681]'
+            - cell [ref=e682]:
+              - 'img "Not included: Performance goals, reviews, 360, Basic Payroll" [ref=e683]'
+            - cell [ref=e684]:
+              - 'img "Included: Performance goals, reviews, 360, Professional Payroll" [ref=e685]'
+          - row [ref=e687]:
+            - rowheader "Asset tracking & assignment" [ref=e688]
+            - cell [ref=e689]:
+              - 'img "Not included: Asset tracking & assignment, Basic Tracking" [ref=e690]'
+            - cell [ref=e691]:
+              - 'img "Not included: Asset tracking & assignment, Advance Tracking" [ref=e692]'
+            - cell [ref=e693]:
+              - 'img "Not included: Asset tracking & assignment, Basic Payroll" [ref=e694]'
+            - cell [ref=e695]:
+              - 'img "Included: Asset tracking & assignment, Professional Payroll" [ref=e696]'
+          - row [ref=e698]:
+            - columnheader "Reports & controls" [ref=e699]
+          - row [ref=e700]:
+            - rowheader "Daily, weekly, monthly & productivity reports" [ref=e701]
+            - cell [ref=e702]:
+              - 'img "Included: Daily, weekly, monthly & productivity reports, Basic Tracking" [ref=e703]'
+            - cell [ref=e705]:
+              - 'img "Included: Daily, weekly, monthly & productivity reports, Advance Tracking" [ref=e706]'
+            - cell [ref=e708]:
+              - 'img "Included: Daily, weekly, monthly & productivity reports, Basic Payroll" [ref=e709]'
+            - cell [ref=e711]:
+              - 'img "Included: Daily, weekly, monthly & productivity reports, Professional Payroll" [ref=e712]'
+          - row [ref=e714]:
+            - rowheader "CSV export" [ref=e715]
+            - cell [ref=e716]:
+              - 'img "Included: CSV export, Basic Tracking" [ref=e717]'
+            - cell [ref=e719]:
+              - 'img "Included: CSV export, Advance Tracking" [ref=e720]'
+            - cell [ref=e722]:
+              - 'img "Included: CSV export, Basic Payroll" [ref=e723]'
+            - cell [ref=e725]:
+              - 'img "Included: CSV export, Professional Payroll" [ref=e726]'
+          - row [ref=e728]:
+            - rowheader "Payroll & statutory registers" [ref=e729]
+            - cell [ref=e730]:
+              - 'img "Not included: Payroll & statutory registers, Basic Tracking" [ref=e731]'
+            - cell [ref=e732]:
+              - 'img "Not included: Payroll & statutory registers, Advance Tracking" [ref=e733]'
+            - cell [ref=e734]:
+              - 'img "Included: Payroll & statutory registers, Basic Payroll" [ref=e735]'
+            - cell [ref=e737]:
+              - 'img "Included: Payroll & statutory registers, Professional Payroll" [ref=e738]'
+          - row [ref=e740]:
+            - rowheader "Differences, duplicates, negative-cost reports" [ref=e741]
+            - cell [ref=e742]:
+              - 'img "Not included: Differences, duplicates, negative-cost reports, Basic Tracking" [ref=e743]'
+            - cell [ref=e744]:
+              - 'img "Not included: Differences, duplicates, negative-cost reports, Advance Tracking" [ref=e745]'
+            - cell [ref=e746]:
+              - 'img "Included: Differences, duplicates, negative-cost reports, Basic Payroll" [ref=e747]'
+            - cell [ref=e749]:
+              - 'img "Included: Differences, duplicates, negative-cost reports, Professional Payroll" [ref=e750]'
+          - row [ref=e752]:
+            - rowheader "Payroll audit log & run activity feed" [ref=e753]
+            - cell [ref=e754]:
+              - 'img "Not included: Payroll audit log & run activity feed, Basic Tracking" [ref=e755]'
+            - cell [ref=e756]:
+              - 'img "Not included: Payroll audit log & run activity feed, Advance Tracking" [ref=e757]'
+            - cell [ref=e758]:
+              - 'img "Included: Payroll audit log & run activity feed, Basic Payroll" [ref=e759]'
+            - cell [ref=e761]:
+              - 'img "Included: Payroll audit log & run activity feed, Professional Payroll" [ref=e762]'
+          - row [ref=e764]:
+            - rowheader "GL mapping & cost centres" [ref=e765]
+            - cell [ref=e766]:
+              - 'img "Not included: GL mapping & cost centres, Basic Tracking" [ref=e767]'
+            - cell [ref=e768]:
+              - 'img "Not included: GL mapping & cost centres, Advance Tracking" [ref=e769]'
+            - cell [ref=e770]:
+              - 'img "Not included: GL mapping & cost centres, Basic Payroll" [ref=e771]'
+            - cell [ref=e772]:
+              - 'img "Included: GL mapping & cost centres, Professional Payroll" [ref=e773]'
+          - row [ref=e775]:
+            - rowheader "Advanced reports & employee timeline" [ref=e776]
+            - cell [ref=e777]:
+              - 'img "Not included: Advanced reports & employee timeline, Basic Tracking" [ref=e778]'
+            - cell [ref=e779]:
+              - 'img "Not included: Advanced reports & employee timeline, Advance Tracking" [ref=e780]'
+            - cell [ref=e781]:
+              - 'img "Not included: Advanced reports & employee timeline, Basic Payroll" [ref=e782]'
+            - cell [ref=e783]:
+              - 'img "Included: Advanced reports & employee timeline, Professional Payroll" [ref=e784]'
+          - row [ref=e786]:
+            - columnheader "Platform" [ref=e787]
+          - row [ref=e788]:
+            - rowheader "Multi-tenant isolation enforced at the ORM layer" [ref=e789]
+            - cell [ref=e790]:
+              - 'img "Included: Multi-tenant isolation enforced at the ORM layer, Basic Tracking" [ref=e791]'
+            - cell [ref=e793]:
+              - 'img "Included: Multi-tenant isolation enforced at the ORM layer, Advance Tracking" [ref=e794]'
+            - cell [ref=e796]:
+              - 'img "Included: Multi-tenant isolation enforced at the ORM layer, Basic Payroll" [ref=e797]'
+            - cell [ref=e799]:
+              - 'img "Included: Multi-tenant isolation enforced at the ORM layer, Professional Payroll" [ref=e800]'
+          - row [ref=e802]:
+            - rowheader "Two-factor authentication (TOTP)" [ref=e803]
+            - cell [ref=e804]:
+              - 'img "Included: Two-factor authentication (TOTP), Basic Tracking" [ref=e805]'
+            - cell [ref=e807]:
+              - 'img "Included: Two-factor authentication (TOTP), Advance Tracking" [ref=e808]'
+            - cell [ref=e810]:
+              - 'img "Included: Two-factor authentication (TOTP), Basic Payroll" [ref=e811]'
+            - cell [ref=e813]:
+              - 'img "Included: Two-factor authentication (TOTP), Professional Payroll" [ref=e814]'
+          - row [ref=e816]:
+            - rowheader "Monitoring notice & consent" [ref=e817]
+            - cell [ref=e818]:
+              - 'img "Included: Monitoring notice & consent, Basic Tracking" [ref=e819]'
+            - cell [ref=e821]:
+              - 'img "Included: Monitoring notice & consent, Advance Tracking" [ref=e822]'
+            - cell [ref=e824]:
+              - 'img "Included: Monitoring notice & consent, Basic Payroll" [ref=e825]'
+            - cell [ref=e827]:
+              - 'img "Included: Monitoring notice & consent, Professional Payroll" [ref=e828]'
+          - row [ref=e830]:
+            - rowheader "Mobile app (iOS & Android)" [ref=e831]
+            - cell [ref=e832]:
+              - 'img "Not included: Mobile app (iOS & Android), Basic Tracking" [ref=e833]'
+            - cell [ref=e834]:
+              - 'img "Not included: Mobile app (iOS & Android), Advance Tracking" [ref=e835]'
+            - cell [ref=e836]:
+              - 'img "Included: Mobile app (iOS & Android), Basic Payroll" [ref=e837]'
+            - cell [ref=e839]:
+              - 'img "Included: Mobile app (iOS & Android), Professional Payroll" [ref=e840]'
+          - row [ref=e842]:
+            - rowheader "Chat Polls for updates rather than pushing in real time." [ref=e843]:
+              - text: Chat
+              - generic [ref=e844]: Polls for updates rather than pushing in real time.
+            - cell [ref=e845]:
+              - 'img "Not included: Chat, Basic Tracking" [ref=e846]'
+            - cell [ref=e847]:
+              - 'img "Included: Chat, Advance Tracking" [ref=e848]'
+            - cell [ref=e850]:
+              - 'img "Not included: Chat, Basic Payroll" [ref=e851]'
+            - cell [ref=e852]:
+              - 'img "Not included: Chat, Professional Payroll" [ref=e853]'
+          - row [ref=e854]:
+            - rowheader "Polls" [ref=e855]
+            - cell [ref=e856]:
+              - 'img "Not included: Polls, Basic Tracking" [ref=e857]'
+            - cell [ref=e858]:
+              - 'img "Not included: Polls, Advance Tracking" [ref=e859]'
+            - cell [ref=e860]:
+              - 'img "Included: Polls, Basic Payroll" [ref=e861]'
+            - cell [ref=e863]:
+              - 'img "Included: Polls, Professional Payroll" [ref=e864]'
+          - row [ref=e866]:
+            - rowheader "Open API access & webhooks" [ref=e867]
+            - cell [ref=e868]:
+              - 'img "Not included: Open API access & webhooks, Basic Tracking" [ref=e869]'
+            - cell [ref=e870]:
+              - 'img "Included: Open API access & webhooks, Advance Tracking" [ref=e871]'
+            - cell [ref=e873]:
+              - 'img "Not included: Open API access & webhooks, Basic Payroll" [ref=e874]'
+            - cell [ref=e875]:
+              - 'img "Not included: Open API access & webhooks, Professional Payroll" [ref=e876]'
+    - generic [ref=e878]:
+      - paragraph [ref=e879]: Not built
+      - heading "What you will not get, stated up front." [level=2] [ref=e880]
+      - paragraph [ref=e881]: If one of these is a requirement, we would rather you found out here than three weeks into an evaluation.
+      - list [ref=e882]:
+        - listitem [ref=e883]: Recruitment / applicant tracking (ATS)
+        - listitem [ref=e886]: Offer letters, e-signature, background verification
+        - listitem [ref=e889]: SSO and SAML (Google OAuth is the only federated sign-in)
+        - listitem [ref=e892]: Multi-entity legal structure — one organisation is one PAN/TAN
+        - listitem [ref=e895]: Effective-dated compensation history
+        - listitem [ref=e898]: Leave accrual schedules and mid-year pro-rating
+        - listitem [ref=e901]: Travel expense management
+        - listitem [ref=e904]: Real-time chat transport
+    - generic [ref=e908]:
+      - paragraph [ref=e909]: Pricing questions
+      - heading "The ones that decide it" [level=2] [ref=e910]
+      - generic [ref=e911]:
+        - group [ref=e912]:
+          - generic "How does the free trial work?" [ref=e913] [cursor=pointer]
+        - group [ref=e916]:
+          - generic "What is the difference between the Tracking and Payroll plans?" [ref=e917] [cursor=pointer]
+        - group [ref=e920]:
+          - generic "Why do the payroll plans include 50 seats when I have 20 people?" [ref=e921] [cursor=pointer]
+        - group [ref=e924]:
+          - generic "Is payroll gated behind a higher tier?" [ref=e925] [cursor=pointer]
+        - group [ref=e928]:
+          - generic "Can I add seats or change plans later?" [ref=e929] [cursor=pointer]
+        - group [ref=e932]:
+          - generic "Is GST included?" [ref=e933] [cursor=pointer]
+        - group [ref=e936]:
+          - generic "What happens to my data if I leave?" [ref=e937] [cursor=pointer]
+      - generic [ref=e940]:
+        - paragraph [ref=e941]: Not sure which plan fits?
+        - paragraph [ref=e942]: Twenty minutes with someone who can answer engine questions, not a script. Minimum 10 seats on per-user plans.
+        - generic [ref=e943]:
+          - link "Book a 20-minute demo" [ref=e944] [cursor=pointer]:
+            - /url: /contact?intent=demo
+          - link "Try the free calculators first" [ref=e945] [cursor=pointer]:
+            - /url: /tools
+      - paragraph [ref=e946]:
+        - text: Every number on this page comes from the product’s own pricing configuration.
+        - link "How we count" [ref=e947] [cursor=pointer]:
+          - /url: /methodology
+  - contentinfo [ref=e948]:
+    - generic [ref=e949]:
+      - generic [ref=e950]:
+        - generic [ref=e951]:
+          - generic [ref=e952]: CareVance
+          - paragraph [ref=e959]: Indian HR and payroll where the evidence of work and the payslip are the same system.
+          - paragraph [ref=e960]:
+            - link "sales@carevance.com" [ref=e961] [cursor=pointer]:
+              - /url: mailto:sales@carevance.com
+        - generic [ref=e962]:
+          - generic [ref=e963]:
+            - paragraph [ref=e964]: Product
+            - list [ref=e965]:
+              - listitem [ref=e966]:
+                - link "Platform overview" [ref=e967] [cursor=pointer]:
+                  - /url: /product
+              - listitem [ref=e968]:
+                - link "Payroll" [ref=e969] [cursor=pointer]:
+                  - /url: /product/payroll
+              - listitem [ref=e970]:
+                - link "Time & attendance" [ref=e971] [cursor=pointer]:
+                  - /url: /product/time-attendance
+              - listitem [ref=e972]:
+                - link "Compliance & filings" [ref=e973] [cursor=pointer]:
+                  - /url: /product/compliance
+              - listitem [ref=e974]:
+                - link "Core HR" [ref=e975] [cursor=pointer]:
+                  - /url: /product/core-hr
+              - listitem [ref=e976]:
+                - link "Reports & controls" [ref=e977] [cursor=pointer]:
+                  - /url: /product/reports
+              - listitem [ref=e978]:
+                - link "Leave" [ref=e979] [cursor=pointer]:
+                  - /url: /product/leave
+              - listitem [ref=e980]:
+                - link "Performance" [ref=e981] [cursor=pointer]:
+                  - /url: /product/performance
+              - listitem [ref=e982]:
+                - link "Expenses & FBP" [ref=e983] [cursor=pointer]:
+                  - /url: /product/expenses-fbp
+              - listitem [ref=e984]:
+                - link "Mobile & desktop apps" [ref=e985] [cursor=pointer]:
+                  - /url: /product/mobile
+          - generic [ref=e986]:
+            - paragraph [ref=e987]: Solutions
+            - list [ref=e988]:
+              - listitem [ref=e989]:
+                - link "Staffing agencies" [ref=e990] [cursor=pointer]:
+                  - /url: /solutions/staffing-agencies
+              - listitem [ref=e991]:
+                - link "IT services" [ref=e992] [cursor=pointer]:
+                  - /url: /solutions/it-services
+              - listitem [ref=e993]:
+                - link "Small business" [ref=e994] [cursor=pointer]:
+                  - /url: /solutions/small-business
+              - listitem [ref=e995]:
+                - link "vs. spreadsheet payroll" [ref=e996] [cursor=pointer]:
+                  - /url: /compare/spreadsheet-payroll
+              - listitem [ref=e997]:
+                - link "Keka alternative" [ref=e998] [cursor=pointer]:
+                  - /url: /compare/keka-alternative
+              - listitem [ref=e999]:
+                - link "greytHR alternative" [ref=e1000] [cursor=pointer]:
+                  - /url: /compare/greythr-alternative
+              - listitem [ref=e1001]:
+                - link "Pricing" [ref=e1002] [cursor=pointer]:
+                  - /url: /pricing
+          - generic [ref=e1003]:
+            - paragraph [ref=e1004]: Free tools
+            - list [ref=e1005]:
+              - listitem [ref=e1006]:
+                - link "Salary breakup calculator" [ref=e1007] [cursor=pointer]:
+                  - /url: /tools/salary-breakup-calculator
+              - listitem [ref=e1008]:
+                - link "Take-home salary calculator" [ref=e1009] [cursor=pointer]:
+                  - /url: /tools/take-home-salary-calculator
+              - listitem [ref=e1010]:
+                - link "Gratuity calculator" [ref=e1011] [cursor=pointer]:
+                  - /url: /tools/gratuity-calculator
+              - listitem [ref=e1012]:
+                - link "HRA exemption calculator" [ref=e1013] [cursor=pointer]:
+                  - /url: /tools/hra-exemption-calculator
+              - listitem [ref=e1014]:
+                - link "Professional tax by state" [ref=e1015] [cursor=pointer]:
+                  - /url: /tools/professional-tax-by-state
+          - generic [ref=e1016]:
+            - paragraph [ref=e1017]: Company
+            - list [ref=e1018]:
+              - listitem [ref=e1019]:
+                - link "Why CareVance" [ref=e1020] [cursor=pointer]:
+                  - /url: /why-carevance
+              - listitem [ref=e1021]:
+                - link "Security" [ref=e1022] [cursor=pointer]:
+                  - /url: /security
+              - listitem [ref=e1023]:
+                - link "How we count" [ref=e1024] [cursor=pointer]:
+                  - /url: /methodology
+              - listitem [ref=e1025]:
+                - link "Guides" [ref=e1026] [cursor=pointer]:
+                  - /url: /resources
+              - listitem [ref=e1027]:
+                - link "Changelog" [ref=e1028] [cursor=pointer]:
+                  - /url: /changelog
+              - listitem [ref=e1029]:
+                - link "About" [ref=e1030] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e1031]:
+                - link "Contact" [ref=e1032] [cursor=pointer]:
+                  - /url: /contact
+              - listitem [ref=e1033]:
+                - link "Careers" [ref=e1034] [cursor=pointer]:
+                  - /url: /careers
+      - generic [ref=e1035]:
+        - paragraph [ref=e1036]:
+          - text: Every figure on this site is counted from the CareVance codebase, not estimated.
+          - link "See how we count" [ref=e1037] [cursor=pointer]:
+            - /url: /methodology
+          - text: . We publish no customer counts, review scores or certification badges, because we have not earned them yet. Prices exclude 18% GST.
+        - generic [ref=e1038]:
+          - paragraph [ref=e1039]: © 2026 CareVance. All rights reserved.
+          - list [ref=e1040]:
+            - listitem [ref=e1041]:
+              - link "Privacy policy" [ref=e1042] [cursor=pointer]:
+                - /url: /legal/privacy
+            - listitem [ref=e1043]:
+              - link "Terms of service" [ref=e1044] [cursor=pointer]:
+                - /url: /legal/terms
+            - listitem [ref=e1045]:
+              - link "Data processing addendum" [ref=e1046] [cursor=pointer]:
+                - /url: /legal/dpa

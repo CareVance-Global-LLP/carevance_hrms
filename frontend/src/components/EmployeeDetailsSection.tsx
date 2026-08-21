@@ -6,7 +6,10 @@ import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
 import { validateGovernmentId } from '@/lib/idValidation';
 import { canAccess } from '@/lib/permissions';
-import { employeeWorkspaceApi, groupApi } from '@/services/api';
+import { employeeWorkspaceApi, groupApi, myEmployeeRecordApi } from '@/services/api';
+import { reportSilentError } from '@/lib/reportSilentError';
+import type { MyEmployeeRecordsPayload } from '@/services/api';
+import type { EmployeeWorkspacePayload } from '@/types';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
 import { formatCalendarDate, formatTenure } from '@/lib/employeeDates';
 import { usePlan } from '@/hooks/usePlan';
@@ -105,6 +108,20 @@ const ADDRESS_PAIRS: Array<{ current: string; permanent: string; label: string }
   { current: 'postal_code', permanent: 'permanent_postal_code', label: 'Postal code' },
 ];
 
+/** The top-level blocks this component can render, in the order they appear. */
+export type EmployeeDetailsSectionName =
+  | 'personal'
+  | 'work'
+  | 'government'
+  | 'education'
+  | 'experience'
+  | 'bank'
+  | 'documents';
+
+const ALL_SECTIONS: EmployeeDetailsSectionName[] = [
+  'personal', 'work', 'government', 'education', 'experience', 'bank', 'documents',
+];
+
 interface EmployeeDetailsSectionProps {
   /**
    * Primary key used for the workspace lookup. When provided, takes
@@ -116,13 +133,31 @@ interface EmployeeDetailsSectionProps {
   employeeCode?: string;
   showHeader?: boolean;
   editable?: boolean;
+  /**
+   * Which blocks to render. Defaults to all of them, so every existing caller
+   * is unaffected.
+   *
+   * Settings > Profile passes a subset because it already owns a "Personal
+   * details" card of its own, and because work info and education are not the
+   * employee's to edit.
+   */
+  sections?: EmployeeDetailsSectionName[];
+  /**
+   * Read and write the signed-in user's OWN record through `/me/*` instead of
+   * the id-addressed `/employees/{id}/*` routes.
+   *
+   * The two return the same keys, so only the transport changes. This exists
+   * because the admin routes are gated on role:admin,manager and take an id —
+   * an employee cannot call them at all, and should not be able to.
+   */
+  selfService?: boolean;
 }
 
 /** What a given ID type should look like, shown before anything is typed. */
 const govIdHint = (idType?: string): string => {
   switch ((idType || '').toLowerCase()) {
     case 'aadhaar': return '12 digits';
-    case 'pan': return 'ABCDE1234F';
+    case 'pan': return 'ABCPE1234F';
     case 'passport': return 'One letter then 7 digits';
     case 'driving_license': return 'State code then numbers';
     case 'voter_id': return 'ABC1234567';
@@ -132,7 +167,16 @@ const govIdHint = (idType?: string): string => {
   }
 };
 
-export default function EmployeeDetailsSection({ userId, employeeCode, showHeader = false, editable }: EmployeeDetailsSectionProps) {
+export default function EmployeeDetailsSection({
+  userId,
+  employeeCode,
+  showHeader = false,
+  editable,
+  sections = ALL_SECTIONS,
+  selfService = false,
+}: EmployeeDetailsSectionProps) {
+  /** Whether a given block was asked for. */
+  const shows = (section: EmployeeDetailsSectionName) => sections.includes(section);
   // Use the numeric userId as the lookup key whenever available — it's
   // always accurate, while employee_code strings can be mangled or
   // omitted for new users.
@@ -169,16 +213,45 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     payout_method: 'bank_transfer',
     is_default: true,
   });
-  const [docForm, setDocForm] = useState<Record<string, any>>({ title: '', category: 'other', review_status: 'pending', file: null });
+  const [docForm, setDocForm] = useState<Record<string, any>>({
+    title: '',
+    category: 'other',
+    review_status: 'pending',
+    file: null,
+    // Off by default. A record holds warning letters and background checks as
+    // readily as offer letters, and nothing on the row tells them apart — so
+    // sharing is a decision somebody makes, never the fallback.
+    visible_to_employee: false,
+  });
 
   const canEditOwnProfile = editable ? true : false;
   const { hasFeature } = usePlan();
   const hasPayrollFeature = hasFeature('payroll');
 
+  /*
+   * Two sources, one shape. The self-service read returns a strict subset of
+   * the workspace payload — employee, bank_accounts, government_ids, documents
+   * — so every section body below reads the same keys either way. Its own
+   * query key keeps the two caches apart: an admin viewing this person and the
+   * person viewing themselves see different document sets, and sharing a key
+   * would let one overwrite the other.
+   */
+  const workspaceQueryKey = selfService ? ['my-employee-records'] : ['employee-workspace', id];
+
   const workspaceQuery = useQuery({
-    queryKey: ['employee-workspace', id],
-    queryFn: async () => (await employeeWorkspaceApi.getWorkspace(id)).data,
-    enabled: Boolean(id),
+    queryKey: workspaceQueryKey,
+    /*
+     * Everything beyond the four self-service keys is optional in this type,
+     * which is the honest description of a component that can be fed either
+     * payload — and it is what makes TypeScript insist the personal, work and
+     * education blocks handle their data being absent.
+     */
+    queryFn: async (): Promise<Partial<EmployeeWorkspacePayload> & MyEmployeeRecordsPayload> => (
+      selfService
+        ? (await myEmployeeRecordApi.getRecords()).data
+        : (await employeeWorkspaceApi.getWorkspace(id)).data
+    ),
+    enabled: selfService || Boolean(id),
   });
 
   // Only fetched when the department picker can actually be shown.
@@ -248,7 +321,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     mutationFn: async () => employeeWorkspaceApi.updateProfile(id, aboutForm),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Personal details saved.' });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save personal details.' });
@@ -273,7 +346,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     }),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Work information saved.' });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save work information.' });
@@ -281,14 +354,14 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   });
 
   const saveGovMutation = useMutation({
-    mutationFn: async () => employeeWorkspaceApi.saveGovernmentId(id, {
+    mutationFn: async () => (selfService ? myEmployeeRecordApi.saveGovernmentId : (data: any) => employeeWorkspaceApi.saveGovernmentId(id, data))({
       ...govForm,
       proof_file: govForm.proof_file || null,
     }),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Government ID saved successfully.' });
       setGovForm({ id_type: 'aadhaar', id_number: '', status: 'pending' });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save government ID.' });
@@ -296,14 +369,14 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   });
 
   const saveEducationMutation = useMutation({
-    mutationFn: async () => employeeWorkspaceApi.saveEducation(id, {
+    mutationFn: async () => (selfService ? myEmployeeRecordApi.saveEducation : (data: any) => employeeWorkspaceApi.saveEducation(id, data))({
       ...educationForm,
       certificate_file: educationForm.certificate_file || null,
     }),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Education record saved.' });
       setEducationForm({ qualification: '', certificate_file: null });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save the education record.' });
@@ -311,10 +384,14 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   });
 
   const removeEducationMutation = useMutation({
-    mutationFn: async (educationId: number) => employeeWorkspaceApi.deleteEducation(id, educationId),
+    mutationFn: async (educationId: number) => (
+      selfService
+        ? myEmployeeRecordApi.deleteEducation(educationId)
+        : employeeWorkspaceApi.deleteEducation(id, educationId)
+    ),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Education record removed. The certificate stays on file.' });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not remove the education record.' });
@@ -327,20 +404,35 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
    * EmployeeDocument's title and category model.
    */
   const saveExperienceMutation = useMutation({
+    /*
+     * A plain object, not a FormData.
+     *
+     * Both upload clients build the FormData themselves from `data.title`,
+     * `data.category` and `data.file`. This used to hand them an
+     * already-assembled FormData cast through `as any` — so every one of those
+     * reads was `undefined`, the request posted the literal string "undefined"
+     * as the file, and the server rejected it. The cast is what stopped
+     * TypeScript from saying so.
+     */
     mutationFn: async () => {
-      const formData = new FormData();
-      formData.append('title', experienceForm.title);
-      formData.append('category', EXPERIENCE_CATEGORY);
-      formData.append('review_status', 'pending');
-      if (experienceForm.file) {
-        formData.append('file', experienceForm.file);
+      if (!experienceForm.file) {
+        throw new Error('Choose a file to upload.');
       }
-      return employeeWorkspaceApi.uploadDocument(id, formData as any);
+
+      const payload = {
+        title: experienceForm.title,
+        category: EXPERIENCE_CATEGORY,
+        file: experienceForm.file as File,
+      };
+
+      return selfService
+        ? myEmployeeRecordApi.uploadDocument(payload)
+        : employeeWorkspaceApi.uploadDocument(id, { ...payload, review_status: 'pending' });
     },
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Experience document uploaded.' });
       setExperienceForm({ title: '', file: null });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not upload the experience document.' });
@@ -348,13 +440,13 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   });
 
   const saveBankMutation = useMutation({
-    mutationFn: async () => employeeWorkspaceApi.saveBankAccount(id, {
+    mutationFn: async () => (selfService ? myEmployeeRecordApi.saveBankAccount : (data: any) => employeeWorkspaceApi.saveBankAccount(id, data))({
       ...bankForm,
       proof_file: bankForm.proof_file || null,
     }),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Bank details saved successfully.' });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save bank details.' });
@@ -362,20 +454,31 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
   });
 
   const saveDocMutation = useMutation({
+    // See saveExperienceMutation: the client assembles the FormData, so it has
+    // to be given the fields, not a FormData.
     mutationFn: async () => {
-      const formData = new FormData();
-      formData.append('title', docForm.title);
-      formData.append('category', docForm.category);
-      formData.append('review_status', docForm.review_status);
-      if (docForm.file) {
-        formData.append('file', docForm.file);
+      if (!docForm.file) {
+        throw new Error('Choose a file to upload.');
       }
-      return employeeWorkspaceApi.uploadDocument(id, formData as any);
+
+      const payload = {
+        title: docForm.title,
+        category: docForm.category,
+        file: docForm.file as File,
+      };
+
+      return selfService
+        ? myEmployeeRecordApi.uploadDocument(payload)
+        : employeeWorkspaceApi.uploadDocument(id, {
+            ...payload,
+            review_status: docForm.review_status,
+            visible_to_employee: Boolean(docForm.visible_to_employee),
+          });
     },
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Document uploaded successfully.' });
-      setDocForm({ title: '', category: 'other', review_status: 'pending', file: null });
-      await queryClient.invalidateQueries({ queryKey: ['employee-workspace', id] });
+      setDocForm({ title: '', category: 'other', review_status: 'pending', file: null, visible_to_employee: false });
+      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not upload document.' });
@@ -414,17 +517,66 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
     return false;
   };
 
+  /*
+   * Both of these used to end at `.then(...)` with no rejection path, so a
+   * refused download was completely silent — the button simply did nothing, and
+   * "nothing happens" gives no clue whether the file is missing, forbidden, or
+   * the request never left. That is what made a 403 on a proof document look
+   * like a broken button.
+   *
+   * The response body is a Blob because of responseType, so the server's JSON
+   * message has to be read back out of it rather than off `error.response.data`.
+   */
+  const reportDownloadFailure = async (error: any, fallback: string) => {
+    const status = error?.response?.status;
+    let message = fallback;
+
+    if (status === 403) {
+      message = 'You do not have permission to open this document.';
+    } else if (status === 404) {
+      message = 'That document is no longer on file.';
+    } else {
+      const body = error?.response?.data;
+      if (body instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await body.text());
+          if (parsed?.message) message = parsed.message;
+        } catch {
+          reportSilentError('employeeDetails.download.parse', error);
+        }
+      }
+    }
+
+    setFeedback({ tone: 'error', message });
+  };
+
+  const fetchDocument = (docId: number) => (
+    selfService
+      ? myEmployeeRecordApi.downloadDocument(docId)
+      : employeeWorkspaceApi.downloadDocument(id, docId)
+  );
+
   const handleFilePreview = (docId: number, mimeType?: string, fileName?: string) => {
-    employeeWorkspaceApi.downloadDocument(id, docId).then((res) => {
+    fetchDocument(docId).then((res) => {
       const blob = new Blob([res.data], { type: mimeType || String(res.headers?.['content-type'] || '') });
       const blobUrl = window.URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
+      const opened = window.open(blobUrl, '_blank');
+
+      // A blocked pop-up is the other way this reads as "the button does
+      // nothing", and it is not something the request can tell us about.
+      if (!opened) {
+        setFeedback({
+          tone: 'error',
+          message: 'Your browser blocked the preview window. Allow pop-ups for this site, or use download instead.',
+        });
+      }
+
       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
-    });
+    }).catch((error) => reportDownloadFailure(error, 'Could not open that document.'));
   };
 
   const handleFileDownload = (docId: number, filename: string, mimeType?: string, fileName?: string) => {
-    employeeWorkspaceApi.downloadDocument(id, docId).then((res) => {
+    fetchDocument(docId).then((res) => {
       const blob = new Blob([res.data], { type: mimeType || String(res.headers?.['content-type'] || '') });
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -434,7 +586,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
       link.click();
       link.remove();
       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 100);
-    });
+    }).catch((error) => reportDownloadFailure(error, 'Could not download that document.'));
   };
 
   const canEditWorkInfo = editable ? true : (
@@ -578,6 +730,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         entire purpose is capturing a new joiner's details showed every section
         except that one.
       */}
+      {shows('personal') && (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
           <UserRound className="h-5 w-5 text-blue-600" />
@@ -690,7 +843,9 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
         )}
       </section>
+      )}
 
+      {shows('work') && (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-blue-600" />
@@ -828,7 +983,9 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
         )}
       </section>
+      )}
 
+      {shows('government') && (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
           <FileText className="h-5 w-5 text-blue-600" />
@@ -957,6 +1114,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
         )}
       </section>
+      )}
 
       {/*
         Education as records rather than as loose files. A certificate could
@@ -964,6 +1122,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         the scan and lost the facts — "who holds a B.Tech" meant opening every
         PDF one at a time.
       */}
+      {shows('education') && (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
           <GraduationCap className="h-5 w-5 text-blue-600" />
@@ -1112,6 +1271,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
         )}
       </section>
+      )}
 
       {/*
         Experience, shaped like Education so the page reads consistently. The
@@ -1119,6 +1279,7 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         employer, dates or role captured there is no fact to hold beyond the
         document type, and a table for that would be an empty ceremony.
       */}
+      {shows('experience') && (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-2">
           <Award className="h-5 w-5 text-blue-600" />
@@ -1201,8 +1362,9 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
           </div>
         )}
       </section>
+      )}
 
-      {hasPayrollFeature && (
+      {hasPayrollFeature && shows('bank') && (
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2">
             <CreditCard className="h-5 w-5 text-blue-600" />
@@ -1334,13 +1496,17 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
         </section>
       )}
 
-      {hasPayrollFeature && (
+      {hasPayrollFeature && shows('documents') && (
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2">
             <Building2 className="h-5 w-5 text-blue-600" />
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">Documents</p>
           </div>
-          <p className="mt-1 text-sm text-slate-500">Upload and manage employee documents.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {selfService
+              ? 'Documents on your record. Ask HR to add or replace anything here.'
+              : 'Upload and manage employee documents.'}
+          </p>
 
           {generalDocuments.length > 0 && (
             <div className="mt-5 space-y-3">
@@ -1348,7 +1514,29 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
                 <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-slate-950">{item.title}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-slate-950">{item.title}</p>
+                        {/*
+                          Stated on the row, not buried in an edit screen. HR
+                          needs to see at a glance which of these the employee
+                          can read — the difference between an offer letter and
+                          a warning letter is not visible from the title.
+
+                          Absent on the employee's own panel: they are looking
+                          at the document, so labelling it "internal" there
+                          answers a question nobody asked and contradicts the
+                          evidence in front of them.
+                        */}
+                        {selfService ? null : item.visible_to_employee ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                            Shared
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                            Internal
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-slate-500">{item.category} • {item.file_name}</p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1377,7 +1565,15 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
             </div>
           )}
 
-          {(canEditOwnProfile || canEditWorkInfo) && (
+          {/*
+            Uploading is HR's, not the employee's.
+
+            They still SEE this section — their offer letter, their ID proofs,
+            anything shared with them — and can open and download it. What they
+            cannot do is add to it, which keeps one hand on what ends up on a
+            personnel record.
+          */}
+          {!selfService && (canEditOwnProfile || canEditWorkInfo) && (
             <div className="mt-6 border-t border-slate-200 pt-6">
               <p className="text-sm font-medium text-slate-900">Upload New Document</p>
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
@@ -1423,6 +1619,36 @@ export default function EmployeeDetailsSection({ userId, employeeCode, showHeade
                   />
                 </div>
               </div>
+              {/*
+                Who the upload is for.
+
+                Everything on this record is equally invisible to the employee
+                until somebody says otherwise, which is what keeps an internal
+                note internal. The cost is that their offer letter and Form 16
+                also need ticking, so the control sits next to the file rather
+                than behind a menu.
+
+                Absent on the employee's own panel: nobody decides whether they
+                may see a file they just uploaded themselves, and the /me route
+                sets it regardless of what the form sends.
+              */}
+              {!selfService && (
+              <label className="mt-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={Boolean(docForm.visible_to_employee)}
+                  onChange={(event) => setDocForm((current) => ({ ...current, visible_to_employee: event.target.checked }))}
+                />
+                <span>
+                  <span className="font-medium text-slate-900">Share with this employee</span>
+                  <span className="mt-0.5 block text-slate-500">
+                    It appears in their own Settings &rarr; Profile. Leave this unticked for
+                    anything internal.
+                  </span>
+                </span>
+              </label>
+              )}
               <div className="mt-4">
                 <Button
                   onClick={() => saveDocMutation.mutate()}
