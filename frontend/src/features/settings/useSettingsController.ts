@@ -7,7 +7,8 @@ import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { validateIdleThresholds } from './idlePolicy';
 import { readIdleResolutionPolicy, readUrlDetailLevel, type UrlDetailLevel } from '@/lib/trackerPolicy';
-import { employeeWorkspaceApi, settingsApi, supportApi, organizationApi } from '@/services/api';
+import { employeeWorkspaceApi, myEmployeeRecordApi, settingsApi, supportApi, organizationApi } from '@/services/api';
+import { reportSilentError } from '@/lib/reportSilentError';
 import type { BillingSnapshot } from '@/types';
 import {
   DEFAULT_LEAVE_CATEGORIES,
@@ -323,6 +324,9 @@ export function useSettingsController() {
      */
     const allowed = new Set<SettingsTabId>([
       'profile',
+      // Everyone has kit assigned to them — an employee, a manager and an admin
+      // alike — so the list of your own assets is never gated.
+      'assets',
       'notifications',
       'appearance',
       'security',
@@ -655,7 +659,17 @@ export function useSettingsController() {
     const loadPersonalDetails = async () => {
       setIsLoadingPersonalDetails(true);
       try {
-        const response = await employeeWorkspaceApi.getWorkspace(currentUserId);
+        /*
+         * The employee's OWN record, through the route they are allowed to call.
+         *
+         * This used to be getWorkspace(currentUserId) — /employees/{id}/workspace,
+         * which is gated on role:admin,manager. An employee was refused by the
+         * middleware; a manager passed it and then failed the scope check,
+         * because their own hierarchy level is not below their own. Only an
+         * admin ever got a response, so every other Settings > Profile showed an
+         * empty form and nothing HR entered for that person ever reached them.
+         */
+        const response = await myEmployeeRecordApi.getRecords();
         const about = (response.data as any)?.about || {};
         // Merge API data with existing form data (only update non-empty values)
         setPersonalDetailsForm((prev) => {
@@ -684,8 +698,12 @@ export function useSettingsController() {
           setProfileBaseline((base) => ({ ...base, personal: merged }));
           return merged;
         });
-      } catch {
-        // Keep existing form data on error instead of resetting to empty
+      } catch (error) {
+        // Keeping the form as-is is right — a failed refresh should not wipe
+        // what somebody is typing. Reporting it is what was missing: this
+        // swallowed a 403 for every non-admin, and a blank form looks exactly
+        // like a person who has not filled anything in yet.
+        reportSilentError('settings.personalDetails.load', error);
       } finally {
         setIsLoadingPersonalDetails(false);
       }

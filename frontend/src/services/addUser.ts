@@ -28,18 +28,56 @@ export interface AdditionalInviteSettings {
 /** Matches `emails` max:50 on StoreInvitationRequest. */
 export const EMAIL_BATCH_LIMIT = 50;
 
+/**
+ * Furthest joining date any invite form accepts, as `YYYY-MM-DD`.
+ *
+ * Built from local parts, not `toISOString()`, which converts to UTC first and
+ * returns yesterday in IST before 05:30. Mirrors the two-year ceiling that
+ * StoreInvitationRequest, StoreInvitationImportRequest and the Create User
+ * wizard all enforce, so the client refuses what the server would refuse.
+ */
+export const maxJoiningDate = (() => {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() + 2);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+})();
+
+/**
+ * What one recipient gets instead of the batch default.
+ *
+ * Every field is optional and an absent field means "use the batch value" —
+ * which is what lets the common case (everybody the same) stay a single empty
+ * map rather than N copies of the defaults.
+ */
+export interface RecipientOverride {
+  role?: InviteUserRole;
+  /**
+   * One department, replacing the batch selection for this person rather than
+   * adding to it. Null and undefined both mean "use the batch departments";
+   * they are distinguished only so a caller can clear a row without deleting
+   * the rest of its override.
+   */
+  groupId?: number | null;
+  jobTitle?: string;
+  joiningDate?: string;
+}
+
 export interface InviteSubmissionPayload {
   organizationId: number;
   emails: string[];
-  /** Role for anyone without an entry in `roleByEmail`. */
+  /** The batch default: what anyone without an override receives. */
   role: InviteUserRole;
   /**
-   * Per-recipient role overrides, keyed by lower-cased email.
+   * Per-recipient overrides, keyed by lower-cased email.
    *
-   * The API takes one `role` per request (StoreInvitationRequest), so mixed
-   * roles cannot go in a single call. Omit this and behaviour is unchanged.
+   * StoreInvitationRequest carries one role, one department list, one job title
+   * and one joining date per request, so a mixed batch cannot be a single call.
+   * `inviteByEmail` resolves each recipient against the batch defaults and sends
+   * one request per distinct combination. Omit this and behaviour is unchanged.
    */
-  roleByEmail?: Record<string, InviteUserRole>;
+  overridesByEmail?: Record<string, RecipientOverride>;
   /**
    * An admin-defined role applied to the whole batch.
    *
@@ -314,34 +352,102 @@ const parseCsvLine = (line: string) => {
   return result;
 };
 
+/** The batch-wide values a recipient falls back to when they override nothing. */
+export interface InviteBatchDefaults {
+  role: InviteUserRole;
+  /** An admin-defined role. Dropped for anyone who overrides their access level. */
+  roleId?: number | null;
+  groupIds: number[];
+  jobTitle?: string;
+  joiningDate?: string;
+}
+
+/** One outgoing request's worth of recipients: everything below is uniform. */
+export interface InviteRecipientGroup {
+  role: InviteUserRole;
+  roleId: number | null;
+  groupIds: number[];
+  jobTitle?: string;
+  joiningDate?: string;
+  emails: string[];
+}
+
 /**
- * Split recipients into one list per distinct role.
+ * Resolve one recipient against the batch defaults.
  *
- * Same-role recipients are merged even when other roles sit between them in the
- * input, because each group becomes an HTTP request and merging is what keeps
- * the request count at one-per-role rather than one-per-run-of-role. Ordering
- * within a group, and the order of the groups themselves, follows first
- * appearance — so the requests go out in a predictable order and a partial
- * failure is still legible in the results list, which is keyed by email anyway.
+ * Departments REPLACE rather than merge. `/invitations` writes exactly the
+ * `group_ids` it is given, so a person moved to Sales must not also keep the
+ * batch's Operations — unlike the CSV import endpoint, which deliberately
+ * unions row and default ids.
  *
- * Returned as entries rather than a Map purely so the caller can iterate it
- * without worrying about insertion-order guarantees.
+ * An overridden access level drops `roleId`. A custom admin-defined role is a
+ * batch-level choice; picking a built-in level for one person means that
+ * person gets the built-in, and pairing a low-privilege custom role with a
+ * different base role is exactly the contradiction the per-chip role selector
+ * was removed for.
  */
-export const groupEmailsByRole = (
+export const resolveRecipient = (
+  email: string,
+  defaults: InviteBatchDefaults,
+  overrides?: Record<string, RecipientOverride>,
+): Omit<InviteRecipientGroup, 'emails'> => {
+  const override = overrides?.[email.trim().toLowerCase()];
+  const role = override?.role ?? defaults.role;
+  const jobTitle = override?.jobTitle?.trim() || defaults.jobTitle?.trim() || undefined;
+  const joiningDate = override?.joiningDate || defaults.joiningDate || undefined;
+
+  return {
+    role,
+    roleId: override?.role ? null : (defaults.roleId ?? null),
+    groupIds:
+      override?.groupId === undefined || override.groupId === null
+        ? defaults.groupIds
+        : [override.groupId],
+    jobTitle,
+    joiningDate,
+  };
+};
+
+/**
+ * Split recipients into one list per distinct request shape.
+ *
+ * StoreInvitationRequest carries a single role, department list, job title and
+ * joining date, so those four fields together decide what can share a call.
+ * Recipients that resolve identically are merged even when others sit between
+ * them in the input, because each group becomes an HTTP request and merging is
+ * what keeps the count at one-per-combination rather than one-per-run. Ordering
+ * within a group, and of the groups themselves, follows first appearance — so
+ * requests go out predictably and a partial failure stays legible in the
+ * results list, which is keyed by email anyway.
+ */
+export const groupRecipientsForInvite = (
   emails: string[],
-  defaultRole: InviteUserRole,
-  overrides?: Record<string, InviteUserRole>,
-): Array<[InviteUserRole, string[]]> => {
-  const groups: Array<[InviteUserRole, string[]]> = [];
+  defaults: InviteBatchDefaults,
+  overrides?: Record<string, RecipientOverride>,
+): InviteRecipientGroup[] => {
+  const groups: InviteRecipientGroup[] = [];
+  const byKey = new Map<string, InviteRecipientGroup>();
 
   for (const email of emails) {
-    const role = overrides?.[email.trim().toLowerCase()] ?? defaultRole;
-    const existing = groups.find(([groupRole]) => groupRole === role);
+    const resolved = resolveRecipient(email, defaults, overrides);
+    const key = [
+      resolved.role,
+      resolved.roleId ?? '',
+      [...resolved.groupIds].sort((a, b) => a - b).join('.'),
+      resolved.jobTitle ?? '',
+      resolved.joiningDate ?? '',
+    ].join('|');
+
+    const existing = byKey.get(key);
+
     if (existing) {
-      existing[1].push(email);
-    } else {
-      groups.push([role, [email]]);
+      existing.emails.push(email);
+      continue;
     }
+
+    const group: InviteRecipientGroup = { ...resolved, emails: [email] };
+    byKey.set(key, group);
+    groups.push(group);
   }
 
   return groups;
@@ -449,35 +555,46 @@ export const addUserService = {
      * detail rather than something the admin has to know.
      */
     /*
-     * Grouped by role first, then chunked within each group.
+     * Grouped by resolved request shape first, then chunked within each group.
      *
-     * StoreInvitationRequest takes a single `role` for the whole request, so a
-     * batch containing two employees and a manager cannot be one call. Grouping
-     * here means the admin sets a role per person and the transport detail —
-     * one request per distinct role — stays out of the UI.
+     * StoreInvitationRequest takes a single role, department list, job title and
+     * joining date for the whole request, so a batch of five joiners across
+     * three departments cannot be one call. Grouping here means the admin fills
+     * one table and the transport detail — one request per distinct combination
+     * — stays out of the UI. Everybody-the-same still collapses to one request.
      */
-    const groups = groupEmailsByRole(payload.emails, payload.role, payload.roleByEmail);
+    const groups = groupRecipientsForInvite(
+      payload.emails,
+      {
+        role: payload.role,
+        roleId: payload.roleId,
+        groupIds: payload.groupIds,
+        jobTitle: payload.jobTitle,
+        joiningDate: payload.joiningDate,
+      },
+      payload.overridesByEmail,
+    );
     let invitedCount = 0;
     const failed: Array<{ email: string; message: string }> = [];
 
-    const requests = groups.flatMap(([role, emails]) =>
-      chunkItems(emails, EMAIL_BATCH_LIMIT).map((chunk) => ({ role, chunk })),
+    const requests = groups.flatMap((group) =>
+      chunkItems(group.emails, EMAIL_BATCH_LIMIT).map((chunk) => ({ group, chunk })),
     );
 
-    for (const { role, chunk } of requests) {
+    for (const { group, chunk } of requests) {
       const response = await invitationApi.create({
         organization_id: payload.organizationId,
         emails: chunk,
-        role,
+        role: group.role,
         delivery: 'email',
-        department_ids: payload.groupIds,
+        department_ids: group.groupIds,
         project_ids: payload.projectIds,
-        ...(payload.joiningDate ? { joining_date: payload.joiningDate } : {}),
-        ...(payload.jobTitle ? { job_title: payload.jobTitle } : {}),
-        ...(payload.roleId ? { role_id: payload.roleId } : {}),
-        // Narrowed to this chunk. Emails are split by role and batch size, so
-        // sending the whole map to every request would reserve a code against
-        // a request that is not inviting that person.
+        ...(group.joiningDate ? { joining_date: group.joiningDate } : {}),
+        ...(group.jobTitle ? { job_title: group.jobTitle } : {}),
+        ...(group.roleId ? { role_id: group.roleId } : {}),
+        // Narrowed to this chunk. Emails are split by request shape and batch
+        // size, so sending the whole map to every request would reserve a code
+        // against a request that is not inviting that person.
         ...pickEmployeeCodes(payload.employeeCodeByEmail, chunk),
         ...(payload.expiresInHours ? { expires_in_hours: payload.expiresInHours } : {}),
         settings: {

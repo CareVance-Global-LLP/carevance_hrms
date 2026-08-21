@@ -1,0 +1,491 @@
+- generic [active] [ref=f12e1]:
+  - banner [ref=f12e2]:
+    - link "Skip to content" [ref=f12e3] [cursor=pointer]:
+      - /url: "#main"
+    - navigation "Primary" [ref=f12e5]:
+      - link "CareVance home" [ref=f12e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f12e7]: CareVance
+      - generic [ref=f12e14]:
+        - button "Product" [ref=f12e16]
+        - button "Solutions" [ref=f12e20]
+        - link "Pricing" [ref=f12e23] [cursor=pointer]:
+          - /url: /pricing
+        - button "Free tools" [ref=f12e25]
+        - button "Resources" [ref=f12e29]
+      - generic [ref=f12e32]:
+        - button "Switch theme" [ref=f12e33]
+        - link "Sign in" [ref=f12e36] [cursor=pointer]:
+          - /url: https://app.carevance.com/login
+        - link "See it live — 2 min" [ref=f12e37] [cursor=pointer]:
+          - /url: /product#tour
+        - link "Book a demo" [ref=f12e38] [cursor=pointer]:
+          - /url: /contact?intent=demo
+  - main [ref=f12e39]:
+    - generic [ref=f12e41]:
+      - navigation "Breadcrumb" [ref=f12e42]:
+        - list [ref=f12e43]:
+          - listitem [ref=f12e44]:
+            - link "Free tools" [ref=f12e45] [cursor=pointer]:
+              - /url: /tools
+          - listitem [ref=f12e46]: /
+          - listitem [ref=f12e47]: Professional tax by state
+      - paragraph [ref=f12e48]: Free calculator
+      - heading "Professional tax by state" [level=1] [ref=f12e49]
+      - paragraph [ref=f12e50]: All 37 states and union territories — the 20 that levy professional tax and the 17 that do not. Month-aware, so February is right where it differs.
+    - generic [ref=f12e52]:
+      - generic [ref=f12e53]:
+        - generic [ref=f12e55]:
+          - generic [ref=f12e56]:
+            - generic [ref=f12e57]: State or union territory
+            - combobox "State or union territory" [ref=f12e59]:
+              - option "Andaman & Nicobar Islands — no PT"
+              - option "Chandigarh — no PT"
+              - option "Dadra & Nagar Haveli — no PT"
+              - option "Daman & Diu — no PT"
+              - option "Delhi — no PT"
+              - option "Jammu & Kashmir — no PT"
+              - option "Ladakh — no PT"
+              - option "Lakshadweep — no PT"
+              - option "Puducherry"
+              - option "Andhra Pradesh"
+              - option "Arunachal Pradesh — no PT"
+              - option "Assam"
+              - option "Bihar"
+              - option "Chhattisgarh — no PT"
+              - option "Goa — no PT"
+              - option "Gujarat"
+              - option "Haryana — no PT"
+              - option "Himachal Pradesh — no PT"
+              - option "Jharkhand"
+              - option "Karnataka"
+              - option "Kerala"
+              - option "Madhya Pradesh"
+              - option "Maharashtra" [selected]
+              - option "Manipur"
+              - option "Meghalaya"
+              - option "Mizoram"
+              - option "Nagaland"
+              - option "Odisha"
+              - option "Punjab — no PT"
+              - option "Rajasthan — no PT"
+              - option "Sikkim"
+              - option "Tamil Nadu"
+              - option "Telangana"
+              - option "Tripura"
+              - option "Uttar Pradesh — no PT"
+              - option "Uttarakhand — no PT"
+              - option "West Bengal"
+          - generic [ref=f12e60]:
+            - generic [ref=f12e61]: Monthly gross salary
+            - generic [ref=f12e63]:
+              - generic: ₹
+              - spinbutton "Monthly gross salary" [ref=f12e64]: "50000"
+        - generic [ref=f12e65]:
+          - generic [ref=f12e66]:
+            - paragraph [ref=f12e67]: Professional tax
+            - paragraph [ref=f12e68]: ₹2,500 a year
+            - paragraph [ref=f12e69]: ₹200 a month, and ₹300 in February
+          - generic [ref=f12e70]:
+            - paragraph [ref=f12e71]: Maharashtra — slabs
+            - list [ref=f12e72]:
+              - listitem [ref=f12e73]:
+                - generic [ref=f12e74]: ₹0 – ₹7,500
+                - generic [ref=f12e75]: Nil
+              - listitem [ref=f12e76]:
+                - generic [ref=f12e77]: ₹7,501 – ₹10,000
+                - generic [ref=f12e78]: ₹175/mo
+              - listitem [ref=f12e79]:
+                - generic [ref=f12e80]: Above ₹10,001
+                - generic [ref=f12e81]: ₹200/mo
+            - paragraph [ref=f12e82]:
+              - text: Maharashtra charges
+              - strong [ref=f12e83]: ₹300
+              - text: in February on the top band, so the annual total reaches the statutory ceiling. It applies to the top band only — applying it lower would overcharge someone the ceiling was never about.
+      - generic [ref=f12e84]:
+        - generic [ref=f12e85]:
+          - generic [ref=f12e86]:
+            - paragraph [ref=f12e87]: All 37 states and union territories
+            - paragraph [ref=f12e88]: 20 levy professional tax · 17 do not
+          - generic [ref=f12e89]:
+            - generic [ref=f12e90]: Filter states
+            - searchbox "Filter states" [ref=f12e91]
+        - table [ref=f12e93]:
+          - caption [ref=f12e94]: Professional tax by state at a monthly gross of ₹50,000
+          - rowgroup [ref=f12e95]:
+            - row [ref=f12e96]:
+              - columnheader "State / UT" [ref=f12e97]
+              - columnheader "At ₹50,000" [ref=f12e98]
+              - columnheader "Annual" [ref=f12e99]
+          - rowgroup [ref=f12e100]:
+            - row [ref=f12e101]:
+              - rowheader [ref=f12e102]:
+                - button "Andaman & Nicobar Islands" [ref=f12e103]
+                - text: UT
+              - cell "—" [ref=f12e104]
+              - cell "Nil" [ref=f12e105]
+            - row [ref=f12e106]:
+              - rowheader [ref=f12e107]:
+                - button "Andhra Pradesh" [ref=f12e108]
+              - cell "₹200" [ref=f12e109]
+              - cell "₹2,400" [ref=f12e110]
+            - row [ref=f12e111]:
+              - rowheader [ref=f12e112]:
+                - button "Arunachal Pradesh" [ref=f12e113]
+              - cell "—" [ref=f12e114]
+              - cell "Nil" [ref=f12e115]
+            - row [ref=f12e116]:
+              - rowheader [ref=f12e117]:
+                - button "Assam" [ref=f12e118]
+              - cell "₹208" [ref=f12e119]
+              - cell "₹2,496" [ref=f12e120]
+            - row [ref=f12e121]:
+              - rowheader [ref=f12e122]:
+                - button "Bihar" [ref=f12e123]
+              - cell "₹167" [ref=f12e124]
+              - cell "₹2,004" [ref=f12e125]
+            - row [ref=f12e126]:
+              - rowheader [ref=f12e127]:
+                - button "Chandigarh" [ref=f12e128]
+                - text: UT
+              - cell "—" [ref=f12e129]
+              - cell "Nil" [ref=f12e130]
+            - row [ref=f12e131]:
+              - rowheader [ref=f12e132]:
+                - button "Chhattisgarh" [ref=f12e133]
+              - cell "—" [ref=f12e134]
+              - cell "Nil" [ref=f12e135]
+            - row [ref=f12e136]:
+              - rowheader [ref=f12e137]:
+                - button "Dadra & Nagar Haveli" [ref=f12e138]
+                - text: UT
+              - cell "—" [ref=f12e139]
+              - cell "Nil" [ref=f12e140]
+            - row [ref=f12e141]:
+              - rowheader [ref=f12e142]:
+                - button "Daman & Diu" [ref=f12e143]
+                - text: UT
+              - cell "—" [ref=f12e144]
+              - cell "Nil" [ref=f12e145]
+            - row [ref=f12e146]:
+              - rowheader [ref=f12e147]:
+                - button "Delhi" [ref=f12e148]
+                - text: UT
+              - cell "—" [ref=f12e149]
+              - cell "Nil" [ref=f12e150]
+            - row [ref=f12e151]:
+              - rowheader [ref=f12e152]:
+                - button "Goa" [ref=f12e153]
+              - cell "—" [ref=f12e154]
+              - cell "Nil" [ref=f12e155]
+            - row [ref=f12e156]:
+              - rowheader [ref=f12e157]:
+                - button "Gujarat" [ref=f12e158]
+              - cell "₹200" [ref=f12e159]
+              - cell "₹2,400" [ref=f12e160]
+            - row [ref=f12e161]:
+              - rowheader [ref=f12e162]:
+                - button "Haryana" [ref=f12e163]
+              - cell "—" [ref=f12e164]
+              - cell "Nil" [ref=f12e165]
+            - row [ref=f12e166]:
+              - rowheader [ref=f12e167]:
+                - button "Himachal Pradesh" [ref=f12e168]
+              - cell "—" [ref=f12e169]
+              - cell "Nil" [ref=f12e170]
+            - row [ref=f12e171]:
+              - rowheader [ref=f12e172]:
+                - button "Jammu & Kashmir" [ref=f12e173]
+                - text: UT
+              - cell "—" [ref=f12e174]
+              - cell "Nil" [ref=f12e175]
+            - row [ref=f12e176]:
+              - rowheader [ref=f12e177]:
+                - button "Jharkhand" [ref=f12e178]
+              - cell "₹150" [ref=f12e179]
+              - cell "₹1,800" [ref=f12e180]
+            - row [ref=f12e181]:
+              - rowheader [ref=f12e182]:
+                - button "Karnataka" [ref=f12e183]
+              - cell "₹200" [ref=f12e184]
+              - cell "₹2,400" [ref=f12e185]
+            - row [ref=f12e186]:
+              - rowheader [ref=f12e187]:
+                - button "Kerala" [ref=f12e188]
+              - cell "₹208" [ref=f12e189]
+              - cell "₹2,496" [ref=f12e190]
+            - row [ref=f12e191]:
+              - rowheader [ref=f12e192]:
+                - button "Ladakh" [ref=f12e193]
+                - text: UT
+              - cell "—" [ref=f12e194]
+              - cell "Nil" [ref=f12e195]
+            - row [ref=f12e196]:
+              - rowheader [ref=f12e197]:
+                - button "Lakshadweep" [ref=f12e198]
+                - text: UT
+              - cell "—" [ref=f12e199]
+              - cell "Nil" [ref=f12e200]
+            - row [ref=f12e201]:
+              - rowheader [ref=f12e202]:
+                - button "Madhya Pradesh" [ref=f12e203]
+              - cell "₹208" [ref=f12e204]
+              - cell "₹2,496" [ref=f12e205]
+            - row [ref=f12e206]:
+              - rowheader [ref=f12e207]:
+                - button "Maharashtra" [ref=f12e208]
+              - cell "₹200" [ref=f12e209]
+              - cell "₹2,500" [ref=f12e210]
+            - row [ref=f12e211]:
+              - rowheader [ref=f12e212]:
+                - button "Manipur" [ref=f12e213]
+              - cell "₹200" [ref=f12e214]
+              - cell "₹2,400" [ref=f12e215]
+            - row [ref=f12e216]:
+              - rowheader [ref=f12e217]:
+                - button "Meghalaya" [ref=f12e218]
+              - cell "₹200" [ref=f12e219]
+              - cell "₹2,400" [ref=f12e220]
+            - row [ref=f12e221]:
+              - rowheader [ref=f12e222]:
+                - button "Mizoram" [ref=f12e223]
+              - cell "₹208" [ref=f12e224]
+              - cell "₹2,496" [ref=f12e225]
+            - row [ref=f12e226]:
+              - rowheader [ref=f12e227]:
+                - button "Nagaland" [ref=f12e228]
+              - cell "₹200" [ref=f12e229]
+              - cell "₹2,400" [ref=f12e230]
+            - row [ref=f12e231]:
+              - rowheader [ref=f12e232]:
+                - button "Odisha" [ref=f12e233]
+              - cell "₹200" [ref=f12e234]
+              - cell "₹2,400" [ref=f12e235]
+            - row [ref=f12e236]:
+              - rowheader [ref=f12e237]:
+                - button "Puducherry" [ref=f12e238]
+                - text: UT
+              - cell "₹208" [ref=f12e239]
+              - cell "₹2,496" [ref=f12e240]
+            - row [ref=f12e241]:
+              - rowheader [ref=f12e242]:
+                - button "Punjab" [ref=f12e243]
+              - cell "—" [ref=f12e244]
+              - cell "Nil" [ref=f12e245]
+            - row [ref=f12e246]:
+              - rowheader [ref=f12e247]:
+                - button "Rajasthan" [ref=f12e248]
+              - cell "—" [ref=f12e249]
+              - cell "Nil" [ref=f12e250]
+            - row [ref=f12e251]:
+              - rowheader [ref=f12e252]:
+                - button "Sikkim" [ref=f12e253]
+              - cell "₹200" [ref=f12e254]
+              - cell "₹2,400" [ref=f12e255]
+            - row [ref=f12e256]:
+              - rowheader [ref=f12e257]:
+                - button "Tamil Nadu" [ref=f12e258]
+              - cell "₹208" [ref=f12e259]
+              - cell "₹2,496" [ref=f12e260]
+            - row [ref=f12e261]:
+              - rowheader [ref=f12e262]:
+                - button "Telangana" [ref=f12e263]
+              - cell "₹200" [ref=f12e264]
+              - cell "₹2,400" [ref=f12e265]
+            - row [ref=f12e266]:
+              - rowheader [ref=f12e267]:
+                - button "Tripura" [ref=f12e268]
+              - cell "₹208" [ref=f12e269]
+              - cell "₹2,496" [ref=f12e270]
+            - row [ref=f12e271]:
+              - rowheader [ref=f12e272]:
+                - button "Uttar Pradesh" [ref=f12e273]
+              - cell "—" [ref=f12e274]
+              - cell "Nil" [ref=f12e275]
+            - row [ref=f12e276]:
+              - rowheader [ref=f12e277]:
+                - button "Uttarakhand" [ref=f12e278]
+              - cell "—" [ref=f12e279]
+              - cell "Nil" [ref=f12e280]
+            - row [ref=f12e281]:
+              - rowheader [ref=f12e282]:
+                - button "West Bengal" [ref=f12e283]
+              - cell "₹200" [ref=f12e284]
+              - cell "₹2,400" [ref=f12e285]
+    - generic [ref=f12e287]:
+      - generic [ref=f12e288]:
+        - heading "A state tax, not a national one" [level=2] [ref=f12e289]
+        - paragraph [ref=f12e290]: Professional tax is levied by state governments on the exercise of a profession, trade or employment. There is no national rate and no national slab table, which is why a single “professional tax calculator” that asks only for your salary cannot be right.
+        - paragraph [ref=f12e291]:
+          - text: "The consequence most often got wrong:"
+          - strong [ref=f12e292]: 17 states and union territories levy nothing at all.
+          - text: Zero is a correct answer, not a missing one. A payroll system that quietly falls back to a default state when yours is unset is deducting a tax that does not exist and filing a return nobody asked for.
+        - heading "The ₹2,500 ceiling explains the odd numbers" [level=2] [ref=f12e293]
+        - paragraph [ref=f12e294]: Article 276(2) of the Constitution caps professional tax at ₹2,500 per person per year. Every strange-looking slab is a state working backwards from that limit — including Maharashtra’s ₹200 monthly charge with a ₹300 February, which lands exactly on ₹2,500 over twelve months.
+        - paragraph [ref=f12e295]: The February rule applies to the top band only. Applying it across every slab is a common bug, and it overcharges lower earners who were never near the ceiling the rule exists to reach.
+        - heading "Why this table is generated, not typed" [level=2] [ref=f12e296]
+        - paragraph [ref=f12e297]: The slabs on this page are extracted directly from the CareVance payroll engine by a script, not transcribed by hand. Professional tax tables drift constantly, and a calculator that disagrees with the engine behind it would be worse than no calculator at all — so there is only one copy of these numbers, and this page reads it.
+      - generic [ref=f12e298]:
+        - paragraph [ref=f12e299]: Where this arithmetic comes from
+        - paragraph [ref=f12e300]: PTStateService::STATE_CONFIGS, read directly from the product and regenerated by a sync script rather than retyped. The February special rate and the top-band-only rule come from PTStateService::calculate.
+        - paragraph [ref=f12e301]: This calculator runs the same rules as the CareVance payroll engine, ported and spot-checked against it. FY 2025-26 figures. It is not tax advice, and an unusual situation deserves an accountant rather than a web form.
+    - generic [ref=f12e303]:
+      - heading "Questions" [level=2] [ref=f12e304]
+      - generic [ref=f12e305]:
+        - group [ref=f12e306]:
+          - generic "Which states do not levy professional tax?" [ref=f12e307] [cursor=pointer]
+        - group [ref=f12e310]:
+          - generic "Why does Maharashtra charge more in February?" [ref=f12e311] [cursor=pointer]
+        - group [ref=f12e314]:
+          - generic "Which state applies if my company and I are in different ones?" [ref=f12e315] [cursor=pointer]
+        - group [ref=f12e318]:
+          - generic "Is professional tax deductible from my income tax?" [ref=f12e319] [cursor=pointer]
+        - group [ref=f12e322]:
+          - generic "Is there a maximum anyone can pay?" [ref=f12e323] [cursor=pointer]
+      - generic [ref=f12e326]:
+        - paragraph [ref=f12e327]: Related calculators
+        - list [ref=f12e328]:
+          - listitem [ref=f12e329]:
+            - link "Take-home salary" [ref=f12e330] [cursor=pointer]:
+              - /url: /tools/take-home-salary-calculator
+          - listitem [ref=f12e331]:
+            - link "Salary breakup" [ref=f12e332] [cursor=pointer]:
+              - /url: /tools/salary-breakup-calculator
+      - generic [ref=f12e333]:
+        - paragraph [ref=f12e334]: This is one rule. The engine behind it runs all of them.
+        - paragraph [ref=f12e335]: CareVance computes PF, ESI, professional tax across 37 states, and cumulative TDS on either regime — then generates the returns and the bank file from the same run.
+        - generic [ref=f12e336]:
+          - link "See the payroll engine" [ref=f12e337] [cursor=pointer]:
+            - /url: /product/payroll
+          - link "Book a demo" [ref=f12e338] [cursor=pointer]:
+            - /url: /contact?intent=demo
+  - contentinfo [ref=f12e339]:
+    - generic [ref=f12e340]:
+      - generic [ref=f12e341]:
+        - generic [ref=f12e342]:
+          - generic [ref=f12e343]: CareVance
+          - paragraph [ref=f12e350]: Indian HR and payroll where the evidence of work and the payslip are the same system.
+          - paragraph [ref=f12e351]:
+            - link "sales@carevance.com" [ref=f12e352] [cursor=pointer]:
+              - /url: mailto:sales@carevance.com
+        - generic [ref=f12e353]:
+          - generic [ref=f12e354]:
+            - paragraph [ref=f12e355]: Product
+            - list [ref=f12e356]:
+              - listitem [ref=f12e357]:
+                - link "Platform overview" [ref=f12e358] [cursor=pointer]:
+                  - /url: /product
+              - listitem [ref=f12e359]:
+                - link "Payroll" [ref=f12e360] [cursor=pointer]:
+                  - /url: /product/payroll
+              - listitem [ref=f12e361]:
+                - link "Time & attendance" [ref=f12e362] [cursor=pointer]:
+                  - /url: /product/time-attendance
+              - listitem [ref=f12e363]:
+                - link "Compliance & filings" [ref=f12e364] [cursor=pointer]:
+                  - /url: /product/compliance
+              - listitem [ref=f12e365]:
+                - link "Core HR" [ref=f12e366] [cursor=pointer]:
+                  - /url: /product/core-hr
+              - listitem [ref=f12e367]:
+                - link "Reports & controls" [ref=f12e368] [cursor=pointer]:
+                  - /url: /product/reports
+              - listitem [ref=f12e369]:
+                - link "Leave" [ref=f12e370] [cursor=pointer]:
+                  - /url: /product/leave
+              - listitem [ref=f12e371]:
+                - link "Performance" [ref=f12e372] [cursor=pointer]:
+                  - /url: /product/performance
+              - listitem [ref=f12e373]:
+                - link "Expenses & FBP" [ref=f12e374] [cursor=pointer]:
+                  - /url: /product/expenses-fbp
+              - listitem [ref=f12e375]:
+                - link "Mobile & desktop apps" [ref=f12e376] [cursor=pointer]:
+                  - /url: /product/mobile
+          - generic [ref=f12e377]:
+            - paragraph [ref=f12e378]: Solutions
+            - list [ref=f12e379]:
+              - listitem [ref=f12e380]:
+                - link "Staffing agencies" [ref=f12e381] [cursor=pointer]:
+                  - /url: /solutions/staffing-agencies
+              - listitem [ref=f12e382]:
+                - link "IT services" [ref=f12e383] [cursor=pointer]:
+                  - /url: /solutions/it-services
+              - listitem [ref=f12e384]:
+                - link "Small business" [ref=f12e385] [cursor=pointer]:
+                  - /url: /solutions/small-business
+              - listitem [ref=f12e386]:
+                - link "vs. spreadsheet payroll" [ref=f12e387] [cursor=pointer]:
+                  - /url: /compare/spreadsheet-payroll
+              - listitem [ref=f12e388]:
+                - link "Keka alternative" [ref=f12e389] [cursor=pointer]:
+                  - /url: /compare/keka-alternative
+              - listitem [ref=f12e390]:
+                - link "greytHR alternative" [ref=f12e391] [cursor=pointer]:
+                  - /url: /compare/greythr-alternative
+              - listitem [ref=f12e392]:
+                - link "Pricing" [ref=f12e393] [cursor=pointer]:
+                  - /url: /pricing
+          - generic [ref=f12e394]:
+            - paragraph [ref=f12e395]: Free tools
+            - list [ref=f12e396]:
+              - listitem [ref=f12e397]:
+                - link "Salary breakup calculator" [ref=f12e398] [cursor=pointer]:
+                  - /url: /tools/salary-breakup-calculator
+              - listitem [ref=f12e399]:
+                - link "Take-home salary calculator" [ref=f12e400] [cursor=pointer]:
+                  - /url: /tools/take-home-salary-calculator
+              - listitem [ref=f12e401]:
+                - link "Gratuity calculator" [ref=f12e402] [cursor=pointer]:
+                  - /url: /tools/gratuity-calculator
+              - listitem [ref=f12e403]:
+                - link "HRA exemption calculator" [ref=f12e404] [cursor=pointer]:
+                  - /url: /tools/hra-exemption-calculator
+              - listitem [ref=f12e405]:
+                - link "Professional tax by state" [ref=f12e406] [cursor=pointer]:
+                  - /url: /tools/professional-tax-by-state
+          - generic [ref=f12e407]:
+            - paragraph [ref=f12e408]: Company
+            - list [ref=f12e409]:
+              - listitem [ref=f12e410]:
+                - link "Why CareVance" [ref=f12e411] [cursor=pointer]:
+                  - /url: /why-carevance
+              - listitem [ref=f12e412]:
+                - link "Security" [ref=f12e413] [cursor=pointer]:
+                  - /url: /security
+              - listitem [ref=f12e414]:
+                - link "How we count" [ref=f12e415] [cursor=pointer]:
+                  - /url: /methodology
+              - listitem [ref=f12e416]:
+                - link "Guides" [ref=f12e417] [cursor=pointer]:
+                  - /url: /resources
+              - listitem [ref=f12e418]:
+                - link "Changelog" [ref=f12e419] [cursor=pointer]:
+                  - /url: /changelog
+              - listitem [ref=f12e420]:
+                - link "About" [ref=f12e421] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=f12e422]:
+                - link "Contact" [ref=f12e423] [cursor=pointer]:
+                  - /url: /contact
+              - listitem [ref=f12e424]:
+                - link "Careers" [ref=f12e425] [cursor=pointer]:
+                  - /url: /careers
+      - generic [ref=f12e426]:
+        - paragraph [ref=f12e427]:
+          - text: Every figure on this site is counted from the CareVance codebase, not estimated.
+          - link "See how we count" [ref=f12e428] [cursor=pointer]:
+            - /url: /methodology
+          - text: . We publish no customer counts, review scores or certification badges, because we have not earned them yet. Prices exclude 18% GST.
+        - generic [ref=f12e429]:
+          - paragraph [ref=f12e430]: © 2026 CareVance. All rights reserved.
+          - list [ref=f12e431]:
+            - listitem [ref=f12e432]:
+              - link "Privacy policy" [ref=f12e433] [cursor=pointer]:
+                - /url: /legal/privacy
+            - listitem [ref=f12e434]:
+              - link "Terms of service" [ref=f12e435] [cursor=pointer]:
+                - /url: /legal/terms
+            - listitem [ref=f12e436]:
+              - link "Data processing addendum" [ref=f12e437] [cursor=pointer]:
+                - /url: /legal/dpa

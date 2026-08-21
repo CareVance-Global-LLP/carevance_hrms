@@ -58,7 +58,7 @@ class IndianIdValidationService
         if (!preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/', $pan)) {
             return [
                 'valid' => false,
-                'error' => 'PAN must be in format: ABCDE1234F (5 letters, 4 digits, 1 letter)',
+                'error' => 'PAN must be in format: ABCPE1234F (5 letters, 4 digits, 1 letter)',
                 'normalized' => $pan
             ];
         }

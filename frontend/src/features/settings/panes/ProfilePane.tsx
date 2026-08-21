@@ -4,7 +4,7 @@ import { COMMON_TIMEZONES } from '@/lib/timezones';
 import { resolveUserRoleLabel } from '@/lib/permissions';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
-import MyAssetsCard from '@/components/assets/MyAssetsCard';
+import EmployeeDetailsSection from '@/components/EmployeeDetailsSection';
 import SettingsCard from '../components/SettingsCard';
 import CompletenessRing from '../components/CompletenessRing';
 import ImageDropzone from '../components/ImageDropzone';
@@ -318,7 +318,35 @@ export default function ProfilePane({ controller }: { controller: SettingsContro
         </div>
       </SettingsCard>
 
-      <MyAssetsCard userId={user?.id} />
+      {/*
+        The employee's own KYC.
+
+        These were admin-only until now: PAN, Aadhaar and a bank account are all
+        declared employee-owned by the profile registry — PAN and bank are even
+        requiredForPayroll — yet the only screen that could enter them was behind
+        an admin route, so payroll waited on somebody transcribing an account
+        number out of an email.
+
+        Rendered by the same component the admin employee-details page uses,
+        deliberately narrowed. `personal` is excluded because the cards above
+        already own it, and `work` because an employee does not set their own
+        employee code or joining date. `selfService` swaps the id-addressed
+        admin endpoints for the /me/* ones the employee is allowed to call.
+
+        Education and experience ARE here, which reverses the note on the admin
+        education routes about a person not attesting to their own certificate.
+        That was a deliberate call: a joiner recording their own degree and
+        attaching the scan is how onboarding actually runs, and the certificate
+        is still evidence anybody can open. HR verifies; they no longer type it.
+      */}
+      {user?.id ? (
+        <EmployeeDetailsSection
+          userId={user.id}
+          selfService
+          editable
+          sections={['government', 'bank', 'education', 'experience', 'documents']}
+        />
+      ) : null}
     </div>
   );
 }

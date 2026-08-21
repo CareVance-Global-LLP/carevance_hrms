@@ -85,11 +85,19 @@ class UserController extends Controller
                 'customRole',
                 'departmentTeamMemberships:id,name,department_id',
                 'departmentTeamManagerships:id,name,department_id',
-                // Profile completeness counts PAN and a bank account among its
-                // required fields, so the roster cannot tell who is actually
-                // incomplete unless these two ship with the list. Columns are
-                // narrowed to what completeness needs — no account numbers.
-                'employeeGovernmentIds:id,user_id,id_type,id_number',
+                // Profile completeness counts PAN, Aadhaar and a bank account
+                // among its required fields, so the roster cannot tell who is
+                // actually incomplete unless these two ship with the list.
+                //
+                // Neither carries its number. Completeness asks whether the fact
+                // is ON FILE, which the row itself answers, and selecting
+                // id_number here did two bad things: it put every employee's PAN
+                // and Aadhaar into a list payload, and because the column is
+                // `encrypted`, toArray() decrypted all of them — so one row that
+                // would not decrypt returned 500 for the ENTIRE employee list
+                // rather than degrading. A roster has no business reading PII it
+                // only needs to count.
+                'employeeGovernmentIds:id,user_id,id_type',
                 'employeeBankAccounts:id,user_id',
             ])
             ->when(!$directory && $currentUser->getHierarchyLevel() > Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['admin'] && $currentUser->getHierarchyLevel() < Organization::SYSTEM_ROLE_HIERARCHY_LEVELS['employee'], function ($query) use ($currentUser) {
@@ -188,6 +196,50 @@ class UserController extends Controller
         return response()->json($payload);
     }
 
+    /**
+     * A temporary password that would itself pass the policy it hands over.
+     *
+     * `Str::random(12)` was alphanumeric, and being minted after validation it
+     * bypassed the rules entirely — so the credential an admin reads out to a
+     * new joiner could not have been typed into the very form that accepts it.
+     * That asymmetry is its own support question.
+     *
+     * Built by construction rather than by generate-and-check: one character
+     * drawn from each required class, the remainder from the full set, then
+     * shuffled so the guaranteed characters are not always in the same
+     * positions. `random_int` throughout, because `rand()` is not suitable for
+     * anything somebody logs in with.
+     */
+    private static function generateTemporaryPassword(int $length = 16): string
+    {
+        $lower = 'abcdefghijkmnpqrstuvwxyz';
+        $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        // No 0/O/1/l/I anywhere above or here: this gets read aloud or typed
+        // from a note, and a password nobody can transcribe is a reset request.
+        $digits = '23456789';
+        $symbols = '!@#$%^&*?-_';
+
+        $pool = $lower.$upper.$digits.$symbols;
+
+        $characters = [
+            $lower[random_int(0, strlen($lower) - 1)],
+            $upper[random_int(0, strlen($upper) - 1)],
+            $digits[random_int(0, strlen($digits) - 1)],
+            $symbols[random_int(0, strlen($symbols) - 1)],
+        ];
+
+        for ($i = count($characters); $i < $length; $i++) {
+            $characters[] = $pool[random_int(0, strlen($pool) - 1)];
+        }
+
+        for ($i = count($characters) - 1; $i > 0; $i--) {
+            $j = random_int(0, $i);
+            [$characters[$i], $characters[$j]] = [$characters[$j], $characters[$i]];
+        }
+
+        return implode('', $characters);
+    }
+
     public function store(Request $request)
     {
         $currentUser = $request->user();
@@ -284,7 +336,7 @@ class UserController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?? null,
-            'password' => Hash::make($suppliedPassword ?? Str::random(12)),
+            'password' => Hash::make($suppliedPassword ?? self::generateTemporaryPassword()),
             'role' => $selectedRole,
             'organization_id' => $currentUser->organization_id,
             'settings' => $normalizedSettings,

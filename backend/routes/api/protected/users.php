@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\DepartmentTeamController;
 use App\Http\Controllers\Api\EmployeeWorkspaceController;
+use App\Http\Controllers\Api\MyEmployeeRecordController;
 use App\Http\Controllers\Api\ReportGroupController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\DocumentValidationController;
@@ -71,3 +72,33 @@ Route::middleware('role:admin,manager')->group(function () {
 
 // Employees can update their own profile (controller's canEditProfile enforces owner-only)
 Route::put('/employees/{id}/profile', [EmployeeWorkspaceController::class, 'updateProfile']);
+
+/*
+ * The employee's own bank details, government IDs and documents.
+ *
+ * Everything above addresses a person by id and is gated on role:admin,manager.
+ * These take no id at all — MyEmployeeRecordController resolves the subject
+ * from the authenticated user — so they cannot be pointed at somebody else even
+ * if an authorization helper were wrong. That is why this is a separate surface
+ * rather than a relaxed owner check on the id-addressed routes.
+ *
+ * Work info and education stay admin-only above, deliberately: an employee
+ * should not set their own joining date, and should not attest to their own
+ * certificates.
+ */
+Route::get('/me/employee-records', [MyEmployeeRecordController::class, 'index']);
+Route::post('/me/government-ids', [MyEmployeeRecordController::class, 'storeGovernmentId']);
+Route::post('/me/bank-accounts', [MyEmployeeRecordController::class, 'storeBankAccount']);
+Route::post('/me/documents', [MyEmployeeRecordController::class, 'storeDocument']);
+/*
+ * Qualifications, self-service.
+ *
+ * The admin routes above call these HR-owned. That was relaxed on purpose: a
+ * joiner recording their own degree and attaching the certificate is how
+ * onboarding actually runs. HR still verifies; they no longer have to type it.
+ */
+Route::post('/me/educations', [MyEmployeeRecordController::class, 'storeEducation']);
+Route::delete('/me/educations/{educationId}', [MyEmployeeRecordController::class, 'destroyEducation'])
+    ->whereNumber('educationId');
+Route::get('/me/documents/{documentId}/download', [MyEmployeeRecordController::class, 'downloadDocument'])
+    ->whereNumber('documentId');

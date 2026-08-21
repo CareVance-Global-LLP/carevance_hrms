@@ -84,7 +84,17 @@ class SettingsController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:120',
             'last_name' => 'required|string|max:120',
-            'display_name' => 'required|string|max:120',
+            /*
+             * Nullable, and derived below when absent.
+             *
+             * This was `required` while ProfileOnboardingPage never collected
+             * it, never sent it, and had no such field on its form type — so
+             * every first-login submit returned 422 naming a field that was not
+             * on the screen, and the only way past the page was Skip. The other
+             * writer of this same row (EmployeeWorkspaceController::updateProfile)
+             * has always treated it as optional.
+             */
+            'display_name' => 'nullable|string|max:120',
             'gender' => 'required|string|max:32',
             'date_of_birth' => 'required|date',
             'phone' => 'required|string|max:64',
@@ -107,6 +117,18 @@ class SettingsController extends Controller
             'emergency_contact_number' => 'required|string|max:64',
             'emergency_contact_relationship' => 'required|string|max:120',
         ]);
+
+        /*
+         * A display name is what you call somebody, so the names they just typed
+         * are the answer unless they said otherwise. Filled here rather than
+         * left null because reports and payslips read this column, and an empty
+         * one would show a blank where a name belongs.
+         */
+        if (trim((string) ($validated['display_name'] ?? '')) === '') {
+            $validated['display_name'] = trim(
+                trim((string) $validated['first_name']).' '.trim((string) $validated['last_name'])
+            );
+        }
 
         $profile = EmployeeProfile::query()->firstOrNew([
             'organization_id' => $user->organization_id,

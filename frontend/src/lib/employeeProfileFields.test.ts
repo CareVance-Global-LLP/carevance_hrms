@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ONBOARDING_GROUPS,
   PROFILE_FIELDS,
   groupMissing,
   profileCompleteness,
@@ -62,6 +63,60 @@ describe('employee profile registry', () => {
     expect(result.missing.length).toBeGreaterThan(10);
     expect(result.missing.map((field) => field.key)).not.toContain('pan');
     expect(result.missing.map((field) => field.key)).not.toContain('bank_account');
+  });
+
+  /*
+   * The roster deliberately does not carry id_number.
+   *
+   * /api/users eager-loads government ids only to answer "is a PAN on file",
+   * and shipping the number itself put every employee's Aadhaar and PAN into a
+   * list payload — as well as making the whole endpoint 500 when one row could
+   * not be decrypted. Presence is proven by the row, exactly as bank_account
+   * has always proven it with `[0]?.id`.
+   */
+  it('counts a government ID as on file from the row alone, without its number', () => {
+    const result = profileCompleteness({
+      government_ids: [
+        { id: 1, id_type: 'PAN' },
+        { id: 2, id_type: 'AADHAAR' },
+      ],
+    });
+
+    expect(result.missing.map((field) => field.key)).not.toContain('pan');
+    expect(result.missing.map((field) => field.key)).not.toContain('aadhaar');
+  });
+
+  it('still reports a government ID as missing when no row of that type exists', () => {
+    const result = profileCompleteness({ government_ids: [{ id: 1, id_type: 'PAN' }] });
+
+    expect(result.missing.map((field) => field.key)).not.toContain('pan');
+    expect(result.missing.map((field) => field.key)).toContain('aadhaar');
+  });
+
+  /*
+   * The first-login form collects profile fields only.
+   *
+   * It scopes its progress bar to employee-owned fields so a joiner is not
+   * blamed for HR's — but pan, aadhaar and bank_account are employee-owned too
+   * and live on a different screen, so counting them meant the bar could never
+   * reach 100% no matter what the joiner typed.
+   */
+  it('lets the onboarding scope reach 100% from the fields that form collects', () => {
+    const result = profileCompleteness(
+      { employee_profile: complete.employee_profile },
+      { owner: 'employee', group: ONBOARDING_GROUPS }
+    );
+
+    expect(result.isComplete).toBe(true);
+    expect(result.percentage).toBe(100);
+  });
+
+  it('still counts PAN, Aadhaar and bank for the unscoped view HR sees', () => {
+    const result = profileCompleteness({ employee_profile: complete.employee_profile });
+
+    expect(result.missing.map((field) => field.key)).toEqual(
+      expect.arrayContaining(['pan', 'aadhaar', 'bank_account'])
+    );
   });
 
   it('reads profile details under either casing the API might return', () => {

@@ -69,6 +69,18 @@ class ChecklistItem extends Model
         return $this->belongsTo(AssetAssignment::class);
     }
 
+    /**
+     * The template row this item was materialised from.
+     *
+     * `document_category` — which decides what an upload has to be to satisfy
+     * this item — lives on the template item rather than being copied onto each
+     * materialised row, so it is only reachable through here.
+     */
+    public function checklistTemplateItem(): BelongsTo
+    {
+        return $this->belongsTo(ChecklistTemplateItem::class, 'checklist_template_item_id');
+    }
+
     public function document(): BelongsTo
     {
         return $this->belongsTo(EmployeeDocument::class, 'employee_document_id');

@@ -733,6 +733,8 @@ export const invitationApi = {
       project_ids?: number[];
       settings?: Record<string, any>;
       job_title?: string;
+      /** The organisation's own identifier, carried per row. */
+      employee_code?: string;
       joining_date?: string;
     }>;
     default_group_ids?: number[];
@@ -877,12 +879,21 @@ export const employeeWorkspaceApi = {
     });
   },
 
-  uploadDocument: (id: number | string, data: { title: string; category: string; review_status?: string; notes?: string; file: File }) => {
+  uploadDocument: (id: number | string, data: {
+    title: string;
+    category: string;
+    review_status?: string;
+    notes?: string;
+    /** Whether the person this document is about may see it. Off unless HR says so. */
+    visible_to_employee?: boolean;
+    file: File;
+  }) => {
     const formData = new FormData();
     formData.append('title', data.title);
     formData.append('category', data.category);
     if (data.review_status) formData.append('review_status', data.review_status);
     if (data.notes) formData.append('notes', data.notes);
+    formData.append('visible_to_employee', data.visible_to_employee ? '1' : '0');
     formData.append('file', data.file);
     return api.post<EmployeeDocumentRecord>(`/employees/${id}/documents`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -891,6 +902,107 @@ export const employeeWorkspaceApi = {
 
   downloadDocument: (employeeId: number | string, documentId: number) =>
     api.get<Blob>(`/employees/${employeeId}/documents/${documentId}/download`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
+};
+
+/**
+ * The four keys `/me/employee-records` returns — a strict subset of the
+ * workspace payload, so a component can render either without a mapping layer.
+ */
+export type MyEmployeeRecordsPayload = Pick<
+  EmployeeWorkspacePayload,
+  'employee' | 'about' | 'bank_accounts' | 'government_ids' | 'educations' | 'documents'
+>;
+
+/**
+ * The signed-in employee's own bank details, government IDs and documents.
+ *
+ * Deliberately a separate surface from `employeeWorkspaceApi` rather than the
+ * same calls with the caller's own id. Every route above addresses a person by
+ * id and is gated on role:admin,manager; these take no id at all, so they
+ * cannot be pointed at anybody else. Method names mirror the ones above so the
+ * shared EmployeeDetailsSection can swap between the two without a mapping
+ * layer, and the read returns the same keys the workspace payload uses.
+ *
+ * `documents` here is only what the employee uploaded themselves — see the
+ * controller for why, and for what that costs them.
+ */
+export const myEmployeeRecordApi = {
+  getRecords: () => api.get<MyEmployeeRecordsPayload>('/me/employee-records'),
+
+  saveGovernmentId: (data: Record<string, any> & { proof_file?: File | null }) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (key === 'proof_file' && value instanceof File) {
+        formData.append('proof_file', value);
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return api.post<EmployeeGovernmentIdRecord>('/me/government-ids', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  saveBankAccount: (data: Record<string, any> & { proof_file?: File | null }) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (key === 'proof_file' && value instanceof File) {
+        formData.append('proof_file', value);
+        return;
+      }
+      if (typeof value === 'boolean') {
+        formData.append(key, value ? '1' : '0');
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return api.post<EmployeeBankAccountRecord>('/me/bank-accounts', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  uploadDocument: (data: { title: string; category: string; notes?: string; file: File }) => {
+    const formData = new FormData();
+    formData.append('title', data.title);
+    formData.append('category', data.category);
+    if (data.notes) formData.append('notes', data.notes);
+    formData.append('file', data.file);
+    return api.post<EmployeeDocumentRecord>('/me/documents', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  /**
+   * Record one of your own qualifications, certificate and all.
+   *
+   * Multipart for the same reason the government-ID save is: the facts and
+   * their evidence travel together, so a saved row and its certificate cannot
+   * diverge.
+   */
+  saveEducation: (data: Record<string, any> & { certificate_file?: File | null }) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      if (key === 'certificate_file' && value instanceof File) {
+        formData.append('certificate_file', value);
+        return;
+      }
+      formData.append(key, String(value));
+    });
+    return api.post<EmployeeEducationRecord>('/me/educations', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  deleteEducation: (educationId: number) =>
+    api.delete<{ message: string }>(`/me/educations/${educationId}`),
+
+  downloadDocument: (documentId: number) =>
+    api.get<Blob>(`/me/documents/${documentId}/download`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
     }),
 };

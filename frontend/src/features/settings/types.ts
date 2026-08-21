@@ -1,5 +1,6 @@
 export type SettingsTabId =
   | 'profile'
+  | 'assets'
   | 'notifications'
   | 'appearance'
   | 'security'

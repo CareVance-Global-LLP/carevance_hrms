@@ -28,8 +28,16 @@ const REQUIREMENTS: Array<{ key: keyof PasswordChecks; label: string }> = [
 const SEGMENT_TONE = ['bg-red-500', 'bg-amber-500', 'bg-amber-500', 'bg-emerald-500'];
 
 /**
- * Tells you whether the password will be accepted before you submit it. The
- * previous page discovered both "too weak" and "does not match" by round-trip.
+ * Tells you whether the password will be accepted before you submit it.
+ *
+ * Worth stating plainly, because this component was the ONLY place in the app
+ * that named the rules at all: accept-invite, reset-password and owner-signup
+ * showed a bare box, so somebody setting their first password learned the policy
+ * by being refused. It renders on all four now.
+ *
+ * The breach check is a note rather than a fifth tick on purpose. It cannot be
+ * evaluated in the browser — it is a server-side k-anonymity lookup — and a
+ * checkbox that never goes green reads as a rule you have failed.
  */
 export default function PasswordStrength({ value }: { value: string }) {
   const { checks, score } = evaluatePassword(value);
@@ -66,6 +74,10 @@ export default function PasswordStrength({ value }: { value: string }) {
           );
         })}
       </ul>
+      <p className="mt-2 text-xs text-slate-500">
+        Also checked against known data breaches when you submit — a password found in one
+        is refused even if it meets everything above.
+      </p>
     </div>
   );
 }

@@ -1,0 +1,529 @@
+- generic [active] [ref=f11e1]:
+  - banner [ref=f11e2]:
+    - link "Skip to content" [ref=f11e3] [cursor=pointer]:
+      - /url: "#main"
+    - navigation "Primary" [ref=f11e5]:
+      - link "CareVance home" [ref=f11e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f11e7]: CareVance
+      - generic [ref=f11e14]:
+        - button "Product" [ref=f11e16]
+        - button "Solutions" [ref=f11e20]
+        - link "Pricing" [ref=f11e23] [cursor=pointer]:
+          - /url: /pricing
+        - button "Free tools" [ref=f11e25]
+        - button "Resources" [ref=f11e29]
+      - generic [ref=f11e32]:
+        - button "Switch theme" [ref=f11e33]
+        - link "Sign in" [ref=f11e36] [cursor=pointer]:
+          - /url: https://app.carevance.com/login
+        - link "See it live — 2 min" [ref=f11e37] [cursor=pointer]:
+          - /url: /product#tour
+        - link "Book a demo" [ref=f11e38] [cursor=pointer]:
+          - /url: /contact?intent=demo
+  - main [ref=f11e39]:
+    - generic [ref=f11e41]:
+      - generic [ref=f11e42]:
+        - paragraph [ref=f11e43]: Payroll
+        - heading "Indian payroll, and the arithmetic to prove it." [level=1] [ref=f11e44]
+        - paragraph [ref=f11e45]: Most payroll software will give you a number. The question that decides whether you trust it is whether the number can explain itself — which component moved, by how much, because of which rule, approved by whom. That is what this engine is built around.
+        - generic [ref=f11e46]:
+          - link "Book a 20-minute demo" [ref=f11e47] [cursor=pointer]:
+            - /url: /contact?intent=demo
+          - link "See pricing" [ref=f11e48] [cursor=pointer]:
+            - /url: /pricing
+      - generic [ref=f11e50]:
+        - generic [ref=f11e51]:
+          - generic [ref=f11e52]:
+            - paragraph [ref=f11e54]: Run status
+            - list [ref=f11e55]:
+              - listitem [ref=f11e56]:
+                - generic [ref=f11e57]: Draft
+                - generic [ref=f11e60]: then
+              - listitem [ref=f11e61]:
+                - generic [ref=f11e62]: Locked
+                - generic [ref=f11e65]: then
+              - listitem [ref=f11e66]:
+                - generic [ref=f11e67]: Approved
+                - generic [ref=f11e70]: then
+              - listitem [ref=f11e71]:
+                - generic [ref=f11e72]: Released
+                - generic [ref=f11e75]: then
+              - listitem [ref=f11e76]:
+                - generic [ref=f11e77]: Disbursed
+          - generic [ref=f11e80]:
+            - paragraph [ref=f11e82]: Statutory · this run
+            - list [ref=f11e83]:
+              - listitem [ref=f11e84]:
+                - generic [ref=f11e85]:
+                  - paragraph [ref=f11e86]: Provident Fund
+                  - paragraph [ref=f11e87]: 12% of ₹15,000 ceiling
+                - paragraph [ref=f11e88]: ₹1,800.00
+              - listitem [ref=f11e89]:
+                - generic [ref=f11e90]:
+                  - paragraph [ref=f11e91]: Employee State Insurance
+                  - paragraph [ref=f11e92]: gross above ₹21,000
+                - paragraph [ref=f11e93]: —
+              - listitem [ref=f11e94]:
+                - generic [ref=f11e95]:
+                  - paragraph [ref=f11e96]: Professional Tax
+                  - paragraph [ref=f11e97]: Maharashtra
+                - paragraph [ref=f11e98]: ₹200.00
+              - listitem [ref=f11e99]:
+                - generic [ref=f11e100]:
+                  - paragraph [ref=f11e101]: TDS
+                  - paragraph [ref=f11e102]: new regime, cumulative
+                - paragraph [ref=f11e103]: ₹6,704.03
+            - generic [ref=f11e104]:
+              - paragraph [ref=f11e105]: Total deductions
+              - paragraph [ref=f11e106]: ₹8,704.03
+        - generic [ref=f11e107]:
+          - generic [ref=f11e108]:
+            - paragraph [ref=f11e109]: Payroll run · August 2026
+            - generic [ref=f11e110]: Approved
+          - table [ref=f11e111]:
+            - rowgroup [ref=f11e112]:
+              - row [ref=f11e113]:
+                - columnheader "Employee" [ref=f11e114]
+                - columnheader "Gross ₹" [ref=f11e115]
+                - columnheader "Net ₹" [ref=f11e116]
+            - rowgroup [ref=f11e117]:
+              - row [ref=f11e118]:
+                - cell "Priya Nair CV-0142 · Engineering" [ref=f11e119]:
+                  - generic [ref=f11e120]: Priya Nair
+                  - generic [ref=f11e121]: CV-0142 · Engineering
+                - cell "1,15,891" [ref=f11e122]
+                - cell "1,07,187" [ref=f11e123]
+              - row [ref=f11e124]:
+                - cell "Arjun Deshpande CV-0088 · Engineering" [ref=f11e125]:
+                  - generic [ref=f11e126]: Arjun Deshpande
+                  - generic [ref=f11e127]: CV-0088 · Engineering
+                - cell "92,450" [ref=f11e128]
+                - cell "86,121" [ref=f11e129]
+              - row [ref=f11e130]:
+                - cell "Fatima Sheikh CV-0211 · Finance" [ref=f11e131]:
+                  - generic [ref=f11e132]: Fatima Sheikh
+                  - generic [ref=f11e133]: CV-0211 · Finance
+                - cell "74,300" [ref=f11e134]
+                - cell "69,884" [ref=f11e135]
+              - row [ref=f11e136]:
+                - cell "Rohit Verma CV-0305 · Operations" [ref=f11e137]:
+                  - generic [ref=f11e138]: Rohit Verma
+                  - generic [ref=f11e139]: CV-0305 · Operations
+                - cell "41,200" [ref=f11e140]
+                - cell "38,947 Excluded from disbursement — bank details missing" [ref=f11e141]:
+                  - text: 38,947
+                  - generic "Excluded from disbursement — bank details missing" [ref=f11e142]
+              - row [ref=f11e143]:
+                - cell "Ananya Iyer CV-0117 · Design" [ref=f11e144]:
+                  - generic [ref=f11e145]: Ananya Iyer
+                  - generic [ref=f11e146]: CV-0117 · Design
+                - cell "68,900" [ref=f11e147]
+                - cell "64,512" [ref=f11e148]
+          - paragraph [ref=f11e149]: 1 person excluded from the bank file — bank details missing. Returned as an exclusion, never dropped.
+    - generic [ref=f11e151]:
+      - generic [ref=f11e152]:
+        - paragraph [ref=f11e153]: The run
+        - heading "Five states, each one stamped with who and when." [level=2] [ref=f11e154]
+        - paragraph [ref=f11e155]: A payroll run moves draft → locked → approved → released → disbursed. Every transition records the actor and the timestamp, and a closed run cannot be written to casually — there is a guard, and it names itself in the stack trace when something tries.
+      - generic [ref=f11e156]:
+        - generic [ref=f11e157]:
+          - generic [ref=f11e158]:
+            - paragraph [ref=f11e159]: Processing
+            - heading "Queued, pollable, and refused if you start it twice." [level=3] [ref=f11e160]
+            - paragraph [ref=f11e161]: Processing a run does not block a request for four minutes. It returns immediately with a progress handle, and the client polls until it finishes. Start a second run while one is in flight and you get a 409 rather than a queue position — two workers walking the same list would race to create the same payroll item.
+            - list [ref=f11e162]:
+              - listitem [ref=f11e163]:
+                - generic [ref=f11e166]: Returns 202 with a progress handle, not a four-minute request
+              - listitem [ref=f11e167]:
+                - generic [ref=f11e170]: A retry is deliberately not attempted — a partial run must not be re-entered
+              - listitem [ref=f11e171]:
+                - generic [ref=f11e174]: Failures are recorded on the run for a human, not swallowed
+            - generic [ref=f11e175]:
+              - paragraph [ref=f11e176]: "409"
+              - paragraph [ref=f11e177]: what a concurrent second start returns, rather than racing
+          - generic [ref=f11e179]:
+            - paragraph [ref=f11e181]: Run status
+            - list [ref=f11e182]:
+              - listitem [ref=f11e183]:
+                - generic [ref=f11e184]: Draft
+                - generic [ref=f11e187]: then
+              - listitem [ref=f11e188]:
+                - generic [ref=f11e189]: Locked
+                - generic [ref=f11e192]: then
+              - listitem [ref=f11e193]:
+                - generic [ref=f11e194]: Approved
+                - generic [ref=f11e197]: then
+              - listitem [ref=f11e198]:
+                - generic [ref=f11e199]: Released
+                - generic [ref=f11e202]: then
+              - listitem [ref=f11e203]:
+                - generic [ref=f11e204]: Disbursed
+        - generic [ref=f11e207]:
+          - generic [ref=f11e208]:
+            - paragraph [ref=f11e209]: Structure
+            - heading "CTC in, components out, and the total balances to the paisa." [level=3] [ref=f11e210]
+            - paragraph [ref=f11e211]: Salary structures are built from formula, slab and lookup components, with CTC range bands and pay groups on top. One component is designated the residual and absorbs whatever is left, so the sum returns to CTC exactly rather than approximately.
+            - list [ref=f11e212]:
+              - listitem [ref=f11e213]:
+                - generic [ref=f11e216]: Formula components are validated before they are saved
+              - listitem [ref=f11e217]:
+                - generic [ref=f11e220]: Employer PF and the gratuity provision sit inside the CTC envelope
+              - listitem [ref=f11e221]:
+                - generic [ref=f11e224]: Per-department templates, pay groups and CTC bands
+            - generic [ref=f11e225]:
+              - paragraph [ref=f11e226]: ₹1,20,000
+              - paragraph [ref=f11e227]: gross plus employer cost, back to monthly CTC exactly
+          - generic [ref=f11e229]:
+            - paragraph [ref=f11e231]: Employer cost · inside CTC
+            - list [ref=f11e232]:
+              - listitem [ref=f11e233]:
+                - generic [ref=f11e234]:
+                  - paragraph [ref=f11e235]: Employer PF
+                  - paragraph [ref=f11e236]: EPS ₹1,249.50 · EPF ₹550.50
+                - paragraph [ref=f11e237]: ₹1,800.00
+              - listitem [ref=f11e238]:
+                - generic [ref=f11e239]:
+                  - paragraph [ref=f11e240]: Gratuity provision
+                  - paragraph [ref=f11e241]: 4.81% of basic
+                - paragraph [ref=f11e242]: ₹2,308.80
+            - generic [ref=f11e243]:
+              - paragraph [ref=f11e244]: Gross + employer cost
+              - paragraph [ref=f11e245]: ₹1,20,000
+            - paragraph [ref=f11e246]: Balances to monthly CTC exactly. The residual component is what makes that true.
+    - generic [ref=f11e248]:
+      - generic [ref=f11e249]:
+        - paragraph [ref=f11e250]: Governed overrides
+        - heading "The module that made this product worth building." [level=2] [ref=f11e251]
+        - paragraph [ref=f11e252]: Every payroll system lets you override a component. The interesting question is what happens next — whether the system tells you what the change actually cost, and what it does when the change cannot work.
+      - generic [ref=f11e253]:
+        - generic [ref=f11e254]:
+          - generic [ref=f11e255]:
+            - paragraph [ref=f11e256]: Amplification
+            - heading "Raising Basic by ₹1 costs ₹1.668. The screen says so before you commit." [level=3] [ref=f11e257]
+            - paragraph [ref=f11e258]: HRA is derived from Basic. Employer PF is computed on it. The gratuity provision is 4.81% of it. All three sit inside the CTC envelope, so four quantities move together — and an admin who types ‘Basic 60,000’ expecting Special Allowance to drop by ₹12,000 watches it drop by ₹20,016. No product in this market shows that, which is exactly why an override screen needs a preview rather than a plain input.
+            - list [ref=f11e259]:
+              - listitem [ref=f11e260]:
+                - generic [ref=f11e263]: The preview names the absorbing component and its before and after
+              - listitem [ref=f11e264]:
+                - generic [ref=f11e267]: The residual role only ever falls to a taxable component
+              - listitem [ref=f11e268]:
+                - generic [ref=f11e271]: Two components claiming the residual is a configuration error, not a coin flip
+          - generic [ref=f11e273]:
+            - generic [ref=f11e274]:
+              - paragraph [ref=f11e275]: Override register
+              - generic [ref=f11e276]: Awaiting approval
+            - generic [ref=f11e277]:
+              - generic [ref=f11e278]:
+                - paragraph [ref=f11e279]: Component
+                - paragraph [ref=f11e280]: Basic
+                - paragraph [ref=f11e281]: Applied value
+                - paragraph [ref=f11e282]: ₹60,000
+                - paragraph [ref=f11e283]: Engine value
+                - paragraph [ref=f11e284]: ₹48,000
+              - generic [ref=f11e285]:
+                - paragraph [ref=f11e286]: Amplification · 1.668×
+                - paragraph [ref=f11e287]: Raising Basic by ₹12,000 costs ₹20,016. HRA is derived from Basic, and employer PF and the gratuity provision sit inside the CTC envelope — four figures move together.
+                - paragraph [ref=f11e288]:
+                  - generic [ref=f11e289]: Special Allowance
+                  - generic [ref=f11e290]: 42,291.20 → 22,275.20
+        - generic [ref=f11e291]:
+          - generic [ref=f11e292]:
+            - paragraph [ref=f11e293]: Refusal
+            - heading "When it cannot balance, it says no — and names the maximum." [level=3] [ref=f11e294]
+            - paragraph [ref=f11e295]: A negative residual is not a warning to be dismissed; it is an impossible structure. Rather than accept the value and fail at finalisation weeks later, the balancer refuses at entry and tells you the largest value that would work, to the paisa, while you are still looking at the screen and the fix is cheap.
+            - list [ref=f11e296]:
+              - listitem [ref=f11e297]:
+                - generic [ref=f11e300]: Refused at entry, with max_permitted computed and returned
+              - listitem [ref=f11e301]:
+                - generic [ref=f11e304]: "Maker-checker: proposed by one person, approved by another"
+              - listitem [ref=f11e305]:
+                - generic [ref=f11e308]: Append-only audit trail per override
+              - listitem [ref=f11e309]:
+                - generic [ref=f11e312]: CSV export, template, validate, then commit — never commit-and-hope
+          - generic [ref=f11e314]:
+            - paragraph [ref=f11e316]: Override · refused at entry
+            - generic [ref=f11e317]:
+              - generic [ref=f11e318]:
+                - paragraph [ref=f11e319]: Requested Basic
+                - paragraph [ref=f11e320]: ₹78,000
+              - generic [ref=f11e321]:
+                - paragraph [ref=f11e322]: Cannot be applied
+                - paragraph [ref=f11e326]: Special Allowance cannot absorb this. The most Basic can be, at this CTC, is ₹73,352.04.
+                - paragraph [ref=f11e327]: Special Allowance would fall to -₹7,749.40. A negative residual is refused here, at the screen, not weeks later at finalisation.
+    - generic [ref=f11e329]:
+      - generic [ref=f11e330]:
+        - paragraph [ref=f11e331]: Before the money moves
+        - heading "Four reports that find the mistake." [level=2] [ref=f11e332]
+        - paragraph [ref=f11e333]: Payroll errors are cheap to fix before disbursement and expensive after. These run against a run rather than after it.
+      - generic [ref=f11e335]:
+        - generic [ref=f11e336]:
+          - heading "The differences report names what moved, and what moved it." [level=3] [ref=f11e337]
+          - paragraph [ref=f11e338]: Compare two runs by item, by employee, or consolidated. Every component that changed is listed with the amount and the reason — including which override caused it. This is the report that makes a parallel run against your current provider a two-hour job rather than a fortnight.
+          - list [ref=f11e339]:
+            - listitem [ref=f11e340]:
+              - generic [ref=f11e343]: "Differences: item-wise, employee-wise and consolidated"
+            - listitem [ref=f11e344]:
+              - generic [ref=f11e347]: Negative-cost report — employees whose run produced an impossible figure
+            - listitem [ref=f11e348]:
+              - generic [ref=f11e351]: Duplicate detection within a run
+            - listitem [ref=f11e352]:
+              - generic [ref=f11e355]: Reconciliation between two runs
+        - generic [ref=f11e357]:
+          - paragraph [ref=f11e359]: Differences · Aug → Sep
+          - table [ref=f11e360]:
+            - rowgroup [ref=f11e361]:
+              - row [ref=f11e362]:
+                - columnheader "Component" [ref=f11e363]
+                - columnheader "Change" [ref=f11e364]
+                - columnheader "Why" [ref=f11e365]
+            - rowgroup [ref=f11e366]:
+              - row [ref=f11e367]:
+                - cell "Basic" [ref=f11e368]
+                - cell "—" [ref=f11e369]
+                - cell "—" [ref=f11e370]
+              - row [ref=f11e371]:
+                - cell "House Rent Allowance" [ref=f11e372]
+                - cell "—" [ref=f11e373]
+                - cell "—" [ref=f11e374]
+              - row [ref=f11e375]:
+                - cell "Special Allowance" [ref=f11e376]
+                - cell "−20,016" [ref=f11e377]
+                - 'cell "Override #418 — Basic raised to ₹60,000" [ref=f11e378]'
+              - row [ref=f11e379]:
+                - cell "Professional Tax" [ref=f11e380]
+                - cell "+100" [ref=f11e381]
+                - cell "February — Maharashtra" [ref=f11e382]
+              - row [ref=f11e383]:
+                - cell "TDS" [ref=f11e384]
+                - cell "—" [ref=f11e385]
+                - cell "—" [ref=f11e386]
+    - generic [ref=f11e388]:
+      - generic [ref=f11e389]:
+        - generic [ref=f11e390]:
+          - generic [ref=f11e391]:
+            - paragraph [ref=f11e392]: Filings & disbursement
+            - heading "Real EPFO and NSDL formats, and a bank file that never drops anyone." [level=3] [ref=f11e393]
+            - paragraph [ref=f11e394]: Thirteen statutory outputs generate today in the formats the portals actually accept. The NEFT/RTGS batch records every line, and people who cannot be paid — missing bank details, a stop-payment flag — come back as named exclusions rather than quietly vanishing from a total that then does not reconcile.
+            - list [ref=f11e395]:
+              - listitem [ref=f11e396]:
+                - generic [ref=f11e399]: Unpayable employees returned as exclusions, never silently dropped
+              - listitem [ref=f11e400]:
+                - generic [ref=f11e403]: The bank’s UTR is the only reference reconciliation trusts
+              - listitem [ref=f11e404]:
+                - generic [ref=f11e407]: Reversals and stop-payment flags are first-class
+              - listitem [ref=f11e408]:
+                - generic [ref=f11e411]: A filing reports not-ready when PAN or TAN is missing
+          - generic [ref=f11e413]:
+            - paragraph [ref=f11e415]: Statutory filings · this period
+            - list [ref=f11e416]:
+              - listitem [ref=f11e417]:
+                - generic [ref=f11e419]: PF ECR
+                - generic [ref=f11e420]: Text
+              - listitem [ref=f11e421]:
+                - generic [ref=f11e423]: ESI Challan
+                - generic [ref=f11e424]: CSV
+              - listitem [ref=f11e425]:
+                - generic [ref=f11e427]: Form 24Q
+                - generic [ref=f11e428]: FVU
+              - listitem [ref=f11e429]:
+                - generic [ref=f11e431]: PT Return — Maharashtra
+                - generic [ref=f11e432]: CSV
+              - listitem [ref=f11e433]:
+                - generic [ref=f11e435]: LWF Return
+                - generic [ref=f11e436]: CSV
+              - listitem [ref=f11e437]:
+                - generic [ref=f11e439]: Form 16
+                - generic [ref=f11e440]: PDF
+              - listitem [ref=f11e441]:
+                - generic [ref=f11e443]: Form 12BA
+                - generic [ref=f11e444]: PDF
+            - paragraph [ref=f11e445]: Availability is resolved against the filesystem — the product cannot list a return it is unable to write.
+        - generic [ref=f11e446]:
+          - generic [ref=f11e447]:
+            - paragraph [ref=f11e448]: The payslip
+            - heading "The end of the chain is the same record as the start." [level=3] [ref=f11e449]
+            - paragraph [ref=f11e450]: Every payroll item is versioned. A figure on a payslip traces back through the version that produced it, the override that moved it, the person who approved that override, and the attendance the run was computed from — without leaving the system.
+            - list [ref=f11e451]:
+              - listitem [ref=f11e452]:
+                - generic [ref=f11e455]: Payslip PDFs, YTD history and Form 16
+              - listitem [ref=f11e456]:
+                - generic [ref=f11e459]: Employees reach their own figures only, through a tested allow-list
+              - listitem [ref=f11e460]:
+                - generic [ref=f11e463]: Negative net pay is surfaced for validation, never clamped to zero
+          - generic [ref=f11e465]:
+            - paragraph [ref=f11e467]: Payslip · Aug 2026
+            - generic [ref=f11e468]:
+              - generic [ref=f11e469]:
+                - generic [ref=f11e470]: PN
+                - generic [ref=f11e471]:
+                  - paragraph [ref=f11e472]: Priya Nair
+                  - paragraph [ref=f11e473]: CV-0142 · Senior Engineer
+              - generic [ref=f11e474]:
+                - generic [ref=f11e475]:
+                  - term [ref=f11e476]: Basic
+                  - definition [ref=f11e477]: 48,000.00
+                - generic [ref=f11e478]:
+                  - term [ref=f11e479]: House Rent Allowance
+                  - definition [ref=f11e480]: 24,000.00
+                - generic [ref=f11e481]:
+                  - term [ref=f11e482]: Conveyance Allowance
+                  - definition [ref=f11e483]: 1,600.00
+                - generic [ref=f11e484]:
+                  - term [ref=f11e485]: Special Allowanceresidual
+                  - definition [ref=f11e486]: 42,291.20
+                - generic [ref=f11e487]:
+                  - term [ref=f11e488]: Gross
+                  - definition [ref=f11e489]: 1,15,891.20
+                - generic [ref=f11e490]:
+                  - term [ref=f11e491]: Deductions
+                  - definition [ref=f11e492]: −8,704.03
+            - generic [ref=f11e493]:
+              - paragraph [ref=f11e494]: Net pay
+              - paragraph [ref=f11e495]: ₹1,07,187.17
+      - generic [ref=f11e497]:
+        - paragraph [ref=f11e498]: What this page does not claim
+        - paragraph [ref=f11e499]: The payroll engine is the most complete part of this product, and it still has edges. These are the ones worth knowing before an evaluation.
+        - list [ref=f11e500]:
+          - listitem [ref=f11e501]: Effective-dated compensation history — retro across a revision is approximate
+          - listitem [ref=f11e504]: Multi-entity legal structure — one organisation is one PAN/TAN/PF code
+          - listitem [ref=f11e507]: Ten declaration forms whose statutory templates are not written yet
+          - listitem [ref=f11e510]: Payroll for jurisdictions outside India
+    - generic [ref=f11e514]:
+      - heading "Run a parallel month against your current provider." [level=2] [ref=f11e515]
+      - paragraph [ref=f11e516]: Process a real month in CareVance without paying from it, then read the differences report. That is a more useful evaluation than any demo, and we would rather you did it.
+      - generic [ref=f11e517]:
+        - link "Book a 20-minute demo" [ref=f11e518] [cursor=pointer]:
+          - /url: /contact?intent=demo
+        - link "Try the free calculators" [ref=f11e519] [cursor=pointer]:
+          - /url: /tools
+  - contentinfo [ref=f11e520]:
+    - generic [ref=f11e521]:
+      - generic [ref=f11e522]:
+        - generic [ref=f11e523]:
+          - generic [ref=f11e524]: CareVance
+          - paragraph [ref=f11e531]: Indian HR and payroll where the evidence of work and the payslip are the same system.
+          - paragraph [ref=f11e532]:
+            - link "sales@carevance.com" [ref=f11e533] [cursor=pointer]:
+              - /url: mailto:sales@carevance.com
+        - generic [ref=f11e534]:
+          - generic [ref=f11e535]:
+            - paragraph [ref=f11e536]: Product
+            - list [ref=f11e537]:
+              - listitem [ref=f11e538]:
+                - link "Platform overview" [ref=f11e539] [cursor=pointer]:
+                  - /url: /product
+              - listitem [ref=f11e540]:
+                - link "Payroll" [ref=f11e541] [cursor=pointer]:
+                  - /url: /product/payroll
+              - listitem [ref=f11e542]:
+                - link "Time & attendance" [ref=f11e543] [cursor=pointer]:
+                  - /url: /product/time-attendance
+              - listitem [ref=f11e544]:
+                - link "Compliance & filings" [ref=f11e545] [cursor=pointer]:
+                  - /url: /product/compliance
+              - listitem [ref=f11e546]:
+                - link "Core HR" [ref=f11e547] [cursor=pointer]:
+                  - /url: /product/core-hr
+              - listitem [ref=f11e548]:
+                - link "Reports & controls" [ref=f11e549] [cursor=pointer]:
+                  - /url: /product/reports
+              - listitem [ref=f11e550]:
+                - link "Leave" [ref=f11e551] [cursor=pointer]:
+                  - /url: /product/leave
+              - listitem [ref=f11e552]:
+                - link "Performance" [ref=f11e553] [cursor=pointer]:
+                  - /url: /product/performance
+              - listitem [ref=f11e554]:
+                - link "Expenses & FBP" [ref=f11e555] [cursor=pointer]:
+                  - /url: /product/expenses-fbp
+              - listitem [ref=f11e556]:
+                - link "Mobile & desktop apps" [ref=f11e557] [cursor=pointer]:
+                  - /url: /product/mobile
+          - generic [ref=f11e558]:
+            - paragraph [ref=f11e559]: Solutions
+            - list [ref=f11e560]:
+              - listitem [ref=f11e561]:
+                - link "Staffing agencies" [ref=f11e562] [cursor=pointer]:
+                  - /url: /solutions/staffing-agencies
+              - listitem [ref=f11e563]:
+                - link "IT services" [ref=f11e564] [cursor=pointer]:
+                  - /url: /solutions/it-services
+              - listitem [ref=f11e565]:
+                - link "Small business" [ref=f11e566] [cursor=pointer]:
+                  - /url: /solutions/small-business
+              - listitem [ref=f11e567]:
+                - link "vs. spreadsheet payroll" [ref=f11e568] [cursor=pointer]:
+                  - /url: /compare/spreadsheet-payroll
+              - listitem [ref=f11e569]:
+                - link "Keka alternative" [ref=f11e570] [cursor=pointer]:
+                  - /url: /compare/keka-alternative
+              - listitem [ref=f11e571]:
+                - link "greytHR alternative" [ref=f11e572] [cursor=pointer]:
+                  - /url: /compare/greythr-alternative
+              - listitem [ref=f11e573]:
+                - link "Pricing" [ref=f11e574] [cursor=pointer]:
+                  - /url: /pricing
+          - generic [ref=f11e575]:
+            - paragraph [ref=f11e576]: Free tools
+            - list [ref=f11e577]:
+              - listitem [ref=f11e578]:
+                - link "Salary breakup calculator" [ref=f11e579] [cursor=pointer]:
+                  - /url: /tools/salary-breakup-calculator
+              - listitem [ref=f11e580]:
+                - link "Take-home salary calculator" [ref=f11e581] [cursor=pointer]:
+                  - /url: /tools/take-home-salary-calculator
+              - listitem [ref=f11e582]:
+                - link "Gratuity calculator" [ref=f11e583] [cursor=pointer]:
+                  - /url: /tools/gratuity-calculator
+              - listitem [ref=f11e584]:
+                - link "HRA exemption calculator" [ref=f11e585] [cursor=pointer]:
+                  - /url: /tools/hra-exemption-calculator
+              - listitem [ref=f11e586]:
+                - link "Professional tax by state" [ref=f11e587] [cursor=pointer]:
+                  - /url: /tools/professional-tax-by-state
+          - generic [ref=f11e588]:
+            - paragraph [ref=f11e589]: Company
+            - list [ref=f11e590]:
+              - listitem [ref=f11e591]:
+                - link "Why CareVance" [ref=f11e592] [cursor=pointer]:
+                  - /url: /why-carevance
+              - listitem [ref=f11e593]:
+                - link "Security" [ref=f11e594] [cursor=pointer]:
+                  - /url: /security
+              - listitem [ref=f11e595]:
+                - link "How we count" [ref=f11e596] [cursor=pointer]:
+                  - /url: /methodology
+              - listitem [ref=f11e597]:
+                - link "Guides" [ref=f11e598] [cursor=pointer]:
+                  - /url: /resources
+              - listitem [ref=f11e599]:
+                - link "Changelog" [ref=f11e600] [cursor=pointer]:
+                  - /url: /changelog
+              - listitem [ref=f11e601]:
+                - link "About" [ref=f11e602] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=f11e603]:
+                - link "Contact" [ref=f11e604] [cursor=pointer]:
+                  - /url: /contact
+              - listitem [ref=f11e605]:
+                - link "Careers" [ref=f11e606] [cursor=pointer]:
+                  - /url: /careers
+      - generic [ref=f11e607]:
+        - paragraph [ref=f11e608]:
+          - text: Every figure on this site is counted from the CareVance codebase, not estimated.
+          - link "See how we count" [ref=f11e609] [cursor=pointer]:
+            - /url: /methodology
+          - text: . We publish no customer counts, review scores or certification badges, because we have not earned them yet. Prices exclude 18% GST.
+        - generic [ref=f11e610]:
+          - paragraph [ref=f11e611]: © 2026 CareVance. All rights reserved.
+          - list [ref=f11e612]:
+            - listitem [ref=f11e613]:
+              - link "Privacy policy" [ref=f11e614] [cursor=pointer]:
+                - /url: /legal/privacy
+            - listitem [ref=f11e615]:
+              - link "Terms of service" [ref=f11e616] [cursor=pointer]:
+                - /url: /legal/terms
+            - listitem [ref=f11e617]:
+              - link "Data processing addendum" [ref=f11e618] [cursor=pointer]:
+                - /url: /legal/dpa

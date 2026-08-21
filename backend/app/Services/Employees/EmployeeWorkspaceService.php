@@ -20,6 +20,8 @@ use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\Reimbursement;
 use App\Models\User;
+use App\Services\Lifecycle\ChecklistService;
+use App\Services\Lifecycle\DocumentChecklistMatcher;
 use App\Services\Lifecycle\PayrollReadinessService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
@@ -264,12 +266,21 @@ class EmployeeWorkspaceService
             ->forGroup($organizationId, $groupId);
     }
 
+    /**
+     * The one place a document is written, whichever panel it came from.
+     *
+     * Admin uploads, employee self-service uploads, and the proof files
+     * attached to a government ID or a bank account all land here — which is
+     * why the checklist tick is hooked at this level rather than in each
+     * controller. "It works from both sides" is then true by construction
+     * rather than by three callers remembering to do the same thing.
+     */
     public function storeDocument(User $employee, User $actor, array $data, UploadedFile $file): EmployeeDocument
     {
         $disk = self::EMPLOYEE_DOCUMENTS_DISK;
         $path = $file->store("employee-documents/{$employee->organization_id}/{$employee->id}", $disk);
 
-        return EmployeeDocument::query()->create([
+        $document = EmployeeDocument::query()->create([
             'organization_id' => $employee->organization_id,
             'user_id' => $employee->id,
             'title' => (string) ($data['title'] ?? $file->getClientOriginalName()),
@@ -284,7 +295,37 @@ class EmployeeWorkspaceService
             'review_status' => (string) ($data['review_status'] ?? 'pending'),
             'notes' => $data['notes'] ?? null,
             'meta' => $data['meta'] ?? null,
+            // Private unless somebody says otherwise. A record holds warning
+            // letters as readily as offer letters and the row cannot tell them
+            // apart, so the safe default is the closed one.
+            'visible_to_employee' => (bool) ($data['visible_to_employee'] ?? false),
         ])->fresh('uploader');
+
+        $this->tickChecklistItemsFor($employee, $actor, $document);
+
+        return $document;
+    }
+
+    /**
+     * Complete any onboarding item this upload satisfies.
+     *
+     * Deliberately best-effort. A checklist that fails to tick is a nuisance; an
+     * upload that fails because the checklist threw is data loss — the file is
+     * already on disk and the row already written by this point, so an
+     * exception here would report failure for something that plainly succeeded.
+     */
+    private function tickChecklistItemsFor(User $employee, User $actor, EmployeeDocument $document): void
+    {
+        try {
+            $matcher = app(DocumentChecklistMatcher::class);
+            $checklist = app(ChecklistService::class);
+
+            foreach ($matcher->pendingItemsFor($employee, $document) as $item) {
+                $checklist->completeFromDocument($item, $actor, $document);
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
