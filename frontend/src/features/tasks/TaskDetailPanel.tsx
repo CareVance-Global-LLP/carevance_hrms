@@ -38,6 +38,7 @@ import {
   getTaskCompletionPercent,
   titleCase,
 } from './taskUtils';
+import { TaskKey, TaskResolutionChip, TaskTypeChip } from './TaskIdentity';
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -197,7 +198,7 @@ export default function TaskDetailPanel({
       open
       onClose={onClose}
       title={task.title}
-      subtitle={`${task.group?.name || 'No department'} · ${getAssigneeLabel(task)}`}
+      subtitle={[task.key, task.group?.name || 'No department', getAssigneeLabel(task)].filter(Boolean).join(' · ')}
       footer={
         canManageTasks ? (
           <>
@@ -257,8 +258,45 @@ export default function TaskDetailPanel({
           </div>
         ) : null}
 
+        {(task.type && task.type !== 'task') || task.resolution || task.parent ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <TaskTypeChip task={task} />
+            <TaskResolutionChip task={task} />
+            {task.parent ? (
+              <span className="text-xs text-slate-600">
+                Part of{' '}
+                <span className="font-medium text-slate-900">
+                  {task.parent.key ? `${task.parent.key} · ` : ''}
+                  {task.parent.title}
+                </span>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+
+        {task.children?.length ? (
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700">
+              Pieces ({task.children.filter((child) => child.status === 'done').length}/{task.children.length} done)
+            </h3>
+            <ul className="mt-2 space-y-1">
+              {task.children.map((child) => (
+                <li key={child.id} className="flex items-center gap-2 text-xs">
+                  <TaskKey task={child} />
+                  <span className={child.status === 'done' ? 'text-slate-500 line-through' : 'text-slate-800'}>
+                    {child.title}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-2 gap-2">
           <Fact label="Assignee" value={getAssigneeLabel(task)} />
+          {/* Who RAISED it, as opposed to who is doing it. Until this existed,
+              "why does this task exist?" had no answer anywhere. */}
+          <Fact label="Reported by" value={task.creator?.name || 'Unknown'} />
           <Fact label="Due date" value={formatDateLong(task.due_date)} />
           <Fact label="Priority" value={PRIORITY_META[task.priority || 'medium']?.label ?? '—'} />
           <Fact label="Project" value={task.project?.name || 'None'} />

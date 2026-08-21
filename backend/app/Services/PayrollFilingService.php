@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\EmployeePayrollTemplate;
+use App\Models\LegalEntity;
+use App\Services\Payroll\LegalEntityResolver;
 use App\Models\Organization;
 use App\Models\PayGroup;
 use App\Models\PayrollFiling;
@@ -119,6 +121,25 @@ class PayrollFilingService
 
     private function orgStatutoryId(?Organization $org, string $wizardKey, array $legacyKeys = []): string
     {
+        /*
+         * The LEGAL ENTITY answers first.
+         *
+         * One organization used to mean one PAN, TAN and PF code, which cannot
+         * represent a group running two to four companies. The entity now holds
+         * the identity; the organization remains the tenant.
+         *
+         * Falling through to settings is what makes the change safe rather than
+         * a cutover: an organization whose entity has not been filled in keeps
+         * filing exactly as it did. The migration seeds one entity per
+         * organization FROM these same settings, so in practice the first branch
+         * returns the same string the second one would have.
+         */
+        $entity = app(\App\Services\Payroll\LegalEntityResolver::class)->primaryFor($org?->id);
+        $fromEntity = $entity?->{self::ENTITY_STATUTORY_FIELDS[$wizardKey] ?? ''} ?? null;
+        if (filled($fromEntity)) {
+            return trim((string) $fromEntity);
+        }
+
         $settings = $org?->settings ?? [];
 
         $fromWizard = $settings['payroll']['statutory'][$wizardKey] ?? null;
@@ -134,6 +155,23 @@ class PayrollFilingService
 
         return '';
     }
+
+    /**
+     * Which entity column answers each statutory key.
+     *
+     * A map rather than a naming convention: the wizard keys are camelCase and
+     * historical, the columns are snake_case and chosen, and pretending they
+     * match would break the moment somebody adds a key that does not.
+     */
+    private const ENTITY_STATUTORY_FIELDS = [
+        'pan' => 'pan',
+        'tan' => 'tan',
+        'establishmentCode' => 'pf_establishment_code',
+        'esiCode' => 'esi_code',
+        'lwfCode' => 'lwf_code',
+        'cin' => 'cin',
+        'gstin' => 'gstin',
+    ];
 
     /**
      * Generate the PF ECR in EPFO's actual Electronic Challan cum Return (ECR)
@@ -154,9 +192,63 @@ class PayrollFilingService
      * This is the exact structure the unified EPFO employer portal ECR Upload
      * accepts. PF wages are capped at ₹15,000 per the Act ceiling.
      */
-    public function generatePfEcr(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
+    /**
+     * The payroll items a filing for one entity should contain.
+     *
+     * A statutory return is filed BY a legal entity: one ECR per PF code, one
+     * 24Q per TAN. Handing every generator the whole run produces a single file
+     * mixing two companies' employees under whichever PAN happened to be read
+     * first - which is not merely untidy, it is a false return for both.
+     *
+     * Passing null keeps the previous behaviour exactly: the whole run, one
+     * file. That is what a single-entity organization gets, and what an
+     * organization mid-migration gets, so this is additive rather than a
+     * cutover.
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\PayrollItem>
+     */
+    private function itemsForEntity(PayrollMonthlyRun $run, ?LegalEntity $entity): \Illuminate\Support\Collection
     {
-        $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
+        $items = $run->items()
+            ->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')
+            ->get();
+
+        if (! $entity) {
+            return $items;
+        }
+
+        $resolver = app(LegalEntityResolver::class);
+
+        return $items
+            ->filter(fn ($item) => $item->user && (int) ($resolver->forUser($item->user)?->id ?? 0) === (int) $entity->id)
+            ->values();
+    }
+
+    /**
+     * Every entity a run needs a filing for.
+     *
+     * Returns [null] when the organization has none or only one, so callers
+     * loop once and produce exactly the single file they produced before.
+     * Splitting a single-entity organization's filing into "one per entity"
+     * would change a filename and a count for no benefit.
+     *
+     * @return array<int, LegalEntity|null>
+     */
+    public function filingEntitiesFor(PayrollMonthlyRun $run, int $orgId): array
+    {
+        $entities = LegalEntity::query()
+            ->where('organization_id', $orgId)
+            ->where('is_active', true)
+            ->orderByDesc('is_primary')
+            ->orderBy('id')
+            ->get();
+
+        return $entities->count() > 1 ? $entities->all() : [null];
+    }
+
+    public function generatePfEcr(PayrollMonthlyRun $run, int $orgId, int $userId, ?LegalEntity $entity = null): PayrollFiling
+    {
+        $items = $this->itemsForEntity($run, $entity);
         $org = Organization::find($orgId);
         $lines = [];
         $totalWages = 0;
@@ -253,6 +345,9 @@ class PayrollFilingService
 
         return PayrollFiling::create([
             'organization_id' => $orgId,
+            // Which company filed it. Null for a single-entity organization,
+            // which is how it has always been.
+            'legal_entity_id' => $entity?->id,
             'type' => 'pf_ecr',
             'period_type' => 'monthly',
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
@@ -1857,11 +1952,17 @@ class PayrollFilingService
         ]);
     }
 
-    public function generateFullEcr(PayrollMonthlyRun $run, int $orgId, int $userId): PayrollFiling
+    /**
+     * The full ECR files under a PF establishment code too, so it takes the
+     * entity for the same reason generatePfEcr does. Null keeps the previous
+     * behaviour: the organization's own code, one file.
+     */
+    public function generateFullEcr(PayrollMonthlyRun $run, int $orgId, int $userId, ?LegalEntity $entity = null): PayrollFiling
     {
         $items = $run->items()->with('user.employeeProfile', 'user.employeeWorkInfo', 'user.employeeGovernmentIds')->get();
         $org = Organization::find($orgId);
-        $pfEstablishment = $this->orgStatutoryId($org, 'establishmentCode', ['pf_establishment_code', 'pf_code']);
+        $pfEstablishment = $entity?->pf_establishment_code
+            ?: $this->orgStatutoryId($org, 'establishmentCode', ['pf_establishment_code', 'pf_code']);
 
         $lines = [];
         $lines[] = "FULL ECR - ELECTRONIC CHALLAN CUM RETURN";

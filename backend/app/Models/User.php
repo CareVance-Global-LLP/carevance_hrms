@@ -107,6 +107,11 @@ class User extends Authenticatable
         return $this->hasMany(PayGroupAssignment::class);
     }
 
+    public function legalEntity(): BelongsTo
+    {
+        return $this->belongsTo(LegalEntity::class);
+    }
+
     public function employeeWorkInfo(): HasOne
     {
         return $this->hasOne(EmployeeWorkInfo::class);
@@ -253,6 +258,10 @@ class User extends Authenticatable
         'role',
         'role_id',
         'organization_id',
+        // Which company within the organization employs this person, for
+        // statutory purposes. Null means the organization's primary entity,
+        // which is every existing employee - see LegalEntityResolver.
+        'legal_entity_id',
         'invited_by',
         'avatar',
         'settings',

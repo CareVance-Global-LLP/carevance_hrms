@@ -120,7 +120,10 @@ describe('NotificationsCenter', () => {
     expect(await screen.findByText('Half Day Leave Request Rejected')).toBeInTheDocument();
     expect(screen.queryByText('New message from Example')).not.toBeInTheDocument();
     expect(apiMocks.notificationList).toHaveBeenCalledWith({
-      limit: 30,
+      // LIST_PAGE_SIZE. The feed loads a screenful at a time and grows by the
+      // same amount on "load more", rather than opening with 30 rows the reader
+      // has to scroll past to reach the controls.
+      limit: 15,
       type: undefined,
       exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
       unread_only: undefined,

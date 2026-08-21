@@ -60,8 +60,24 @@ return Application::configure(basePath: dirname(__DIR__))
          * No-ops entirely when SENTRY_LARAVEL_DSN is unset, which is the point:
          * an unconfigured deployment behaves exactly as it did, and setting one
          * environment variable turns it on. See deploy/lightsail/RUNBOOK.md.
+         *
+         * The class_exists guard makes that promise true for a missing PACKAGE
+         * as well as a missing DSN. Without it the call is reached while the
+         * exception handler is still being built, so `Class
+         * "Sentry\Laravel\Integration" not found` is thrown before routing and
+         * EVERY request 500s — login included, with no way into the app at all.
+         * That is what a deploy which ships the code but never runs `composer
+         * install` produces, and it happened in production on 20 Aug 2026: the
+         * scheduler failed on the same error every minute for as long as it
+         * lasted, so idle timers stopped closing too.
+         *
+         * Error tracking must never be the thing that takes the application
+         * down. If the package is absent the app runs exactly as it did before
+         * error tracking existed, which is the whole promise above.
          */
-        Sentry\Laravel\Integration::handles($exceptions);
+        if (class_exists(\Sentry\Laravel\Integration::class)) {
+            \Sentry\Laravel\Integration::handles($exceptions);
+        }
 
         $exceptions->render(function (ValidationException $e, Request $request) {
             if (!$request->is('api/*')) {

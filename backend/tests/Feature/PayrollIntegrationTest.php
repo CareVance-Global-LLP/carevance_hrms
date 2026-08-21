@@ -97,35 +97,35 @@ class PayrollIntegrationTest extends TestCase
     /**
      * Test: Manager can view department payroll
      */
-    public function test_manager_can_view_department_payroll(): void
+    /**
+     * A line manager is not a payroll administrator.
+     *
+     * This asserted 200 until 20 Aug 2026, because the payroll group was gated
+     * `role:admin,manager` and EnsureUserHasRole reads 'manager' as
+     * hierarchy_level < 100 — so every manager in the organization could open
+     * department payroll, which is the salary of everyone in it. Having a team
+     * is not a reason to see what the company pays.
+     *
+     * Managers keep their own figures through My Payroll, and their team's
+     * expense claims through the manager reimbursement routes, both of which
+     * live outside this group. See PayrollManagerBoundaryTest.
+     */
+    public function test_a_manager_cannot_view_department_payroll(): void
     {
         $this->actingAs($this->manager);
 
-        $response = $this->getJson('/api/payroll/departments');
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'departments',
-                'unassigned_count',
-                'month_year',
-            ]);
+        $this->getJson('/api/payroll/departments')->assertStatus(403);
     }
 
     /**
      * Test: Manager can view employee details in their department
      */
-    public function test_manager_can_view_department_employees(): void
+    /** Same boundary as above: the per-department employee payroll list. */
+    public function test_a_manager_cannot_view_department_employee_payroll(): void
     {
         $this->actingAs($this->manager);
 
-        $response = $this->getJson("/api/payroll/departments/{$this->department->id}/employees");
-
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'department_id',
-                'department_name',
-                'employees',
-            ]);
+        $this->getJson("/api/payroll/departments/{$this->department->id}/employees")->assertStatus(403);
     }
 
     // ==================== HR WORKFLOW ====================

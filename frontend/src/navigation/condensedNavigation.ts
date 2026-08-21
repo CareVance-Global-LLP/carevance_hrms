@@ -27,6 +27,7 @@ import {
   Share2,
   ShieldCheck,
   SquareKanban,
+  Briefcase,
   Users,
   UserMinus,
   UserPlus,
@@ -41,6 +42,8 @@ export type NavLinkItem = {
   section?: string;
   unreadCount?: number;
   adminOnly?: boolean;
+  /** Admin, HR and payroll_manager only — mirrors the API's `role:payroll`. */
+  payrollAdminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
@@ -59,6 +62,8 @@ export type NavGroup = {
   icon: LucideIcon;
   unreadCount?: number;
   adminOnly?: boolean;
+  /** Admin, HR and payroll_manager only — mirrors the API's `role:payroll`. */
+  payrollAdminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
@@ -86,6 +91,9 @@ export const condensedNavigation: NavGroup[] = [
     label: 'People',
     icon: Users,
     items: [
+      // First in the group because it is where people enter the company:
+      // hired, then invited, then joined, then gone.
+      { label: 'Hiring', to: '/hiring', icon: Briefcase, adminOnly: true },
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       // Before New Hires because that is the order people move through: invited,
       // then joined, then gone. The route existed with nothing linking to it, so

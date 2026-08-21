@@ -1233,9 +1233,36 @@ const createWindow = async () => {
       failRetryCount++;
       console.log(`[desktop] retrying load (${failRetryCount}/${MAX_FAIL_RETRIES}) in ${FAIL_RETRY_DELAY}ms...`);
       setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.loadURL(APP_URL).catch(() => {});
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return;
         }
+
+        /*
+         * Drop the HTTP cache before retrying.
+         *
+         * Until 1.2.2 the cache was cleared on EVERY launch, which was wasteful
+         * — it re-downloaded the whole renderer each time — but had a property
+         * nobody had written down: a bad cached shell could never survive a
+         * restart. Making the clear version-keyed removed the waste and the
+         * recovery with it, so a page cached while the server was returning
+         * errors was then served on every subsequent launch, and the app opened
+         * blank until the next release changed the stamp.
+         *
+         * Clearing on FAILURE keeps both: a healthy launch pays nothing, and a
+         * broken one still heals itself on the next attempt. This is the retry
+         * path, so by definition something is already wrong.
+         */
+        void (async () => {
+          try {
+            await mainWindow.webContents.session.clearCache();
+          } catch {
+            // Best effort; a retry against a warm cache still beats no retry.
+          }
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.loadURL(APP_URL).catch(() => {});
+          }
+        })();
       }, FAIL_RETRY_DELAY);
       return;
     }
@@ -1359,7 +1386,20 @@ const createWindow = async () => {
   }
 
   try {
-    await mainWindow.loadURL(APP_URL);
+    /*
+     * Revalidate the app shell, but nothing else.
+     *
+     * index.html is the one file that CAN go stale: Vite emits content-hashed
+     * chunk names, so every asset it references is immutable and safe to serve
+     * from cache forever. The shell is what points at them, and a stale one
+     * points at chunks that no longer exist — which renders as an empty window
+     * rather than an error, because nothing technically failed.
+     *
+     * `pragma: no-cache` applies to this navigation only, so the chunks stay
+     * cached and this costs one small conditional request per launch. That is
+     * the whole reason the blanket clearCache on every start was unnecessary.
+     */
+    await mainWindow.loadURL(APP_URL, { extraHeaders: 'pragma: no-cache\n' });
   } catch (error) {
     const errMsg = (error?.message || '').toLowerCase();
     const isAborted = errMsg.includes('err_aborted') || error?.errno === -3;

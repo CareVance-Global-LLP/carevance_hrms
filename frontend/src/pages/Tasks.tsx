@@ -327,6 +327,7 @@ export default function Tasks() {
               assignee_id: taskForm.assignee_id ? Number(taskForm.assignee_id) : null,
               assignee_ids: taskForm.assignee_ids.map((id) => Number(id)),
               status: taskForm.status,
+              type: taskForm.type,
               priority: taskForm.priority,
               due_date: taskForm.due_date || undefined,
               estimated_time: taskForm.estimated_time ? Number(taskForm.estimated_time) : undefined,

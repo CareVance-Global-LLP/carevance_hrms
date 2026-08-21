@@ -2230,7 +2230,7 @@ export default function DesktopTimerDashboard() {
                 className="mt-3 h-12 border-slate-300 bg-white text-slate-700 shadow-none disabled:bg-slate-50 disabled:text-slate-500"
               >
                 <option value="" className="text-gray-900">
-                  {availableTasks.length === 0 ? 'No tasks available for your group' : 'Choose task'}
+                  {availableTasks.length === 0 ? 'No open tasks assigned to you' : 'Choose task'}
                 </option>
                 {availableTasks.map((task) => (
                   <option key={task.id} value={task.id} className="text-gray-900">

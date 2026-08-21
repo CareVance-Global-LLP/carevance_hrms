@@ -30,6 +30,24 @@ const normalizeRole = (role: string | null | undefined): string =>
 export const hasStrictAdminAccess = (user: User | null | undefined): boolean =>
   getUserLevel(user) <= 10;
 
+/**
+ * May this person open the ADMINISTRATIVE payroll area?
+ *
+ * Mirrors the API's `role:payroll` middleware — hierarchy level <= 20, which is
+ * admin, hr and payroll_manager, the same set as PayslipController's
+ * PAYROLL_ROLES. Everyone else reaches their own figures through My Payroll.
+ *
+ * Neither of the existing helpers fits, and both failure modes are real:
+ * hasAdminAccess is `< 100`, which showed the whole company's pay to every line
+ * manager; hasStrictAdminAccess is `<= 10`, which hides the module from the HR
+ * users who actually run it.
+ *
+ * A level comparison rather than a role NAME check, so a custom role placed at
+ * payroll level sees the module without needing to be listed here.
+ */
+export const hasPayrollAdminAccess = (user: User | null | undefined): boolean =>
+  getUserLevel(user) <= 20;
+
 export const hasSuperAdminAccess = (user: User | null | undefined): boolean =>
   getUserLevel(user) === 0;
 

@@ -154,6 +154,51 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 ---
 
+### Working-hour law is not configuration
+
+Limits and the overtime rate are properties of the **premises**, so they live on
+`legal_entities` (`establishment_type`, plus any exemption), not on a policy
+somebody configured. `StatutoryWorkingTime` is the single place the statute is
+written down, with the provision each number comes from.
+
+Five rules that are not obvious from the code:
+
+- **The floor is computed always, applied only on request.** A configured rate
+  below the s.59 minimum of 2× is *always* flagged (`isBelowStatutoryFloor()`),
+  and only *paid* at the floor when the entity has `enforce_overtime_floor` on.
+  Raising a live payroll's overtime rate because somebody deployed a release is
+  not a decision the engine is entitled to make. The assessment carries both
+  `multiplier` (applied) and `configuredMultiplier`, because "we paid 2× because
+  the law says so, and your policy says 1.5×" is a sentence a report has to be
+  able to say.
+- **Statutory overtime ≠ policy overtime.** `OvertimeEngine` measures the excess
+  over the *rostered shift* — that is what an employer agreed to pay for.
+  `StatutoryComplianceService::overtimeMinutesBetween()` measures the excess over
+  *nine hours a day or forty-eight a week*, because that is what s.59 defines and
+  what the s.64(4) quarterly cap counts. Using the engine's number for the cap
+  over-counts an 8h roster and under-counts a 10h one, and it also cannot work at
+  all for an establishment with no roster configured.
+- **`unregulated` means unassessed, not compliant.** The breach list returns
+  `is_regulated: false` and an empty array; the controller counts those people
+  separately as `employees_not_assessed`. Never let an empty breach list render
+  as a green tick — nobody re-checks a clean compliance report.
+- **A rest interval is one qualifying break, not the sum of several.** Two
+  fifteen-minute teas are not a half hour under s.55. The check finds the longest
+  *continuous* stretch, and only a break of at least `minimumRestMinutes` resets
+  the clock.
+- **The register prices assessed hours, not approved ones.** An approval workflow
+  is internal; s.59(4) records what was worked and what it is worth. Pricing the
+  unapproved assessment returns `0.00` for every pending row, which reads as
+  "overtime worked, nothing owed". Approval state lives in the payable/pending
+  columns. And an employee with no `annual_ctc` yields `amount: null`, **never
+  `0.00`** — the totals surface `rows_without_a_rate` so nobody hands over a
+  register that could not price half its people.
+
+Exemptions are read from the entity, never inferred from its state. s.55 allows
+six hours instead of five *by written order of the Chief Inspector*; a Gujarat
+factory without that order is still on five. An exemption may only relax a limit —
+a recorded value stricter than the Act is treated as a typo and ignored.
+
 ## Known gaps
 
 Real, and deliberately not yet built:
@@ -166,13 +211,11 @@ Real, and deliberately not yet built:
 > shipped. When you close a gap, delete the line in the same commit.
 
 - **Ten filing generators have no blade view** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. `FilingGeneratorRegistry` resolves availability from the filesystem, so these are now reported as *unavailable* rather than attempted and failed — writing a template is the whole act of shipping its filing. This is real statutory work, not a stub.
-- **No SSO/SAML and no SCIM.** MFA now exists (TOTP + recovery codes, see `MfaService`), but Google OAuth is still the only federated option. This is the gate on any deal above ~500 seats.
-- **No legal-entity layer.** One organization = one PAN/TAN/PF code. Most Indian mid-market groups run two to four entities, so this disqualifies the product before a demo rather than merely losing marks.
+- **No SCIM.** SAML 2.0 now exists (see below), so people can *sign in* through Entra, Okta or Google — but nothing provisions or, more importantly, deprovisions them automatically. Somebody disabled in the IdP keeps their CareVance account until an admin deactivates it by hand; SAML refuses their login, but their data access via an existing token is not revoked by the IdP. This is the remaining half of the enterprise identity story.
 - **No offer letter, e-signature or background verification.**
-- **No recruitment/ATS, engagement surveys, or HR helpdesk.** No job, candidate, interview or offer models exist. This is most of what a Keka comparison turns on.
-- **Leave is a flat annual quota**, held as JSON in `organizations.settings` (`LeavePolicyService`). No accrual schedule, no pro-rating for mid-year joiners, no configurable leave year, no per-type carry-forward caps. Every customer has mid-year joiners, so this one is universal.
+- **Recruitment has no careers page and no background verification.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, and a signed offer letter with an audit trail all exist (see below). What is missing is a public careers page or job board a candidate can browse and apply from, and BGV. No engagement surveys or HR helpdesk either.
 - **No date-based rostering.** Shift *definitions* exist and are real — `Shift` carries night-shift windows, differentials, overtime multipliers and grace periods, and `employee_shifts` assigns them. What is missing is the calendar: rotation patterns, published rosters by date, week-off calendars and swap requests.
-- **No biometric device ingestion.** eSSL, ZKTeco and Matrix punch devices are on the wall of most Indian offices and none of them can talk to this.
+- **No biometric device ingestion beyond ADMS push.** The push protocol is implemented (see below), which covers eSSL, ZKTeco, Biomax and Matrix terminals configured to post to a cloud server. Devices that only offer SDK pull, or that sit on a LAN with no outbound route, still cannot talk to this.
 - **No accounting export.** `GlMappingConfig` exists with nothing to export to — no Tally, no Zoho Books.
 - **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.
 - **0 Laravel policies.** Authorization is inline in controllers, though the `Role`/`Permission` schema and `hasPermission()` are real and maker-checker now covers the full payroll chain.
@@ -181,11 +224,92 @@ Real, and deliberately not yet built:
 
 ### Not gaps — these were on this list and are built
 
-Kept visible rather than deleted, because they were wrongly believed missing:
+Kept visible rather than deleted, for two different reasons. The first three
+were never missing and were wrongly believed to be. The rest were genuinely
+missing and were built in Aug 2026 — they stay here because a buyer who read
+the old list needs to be told what changed, and because each one carries a rule
+that is not obvious from the code:
 
 - **Effective-dated compensation is implemented.** `Services/Payroll/CompensationTimeline` resolves what somebody earned on any given day from accepted revision letters, and `PayrollAutoProcessService` calls `blendedAnnualCtcForMonth()`. A mid-month revision blends correctly and a back-dated one diffs against a real prior rate — arrears are not "approximate".
 - **Mobile has manager approvals.** `mobile-app/app/approval-inbox/`, plus team, notification publishing, comp-off, regularisation and selfie attendance across 18 screens.
 - **Shift definitions exist** — see the rostering entry above for what actually remains.
+- **Leave accrues on a schedule, and a balance is a ledger.** `leave_types` replaces the JSON quota in `organizations.settings` — per-type annual quota, `annual|half_yearly|quarterly|monthly` accrual, pro-rating for mid-year joiners against a `joining_cutoff_day`, a separate probation rate, and per-type carry-forward caps. `LeaveAccrualService` writes signed rows into `leave_ledger_entries`, and a balance is `SUM(units)` over them, never a stored counter — so "why is my balance 8.5" expands into the dated rows that produced it. Accrual timing (`period_start`|`period_end`), year-end action (`carry_forward`|`reset`|`encash`) and a separate notice-period rate are all per type. `LeaveYearEndService` closes a year as **ledger rows, never edits** — carry-and-expire is two rows so "10 carried, 5 expired" is sayable, the carry lands on **both sides** of the boundary so each year's ledger adds up to its own balance, and an overdrawn balance is left alone rather than zeroed. `annualQuotaFor()`: notice outranks probation, and NULL means the normal rate in both cases, never zero. Configured under Settings → Leave — **the only editor**. The old quota editor under Settings → Organization → Leave policy was a second one writing to the JSON, and for a day the two answered different questions: request options came from the JSON while balances came from `leave_types`, so a type could be requestable with no balance, and `normalizeRequestedCategory()` silently rewrote an unrecognised code to `paid` — you asked for sick leave and paid leave was deducted. `resolvePolicyCategories()` now resolves from `leave_types` and reads the JSON only when a tenant has no rows. Do not add a second editor.
+- **Legal entities exist.** `legal_entities` carries its own PAN, TAN, PF and ESI codes; `LegalEntityResolver` decides which one an employee files under, defaulting to the organization's primary entity. Filings generate per entity. Configured under Settings → Legal entities.
+- **Biometric punch ingestion is implemented.** ADMS push (`routes/api/biometric.php`, `/iclock/*`), which is what eSSL, ZKTeco, Biomax and Matrix terminals speak. A serial must be registered by an admin before anything is accepted; punches are unique on (device, device user, timestamp) so a replayed request is a no-op; `BiometricPunchProcessor` pairs readings into attendance. Managed under Settings → Biometric devices, which also surfaces the two silent failures: a device that has stopped reporting, and a device user ID nobody has claimed. **`isStale()` means "reported before and stopped", not "has never reported"** — `hasEverReported()` is the separate question. Conflating them made a terminal registered thirty seconds earlier announce "no attendance is arriving from this device", which teaches an admin to ignore the warning by the time it means something. **Unclaimed punches are kept, not dropped** — claiming the ID attaches the backlog.
+- **SAML 2.0 single sign-on is implemented.** `SamlAuthService` over `onelogin/php-saml`; signature verification is delegated to the library on purpose, and this codebase owns only connection resolution (by Issuer, across tenants, without trusting it), replay refusal via `saml_used_assertions`, and whether an authenticated stranger becomes a user at all. Configured under Settings → Single sign-on. A new connection is created **switched off** — turning one on redirects every sign-in in the organization, so it is a deliberate second act.
+
+### Recruitment
+
+`job_openings` — **not** `jobs`, which Laravel's queue owns; a collision there
+surfaces in a worker rather than in a test.
+
+- **A candidate is a PERSON, an application is one candidacy.** Collapsing them
+  breaks the moment somebody good applies for a second role — you either lose
+  their history or duplicate the human.
+- **`candidates.email` is unique per ORGANIZATION**, deliberately unlike
+  `users.email` which is globally unique. The same person legitimately applies
+  to two customers on this platform.
+- **A stage move is an event, not a column.** `hiring_stage_id` says where
+  somebody is; `application_stage_events` says how they got there. Every
+  transition writes both, in one transaction, through `HiringPipelineService` —
+  a controller touching `hiring_stage_id` directly would be a second, silent
+  pipeline.
+- **`status` and `hiring_stage_id` answer different questions.** A rejection
+  keeps the stage it happened at: "rejected after the tech round" and "rejected
+  on the CV" are different facts.
+- **Requisitions soft-delete.** `REQ-2` gets quoted in approval emails, so the
+  reference must never be reused — `nextCode()` reads the highest number ever
+  issued, `withTrashed()`, which only works if the row survives.
+- Moving backwards is allowed and recorded as `moved_back`. A pipeline that only
+  goes forwards gets worked around by deleting and recreating the application,
+  which destroys the history.
+- Gated on `role:manager`, not admin: hiring is line-management work, but
+  candidate records carry personal data and current salary so it stops there.
+
+**Interviews and offers:**
+
+- **Panel feedback is per interviewer and never averaged.** Three people going
+  two-to-one and three people all lukewarm produce the same mean, and they call
+  for completely different conversations — `summaryFor()` returns the split and
+  an explicit `is_split`, never a score.
+- **Invited and submitted are different states.** `panelProgress()` answers "two
+  of three have responded", which a table of only-submitted rows cannot.
+- **Somebody who has already given feedback cannot be dropped from a panel.**
+  Their verdict informed a decision that may already be taken; cascading the
+  delete rewrites how it was reached.
+- **An empty approver list is refused, never treated as "no approval needed".**
+  That is how an offer goes out with nobody having agreed to it.
+- **One rejection sends the whole offer back to draft immediately**, rather than
+  collecting the rest of a chain for something already refused.
+- **`sent` and `accepted` are separate states.** An offer with a candidate is a
+  commitment already made; editing one in place is refused — withdraw and draft
+  a revision, so the change is visible.
+- **Re-sending does not move `sent_at`.** The candidate has been counting down.
+- Accepting an offer moves the candidacy to hired **through the pipeline**, so
+  the opening's headcount and the offer cannot disagree.
+
+**Signing the offer letter** (`/offer/{token}`, unauthenticated):
+
+- **The signing token IS the authentication.** A candidate is not a user and
+  never will be — making somebody create an account to accept a job loses
+  offers. So it is 32 random bytes, stored only as a SHA-256 hash, compared with
+  `hash_equals`, `$hidden` on the model, and **cleared in the same transaction**
+  as the signature is written. A link that still works after use can be accepted
+  twice.
+- **Every failure returns the same 404** — wrong token, expired, already used,
+  withdrawn. Distinguishing them tells an unauthenticated caller which tokens
+  exist, and the candidate's next step is the same either way.
+- **`document_hash` is the load-bearing column**, not the drawing. It
+  fingerprints the letter as the candidate actually read it, so "I never agreed
+  to that salary" has an answer even if the letter is regenerated later. Taken
+  from the UNSIGNED render — that is the document they saw.
+- **Typing a name is a signature.** The canvas is optional; requiring it
+  excludes keyboard and assistive-technology users. An untouched canvas is never
+  stored, so a typed signature is not dressed up as a drawn one.
+- Declining is offered on the same page. "No reply" is a worse outcome for a
+  recruiter than a reason.
+- The page is routed WITHOUT `PublicRoute` — that redirects signed-in users to
+  the dashboard, which would bounce a recruiter checking their own link.
 
 ### The queue, and the worker you must actually run
 

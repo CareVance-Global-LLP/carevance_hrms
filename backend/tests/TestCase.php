@@ -4,11 +4,35 @@ namespace Tests;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 abstract class TestCase extends BaseTestCase
 {
     use CreatesApplication;
+
+    /**
+     * Start every test with an empty cache.
+     *
+     * RefreshDatabase rolls the database back but leaves the cache alone, and
+     * the array store lives for the whole PHP process — so cached values
+     * outlive the rows they were computed from. That is not a theoretical leak:
+     * report caches are keyed on user id and date range, and RefreshDatabase
+     * restarts identity columns at 1, so "user 1, this week" from one test is
+     * served verbatim to a completely different user 1 in the next. Nine
+     * ReportWorkingTimeTest cases failed only in a full run and passed alone,
+     * for exactly this reason.
+     *
+     * The cost is one flush per test; the alternative is a suite whose result
+     * depends on the order it happened to run in, which is a suite you cannot
+     * use to tell whether a change was safe.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Cache::flush();
+    }
 
     protected function issueApiToken(User $user, string $name = 'test-token'): string
     {

@@ -17,6 +17,7 @@ import { getReadableTextColor } from '@/utils/getContrastColor';
 import TaskAvatar from './TaskAvatar';
 import { PRIORITY_META, STATUS_OPTIONS, type TaskStatus } from './taskConstants';
 import { formatDate, isOverdue, sortTasks } from './taskUtils';
+import { TaskKey, TaskResolutionChip, TaskTypeChip } from './TaskIdentity';
 
 interface TaskBoardViewProps {
   tasks: Task[];
@@ -145,6 +146,11 @@ export default function TaskBoardView({
                             onClick={() => onOpenTask(task)}
                             className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
                           >
+                            <span className="mb-1 flex items-center gap-1.5">
+                              <TaskKey task={task} />
+                              <TaskTypeChip task={task} />
+                              <TaskResolutionChip task={task} />
+                            </span>
                             <p
                               className={cn(
                                 'line-clamp-2 text-sm font-medium leading-snug',

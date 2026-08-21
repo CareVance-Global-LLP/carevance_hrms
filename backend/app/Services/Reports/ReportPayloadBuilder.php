@@ -41,15 +41,25 @@ class ReportPayloadBuilder
         // Idle time must be detected inactivity, never derived from billable.
         // Reuse the same idle-resolution path as the rest of the reports suite.
         $idleByUser = [];
+        $measuredIdleByUser = [];
         if ($startDate && $endDate) {
             $userIds = $enrichedEntries->pluck('user_id')->filter()->unique()->values();
-            $idleByUser = collect(
-                $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate)['by_user'] ?? []
-            )->all();
+            $idleSummary = $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $startDate, $endDate);
+            $idleByUser = collect($idleSummary['by_user'] ?? [])->all();
+            $measuredIdleByUser = collect($idleSummary['by_user_measured'] ?? [])->all();
         }
+        // Clipped: still owed against tracked time.
         $idleDuration = (int) array_sum($idleByUser);
+        /*
+         * Measured: how long people were actually idle. One variable used to
+         * serve both, so a report showed the deducted figure as though it were
+         * the observation - zero, whenever an auto-stop had rewound the entry
+         * past the idle it caused.
+         */
+        $measuredIdleDuration = (int) array_sum($measuredIdleByUser ?: $idleByUser);
 
-        // Work Time = Track Time - Idle Time (canonical formula).
+        // Work Time = Track Time - Idle Time (canonical formula), on the
+        // clipped figure: worked time feeds payroll and must not move.
         $workingBreakdown = $this->timeBreakdownService->build($totalDuration, $idleDuration);
         $workingDuration = $workingBreakdown['working_duration'];
 
@@ -87,14 +97,14 @@ class ReportPayloadBuilder
             'billable_time' => $billableDuration,
             'total_duration' => $totalDuration,
             'working_duration' => $workingDuration,
-            'idle_duration' => $idleDuration,
-            'idle_time' => $idleDuration,
+            'idle_duration' => $measuredIdleDuration,
+            'idle_time' => $measuredIdleDuration,
             'billable_duration' => $billableDuration,
             'total_break_seconds' => $breakDuration,
             'break_hours' => round($breakDuration / 3600, 2),
             'total_hours' => round($totalDuration / 3600, 2),
             'working_hours' => round($workingDuration / 3600, 2),
-            'idle_hours' => round($idleDuration / 3600, 2),
+            'idle_hours' => round($measuredIdleDuration / 3600, 2),
             'billable_hours' => round($billableDuration / 3600, 2),
             'by_project' => $byProject,
             'by_user' => $byUser,

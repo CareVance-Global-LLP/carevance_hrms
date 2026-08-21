@@ -41,6 +41,46 @@ export const PRIORITY_META: Record<NonNullable<TaskPriority>, { label: string; c
   low: { label: 'Low', className: 'text-slate-600', rank: 3 },
 };
 
+/**
+ * What kind of work a task is.
+ *
+ * Rendered as a small tinted chip rather than another word in the row: on a
+ * dense list the type is something you scan for, not something you read. The
+ * colours are deliberately outside the priority palette (rose/amber) so a bug
+ * chip can never be mistaken for an urgent flag.
+ */
+export const TYPE_META: Record<NonNullable<Task['type']>, { label: string; className: string }> = {
+  task: { label: 'Task', className: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200' },
+  bug: { label: 'Bug', className: 'bg-red-50 text-red-700 ring-1 ring-red-200' },
+  story: { label: 'Story', className: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200' },
+  epic: { label: 'Epic', className: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200' },
+};
+
+export const TYPE_OPTIONS = Object.entries(TYPE_META).map(([value, meta]) => ({
+  value: value as NonNullable<Task['type']>,
+  label: meta.label,
+}));
+
+/**
+ * How a finished task ended.
+ *
+ * `done` alone cannot tell shipped from abandoned from duplicate, so a board
+ * full of green says nothing about what was actually delivered. Only shown on
+ * tasks that are done — a resolution on an open task claims an outcome that has
+ * not happened.
+ */
+export const RESOLUTION_META: Record<NonNullable<Task['resolution']>, { label: string; className: string }> = {
+  fixed: { label: 'Fixed', className: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' },
+  wont_do: { label: "Won't do", className: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200' },
+  duplicate: { label: 'Duplicate', className: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200' },
+  cannot_reproduce: { label: 'Cannot reproduce', className: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' },
+};
+
+export const RESOLUTION_OPTIONS = Object.entries(RESOLUTION_META).map(([value, meta]) => ({
+  value: value as NonNullable<Task['resolution']>,
+  label: meta.label,
+}));
+
 /** The axes the list can be grouped by. Replaces stacking four dropdowns. */
 export type TaskGroupBy = 'status' | 'assignee' | 'priority' | 'department' | 'due' | 'none';
 

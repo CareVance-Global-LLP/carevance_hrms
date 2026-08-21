@@ -103,14 +103,36 @@ export interface Project {
 }
 
 // Task Types
+/** What kind of work a task is. A bug and a feature are not the same thing to report on. */
+export type TaskType = 'task' | 'bug' | 'story' | 'epic';
+
+/**
+ * How a task ENDED, which `status` cannot say — `done` alone cannot tell
+ * shipped from abandoned from duplicate. Null while the task is still open.
+ */
+export type TaskResolution = 'fixed' | 'wont_do' | 'duplicate' | 'cannot_reproduce';
+
 export interface Task {
   id: number;
+  /** Per-organization shareable identifier, e.g. `CV-14`. */
+  key?: string | null;
+  number?: number | null;
+  organization_id?: number | null;
   group_id?: number | null;
   project_id?: number | null;
+  /** The task this one is a piece of. The hierarchy is one level deep. */
+  parent_id?: number | null;
   assignee_id?: number | null;
+  /** Who raised it, as opposed to who is doing it. */
+  created_by?: number | null;
+  creator?: User | null;
+  parent?: Task | null;
+  children?: Task[];
   title: string;
   description?: string;
   status: 'todo' | 'in_progress' | 'in_review' | 'done';
+  type?: TaskType;
+  resolution?: TaskResolution | null;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   due_date?: string;
   estimated_time?: number;
@@ -1980,4 +2002,359 @@ export interface FormulaValidateResult {
   valid: boolean;
   errors?: string[];
   parsed?: string;
+}
+
+/**
+ * A company inside the organization: the thing that holds a PAN and files
+ * returns. One organization can contain several, which is how Indian groups
+ * running two to four entities are represented.
+ */
+export interface LegalEntity {
+  id: number;
+  organization_id: number;
+  name: string;
+  legal_name?: string | null;
+  pan?: string | null;
+  tan?: string | null;
+  pf_establishment_code?: string | null;
+  esi_code?: string | null;
+  lwf_code?: string | null;
+  cin?: string | null;
+  gstin?: string | null;
+  address_line?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  /** Where employees with no explicit entity are filed. Exactly one per organization. */
+  is_primary: boolean;
+  is_active: boolean;
+  users_count?: number;
+  /**
+   * Which statute the premises works under. Working-hour limits and the
+   * overtime rate are properties of the establishment, not of a policy.
+   */
+  establishment_type?: EstablishmentType;
+  /** Whether the statutory overtime rate is APPLIED or only reported. */
+  enforce_overtime_floor?: boolean;
+  /** A written exemption under s.55, in minutes. Null means none. */
+  rest_interval_exemption_minutes?: number | null;
+  /** Raised from the default 50 under s.65(3). Null means the default. */
+  quarterly_overtime_cap_hours?: number | null;
+  exemption_reference?: string | null;
+}
+
+export type EstablishmentType = 'factory' | 'shops_establishment' | 'unregulated';
+
+/** What the law requires of one establishment. Minutes throughout. */
+export interface StatutoryLimits {
+  establishment_type: EstablishmentType;
+  is_regulated: boolean;
+  max_daily_minutes: number | null;
+  max_weekly_minutes: number | null;
+  max_spread_over_minutes: number | null;
+  max_weekly_including_overtime_minutes: number | null;
+  max_continuous_work_minutes: number | null;
+  minimum_rest_minutes: number;
+  /** Decimal string, e.g. "2.00". Null where nothing is asserted. */
+  overtime_multiplier_floor: string | null;
+  quarterly_overtime_minutes: number | null;
+  enforce_overtime_floor: boolean;
+  exemption_reference: string | null;
+  citations: Record<string, string>;
+}
+
+export interface OvertimeRegisterRow {
+  user_id: number;
+  name: string;
+  employee_code?: string | null;
+  date: string;
+  scope: string;
+  normal_minutes: number | null;
+  worked_minutes: number;
+  overtime_minutes: number;
+  payable_minutes: number;
+  pending_minutes: number;
+  multiplier: string;
+  configured_multiplier: string;
+  statutory_multiplier_floor: string | null;
+  is_below_statutory_floor: boolean;
+  hourly_rate: string | null;
+  /** Null, never "0.00", when there is no ordinary rate to compute from. */
+  amount: string | null;
+  establishment_type: EstablishmentType;
+}
+
+export interface StatutoryBreach {
+  type: string;
+  period: string;
+  limit_minutes: number;
+  actual_minutes: number;
+  excess_minutes: number;
+  citation: string | null;
+  summary: string;
+}
+
+/** How often a leave type accrues over a leave year. */
+export type LeaveAccrualFrequency = 'annual' | 'monthly' | 'quarterly' | 'half_yearly';
+
+/** When in its period an accrual lands. */
+export type LeaveAccrualTiming = 'period_start' | 'period_end';
+
+/** What happens to an unused balance when the leave year closes. */
+export type LeaveYearEndAction = 'carry_forward' | 'reset' | 'encash';
+
+export interface LeaveType {
+  id: number;
+  organization_id: number;
+  code: string;
+  name: string;
+  annual_quota: string | number;
+  accrual_frequency: LeaveAccrualFrequency;
+  accrual_timing?: LeaveAccrualTiming;
+  year_end_action?: LeaveYearEndAction;
+  /** Null means the normal rate, never zero. */
+  notice_period_annual_quota?: string | number | null;
+  /** Whether somebody joining mid-period earns that period. */
+  pro_rate_on_join: boolean;
+  /** Join on or before this day of the month and the period accrues in full. */
+  joining_cutoff_day: number;
+  probation_annual_quota?: string | number | null;
+  carry_forward_cap: string | number;
+  carry_forward_expiry_months?: number | null;
+  is_encashable: boolean;
+  is_paid: boolean;
+  is_active: boolean;
+  position: number;
+}
+
+/** What a movement of leave was. Signed: accrual positive, consumption negative. */
+export type LeaveLedgerKind =
+  | 'opening_balance' | 'accrual' | 'consumption'
+  | 'carry_forward' | 'expiry' | 'encashment' | 'adjustment';
+
+export interface LeaveLedgerEntry {
+  id: number;
+  leave_type_id: number;
+  kind: LeaveLedgerKind;
+  units: string | number;
+  effective_on: string;
+  note?: string | null;
+  leave_type?: Pick<LeaveType, 'id' | 'code' | 'name'> | null;
+}
+
+/** A punch terminal that posts attendance to us over the ADMS push protocol. */
+export interface BiometricDevice {
+  id: number;
+  organization_id: number;
+  serial_number: string;
+  name: string;
+  location?: string | null;
+  legal_entity_id?: number | null;
+  vendor?: string | null;
+  last_seen_at?: string | null;
+  punches_received?: number;
+  is_active: boolean;
+  /** Computed server-side: it reported before and has gone quiet. */
+  is_stale?: boolean;
+  /** False means it has never called in at all — a different problem entirely. */
+  has_ever_reported?: boolean;
+}
+
+export interface UnmappedDeviceUser {
+  device_user_id: string;
+  punch_count: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+/** One customer's identity provider, as configured by an admin. */
+export interface SamlConnection {
+  id: number;
+  organization_id: number;
+  legal_entity_id?: number | null;
+  name?: string | null;
+  idp_entity_id: string;
+  idp_sso_url: string;
+  idp_slo_url?: string | null;
+  /**
+   * Write-only. The API never returns the certificate - it is the trust anchor,
+   * and what is worth trusting is not worth broadcasting. Read `certificate`
+   * for what is loaded and when it expires.
+   */
+  idp_x509_cert?: string;
+  certificate?: {
+    subject: string;
+    expires_at: string;
+    /** Signed: negative means it has already expired. */
+    days_remaining: number;
+    fingerprint: string;
+  } | null;
+  email_attribute?: string | null;
+  name_attribute?: string | null;
+  provision_users: boolean;
+  default_role?: string | null;
+  is_active: boolean;
+  is_usable?: boolean;
+  last_login_at?: string | null;
+}
+
+/** The values an admin pastes into their identity provider. */
+export interface SamlServiceProvider {
+  entity_id: string;
+  acs_url: string;
+  metadata_url: string;
+}
+
+// ---------------------------------------------------------------- recruitment
+
+export type JobOpeningStatus = 'draft' | 'open' | 'on_hold' | 'closed' | 'filled';
+export type EmploymentType = 'full_time' | 'part_time' | 'contract' | 'intern' | 'temporary';
+export type ApplicationStatus = 'active' | 'rejected' | 'withdrawn' | 'hired';
+export type InterviewVerdict = 'strong_yes' | 'yes' | 'no' | 'strong_no';
+export type OfferStatus =
+  | 'draft' | 'pending_approval' | 'approved' | 'sent'
+  | 'accepted' | 'declined' | 'withdrawn' | 'expired';
+
+/** One step in the hiring pipeline. `kind` is what the product acts on, not the name. */
+export interface HiringStage {
+  id: number;
+  name: string;
+  slug: string;
+  position: number;
+  kind: 'screening' | 'interview' | 'offer' | 'hired' | 'rejected';
+  is_terminal: boolean;
+  is_active: boolean;
+}
+
+export interface JobOpening {
+  id: number;
+  organization_id: number;
+  code: string;
+  title: string;
+  description?: string | null;
+  employment_type: EmploymentType;
+  location?: string | null;
+  is_remote: boolean;
+  openings_count: number;
+  min_ctc?: string | number | null;
+  max_ctc?: string | number | null;
+  status: JobOpeningStatus;
+  hiring_manager_id?: number | null;
+  recruiter_id?: number | null;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  hiring_manager?: { id: number; name: string } | null;
+  recruiter?: { id: number; name: string } | null;
+  department?: { id: number; name: string } | null;
+  active_applications_count?: number;
+  hired_count?: number;
+}
+
+/** A PERSON. Their candidacy for one role is a JobApplication. */
+export interface Candidate {
+  id: number;
+  first_name: string;
+  last_name?: string | null;
+  email: string;
+  phone?: string | null;
+  linkedin_url?: string | null;
+  source: string;
+  current_company?: string | null;
+  current_ctc?: string | number | null;
+  expected_ctc?: string | number | null;
+  notice_period_days?: number | null;
+  location?: string | null;
+  applications_count?: number;
+}
+
+export interface JobApplication {
+  id: number;
+  job_opening_id: number;
+  candidate_id: number;
+  hiring_stage_id?: number | null;
+  status: ApplicationStatus;
+  applied_at?: string | null;
+  /** Always present on a rejection — a candidacy that just stops explains nothing. */
+  rejection_reason?: string | null;
+  candidate?: Pick<Candidate, 'id' | 'first_name' | 'last_name' | 'email'> | null;
+  stage?: Pick<HiringStage, 'id' | 'name' | 'kind' | 'position'> | null;
+  opening?: Pick<JobOpening, 'id' | 'title' | 'code'> | null;
+}
+
+export interface ApplicationStageEvent {
+  id: number;
+  action: 'applied' | 'advanced' | 'moved_back' | 'rejected' | 'withdrawn' | 'hired';
+  note?: string | null;
+  created_at: string;
+  from_stage?: { id: number; name: string } | null;
+  to_stage?: { id: number; name: string } | null;
+  actor?: { id: number; name: string } | null;
+}
+
+/** One stage of the funnel. Empty stages are included on purpose. */
+export interface FunnelStage {
+  stage_id: number;
+  name: string;
+  kind: string;
+  active: number;
+}
+
+export interface Interview {
+  id: number;
+  job_application_id: number;
+  title?: string | null;
+  mode: 'phone' | 'video' | 'onsite' | 'take_home';
+  location_or_link?: string | null;
+  scheduled_at: string;
+  duration_minutes: number;
+  status: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+  recommendation?: InterviewVerdict | null;
+  panellists?: Array<{ id: number; name: string }>;
+  stage?: { id: number; name: string } | null;
+  application?: { id: number; candidate?: { first_name: string; last_name?: string | null } | null } | null;
+}
+
+/**
+ * What the panel said — a split, never an average.
+ *
+ * `is_split` is explicit because it is the one fact a hiring manager must not
+ * miss, and a mean score hides it completely.
+ */
+export interface InterviewSummary {
+  panel: { invited: number; submitted: number; outstanding: number };
+  verdicts: Record<InterviewVerdict, number>;
+  is_split: boolean;
+  feedback: Array<{
+    interviewer: string | null;
+    verdict: InterviewVerdict;
+    rating: number | null;
+    notes: string | null;
+    submitted_at: string | null;
+  }>;
+}
+
+export interface OfferApproval {
+  id: number;
+  approver_id: number;
+  position: number;
+  status: 'pending' | 'approved' | 'rejected';
+  note?: string | null;
+  decided_at?: string | null;
+  approver?: { id: number; name: string } | null;
+}
+
+export interface JobOffer {
+  id: number;
+  job_application_id: number;
+  designation: string;
+  annual_ctc: string | number;
+  joining_bonus?: string | number | null;
+  proposed_joining_date?: string | null;
+  status: OfferStatus;
+  valid_until?: string | null;
+  sent_at?: string | null;
+  responded_at?: string | null;
+  decline_reason?: string | null;
+  approvals?: OfferApproval[];
+  application?: { id: number; candidate?: Pick<Candidate, 'id' | 'first_name' | 'last_name' | 'email'> | null } | null;
 }

@@ -103,3 +103,43 @@ Route::post('/webhooks/razorpay', [\App\Http\Controllers\Api\BillingController::
  * status — and reading the whole file into memory made it a denial-of-service
  * lever once the log grew. Do not put this back.
  */
+
+/*
+ * SAML single sign-on.
+ *
+ * Necessarily public: somebody signing in has no session yet, and the identity
+ * provider POSTs its response straight from the browser. What stands in for
+ * authentication is in SamlAuthService - the assertion is trusted only because
+ * it is signed by the key matching the certificate the customer registered, it
+ * is refused if we have seen that assertion before, and the tenant comes from
+ * the assertion's issuer rather than from anything the caller controls.
+ *
+ * Throttled: the callback does XML parsing and signature verification, which is
+ * expensive enough to be worth abusing.
+ */
+Route::middleware('throttle:30,1')->group(function () {
+    Route::post('/auth/saml/discover', [\App\Http\Controllers\Api\SamlAuthController::class, 'discover']);
+    Route::get('/auth/saml/{connectionId}/redirect', [\App\Http\Controllers\Api\SamlAuthController::class, 'redirect']);
+    Route::post('/auth/saml/callback', [\App\Http\Controllers\Api\SamlAuthController::class, 'callback']);
+    Route::get('/auth/saml/metadata', [\App\Http\Controllers\Api\SamlAuthController::class, 'metadata']);
+});
+
+/**
+ * Signing an offer letter.
+ *
+ * Unauthenticated by necessity: a candidate is not a user of this system, and
+ * making somebody create an account to accept a job is a step at which offers
+ * are lost. The token in the URL IS the credential - 32 random bytes, stored
+ * only as a hash, cleared the moment it is used.
+ *
+ * Throttled hard. These routes render a PDF on every document view, and the
+ * token is the only thing standing between a caller and an acceptance, so
+ * brute-forcing it must be expensive. Thirty attempts a minute is generous for
+ * one candidate reading one letter and useless for anybody guessing.
+ */
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get('/offers/sign/{token}', [\App\Http\Controllers\Api\OfferSigningController::class, 'show']);
+    Route::get('/offers/sign/{token}/document', [\App\Http\Controllers\Api\OfferSigningController::class, 'document']);
+    Route::post('/offers/sign/{token}', [\App\Http\Controllers\Api\OfferSigningController::class, 'sign']);
+    Route::post('/offers/sign/{token}/decline', [\App\Http\Controllers\Api\OfferSigningController::class, 'decline']);
+});

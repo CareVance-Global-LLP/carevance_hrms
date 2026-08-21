@@ -53,6 +53,12 @@ final class OvertimeAssessment
     public const MULTIPLIER_FROM_SHIFT = 'shift';
     public const MULTIPLIER_FROM_DEFAULT = 'default';
 
+    /**
+     * The configured rate was below what the law requires and the establishment
+     * is enforcing the floor, so the statutory rate is what applies.
+     */
+    public const MULTIPLIER_FROM_STATUTORY_FLOOR = 'statutory_floor';
+
     public function __construct(
         public readonly Carbon $attendanceDate,
         /** working_day | weekly_off | holiday */
@@ -79,7 +85,50 @@ final class OvertimeAssessment
         public readonly ?int $policyId = null,
         public readonly ?int $scopeRateId = null,
         public readonly string $multiplierSource = self::MULTIPLIER_FROM_DEFAULT,
+        /**
+         * The least an overtime hour may be worth here, as a decimal string.
+         * Null where the establishment is unregulated or unknown.
+         */
+        public readonly ?string $statutoryMultiplierFloor = null,
+        /**
+         * What the POLICY said, before any floor was applied. Null means the
+         * policy's rate is what `multiplier` already holds.
+         *
+         * Kept separately rather than overwritten because "we paid 2x because
+         * the law says so, and your policy says 1.5x" is the sentence a
+         * compliance report has to be able to say. Overwriting the configured
+         * rate makes the payslip correct and the explanation impossible.
+         */
+        public readonly ?string $configuredMultiplier = null,
     ) {
+    }
+
+    /**
+     * Is the configured rate below the statutory floor?
+     *
+     * True whether or not the floor is being enforced — that is the point. An
+     * establishment that has not switched enforcement on still needs to be told
+     * it is underpaying, and an establishment that has needs the shortfall
+     * visible so somebody eventually fixes the policy rather than relying on
+     * the floor forever.
+     */
+    public function isBelowStatutoryFloor(): bool
+    {
+        if ($this->statutoryMultiplierFloor === null) {
+            return false;
+        }
+
+        return bccomp($this->configuredMultiplier ?? $this->multiplier, $this->statutoryMultiplierFloor, 2) < 0;
+    }
+
+    /** How far below, as a decimal string, or null when it is not below. */
+    public function statutoryShortfall(): ?string
+    {
+        if (! $this->isBelowStatutoryFloor()) {
+            return null;
+        }
+
+        return bcsub($this->statutoryMultiplierFloor, $this->configuredMultiplier ?? $this->multiplier, 2);
     }
 
     /** Has the approval gate been satisfied? */
@@ -172,6 +221,10 @@ final class OvertimeAssessment
             'source' => $this->source,
             'overtime_policy_id' => $this->policyId,
             'overtime_policy_scope_id' => $this->scopeRateId,
+            'statutory_multiplier_floor' => $this->statutoryMultiplierFloor,
+            'configured_multiplier' => $this->configuredMultiplier ?? $this->multiplier,
+            'is_below_statutory_floor' => $this->isBelowStatutoryFloor(),
+            'statutory_shortfall' => $this->statutoryShortfall(),
         ];
     }
 

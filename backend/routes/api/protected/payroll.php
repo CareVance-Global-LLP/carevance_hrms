@@ -84,6 +84,28 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::get('/payslip/{userId}/{monthYear}/view', [PayrollController::class, 'viewPayslipPdf']);
 });
 
+/*
+ * Manager-facing reimbursement review.
+ *
+ * Deliberately OUTSIDE the payroll-admin group. Approving your own team's
+ * expense claims is a line manager's job — it is the manager rung of the
+ * approval chain, and the admin rung (`approve`, `mark-paid`) stays admin-only
+ * below. Tightening the payroll group to `role:payroll` swept these up with it
+ * and 403'd every manager out of their own inbox, which ReimbursementFlowTest
+ * caught.
+ *
+ * Each handler still resolves the subject from the caller, so a manager sees
+ * only claims from people who report to them.
+ */
+Route::prefix('payroll')->middleware(['plan.payroll', 'role:manager'])->group(function () {
+    Route::get('/reimbursements/inbox/manager', [ReimbursementController::class, 'managerInbox']);
+    Route::post('/reimbursements/{id}/manager-approve', [ReimbursementController::class, 'managerApprove']);
+    Route::post('/reimbursements/{id}/manager-reject', [ReimbursementController::class, 'managerReject']);
+    Route::post('/reimbursements/bulk/manager-approve', [ReimbursementController::class, 'bulkManagerApprove']);
+    Route::post('/reimbursements/bulk/manager-reject', [ReimbursementController::class, 'bulkManagerReject']);
+    Route::post('/reimbursements/{id}/mark-read', [ReimbursementController::class, 'markInboxRead']);
+});
+
 /**
  * Administrative payroll.
  *
@@ -97,7 +119,28 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
  *
  * The gate belongs here, once, where it cannot be forgotten.
  */
-Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->group(function () {
+/*
+ * The administrative payroll area is admin-only.
+ *
+ * This was 'role:admin,manager'. EnsureUserHasRole reads 'manager' as
+ * hierarchy_level < 100, so every manager in the organization could open payroll
+ * runs, salary structures, bank files and every employee's compensation — the
+ * whole company's pay, visible to anyone with a team. Employees and managers
+ * reach their own figures through the `payroll/my/*` and ESS routes in
+ * PayrollRouteAuthorizationTest's allow-list, which are deliberately outside
+ * this group.
+ *
+ * 'payroll' means hierarchy_level <= 20 — admin, hr and payroll_manager, the
+ * same set as PayslipController::PAYROLL_ROLES. It is NOT 'role:admin': that is
+ * <= 10 and would lock HR out of the module they operate, an outage already
+ * written up in User::getHierarchyLevel().
+ *
+ * Being a level comparison rather than a role NAME check, a custom role placed
+ * at payroll level still passes. Granting payroll access stays a deliberate act
+ * of moving somebody up the hierarchy, rather than something a job title hands
+ * them by accident.
+ */
+Route::prefix('payroll')->middleware(['plan.payroll', 'role:payroll'])->group(function () {
     /*
      * The diagnostic and test endpoints that used to live here are gone.
      *
@@ -370,17 +413,11 @@ Route::get('/runs/{runId}/checklist', [PayrollDepartmentController::class, 'getR
 
     // Reimbursements (two-level approval: manager → admin)
     Route::get('/reimbursements', [ReimbursementController::class, 'index']);
-    Route::get('/reimbursements/inbox/manager', [ReimbursementController::class, 'managerInbox']);
     Route::get('/reimbursements/inbox/admin', [ReimbursementController::class, 'adminInbox']);
     Route::get('/reimbursements/pending-payments', [ReimbursementController::class, 'pendingPayments']);
     Route::get('/reimbursements/{id}', [ReimbursementController::class, 'show']);
     Route::post('/reimbursements/upload-receipt', [ReimbursementController::class, 'uploadReceipt']);
     Route::put('/reimbursements/{id}', [ReimbursementController::class, 'update']);
-    Route::post('/reimbursements/{id}/manager-approve', [ReimbursementController::class, 'managerApprove']);
-    Route::post('/reimbursements/{id}/manager-reject', [ReimbursementController::class, 'managerReject']);
-    Route::post('/reimbursements/{id}/mark-read', [ReimbursementController::class, 'markInboxRead']);
-    Route::post('/reimbursements/bulk/manager-approve', [ReimbursementController::class, 'bulkManagerApprove']);
-    Route::post('/reimbursements/bulk/manager-reject', [ReimbursementController::class, 'bulkManagerReject']);
     Route::post('/reimbursements/{id}/mark-paid', [ReimbursementController::class, 'markPaid']);
     Route::post('/reimbursements/{id}/approve', [ReimbursementController::class, 'approve']);
     Route::post('/reimbursements/{id}/reject', [ReimbursementController::class, 'reject']);

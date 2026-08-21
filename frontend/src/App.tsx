@@ -1,7 +1,7 @@
 ﻿import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { canAccess, hasAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
+import { canAccess, hasAdminAccess, hasPayrollAdminAccess, hasEmployeeOrManagerAccess, hasStrictAdminAccess, hasSuperAdminAccess, isEmployeeUser } from '@/lib/permissions';
 import { usePlan } from '@/hooks/usePlan';
 import { resolveTrackerPolicy } from '@/lib/trackerPolicy';
 import { isLikelyMobile } from '@/lib/mobile';
@@ -97,6 +97,9 @@ const OperationsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/Oper
 const TaxComplianceTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/TaxComplianceTab'));
 const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/ReportsTab'));
 const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollReportsPage'));
+const OvertimeRegisterPage = lazyWithChunkRetry(() => import('@/pages/OvertimeRegisterPage'));
+const RecruitmentPage = lazyWithChunkRetry(() => import('@/pages/RecruitmentPage'));
+const OfferSigningPage = lazyWithChunkRetry(() => import('@/pages/OfferSigningPage'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const PayGroupSettings = lazyWithChunkRetry(() => import('@/pages/payroll/PayGroupSettings'));
 // Payroll Setup (page-based onboarding)
@@ -430,6 +433,35 @@ export function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * The administrative payroll area.
+ *
+ * Mirrors the API's `role:payroll` middleware — hierarchy level <= 20, i.e.
+ * admin, hr and payroll_manager. AdminRoute is `< 100` and let every line
+ * manager into the whole company's pay; StrictAdminRoute is `<= 10` and would
+ * lock HR out of the module they operate. This route needs the set in between,
+ * and it must equal the server's, or people see a page that then 403s.
+ */
+export function PayrollAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  if (!hasPayrollAdminAccess(user)) {
+    // Their own figures still exist, so send them there rather than to a
+    // dead end that reads as "payroll is broken".
+    return <Navigate to="/my-payroll" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 export function StrictAdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
 
@@ -599,6 +631,17 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/*
+            * The candidate's signing page.
+            *
+            * Bare, with NO PublicRoute wrapper: PublicRoute redirects an
+            * already-signed-in user to the dashboard, and a recruiter checking
+            * their own link would be bounced away from the page they were
+            * trying to look at. The token in the URL is the only credential
+            * this page has or needs.
+            */}
+          <Route path="/offer/:token" element={<OfferSigningPage />} />
+
           <Route
             path="/login"
             element={
@@ -720,7 +763,7 @@ function App() {
             <Route path="settings/geofence" element={<AdminRoute><GeofenceSettings /></AdminRoute>} />
             <Route path="settings/roles" element={<AdminRoute><RoleManagement /></AdminRoute>} />
             {/* Payroll module — single shell with 6 deep-linkable tabs */}
-            <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><AdminRoute><PayrollShell /></AdminRoute></PlanFeatureRoute>}>
+            <Route path="payroll" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayrollShell /></PayrollAdminRoute></PlanFeatureRoute>}>
               <Route index element={<OverviewTab />} />
               <Route path="run" element={<RunPayrollTab />} />
               <Route path="employee-pay" element={<EmployeePayTab />} />
@@ -729,10 +772,23 @@ function App() {
               <Route path="reports" element={<PayrollReportsPage />} />
             </Route>
             {/* Pay Group Settings - standalone page for configuring pay group state and statutory details */}
-            <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettingsRoute /></StrictAdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/pay-group-settings/:payGroupId" element={<PlanFeatureRoute feature="payroll"><StrictAdminRoute><PayGroupSettingsRoute /></StrictAdminRoute></PlanFeatureRoute>} />
+            {/*
+              * The statutory overtime register. Behind PayrollAdminRoute to
+              * match the API's own `role:payroll` gate exactly - it carries
+              * every colleague's hourly rate, so a line manager must not reach
+              * a screen the server would refuse anyway.
+              */}
+            {/*
+              * Hiring. AdminRoute is `< 100`, which is exactly the
+              * `role:manager` gate the API uses — a hiring manager runs their
+              * own pipeline without going through HR.
+              */}
+            <Route path="hiring" element={<AdminRoute><RecruitmentPage /></AdminRoute>} />
+            <Route path="reports/overtime-register" element={<PayrollAdminRoute><OvertimeRegisterPage /></PayrollAdminRoute>} />
+            <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayGroupSettingsRoute /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/pay-group-settings/:payGroupId" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayGroupSettingsRoute /></PayrollAdminRoute></PlanFeatureRoute>} />
             {/* Standalone Unassigned Employees screen (not a tab) */}
-            <Route path="payroll/unassigned-employees" element={<PlanFeatureRoute feature="payroll"><AdminRoute><UnassignedEmployeesPage /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/unassigned-employees" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><UnassignedEmployeesPage /></PayrollAdminRoute></PlanFeatureRoute>} />
             <Route path="my-payroll" element={<PlanFeatureRoute feature="payroll"><ProtectedRoute><MyPayroll /></ProtectedRoute></PlanFeatureRoute>} />
 
             {/* Legacy payroll routes → redirect into the new tabbed shell */}
@@ -749,15 +805,15 @@ function App() {
             <Route path="payroll-reports" element={<Navigate to="/payroll/reports?panel=register" replace />} />
 
             {/* Payroll Setup (page-based onboarding) */}
-            <Route path="payroll/setup" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupWelcome /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/defaults" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDefaults /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/employees" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupEmployees /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/compliance" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupCompliance /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/statutory" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupStatutory /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/pay-schedule" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupPaySchedule /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/bank" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupBank /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/departments" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupDepartments /></AdminRoute></PlanFeatureRoute>} />
-            <Route path="payroll/setup/test-run" element={<PlanFeatureRoute feature="payroll"><AdminRoute><SetupTestRun /></AdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupWelcome /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/defaults" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupDefaults /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/employees" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupEmployees /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/compliance" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupCompliance /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/statutory" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupStatutory /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/pay-schedule" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupPaySchedule /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/bank" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupBank /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/departments" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupDepartments /></PayrollAdminRoute></PlanFeatureRoute>} />
+            <Route path="payroll/setup/test-run" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><SetupTestRun /></PayrollAdminRoute></PlanFeatureRoute>} />
             <Route path="reimbursements" element={<Navigate to="/payroll/employee-pay?type=reimbursements" replace />} />
             <Route path="pre-payroll-checklist" element={<Navigate to="/payroll/run?step=checklist" replace />} />
             <Route path="filings" element={<Navigate to="/payroll/reports?panel=filings" replace />} />

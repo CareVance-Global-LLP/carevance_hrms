@@ -91,8 +91,7 @@ import type {
   UpdateFilingDetailsPayload,
   IndianState,
   PollItem,
-  PollResultsResponse,
-} from '@/types';
+  PollResultsResponse, LegalEntity , LeaveType, LeaveLedgerEntry , BiometricDevice, UnmappedDeviceUser , SamlConnection, SamlServiceProvider , StatutoryLimits, OvertimeRegisterRow, StatutoryBreach , JobOpening, Candidate, HiringStage, JobApplication, ApplicationStageEvent, FunnelStage, Interview, InterviewSummary, InterviewVerdict, JobOffer } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 // Define API error response structure
@@ -1483,6 +1482,227 @@ export const screenshotApi = {
 };
 
 // Activity API
+/**
+ * The companies inside an organization.
+ *
+ * Reading is open to managers; every write is payroll-admin only, because an
+ * entity's PAN and TAN decide which statutory return every employee under it
+ * appears on.
+ */
+/**
+ * Leave types and the ledger behind a balance.
+ *
+ * `ledger` is readable by anybody about themselves; the server refuses anyone
+ * else's unless the caller can manage leave.
+ */
+/**
+ * Punch terminals, and saying whose finger is whose.
+ *
+ * Separate from the /iclock protocol routes the hardware itself speaks: this is
+ * the administrative side.
+ */
+/**
+ * Configuring single sign-on.
+ *
+ * Separate from the unauthenticated login routes under /auth/saml, which the
+ * browser reaches without a session.
+ */
+export const samlConnectionApi = {
+  list: () =>
+    api.get<{ data: SamlConnection[]; service_provider: SamlServiceProvider }>('/saml-connections'),
+
+  create: (payload: Partial<SamlConnection>) =>
+    api.post<{ data: SamlConnection }>('/saml-connections', payload),
+
+  update: (id: number, payload: Partial<SamlConnection>) =>
+    api.put<{ data: SamlConnection }>(`/saml-connections/${id}`, payload),
+
+  remove: (id: number) => api.delete<{ message: string }>(`/saml-connections/${id}`),
+};
+
+export const biometricDeviceApi = {
+  list: () =>
+    api.get<{ data: BiometricDevice[]; unmapped: UnmappedDeviceUser[]; endpoint: string }>('/biometric-devices'),
+
+  create: (payload: Partial<BiometricDevice>) =>
+    api.post<{ data: BiometricDevice }>('/biometric-devices', payload),
+
+  update: (id: number, payload: Partial<BiometricDevice>) =>
+    api.put<{ data: BiometricDevice }>(`/biometric-devices/${id}`, payload),
+
+  claim: (deviceUserId: string, userId: number) =>
+    api.post<{ message: string }>('/biometric-devices/claim', {
+      device_user_id: deviceUserId,
+      user_id: userId,
+    }),
+};
+
+export const leaveTypeApi = {
+  list: () => api.get<{ data: LeaveType[] }>('/leave-types'),
+
+  create: (payload: Partial<LeaveType>) => api.post<{ data: LeaveType }>('/leave-types', payload),
+
+  update: (id: number, payload: Partial<LeaveType>) =>
+    api.put<{ data: LeaveType }>(`/leave-types/${id}`, payload),
+
+  ledger: (userId: number) =>
+    api.get<{
+      cycle: { start_date: string; end_date: string };
+      entries: LeaveLedgerEntry[];
+      // Sent by the server so the UI never re-adds the rows: two places
+      // computing a balance is how a breakdown stops matching the figure.
+      balance: { totals: { quota: number; used: number; remaining: number } };
+    }>(`/leave-ledger/${userId}`),
+};
+
+/**
+ * The overtime register and the working-hours breach list.
+ *
+ * `limits` is readable by anybody - what the law requires of the place you work
+ * is your own information. The other two carry everybody's hours and pay.
+ */
+/**
+ * Recruitment: openings, candidates, the pipeline, interviews and offers.
+ *
+ * Every pipeline write goes through a dedicated endpoint rather than a generic
+ * update — the server refuses transitions the UI should never offer, and a
+ * PATCH on `hiring_stage_id` would bypass the event that explains the move.
+ */
+export const recruitmentApi = {
+  openings: (params?: { status?: string; page?: number }) =>
+    api.get<PaginatedResponse<JobOpening>>('/recruitment/openings', { params }),
+
+  opening: (id: number) =>
+    api.get<{ data: JobOpening; funnel: FunnelStage[]; remaining_openings: number }>(
+      `/recruitment/openings/${id}`,
+    ),
+
+  createOpening: (payload: Partial<JobOpening>) =>
+    api.post<{ data: JobOpening }>('/recruitment/openings', payload),
+
+  updateOpening: (id: number, payload: Partial<JobOpening>) =>
+    api.put<{ data: JobOpening }>(`/recruitment/openings/${id}`, payload),
+
+  candidates: (params?: { q?: string; page?: number }) =>
+    api.get<PaginatedResponse<Candidate>>('/recruitment/candidates', { params }),
+
+  createCandidate: (payload: Partial<Candidate>) =>
+    api.post<{ data: Candidate }>('/recruitment/candidates', payload),
+
+  stages: () => api.get<{ data: HiringStage[] }>('/recruitment/stages'),
+
+  applications: (params?: { job_opening_id?: number; status?: string; page?: number }) =>
+    api.get<PaginatedResponse<JobApplication>>('/recruitment/applications', { params }),
+
+  apply: (jobOpeningId: number, candidateId: number) =>
+    api.post<{ data: JobApplication }>('/recruitment/applications', {
+      job_opening_id: jobOpeningId,
+      candidate_id: candidateId,
+    }),
+
+  moveApplication: (id: number, hiringStageId: number, note?: string) =>
+    api.post<{ data: JobApplication }>(`/recruitment/applications/${id}/move`, {
+      hiring_stage_id: hiringStageId,
+      note,
+    }),
+
+  decideApplication: (id: number, decision: 'rejected' | 'withdrawn', reason?: string) =>
+    api.post<{ data: JobApplication }>(`/recruitment/applications/${id}/decide`, { decision, reason }),
+
+  applicationEvents: (id: number) =>
+    api.get<{ data: ApplicationStageEvent[] }>(`/recruitment/applications/${id}/events`),
+
+  interviews: (params?: { job_application_id?: number; mine?: boolean; page?: number }) =>
+    api.get<PaginatedResponse<Interview>>('/recruitment/interviews', { params }),
+
+  scheduleInterview: (payload: Record<string, unknown>) =>
+    api.post<{ data: Interview }>('/recruitment/interviews', payload),
+
+  interviewSummary: (id: number) =>
+    api.get<{ data: InterviewSummary }>(`/recruitment/interviews/${id}/summary`),
+
+  submitFeedback: (id: number, payload: { verdict: InterviewVerdict; rating?: number | null; notes?: string | null }) =>
+    api.post(`/recruitment/interviews/${id}/feedback`, payload),
+
+  cancelInterview: (id: number, reason: string) =>
+    api.post<{ data: Interview }>(`/recruitment/interviews/${id}/cancel`, { reason }),
+
+  offers: (params?: { status?: string; page?: number }) =>
+    api.get<PaginatedResponse<JobOffer>>('/recruitment/offers', { params }),
+
+  draftOffer: (payload: Record<string, unknown>) =>
+    api.post<{ data: JobOffer }>('/recruitment/offers', payload),
+
+  submitOffer: (id: number, approverIds: number[]) =>
+    api.post<{ data: JobOffer }>(`/recruitment/offers/${id}/submit`, { approver_ids: approverIds }),
+
+  decideOffer: (id: number, approved: boolean, note?: string) =>
+    api.post<{ data: JobOffer }>(`/recruitment/offers/${id}/decide`, { approved, note }),
+
+  sendOffer: (id: number, validUntil?: string) =>
+    api.post<{ data: JobOffer }>(`/recruitment/offers/${id}/send`, { valid_until: validUntil }),
+
+  respondToOffer: (id: number, accepted: boolean, declineReason?: string) =>
+    api.post<{ data: JobOffer }>(`/recruitment/offers/${id}/respond`, {
+      accepted,
+      decline_reason: declineReason,
+    }),
+
+  withdrawOffer: (id: number, reason: string) =>
+    api.post<{ data: JobOffer }>(`/recruitment/offers/${id}/withdraw`, { reason }),
+};
+
+export const statutoryApi = {
+  limits: () => api.get<{ data: StatutoryLimits }>('/statutory/limits'),
+
+  register: (params: { from: string; to: string; user_id?: number }) =>
+    api.get<{
+      from: string;
+      to: string;
+      rows: OvertimeRegisterRow[];
+      totals: {
+        entries: number;
+        overtime_minutes: number;
+        pending_minutes: number;
+        rows_without_a_rate: number;
+      };
+    }>('/statutory/overtime-register', { params }),
+
+  breaches: (params: { from: string; to: string; user_id?: number }) =>
+    api.get<{
+      from: string;
+      to: string;
+      employees: Array<{
+        user_id: number;
+        name: string;
+        establishment_type: string;
+        breaches: StatutoryBreach[];
+      }>;
+      totals: {
+        breaches: number;
+        employees_in_breach: number;
+        /** Nobody said what their establishment is, so they were not assessed. */
+        employees_not_assessed: number;
+      };
+    }>('/statutory/breaches', { params }),
+};
+
+export const legalEntityApi = {
+  list: () =>
+    api.get<{ data: LegalEntity[]; unassigned_count: number }>('/legal-entities'),
+
+  create: (payload: Partial<LegalEntity>) =>
+    api.post<{ data: LegalEntity }>('/legal-entities', payload),
+
+  update: (id: number, payload: Partial<LegalEntity>) =>
+    api.put<{ data: LegalEntity }>(`/legal-entities/${id}`, payload),
+
+  remove: (id: number) => api.delete<{ message: string }>(`/legal-entities/${id}`),
+
+  assignEmployees: (id: number, userIds: number[]) =>
+    api.post<{ message: string; moved: number }>(`/legal-entities/${id}/employees`, { user_ids: userIds }),
+};
+
 export const activityApi = {
   /**
    * Record what an idle stretch actually was. Only the person it belongs to
