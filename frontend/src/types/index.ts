@@ -2399,3 +2399,75 @@ export interface ShiftSwapRequest {
   requester_day?: { id: number; roster_date: string; shift_id: number | null } | null;
   counterparty_day?: { id: number; roster_date: string; shift_id: number | null } | null;
 }
+
+// -------------------------------------------------- background verification
+
+export type BgvCheckType =
+  | 'identity' | 'address' | 'education' | 'employment' | 'criminal' | 'reference' | 'credit';
+
+/** clear and discrepancy are BOTH complete. Only a human decides what a discrepancy means. */
+export type BgvItemStatus =
+  | 'pending' | 'in_progress' | 'clear' | 'discrepancy' | 'insufficient' | 'skipped';
+
+export type BgvOutcome = 'clear' | 'discrepancy' | 'insufficient';
+
+export interface BgvConsent {
+  id: number;
+  consented_name: string;
+  consented_email?: string | null;
+  /** What they actually agreed to. Never widened after the fact. */
+  scope: BgvCheckType[];
+  notice_text?: string | null;
+  ip_address?: string | null;
+  consented_at: string;
+  withdrawn_at?: string | null;
+  withdrawal_reason?: string | null;
+}
+
+export interface BgvItem {
+  id: number;
+  background_check_id: number;
+  type: BgvCheckType;
+  label?: string | null;
+  status: BgvItemStatus;
+  /** Both sides of a discrepancy. One without the other is an accusation nobody can answer. */
+  claimed?: string | null;
+  verified?: string | null;
+  notes?: string | null;
+  completed_at?: string | null;
+}
+
+export interface BackgroundCheck {
+  id: number;
+  candidate_id?: number | null;
+  user_id?: number | null;
+  consent_id?: number | null;
+  package?: string | null;
+  vendor?: string | null;
+  status: 'pending_consent' | 'awaiting_start' | 'in_progress' | 'completed' | 'cancelled';
+  /** Never pass/fail — see the service. */
+  outcome?: BgvOutcome | null;
+  requested_at?: string | null;
+  completed_at?: string | null;
+  notified_at?: string | null;
+  candidate_response?: string | null;
+  responded_at?: string | null;
+  items?: BgvItem[];
+  consent?: BgvConsent | null;
+  candidate?: { id: number; first_name: string; last_name?: string | null; email: string } | null;
+  subject?: { id: number; name: string; email: string } | null;
+}
+
+/** A bearer token an identity provider provisions with. The value itself never comes back. */
+export interface ScimToken {
+  id: number;
+  name: string;
+  /** Last few characters only — enough to tell two apart, useless on its own. */
+  token_hint?: string | null;
+  last_used_at?: string | null;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  is_live?: boolean;
+  creator?: { id: number; name: string } | null;
+  created_at: string;
+}

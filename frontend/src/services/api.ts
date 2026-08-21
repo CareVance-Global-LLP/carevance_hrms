@@ -91,7 +91,7 @@ import type {
   UpdateFilingDetailsPayload,
   IndianState,
   PollItem,
-  PollResultsResponse, LegalEntity , LeaveType, LeaveLedgerEntry , BiometricDevice, UnmappedDeviceUser , SamlConnection, SamlServiceProvider , StatutoryLimits, OvertimeRegisterRow, StatutoryBreach , JobOpening, Candidate, HiringStage, JobApplication, ApplicationStageEvent, FunnelStage, Interview, InterviewSummary, InterviewVerdict, JobOffer , RosterDay, ShiftRotation as RosterRotation, ShiftSwapRequest } from '@/types';
+  PollResultsResponse, LegalEntity , LeaveType, LeaveLedgerEntry , BiometricDevice, UnmappedDeviceUser , SamlConnection, SamlServiceProvider , StatutoryLimits, OvertimeRegisterRow, StatutoryBreach , JobOpening, Candidate, HiringStage, JobApplication, ApplicationStageEvent, FunnelStage, Interview, InterviewSummary, InterviewVerdict, JobOffer , RosterDay, ShiftRotation as RosterRotation, ShiftSwapRequest , BackgroundCheck, BgvConsent, BgvItem, BgvCheckType, BgvItemStatus , ScimToken } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 // Define API error response structure
@@ -1694,6 +1694,70 @@ export const leaveTypeApi = {
  * half a million rupees should see the journal, and which components have no
  * ledger mapped, before a file exists.
  */
+/**
+ * Background verification.
+ *
+ * Consent is its own call rather than a field on the check, because it is its
+ * own record: what they agreed to, when, and from where. The server refuses a
+ * check whose types fall outside a recorded consent.
+ */
+/**
+ * SCIM tokens.
+ *
+ * `create` returns the plain token exactly once — it is stored hashed, so
+ * nobody, including an administrator, can retrieve it afterwards.
+ */
+export const scimTokenApi = {
+  list: () => api.get<{ data: ScimToken[]; endpoint: string }>('/scim-tokens'),
+
+  create: (name: string) =>
+    api.post<{ data: ScimToken; token: string; message: string }>('/scim-tokens', { name }),
+
+  revoke: (id: number) => api.post<{ data: ScimToken }>(`/scim-tokens/${id}/revoke`),
+};
+
+export const bgvApi = {
+  list: (params?: { status?: string; outcome?: string }) =>
+    api.get<PaginatedResponse<BackgroundCheck>>('/recruitment/background-checks', { params }),
+
+  show: (id: number) =>
+    api.get<{ data: BackgroundCheck; needs_adverse_action_notice: boolean }>(
+      `/recruitment/background-checks/${id}`,
+    ),
+
+  recordConsent: (payload: {
+    candidate_id?: number;
+    user_id?: number;
+    consented_name: string;
+    scope: BgvCheckType[];
+    notice_text?: string;
+  }) => api.post<{ data: BgvConsent }>('/recruitment/bgv-consents', payload),
+
+  withdrawConsent: (id: number, reason: string) =>
+    api.post<{ data: BgvConsent }>(`/recruitment/bgv-consents/${id}/withdraw`, { reason }),
+
+  open: (payload: {
+    candidate_id?: number;
+    user_id?: number;
+    consent_id: number;
+    types: BgvCheckType[];
+    package?: string;
+  }) => api.post<{ data: BackgroundCheck }>('/recruitment/background-checks', payload),
+
+  recordItem: (itemId: number, payload: {
+    status: BgvItemStatus;
+    claimed?: string | null;
+    verified?: string | null;
+    notes?: string | null;
+  }) => api.post<{ data: BgvItem }>(`/recruitment/background-check-items/${itemId}`, payload),
+
+  notify: (id: number) =>
+    api.post<{ data: BackgroundCheck }>(`/recruitment/background-checks/${id}/notify`),
+
+  recordResponse: (id: number, response: string) =>
+    api.post<{ data: BackgroundCheck }>(`/recruitment/background-checks/${id}/respond`, { response }),
+};
+
 export const accountingApi = {
   journal: (runId: number) =>
     api.get<{

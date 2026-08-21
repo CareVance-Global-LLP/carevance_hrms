@@ -100,6 +100,7 @@ const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollRepor
 const OvertimeRegisterPage = lazyWithChunkRetry(() => import('@/pages/OvertimeRegisterPage'));
 const RecruitmentPage = lazyWithChunkRetry(() => import('@/pages/RecruitmentPage'));
 const RosterPage = lazyWithChunkRetry(() => import('@/pages/RosterPage'));
+const BackgroundChecksPage = lazyWithChunkRetry(() => import('@/pages/BackgroundChecksPage'));
 const OfferSigningPage = lazyWithChunkRetry(() => import('@/pages/OfferSigningPage'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const PayGroupSettings = lazyWithChunkRetry(() => import('@/pages/payroll/PayGroupSettings'));
@@ -785,6 +786,14 @@ function App() {
               * own pipeline without going through HR.
               */}
             <Route path="hiring" element={<AdminRoute><RecruitmentPage /></AdminRoute>} />
+
+            {/*
+              * Background checks. PayrollAdminRoute, not AdminRoute — it mirrors
+              * the API's `role:payroll` gate. A completed check can carry a
+              * criminal record and a previous salary; a hiring manager decides
+              * whether to hire without needing either.
+              */}
+            <Route path="hiring/background-checks" element={<PayrollAdminRoute><BackgroundChecksPage /></PayrollAdminRoute>} />
 
             {/*
               * The rota. NOT behind AdminRoute: the API narrows what it returns

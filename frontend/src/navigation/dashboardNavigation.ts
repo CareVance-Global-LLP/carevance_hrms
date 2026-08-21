@@ -94,6 +94,8 @@ export const topNavigation: NavGroup[] = [
     items: [
       // Kept in step with condensedNavigation.ts.
       { label: 'Hiring', to: '/hiring', icon: Briefcase, adminOnly: true },
+      // Kept in step with condensedNavigation.ts.
+      { label: 'Background Checks', to: '/hiring/background-checks', icon: ShieldCheck, adminOnly: true },
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       // Kept in step with condensedNavigation.ts, which defines the same rail.
       { label: 'Invitations', to: '/employees/invitations', icon: MailPlus, adminOnly: true },

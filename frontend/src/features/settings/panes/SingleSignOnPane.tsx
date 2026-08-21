@@ -6,6 +6,7 @@ import type { SamlConnection } from '@/types';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import { PageLoadingState } from '@/components/ui/PageState';
+import ScimTokensSection from './ScimTokensSection';
 
 /**
  * Signing in through the customer's own identity provider.
@@ -340,6 +341,10 @@ export default function SingleSignOnPane() {
           Connect an identity provider
         </Button>
       )}
+
+      <div className="border-t border-slate-200 pt-4">
+        <ScimTokensSection />
+      </div>
     </div>
   );
 }

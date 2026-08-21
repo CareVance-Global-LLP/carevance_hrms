@@ -95,6 +95,9 @@ export const condensedNavigation: NavGroup[] = [
       // First in the group because it is where people enter the company:
       // hired, then invited, then joined, then gone.
       { label: 'Hiring', to: '/hiring', icon: Briefcase, adminOnly: true },
+      // Behind the payroll gate, unlike the rest of hiring: a completed
+      // check can carry a criminal record and a previous salary.
+      { label: 'Background Checks', to: '/hiring/background-checks', icon: ShieldCheck, adminOnly: true },
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       // Before New Hires because that is the order people move through: invited,
       // then joined, then gone. The route existed with nothing linking to it, so
