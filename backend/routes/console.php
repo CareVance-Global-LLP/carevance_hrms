@@ -322,6 +322,21 @@ Artisan::command('schedule:screenshots-purge', function () {
 })->dailyAt('02:30');
 
 /*
+ * Biometric punches into attendance.
+ *
+ * Every five minutes rather than daily. A punch that has not become attendance
+ * is invisible to the person who made it, and somebody standing at a terminal
+ * watching nothing happen will punch again - which then pairs as an immediate
+ * check-out and takes their morning with it.
+ *
+ * Each punch is claimed by stamping processed_at, so an overlapping run picks
+ * up only what the previous one did not reach.
+ */
+Artisan::command('schedule:biometric-process', function () {
+    $this->call('biometric:process');
+})->everyFiveMinutes();
+
+/*
  * Leave accrual, and mirroring approved leave into the ledger.
  *
  * Daily rather than monthly on purpose. A monthly job that fails on the 1st is

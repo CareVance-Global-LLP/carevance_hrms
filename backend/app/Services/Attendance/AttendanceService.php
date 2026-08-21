@@ -205,14 +205,31 @@ class AttendanceService
         }
 
         $checkInAt = $this->resolveSyncTimestamp($syncContext['punch_at'] ?? null);
+
+        /*
+         * The record is filed on the day the punch HAPPENED, not the day it
+         * arrived.
+         *
+         * resolveSyncTimestamp already normalises a buffered punch to the app
+         * timezone precisely so it lands on the right calendar day - but the
+         * date used here was now(), so the timestamp was yesterday's and the
+         * record was today's. A punch buffered overnight by an offline desktop
+         * or a biometric device therefore appeared on the wrong day, with a
+         * check-in time that could not have happened on it.
+         *
+         * A live punch is unaffected: $checkInAt is now() when nothing was
+         * supplied, so this resolves to exactly the same date it always did.
+         */
+        $punchDate = $checkInAt->copy()->setTimezone(config('app.timezone', 'UTC'))->toDateString();
+
         $record = AttendanceRecord::firstOrNew([
             'user_id' => $user->id,
-            'attendance_date' => $today,
+            'attendance_date' => $punchDate,
         ]);
 
         $openPunch = AttendancePunch::where('user_id', $user->id)
-            ->whereHas('attendanceRecord', function ($query) use ($today) {
-                $query->whereDate('attendance_date', $today);
+            ->whereHas('attendanceRecord', function ($query) use ($punchDate) {
+                $query->whereDate('attendance_date', $punchDate);
             })
             ->whereNull('punch_out_at')
             ->first();
@@ -327,9 +344,20 @@ class AttendanceService
             }
         }
 
-        $today = now()->toDateString();
+        /*
+         * Close the day the punch belongs to, which is the same day check-in
+         * filed it under. Looking for today's record instead means a buffered
+         * punch-out cannot find the punch-in it belongs to, and reports "please
+         * check in first" for a day that was already open.
+         *
+         * Live punches are unaffected: with nothing supplied, $checkOutAt is
+         * now() and this is today.
+         */
+        $checkOutAt = $this->resolveSyncTimestamp($syncContext['punch_out_at'] ?? null);
+        $punchDate = $checkOutAt->copy()->setTimezone(config('app.timezone', 'UTC'))->toDateString();
+
         $record = AttendanceRecord::where('user_id', $user->id)
-            ->whereDate('attendance_date', $today)
+            ->whereDate('attendance_date', $punchDate)
             ->with('punches')
             ->first();
 
