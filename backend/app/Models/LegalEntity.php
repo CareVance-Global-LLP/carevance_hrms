@@ -36,11 +36,22 @@ class LegalEntity extends Model
         'pincode',
         'is_primary',
         'is_active',
+        // Which statute the premises works under, and any exemption it holds.
+        // Not configuration in the ordinary sense - these decide what the law
+        // requires of the people who work here.
+        'establishment_type',
+        'enforce_overtime_floor',
+        'rest_interval_exemption_minutes',
+        'quarterly_overtime_cap_hours',
+        'exemption_reference',
     ];
 
     protected $casts = [
         'is_primary' => 'boolean',
         'is_active' => 'boolean',
+        'enforce_overtime_floor' => 'boolean',
+        'rest_interval_exemption_minutes' => 'integer',
+        'quarterly_overtime_cap_hours' => 'integer',
     ];
 
     public function organization(): BelongsTo

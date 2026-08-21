@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\LegalEntity;
 use App\Models\User;
+use App\Services\Attendance\StatutoryLimits;
 use App\Services\PayrollFilingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -177,6 +178,28 @@ class LegalEntityController extends Controller
             'pincode' => 'nullable|string|max:10',
             'is_primary' => 'sometimes|boolean',
             'is_active' => 'sometimes|boolean',
+
+            /*
+             * What the law requires of this establishment. Not preferences -
+             * these decide the overtime rate people are owed and which
+             * working-hour limits they are measured against.
+             */
+            'establishment_type' => ['sometimes', Rule::in([
+                StatutoryLimits::FACTORY,
+                StatutoryLimits::SHOPS_ESTABLISHMENT,
+                StatutoryLimits::UNREGULATED,
+            ])],
+            'enforce_overtime_floor' => 'sometimes|boolean',
+            /*
+             * Section 55 permits six hours in place of five under a written
+             * order. Nothing longer, and nothing shorter - a shorter value is a
+             * mistake, and StatutoryWorkingTime ignores one anyway rather than
+             * manufacturing breaches the Act does not require.
+             */
+            'rest_interval_exemption_minutes' => 'sometimes|nullable|integer|min:300|max:360',
+            // Fifty by default; s.65(3) and the state amendments reach 144.
+            'quarterly_overtime_cap_hours' => 'sometimes|nullable|integer|min:1|max:200',
+            'exemption_reference' => 'sometimes|nullable|string|max:255',
         ]);
     }
 }

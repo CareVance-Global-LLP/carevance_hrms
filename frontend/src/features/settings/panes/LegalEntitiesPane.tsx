@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Plus, Star, Trash2 } from 'lucide-react';
 import { legalEntityApi } from '@/services/api';
-import type { LegalEntity } from '@/types';
+import type { EstablishmentType, LegalEntity } from '@/types';
 import Button from '@/components/ui/Button';
-import { FieldLabel, TextInput } from '@/components/ui/FormField';
+import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
 import { PageLoadingState } from '@/components/ui/PageState';
 
 /**
@@ -22,6 +22,10 @@ import { PageLoadingState } from '@/components/ui/PageState';
  */
 export default function LegalEntitiesPane() {
   const queryClient = useQueryClient();
+  // One stable prefix per form, so every caption is tied to its control.
+  // FieldLabel without htmlFor is decoration: a screen reader reaches the
+  // field and announces "edit text, blank".
+  const fieldId = useId();
   const [draft, setDraft] = useState<Partial<LegalEntity> | null>(null);
   const [error, setError] = useState('');
 
@@ -155,8 +159,9 @@ export default function LegalEntitiesPane() {
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <FieldLabel>Entity name</FieldLabel>
+              <FieldLabel htmlFor={`${fieldId}-name`}>Entity name</FieldLabel>
               <TextInput
+                id={`${fieldId}-name`}
                 value={draft.name ?? ''}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 required
@@ -170,14 +175,132 @@ export default function LegalEntitiesPane() {
               ['state', 'State', 'Maharashtra'],
             ] as const).map(([field, label, placeholder]) => (
               <div key={field}>
-                <FieldLabel>{label}</FieldLabel>
+                <FieldLabel htmlFor={`${fieldId}-${field}`}>{label}</FieldLabel>
                 <TextInput
+                  id={`${fieldId}-${field}`}
                   value={(draft[field] as string) ?? ''}
                   placeholder={placeholder}
                   onChange={(event) => setDraft({ ...draft, [field]: event.target.value })}
                 />
               </div>
             ))}
+          </div>
+
+
+          {/*
+            * Which statute the premises works under.
+            *
+            * Kept with the entity rather than with the overtime policy, because
+            * these are not preferences — they are what the law requires of a
+            * registered establishment, and the entity is what is registered.
+            */}
+          <div className="rounded-lg border border-slate-200 bg-white p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Working hours and overtime</p>
+
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <div>
+                <FieldLabel htmlFor={`${fieldId}-esttype`}>This establishment is</FieldLabel>
+                <SelectInput
+                  id={`${fieldId}-esttype`}
+                  value={draft.establishment_type ?? 'unregulated'}
+                  onChange={(event) =>
+                    setDraft({ ...draft, establishment_type: event.target.value as EstablishmentType })
+                  }
+                >
+                  <option value="unregulated">Not set</option>
+                  <option value="factory">A factory (Factories Act 1948)</option>
+                  <option value="shops_establishment">Shops &amp; establishments</option>
+                </SelectInput>
+                {/*
+                  * Only while it IS unset. Leaving the warning up after a type
+                  * is chosen reads as though the choice did not take.
+                  */}
+                {!draft.establishment_type || draft.establishment_type === 'unregulated' ? (
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    While this is unset, nobody here is checked against working-hour limits and they are left out of the
+                    compliance report rather than passing it.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Everyone filing under this entity is measured against these limits.
+                  </p>
+                )}
+              </div>
+
+              {draft.establishment_type && draft.establishment_type !== 'unregulated' ? (
+                <>
+                  <div>
+                    <FieldLabel htmlFor={`${fieldId}-restexempt`}>Rest interval exemption</FieldLabel>
+                    <SelectInput
+                      id={`${fieldId}-restexempt`}
+                      value={String(draft.rest_interval_exemption_minutes ?? '')}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          rest_interval_exemption_minutes: event.target.value === '' ? null : Number(event.target.value),
+                        })
+                      }
+                    >
+                      <option value="">None — 5 hours, as the Act requires</option>
+                      <option value="360">6 hours, under a written order</option>
+                    </SelectInput>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Section 55 lets the Chief Inspector permit six hours in writing. Only choose this if you hold the
+                      order.
+                    </p>
+                  </div>
+
+                  <div>
+                    <FieldLabel htmlFor={`${fieldId}-qcap`}>Quarterly overtime cap</FieldLabel>
+                    <TextInput
+                      type="number"
+                      min="1"
+                      max="200"
+                      placeholder="50 hours, as the Act requires"
+                      id={`${fieldId}-qcap`}
+                      value={draft.quarterly_overtime_cap_hours == null ? '' : String(draft.quarterly_overtime_cap_hours)}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          quarterly_overtime_cap_hours: event.target.value === '' ? null : Number(event.target.value),
+                        })
+                      }
+                    />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Leave blank for the statutory 50. Raise it only under a section 65(3) exemption.
+                    </p>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <FieldLabel htmlFor={`${fieldId}-exemptref`}>Exemption order reference</FieldLabel>
+                    <TextInput
+                      id={`${fieldId}-exemptref`}
+                      value={draft.exemption_reference ?? ''}
+                      placeholder="The order number and date"
+                      onChange={(event) => setDraft({ ...draft, exemption_reference: event.target.value })}
+                    />
+                  </div>
+
+                  <label className="sm:col-span-2 flex items-start gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={Boolean(draft.enforce_overtime_floor)}
+                      onChange={(event) => setDraft({ ...draft, enforce_overtime_floor: event.target.checked })}
+                    />
+                    <span>
+                      Pay the statutory overtime rate even where a policy is set lower
+                      <span className="block text-[11px] text-slate-500">
+                        {/* The consequence, next to the switch that causes it. */}
+                        Overtime is owed at twice the ordinary rate. Leave this off and a lower configured rate is still
+                        paid — the shortfall is reported but nothing changes. Turn it on and overtime pay goes up for
+                        anyone on a rate below it.
+                      </span>
+                    </span>
+                  </label>
+                </>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex gap-2">
