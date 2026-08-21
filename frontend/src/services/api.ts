@@ -91,7 +91,7 @@ import type {
   UpdateFilingDetailsPayload,
   IndianState,
   PollItem,
-  PollResultsResponse, LegalEntity , LeaveType, LeaveLedgerEntry , BiometricDevice, UnmappedDeviceUser , SamlConnection, SamlServiceProvider , StatutoryLimits, OvertimeRegisterRow, StatutoryBreach , JobOpening, Candidate, HiringStage, JobApplication, ApplicationStageEvent, FunnelStage, Interview, InterviewSummary, InterviewVerdict, JobOffer } from '@/types';
+  PollResultsResponse, LegalEntity , LeaveType, LeaveLedgerEntry , BiometricDevice, UnmappedDeviceUser , SamlConnection, SamlServiceProvider , StatutoryLimits, OvertimeRegisterRow, StatutoryBreach , JobOpening, Candidate, HiringStage, JobApplication, ApplicationStageEvent, FunnelStage, Interview, InterviewSummary, InterviewVerdict, JobOffer , RosterDay, ShiftRotation as RosterRotation, ShiftSwapRequest } from '@/types';
 import { apiUrl } from '@/lib/runtimeConfig';
 
 // Define API error response structure
@@ -1680,6 +1680,45 @@ export const leaveTypeApi = {
  * update — the server refuses transitions the UI should never offer, and a
  * PATCH on `hiring_stage_id` would bypass the event that explains the move.
  */
+/**
+ * The rota.
+ *
+ * `can_manage` comes back from the server rather than being inferred from the
+ * user's role in the browser — the endpoint already narrows what it returns by
+ * role, and a second guess in the UI is how the two drift apart.
+ */
+export const rosterApi = {
+  days: (params: { from: string; to: string; user_id?: number }) =>
+    api.get<{ from: string; to: string; can_manage: boolean; data: RosterDay[] }>('/roster', { params }),
+
+  coverage: (date: string) =>
+    api.get<{ date: string; data: Array<{ user_id: number; name: string; shift: string | null; is_rest_day: boolean }> }>(
+      '/roster/coverage', { params: { date } },
+    ),
+
+  rotations: () => api.get<{ data: RosterRotation[] }>('/roster/rotations'),
+
+  generate: (payload: { user_ids: number[]; from: string; to: string }) =>
+    api.post<{ data: { created: number; updated: number; skipped_manual: number; skipped_past: number } }>(
+      '/roster/generate', payload,
+    ),
+
+  publish: (payload: { from: string; to: string; user_ids?: number[] }) =>
+    api.post<{ published: number }>('/roster/publish', payload),
+
+  setDay: (payload: { user_id: number; date: string; shift_id: number | null; note?: string }) =>
+    api.post<{ data: RosterDay }>('/roster/day', payload),
+
+  swaps: (params?: { status?: string }) =>
+    api.get<PaginatedResponse<ShiftSwapRequest>>('/roster/swaps', { params }),
+
+  requestSwap: (payload: { own_roster_day_id: number; their_roster_day_id: number; reason?: string }) =>
+    api.post<{ data: ShiftSwapRequest }>('/roster/swaps', payload),
+
+  respondToSwap: (id: number, action: 'accept' | 'decline' | 'cancel' | 'approve', reason?: string) =>
+    api.post<{ data: ShiftSwapRequest }>(`/roster/swaps/${id}`, { action, reason }),
+};
+
 export const recruitmentApi = {
   openings: (params?: { status?: string; page?: number }) =>
     api.get<PaginatedResponse<JobOpening>>('/recruitment/openings', { params }),

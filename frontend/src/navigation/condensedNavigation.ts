@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   SquareKanban,
   Briefcase,
+  CalendarRange,
   Users,
   UserMinus,
   UserPlus,
@@ -120,6 +121,9 @@ export const condensedNavigation: NavGroup[] = [
     icon: CalendarClock,
     items: [
       { label: 'Attendance', to: '/attendance', icon: CalendarClock },
+      // Visible to everybody: the whole point of publishing a rota is that
+      // people can see it without asking.
+      { label: 'Rota', to: '/roster', icon: CalendarRange },
       { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },

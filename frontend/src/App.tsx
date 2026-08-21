@@ -99,6 +99,7 @@ const ReportsTab = lazyWithChunkRetry(() => import('@/pages/payroll/tabs/Reports
 const PayrollReportsPage = lazyWithChunkRetry(() => import('@/pages/PayrollReportsPage'));
 const OvertimeRegisterPage = lazyWithChunkRetry(() => import('@/pages/OvertimeRegisterPage'));
 const RecruitmentPage = lazyWithChunkRetry(() => import('@/pages/RecruitmentPage'));
+const RosterPage = lazyWithChunkRetry(() => import('@/pages/RosterPage'));
 const OfferSigningPage = lazyWithChunkRetry(() => import('@/pages/OfferSigningPage'));
 const MyPayroll = lazyWithChunkRetry(() => import('@/pages/MyPayroll'));
 const PayGroupSettings = lazyWithChunkRetry(() => import('@/pages/payroll/PayGroupSettings'));
@@ -784,6 +785,14 @@ function App() {
               * own pipeline without going through HR.
               */}
             <Route path="hiring" element={<AdminRoute><RecruitmentPage /></AdminRoute>} />
+
+            {/*
+              * The rota. NOT behind AdminRoute: the API narrows what it returns
+              * by role, and an employee being able to see when they are working
+              * without asking their manager is the entire point of publishing
+              * it.
+              */}
+            <Route path="roster" element={<RosterPage />} />
             <Route path="reports/overtime-register" element={<PayrollAdminRoute><OvertimeRegisterPage /></PayrollAdminRoute>} />
             <Route path="payroll/pay-group-settings" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayGroupSettingsRoute /></PayrollAdminRoute></PlanFeatureRoute>} />
             <Route path="payroll/pay-group-settings/:payGroupId" element={<PlanFeatureRoute feature="payroll"><PayrollAdminRoute><PayGroupSettingsRoute /></PayrollAdminRoute></PlanFeatureRoute>} />

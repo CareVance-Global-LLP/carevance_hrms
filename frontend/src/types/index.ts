@@ -2358,3 +2358,44 @@ export interface JobOffer {
   approvals?: OfferApproval[];
   application?: { id: number; candidate?: Pick<Candidate, 'id' | 'first_name' | 'last_name' | 'email'> | null } | null;
 }
+
+// ----------------------------------------------------------------- rostering
+
+/** One person's day. `is_rest_day` is explicit so "off" cannot read as "missing". */
+export interface RosterDay {
+  id: number;
+  user_id: number;
+  name?: string | null;
+  date: string;
+  shift_id?: number | null;
+  shift?: string | null;
+  is_rest_day: boolean;
+  status: 'draft' | 'published';
+  source: 'generated' | 'manual' | 'swap';
+  note?: string | null;
+}
+
+export interface ShiftRotation {
+  id: number;
+  name: string;
+  description?: string | null;
+  cycle_length_days: number;
+  is_active: boolean;
+  steps?: Array<{ id: number; position: number; shift_id: number | null; shift?: { id: number; name: string } | null }>;
+}
+
+export type SwapStatus =
+  | 'pending_counterparty' | 'pending_approval' | 'approved' | 'declined' | 'cancelled';
+
+export interface ShiftSwapRequest {
+  id: number;
+  requested_by: number;
+  requested_with: number;
+  status: SwapStatus;
+  reason?: string | null;
+  decline_reason?: string | null;
+  requester?: { id: number; name: string } | null;
+  counterparty?: { id: number; name: string } | null;
+  requester_day?: { id: number; roster_date: string; shift_id: number | null } | null;
+  counterparty_day?: { id: number; roster_date: string; shift_id: number | null } | null;
+}

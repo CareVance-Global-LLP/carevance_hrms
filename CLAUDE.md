@@ -154,6 +154,35 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 ---
 
+### Rostering
+
+The calendar on top of shift definitions. `ShiftResolver`'s precedence is now
+**published roster day → effective-dated assignment → work info**.
+
+- **An off day is a ROW, not a missing row.** `roster_days` with a null
+  `shift_id` means "rostered, and off"; no row means "not rostered". Somebody
+  given the day off has been told something; somebody nobody scheduled has not.
+- **A rostered rest day does NOT fall through.** `resolve()` returns null rather
+  than dropping to the standing assignment — falling through would quietly
+  expect a full night shift from somebody told they had the day off.
+- **Draft days are invisible to the resolver.** A manager builds next month
+  without changing what attendance expects of anybody today, which is why
+  publishing is a separate act rather than implied by saving.
+- **Regenerating never destroys a decision.** `source` separates `generated`
+  from `manual`/`swap`, and generation replaces only its own rows. Somebody who
+  moved one person to nights on the 14th must not lose that to a rebuild.
+- **A roster already worked is not rewritten.** Generation skips past dates: it
+  is the record of what people were told, and every attendance record on that
+  date was measured against it.
+- **Cycle length is in DAYS, not weeks.** A four-on-four-off runs on eight days
+  and a week-based model cannot express it. `start_offset` is what stops
+  everybody on a rota resting on the same day.
+- **A swap needs three parties.** The counterparty agrees AND a manager
+  approves; nothing moves on the roster until approval, and the shifts are
+  re-read at that moment rather than trusted from when the request was made.
+  One person cannot give away a shift, and two cannot rewrite the site's cover
+  between them.
+
 ### Working-hour law is not configuration
 
 Limits and the overtime rate are properties of the **premises**, so they live on
@@ -214,7 +243,7 @@ Real, and deliberately not yet built:
 - **No SCIM.** SAML 2.0 now exists (see below), so people can *sign in* through Entra, Okta or Google — but nothing provisions or, more importantly, deprovisions them automatically. Somebody disabled in the IdP keeps their CareVance account until an admin deactivates it by hand; SAML refuses their login, but their data access via an existing token is not revoked by the IdP. This is the remaining half of the enterprise identity story.
 - **No offer letter, e-signature or background verification.**
 - **Recruitment has no careers page, and BGV has no vendor integration.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, a signed offer letter with an audit trail, and consent-gated background verification all exist (see below). What is missing is a public careers page or job board a candidate can browse and apply from, and an actual connection to AuthBridge, IDfy or similar — the BGV schema is vendor-agnostic and today a human records the findings. No engagement surveys or HR helpdesk either.
-- **No date-based rostering.** Shift *definitions* exist and are real — `Shift` carries night-shift windows, differentials, overtime multipliers and grace periods, and `employee_shifts` assigns them. What is missing is the calendar: rotation patterns, published rosters by date, week-off calendars and swap requests.
+- **Rostering has no UI yet.** Rotation patterns, published rosters by date, coverage and swap requests all exist (see below) and `ShiftResolver` reads them. What is missing is a screen: today a rota is built through the service, not by a manager dragging shifts around a calendar.
 - **No biometric device ingestion beyond ADMS push.** The push protocol is implemented (see below), which covers eSSL, ZKTeco, Biomax and Matrix terminals configured to post to a cloud server. Devices that only offer SDK pull, or that sit on a LAN with no outbound route, still cannot talk to this.
 - **No accounting export.** `GlMappingConfig` exists with nothing to export to — no Tally, no Zoho Books.
 - **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.

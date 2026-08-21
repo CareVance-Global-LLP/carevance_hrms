@@ -30,6 +30,7 @@ import {
   UserMinus,
   UserPlus,
   Briefcase,
+  CalendarRange,
   Users,
   Wallet,
   Waypoints,
@@ -117,6 +118,8 @@ export const topNavigation: NavGroup[] = [
     icon: CalendarClock,
     items: [
       { label: 'Attendance', to: '/attendance', icon: CalendarClock },
+      // Kept in step with condensedNavigation.ts.
+      { label: 'Rota', to: '/roster', icon: CalendarRange },
       { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
