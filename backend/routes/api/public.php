@@ -103,3 +103,23 @@ Route::post('/webhooks/razorpay', [\App\Http\Controllers\Api\BillingController::
  * status — and reading the whole file into memory made it a denial-of-service
  * lever once the log grew. Do not put this back.
  */
+
+/*
+ * SAML single sign-on.
+ *
+ * Necessarily public: somebody signing in has no session yet, and the identity
+ * provider POSTs its response straight from the browser. What stands in for
+ * authentication is in SamlAuthService - the assertion is trusted only because
+ * it is signed by the key matching the certificate the customer registered, it
+ * is refused if we have seen that assertion before, and the tenant comes from
+ * the assertion's issuer rather than from anything the caller controls.
+ *
+ * Throttled: the callback does XML parsing and signature verification, which is
+ * expensive enough to be worth abusing.
+ */
+Route::middleware('throttle:30,1')->group(function () {
+    Route::post('/auth/saml/discover', [\App\Http\Controllers\Api\SamlAuthController::class, 'discover']);
+    Route::get('/auth/saml/{connectionId}/redirect', [\App\Http\Controllers\Api\SamlAuthController::class, 'redirect']);
+    Route::post('/auth/saml/callback', [\App\Http\Controllers\Api\SamlAuthController::class, 'callback']);
+    Route::get('/auth/saml/metadata', [\App\Http\Controllers\Api\SamlAuthController::class, 'metadata']);
+});
