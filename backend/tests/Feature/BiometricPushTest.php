@@ -189,14 +189,32 @@ class BiometricPushTest extends TestCase
 
     public function test_the_device_is_marked_as_seen(): void
     {
-        // A device that stops talking produces no attendance, which looks
-        // exactly like everybody being absent. This is what an alert reads.
-        $this->assertTrue($this->device->isStale());
+        /*
+         * A freshly registered device has never called in, which is NOT the
+         * same as one that called for a year and stopped. This test used to
+         * assert it was stale, and the UI duly told an admin "no attendance is
+         * arriving from this device" about a terminal added thirty seconds
+         * earlier - training them to ignore the warning by the time it meant
+         * something.
+         */
+        $this->assertFalse($this->device->hasEverReported());
+        $this->assertFalse($this->device->isStale());
 
         $this->push($this->line('7', '2026-08-20 09:15:00'))->assertOk();
 
+        $this->assertTrue($this->device->fresh()->hasEverReported());
         $this->assertFalse($this->device->fresh()->isStale());
         $this->assertSame(1, (int) $this->device->fresh()->punches_received);
+    }
+
+    public function test_a_device_that_reported_and_stopped_is_stale(): void
+    {
+        // The failure that matters: it WAS working, and no longer is. Nothing
+        // else in the product can tell an admin this happened.
+        $this->device->forceFill(['last_seen_at' => now()->subDay()])->save();
+
+        $this->assertTrue($this->device->fresh()->isStale());
+        $this->assertTrue($this->device->fresh()->hasEverReported());
     }
 
     public function test_an_inactive_device_is_ignored(): void

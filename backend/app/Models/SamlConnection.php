@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Traits\BelongsToOrganization;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use OneLogin\Saml2\Utils as SamlUtils;
 
 /**
  * One customer's identity provider.
@@ -67,5 +69,47 @@ class SamlConnection extends Model
             && filled($this->idp_entity_id)
             && filled($this->idp_sso_url)
             && filled($this->idp_x509_cert);
+    }
+
+    /**
+     * What the stored certificate is, and when it stops working.
+     *
+     * Signing certificates expire, usually on a three-year cycle nobody diarises,
+     * and the failure is total and simultaneous: every single sign-on login in
+     * the organization breaks at the same moment, including the administrator's,
+     * so the person who could fix it is locked out too. Surfacing the expiry is
+     * the difference between a scheduled ten-minute paste and an outage.
+     *
+     * Returns null when the certificate cannot be parsed at all, which is itself
+     * worth showing - a connection holding an unreadable certificate is one that
+     * will fail at first use.
+     *
+     * @return array{subject: string, expires_at: string, days_remaining: int, fingerprint: string}|null
+     */
+    public function certificateSummary(): ?array
+    {
+        if (! filled($this->idp_x509_cert)) {
+            return null;
+        }
+
+        $pem = SamlUtils::formatCert($this->idp_x509_cert, true);
+
+        $parsed = @openssl_x509_parse($pem);
+        if (! is_array($parsed) || ! isset($parsed['validTo_time_t'])) {
+            return null;
+        }
+
+        $expiresAt = Carbon::createFromTimestamp((int) $parsed['validTo_time_t']);
+
+        return [
+            'subject' => (string) ($parsed['subject']['CN'] ?? $parsed['name'] ?? 'Unknown'),
+            'expires_at' => $expiresAt->toIso8601String(),
+            // Signed on purpose: an already-expired certificate reads as a
+            // negative rather than as zero, so "expired 40 days ago" is sayable.
+            'days_remaining' => (int) now()->startOfDay()->diffInDays($expiresAt->startOfDay(), false),
+            // Enough to tell two certificates apart when rotating, without
+            // exposing the certificate itself.
+            'fingerprint' => strtoupper(substr(hash('sha256', $pem), 0, 16)),
+        ];
     }
 }

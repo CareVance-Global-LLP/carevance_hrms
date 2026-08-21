@@ -59,6 +59,19 @@ class BiometricDevice extends Model
      */
     public function isStale(int $hours = 6): bool
     {
-        return ! $this->last_seen_at || $this->last_seen_at->lt(now()->subHours($hours));
+        /*
+         * A device that has NEVER reported is not stale, it is unconfigured -
+         * two different situations needing two different actions. Treating them
+         * alike meant a terminal registered thirty seconds ago immediately
+         * announced "no attendance is arriving from this device", which trains
+         * an admin to ignore the warning by the time it means something.
+         */
+        return $this->hasEverReported() && $this->last_seen_at->lt(now()->subHours($hours));
+    }
+
+    /** Has this device ever completed a handshake or sent a punch? */
+    public function hasEverReported(): bool
+    {
+        return $this->last_seen_at !== null;
     }
 }
