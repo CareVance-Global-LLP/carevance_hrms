@@ -154,6 +154,32 @@ Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers res
 
 ---
 
+### Accounting export
+
+`PayrollJournalService` turns a run into double-entry; `AccountingExportService`
+renders it for Tally or Zoho.
+
+- **The journal must balance exactly, or nothing is produced.** An unbalanced
+  journal is rejected by any accounting system worth the name — and the ones
+  that do not reject it import half, which costs far more than a refusal.
+- **An unmapped component refuses the export and is NAMED.** Never a suspense
+  account, never omitted: "your salary journal is 40,000 light and nobody knows
+  why" is what omitting one line produces.
+- **PF and ESI payable carry BOTH halves** in one credit line. The employee's
+  share was deducted and the employer's was an expense, but the organization
+  owes the total onward as one liability — split into two, it stops reconciling
+  against the single challan that gets paid.
+- **Tally's sign convention is backwards.** A DEBIT is a NEGATIVE `<AMOUNT>`
+  with `ISDEEMEDPOSITIVE = Yes`; a CREDIT is positive with `No`. Get it the
+  intuitive way round and the voucher still imports — it just posts every salary
+  as income, which nobody notices until the P&L is read. Dates are `YYYYMMDD`
+  with no separators, the other reason a Tally import silently does nothing.
+- **Zoho groups rows into one entry by date + reference**, so every row repeats
+  both; a blank on any row splits the journal into two that each fail to
+  balance. The unused side of each row is EMPTY, not `0.00`.
+- Zero components are not posted at all — an org with no ESI liability should
+  not have an ESI row for a reviewer to skip past.
+
 ### Rostering
 
 The calendar on top of shift definitions. `ShiftResolver`'s precedence is now
@@ -245,7 +271,7 @@ Real, and deliberately not yet built:
 - **Recruitment has no careers page, and BGV has no vendor integration.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, a signed offer letter with an audit trail, and consent-gated background verification all exist (see below). What is missing is a public careers page or job board a candidate can browse and apply from, and an actual connection to AuthBridge, IDfy or similar — the BGV schema is vendor-agnostic and today a human records the findings. No engagement surveys or HR helpdesk either.
 - **Rostering has no UI yet.** Rotation patterns, published rosters by date, coverage and swap requests all exist (see below) and `ShiftResolver` reads them. What is missing is a screen: today a rota is built through the service, not by a manager dragging shifts around a calendar.
 - **No biometric device ingestion beyond ADMS push.** The push protocol is implemented (see below), which covers eSSL, ZKTeco, Biomax and Matrix terminals configured to post to a cloud server. Devices that only offer SDK pull, or that sit on a LAN with no outbound route, still cannot talk to this.
-- **No accounting export.** `GlMappingConfig` exists with nothing to export to — no Tally, no Zoho Books.
+- **Accounting export has no UI and no direct API push.** A payroll run exports to Tally XML and a Zoho Books journal CSV as a file (see below); what is missing is a screen to preview and download it, and a live connection that posts into Zoho rather than producing a file somebody imports.
 - **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.
 - **0 Laravel policies.** Authorization is inline in controllers, though the `Role`/`Permission` schema and `hasPermission()` are real and maker-checker now covers the full payroll chain.
 - **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.

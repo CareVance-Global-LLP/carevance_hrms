@@ -39,6 +39,7 @@ Route::middleware(['api.token', 'mfa.enrolled'])->group(function () {
     require base_path('routes/api/protected/statutory_compliance.php');
     require base_path('routes/api/protected/recruitment.php');
     require base_path('routes/api/protected/roster.php');
+    require base_path('routes/api/protected/accounting_export.php');
     require base_path('routes/api/protected/legal_entities.php');
     require base_path('routes/api/protected/organizations.php');
     require base_path('routes/api/protected/super-admin.php');
