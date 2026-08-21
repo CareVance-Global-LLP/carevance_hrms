@@ -1687,6 +1687,34 @@ export const leaveTypeApi = {
  * user's role in the browser — the endpoint already narrows what it returns by
  * role, and a second guess in the UI is how the two drift apart.
  */
+/**
+ * Payroll as a general-ledger journal.
+ *
+ * The preview is separate from the download on purpose: somebody about to post
+ * half a million rupees should see the journal, and which components have no
+ * ledger mapped, before a file exists.
+ */
+export const accountingApi = {
+  journal: (runId: number) =>
+    api.get<{
+      data: {
+        run_id: number;
+        period: string;
+        date: string;
+        lines: Array<{
+          entity: string; ledger: string; gl_code: string;
+          cost_center: string | null; side: 'debit' | 'credit'; amount: string;
+        }>;
+        totals: { debit: string; credit: string; balanced: boolean };
+        unmapped: string[];
+      };
+      exportable: boolean;
+    }>(`/payroll/runs/${runId}/journal`),
+
+  exportUrl: (runId: number, format: 'tally' | 'zoho') =>
+    `/api/payroll/runs/${runId}/journal/export?format=${format}`,
+};
+
 export const rosterApi = {
   days: (params: { from: string; to: string; user_id?: number }) =>
     api.get<{ from: string; to: string; can_manage: boolean; data: RosterDay[] }>('/roster', { params }),
@@ -1798,6 +1826,13 @@ export const recruitmentApi = {
       accepted,
       decline_reason: declineReason,
     }),
+
+  /**
+   * Mint a signing link. The plain token exists only in this response — it is
+   * stored hashed, so nobody can recover it afterwards.
+   */
+  issueSigningLink: (id: number) =>
+    api.post<{ data: { url: string; expires_at: string | null } }>(`/recruitment/offers/${id}/signing-link`),
 
   withdrawOffer: (id: number, reason: string) =>
     api.post<{ data: JobOffer }>(`/recruitment/offers/${id}/withdraw`, { reason }),

@@ -5,6 +5,8 @@ import type { ApplicationStageEvent, JobApplication } from '@/types';
 import { SlideOver } from '@/components/ui/dialog';
 import Button from '@/components/ui/Button';
 import { FieldLabel, TextareaInput } from '@/components/ui/FormField';
+import InterviewPanel from './InterviewPanel';
+import OfferPanel from './OfferPanel';
 
 /**
  * One candidacy: where they are, how they got there, and how to end it.
@@ -89,6 +91,13 @@ export default function CandidateDrawer({
         <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <span className="font-semibold">Rejected:</span> {application.rejection_reason}
         </p>
+      ) : null}
+
+      {application?.status === 'active' ? (
+        <div className="mb-4 space-y-4 border-b border-slate-200 pb-4">
+          <InterviewPanel applicationId={application.id} />
+          <OfferPanel applicationId={application.id} />
+        </div>
       ) : null}
 
       <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">History</h3>
