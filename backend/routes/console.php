@@ -321,6 +321,23 @@ Artisan::command('schedule:screenshots-purge', function () {
     $this->call('screenshots:purge');
 })->dailyAt('02:30');
 
+/*
+ * Leave accrual, and mirroring approved leave into the ledger.
+ *
+ * Daily rather than monthly on purpose. A monthly job that fails on the 1st is
+ * a month of missing entitlement nobody notices until somebody is refused leave
+ * they had actually earned; a daily job that fails simply catches up tomorrow.
+ *
+ * Runs at 01:00, after the midnight lifecycle sweep has closed any leavers, so
+ * nobody accrues on a day they were deactivated.
+ *
+ * Safe to run repeatedly: accrual is unique on (user, type, period) at the
+ * database level and consumption is keyed on the leave request.
+ */
+Artisan::command('schedule:leave-accrue', function () {
+    $this->call('leave:accrue');
+})->dailyAt('01:00');
+
 // Schedule: revoke access past the last working day, and advance onboarding
 // stages by date. Runs shortly after midnight so a last working day is fully
 // over before the account is closed.
