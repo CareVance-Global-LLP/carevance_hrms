@@ -76,7 +76,10 @@ class WorkTimeSummaryService
     private function buildFromEntries(Collection $entries, array|Collection $userIds, Carbon $start, Carbon $end, Carbon $resolvedNow): array
     {
         $idleSummary = $this->usageProcessingService->summarizeIdleDurationsFastForUsers($userIds, $start, $end);
+        // Clipped to entry windows: what still needs subtracting from tracked time.
         $idleByUser = collect($idleSummary['by_user'] ?? []);
+        // Unclipped: how long the person was actually idle, which is what gets shown.
+        $measuredIdleByUser = collect($idleSummary['by_user_measured'] ?? []);
 
         $perUser = [];
         foreach ($userIds as $userId) {
@@ -88,12 +91,35 @@ class WorkTimeSummaryService
             $breakTime = (int) $this->timeEntryDurationService->sumEffectiveDuration($breakEntries, $resolvedNow);
             $idleTime = (int) ($idleByUser->get($userId) ?? 0);
 
+            /*
+             * Deliberately the CLIPPED figure, and only this one.
+             *
+             * work_time = track - idle, and tracked time only ever counts what
+             * lies inside an entry. An idle auto-stop already rewound the entry
+             * to the last keypress, so subtracting the tail again would remove
+             * it twice - and worked time feeds payroll. Changing what is
+             * DISPLAYED must not change what is paid.
+             */
             $breakdown = $this->timeBreakdownService->build($trackTime, $idleTime);
+
+            /*
+             * What a person reads. Measured on live data 21 Aug 2026, a
+             * five-minute idle span sat entirely outside its own entry, so the
+             * clipped figure was ZERO while the auto-stop email correctly
+             * reported the full span - three surfaces reporting three numbers
+             * for one event. Falls back to the clipped value when no measured
+             * figure exists, so nothing regresses.
+             */
+            $measuredIdleTime = (int) ($measuredIdleByUser->get($userId) ?? $idleTime);
 
             $perUser[$userId] = [
                 'track_time' => $trackTime,
                 'work_time' => $breakdown['working_duration'],
-                'idle_time' => $breakdown['idle_duration'],
+                // The measured figure, not the clipped one - see above.
+                'idle_time' => $measuredIdleTime,
+                // Kept separately for anything that needs to reconcile against
+                // work_time, which is derived from the clipped value.
+                'idle_time_billable' => $breakdown['idle_duration'],
                 'break_time' => $breakTime,
             ];
         }

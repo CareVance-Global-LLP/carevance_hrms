@@ -447,6 +447,8 @@ class UsageProcessingService
         }
 
         $byUser = [];
+        // Unclipped: what a person actually experienced, for display.
+        $byUserMeasured = [];
         $byUserDay = [];
         $totalIdle = 0;
         $totalSegments = 0;
@@ -479,6 +481,30 @@ class UsageProcessingService
                 }
             }
 
+            /*
+             * Two totals, because one number cannot answer both questions.
+             *
+             * MEASURED is how long the person was actually idle. It is what a
+             * human reads on a dashboard, and what the desktop prompt and the
+             * auto-stop email report.
+             *
+             * CLIPPED is how much of that idle still needs subtracting from
+             * tracked time. An idle auto-stop rewinds the entry's end_time to
+             * the last keypress, so the idle tail already sits outside the
+             * entry and has already been excluded - subtracting it again would
+             * remove it twice.
+             *
+             * Reporting the clipped figure as "idle time" was the bug: measured
+             * on live data, a five-minute idle span sat entirely outside its
+             * own entry and the dashboard therefore showed ZERO, while the
+             * email correctly reported the full span. Three surfaces, three
+             * numbers, one event.
+             */
+            $userMeasured = 0;
+            foreach ($merged as [$start, $end]) {
+                $userMeasured += max(0, $end - $start);
+            }
+
             $merged = $this->clipIntervalsToWindows($merged, $entryWindowsByUser[(int) $userId] ?? []);
 
             $userTotal = 0;
@@ -497,12 +523,19 @@ class UsageProcessingService
             if ($userTotal > 0) {
                 $byUser[(int) $userId] = $userTotal;
             }
+
+            if ($userMeasured > 0) {
+                $byUserMeasured[(int) $userId] = $userMeasured;
+            }
         }
 
         return [
             'total_idle_time' => $totalIdle,
             'idle_segments_count' => $totalSegments,
+            // Clipped to entry windows. Subtract THIS from tracked time.
             'by_user' => $byUser,
+            // How long the person was actually idle. Show THIS to a human.
+            'by_user_measured' => $byUserMeasured,
             'by_user_day' => $byUserDay,
         ];
     }
@@ -723,7 +756,12 @@ class UsageProcessingService
         // the idle total. Reading raw idle records keeps the two views
         // consistent.
         $fastIdleSummary = $this->summarizeIdleDurationsFastForUsers([$userId], $startDate, $endDate);
-        $combined['metrics']['idle_time'] = (int) ($fastIdleSummary['by_user'][$userId] ?? 0);
+        // The MEASURED figure: this is read by a person, not subtracted from
+        // anything. The clipped value belongs to the work-time arithmetic and
+        // reads as zero whenever an auto-stop rewound the entry past the idle.
+        $combined['metrics']['idle_time'] = (int) (
+            $fastIdleSummary['by_user_measured'][$userId] ?? $fastIdleSummary['by_user'][$userId] ?? 0
+        );
         $combined['idle_segments_count'] = (int) ($fastIdleSummary['idle_segments_count'] ?? 0);
 
         return $combined;
