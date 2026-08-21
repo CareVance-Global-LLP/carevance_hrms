@@ -119,6 +119,25 @@ class PayrollFilingService
 
     private function orgStatutoryId(?Organization $org, string $wizardKey, array $legacyKeys = []): string
     {
+        /*
+         * The LEGAL ENTITY answers first.
+         *
+         * One organization used to mean one PAN, TAN and PF code, which cannot
+         * represent a group running two to four companies. The entity now holds
+         * the identity; the organization remains the tenant.
+         *
+         * Falling through to settings is what makes the change safe rather than
+         * a cutover: an organization whose entity has not been filled in keeps
+         * filing exactly as it did. The migration seeds one entity per
+         * organization FROM these same settings, so in practice the first branch
+         * returns the same string the second one would have.
+         */
+        $entity = app(\App\Services\Payroll\LegalEntityResolver::class)->primaryFor($org?->id);
+        $fromEntity = $entity?->{self::ENTITY_STATUTORY_FIELDS[$wizardKey] ?? ''} ?? null;
+        if (filled($fromEntity)) {
+            return trim((string) $fromEntity);
+        }
+
         $settings = $org?->settings ?? [];
 
         $fromWizard = $settings['payroll']['statutory'][$wizardKey] ?? null;
@@ -134,6 +153,23 @@ class PayrollFilingService
 
         return '';
     }
+
+    /**
+     * Which entity column answers each statutory key.
+     *
+     * A map rather than a naming convention: the wizard keys are camelCase and
+     * historical, the columns are snake_case and chosen, and pretending they
+     * match would break the moment somebody adds a key that does not.
+     */
+    private const ENTITY_STATUTORY_FIELDS = [
+        'pan' => 'pan',
+        'tan' => 'tan',
+        'establishmentCode' => 'pf_establishment_code',
+        'esiCode' => 'esi_code',
+        'lwfCode' => 'lwf_code',
+        'cin' => 'cin',
+        'gstin' => 'gstin',
+    ];
 
     /**
      * Generate the PF ECR in EPFO's actual Electronic Challan cum Return (ECR)
