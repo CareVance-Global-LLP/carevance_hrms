@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\BackgroundCheckController;
 use App\Http\Controllers\Api\InterviewOfferController;
 use App\Http\Controllers\Api\RecruitmentController;
 use Illuminate\Support\Facades\Route;
@@ -57,4 +58,25 @@ Route::middleware('role:manager')->group(function () {
     Route::post('/recruitment/offers/{jobOffer}/withdraw', [InterviewOfferController::class, 'withdrawOffer']);
     Route::post('/recruitment/offers/{jobOffer}/signing-link', [InterviewOfferController::class, 'issueSigningLink']);
     Route::get('/recruitment/offers/{jobOffer}/letter', [InterviewOfferController::class, 'offerLetter']);
+});
+
+/**
+ * Background verification.
+ *
+ * Behind `role:hr` rather than the manager gate the rest of recruitment uses.
+ * A completed check can contain a criminal record, an address history and
+ * somebody's real salary at a previous employer. A hiring manager decides
+ * whether to hire; they do not need to read a police verification to do it.
+ */
+Route::middleware('role:payroll')->group(function () {
+    Route::get('/recruitment/background-checks', [BackgroundCheckController::class, 'index']);
+    Route::post('/recruitment/background-checks', [BackgroundCheckController::class, 'store']);
+    Route::get('/recruitment/background-checks/{backgroundCheck}', [BackgroundCheckController::class, 'show']);
+    Route::post('/recruitment/background-checks/{backgroundCheck}/notify', [BackgroundCheckController::class, 'notify']);
+    Route::post('/recruitment/background-checks/{backgroundCheck}/respond', [BackgroundCheckController::class, 'respond']);
+
+    Route::post('/recruitment/background-check-items/{backgroundCheckItem}', [BackgroundCheckController::class, 'recordItem']);
+
+    Route::post('/recruitment/bgv-consents', [BackgroundCheckController::class, 'storeConsent']);
+    Route::post('/recruitment/bgv-consents/{backgroundCheckConsent}/withdraw', [BackgroundCheckController::class, 'withdrawConsent']);
 });

@@ -213,7 +213,7 @@ Real, and deliberately not yet built:
 - **Ten filing generators have no blade view** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. `FilingGeneratorRegistry` resolves availability from the filesystem, so these are now reported as *unavailable* rather than attempted and failed — writing a template is the whole act of shipping its filing. This is real statutory work, not a stub.
 - **No SCIM.** SAML 2.0 now exists (see below), so people can *sign in* through Entra, Okta or Google — but nothing provisions or, more importantly, deprovisions them automatically. Somebody disabled in the IdP keeps their CareVance account until an admin deactivates it by hand; SAML refuses their login, but their data access via an existing token is not revoked by the IdP. This is the remaining half of the enterprise identity story.
 - **No offer letter, e-signature or background verification.**
-- **Recruitment has no careers page and no background verification.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, and a signed offer letter with an audit trail all exist (see below). What is missing is a public careers page or job board a candidate can browse and apply from, and BGV. No engagement surveys or HR helpdesk either.
+- **Recruitment has no careers page, and BGV has no vendor integration.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, a signed offer letter with an audit trail, and consent-gated background verification all exist (see below). What is missing is a public careers page or job board a candidate can browse and apply from, and an actual connection to AuthBridge, IDfy or similar — the BGV schema is vendor-agnostic and today a human records the findings. No engagement surveys or HR helpdesk either.
 - **No date-based rostering.** Shift *definitions* exist and are real — `Shift` carries night-shift windows, differentials, overtime multipliers and grace periods, and `employee_shifts` assigns them. What is missing is the calendar: rotation patterns, published rosters by date, week-off calendars and swap requests.
 - **No biometric device ingestion beyond ADMS push.** The push protocol is implemented (see below), which covers eSSL, ZKTeco, Biomax and Matrix terminals configured to post to a cloud server. Devices that only offer SDK pull, or that sit on a LAN with no outbound route, still cannot talk to this.
 - **No accounting export.** `GlMappingConfig` exists with nothing to export to — no Tally, no Zoho Books.
@@ -310,6 +310,33 @@ surfaces in a worker rather than in a test.
   recruiter than a reason.
 - The page is routed WITHOUT `PublicRoute` — that redirects signed-in users to
   the dashboard, which would bounce a recruiter checking their own link.
+
+**Background verification** — three rules here are legal, not product:
+
+- **Consent gates everything, structurally.** `background_checks.consent_id` is
+  a foreign key, not a boolean somebody could set from a console. No consent, no
+  check; withdrawn consent, no further checking.
+- **Consent is to a SCOPE, not to "background checks".** Somebody who agreed to
+  employment verification has not agreed to a credit check, so `scope` is stored
+  verbatim and items outside it are refused by name. A package that gains a
+  check next year cannot retroactively widen a consent given last year.
+- **Withdrawal stops outstanding work but does NOT erase findings.** They were
+  lawfully obtained at the time, and deleting them would also delete the record
+  that the check happened. Unstarted items become `skipped`, so the record shows
+  what was going to be checked and was not.
+- **A discrepancy is not a failure.** The vocabulary is
+  `clear|discrepancy|insufficient`, never pass/fail — a name spelled differently
+  on a certificate and a fabricated employer are both discrepancies. **Nothing
+  in the service touches a candidacy or moves a pipeline stage.** A discrepancy
+  also requires BOTH `claimed` and `verified`: an accusation with no comparison
+  behind it is one nobody can answer.
+- **Adverse action has to reach the person.** `needsAdverseActionNotice()` is
+  surfaced on the API, a notice on a clear check is refused, and a candidate
+  response before a notice is refused — that would record a conversation that
+  did not happen.
+- Gated on `role:payroll`, **not** the `role:manager` gate the rest of
+  recruitment uses. A completed check can carry a criminal record and a previous
+  salary; a hiring manager decides whether to hire without needing either.
 
 ### The queue, and the worker you must actually run
 
