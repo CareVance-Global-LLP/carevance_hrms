@@ -100,7 +100,7 @@ export default function InviteLinkPanel({
         */}
         <div>
           <FieldLabel htmlFor="invite-link-employee-code">
-            Employee Code <span className="text-xs font-normal text-slate-400">(optional)</span>
+            Employee Code <span className="text-xs font-normal text-slate-500">(optional)</span>
           </FieldLabel>
           <TextInput
             id="invite-link-employee-code"
@@ -110,7 +110,7 @@ export default function InviteLinkPanel({
             onChange={(event) => onEmployeeCodeChange(event.target.value)}
             placeholder="e.g., EMP-001"
           />
-          <p className="mt-1 text-xs text-slate-400">Must be unique. Can be added later.</p>
+          <p className="mt-1 text-xs text-slate-500">Must be unique. Can be added later.</p>
         </div>
       </div>
 

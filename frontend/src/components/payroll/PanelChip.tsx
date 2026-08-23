@@ -38,7 +38,7 @@ export default function PanelChip({
         isActive
           ? 'border-blue-600 bg-blue-500/10 text-blue-600'
           : isLocked
-            ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
+            ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-500'
             : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
       )}
     >

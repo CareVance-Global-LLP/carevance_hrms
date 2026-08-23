@@ -53,7 +53,7 @@ export default function Footer() {
             <p className="mt-4 max-w-md text-sm leading-7 text-slate-500">
               Time tracking, employee monitoring, attendance, payroll, and HR operations — all in one platform.
             </p>
-            <div className="mt-5 flex items-center gap-3 text-slate-400">
+            <div className="mt-5 flex items-center gap-3 text-slate-500">
               {[Twitter, Linkedin, Github].map((Icon) => (
                 <a
                   key={Icon.displayName || Icon.name}
@@ -70,7 +70,7 @@ export default function Footer() {
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
             {groups.map((group, gi) => (
               <motion.div key={group.title} variants={fadeUp}>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{group.title}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{group.title}</p>
                 <div className="mt-3 space-y-2.5">
                   {group.links.map((link) => (
                     <Link key={link.label} to={link.to} className="block text-sm text-slate-500 transition-colors duration-200 hover:text-slate-900">
@@ -84,7 +84,7 @@ export default function Footer() {
         </motion.div>
 
         <div className="mt-8 flex flex-col gap-3 border-t border-slate-200 pt-5 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-slate-400">&copy; {new Date().getFullYear()} CareVance. All rights reserved.</p>
+          <p className="text-slate-500">&copy; {new Date().getFullYear()} CareVance. All rights reserved.</p>
           <button
             type="button"
             onClick={openPreferences}

@@ -148,7 +148,7 @@ function toList(value: unknown): string[] {
 }
 
 function RatingStars({ rating, size = 'sm' }: { rating: number | null; size?: 'sm' | 'lg' }) {
-  if (!rating) return <span className="text-xs text-slate-400">Not rated</span>;
+  if (!rating) return <span className="text-xs text-slate-500">Not rated</span>;
   const starClass = size === 'lg' ? 'h-5 w-5' : 'h-3.5 w-3.5';
   return (
     <span className="inline-flex items-center gap-1">
@@ -311,16 +311,16 @@ function CycleBanner({
                     'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
                     done && 'bg-blue-600 text-white',
                     now && 'border-2 border-blue-600 bg-white text-blue-700',
-                    !done && !now && 'bg-slate-100 text-slate-400'
+                    !done && !now && 'bg-slate-100 text-slate-500'
                   )}
                 >
                   {done ? '✓' : index + 1}
                 </span>
                 <span className="whitespace-nowrap">
-                  <span className={cn('block text-xs font-semibold', done || now ? 'text-slate-900' : 'text-slate-400')}>
+                  <span className={cn('block text-xs font-semibold', done || now ? 'text-slate-900' : 'text-slate-500')}>
                     {step.label}
                   </span>
-                  <span className="block text-[11px] text-slate-400">{stepHint(step.id)}</span>
+                  <span className="block text-[11px] text-slate-500">{stepHint(step.id)}</span>
                 </span>
               </div>
             </div>
@@ -367,7 +367,7 @@ function CompetencyBars({
       {!single ? (
         <div className="mt-1.5 grid grid-cols-[110px_1fr_1fr] items-center gap-x-3 text-[10px] font-bold uppercase tracking-[0.13em]">
           <span />
-          <span className="text-slate-400">Self</span>
+          <span className="text-slate-500">Self</span>
           <span className="text-blue-700">Manager</span>
         </div>
       ) : null}
@@ -394,7 +394,7 @@ function Panel360({ data }: { data: Aggregate360 }) {
         </p>
         {data.average_rating ? (
           <span className="text-sm font-bold text-slate-800">
-            {data.average_rating.toFixed(1)} <span className="text-[11px] font-medium text-slate-400">avg</span>
+            {data.average_rating.toFixed(1)} <span className="text-[11px] font-medium text-slate-500">avg</span>
           </span>
         ) : null}
       </div>
@@ -416,7 +416,7 @@ function Panel360({ data }: { data: Aggregate360 }) {
       {data.comments.slice(0, 3).map((c, index) => (
         <blockquote key={index} className="mt-2.5 border-l-2 border-slate-200 pl-3">
           <p className="text-sm text-slate-600">"{c.comment}"</p>
-          <p className="mt-0.5 text-[11px] text-slate-400">
+          <p className="mt-0.5 text-[11px] text-slate-500">
             {c.reviewer_name ?? `${c.review_type === '360' ? '360°' : 'Peer'} reviewer · anonymized`}
           </p>
         </blockquote>
@@ -449,7 +449,7 @@ function ListEditor({ label, addLabel, values, onChange }: ListEditorProps) {
               <button
                 type="button"
                 onClick={() => onChange(values.filter((_, i) => i !== index))}
-                className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+                className="rounded-lg p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-500"
                 aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
               >
                 <Trash2 className="h-4 w-4" />
@@ -830,7 +830,7 @@ export default function PerformancePage() {
               <div className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="text-sm text-slate-700">
                   {selfPromptLabel}
-                  {selfPromptDue ? <span className="ml-2 text-xs text-slate-400">{selfPromptDue}</span> : null}
+                  {selfPromptDue ? <span className="ml-2 text-xs text-slate-500">{selfPromptDue}</span> : null}
                 </span>
                 <Button variant="ghost" size="sm" onClick={openSelfAssessment}>
                   Start →
@@ -936,7 +936,7 @@ export default function PerformancePage() {
             <option value="archived">Archived</option>
           </SelectInput>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <TextInput
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -1480,7 +1480,7 @@ function CyclesPanel({
                   <span className="ml-2 text-xs text-slate-500">{formatPeriod(cycle.period_start, cycle.period_end)}</span>
                 </span>
                 <span className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">{cycle.participants_count ?? 0} enrolled</span>
+                  <span className="text-xs text-slate-500">{cycle.participants_count ?? 0} enrolled</span>
                   <StatusBadge tone={PHASE_TONES[cycle.phase]}>{cycle.phase}</StatusBadge>
                 </span>
               </button>
@@ -1518,7 +1518,7 @@ function CyclesPanel({
               { label: 'Blocked on', value: `${detail.stats.blocked_managers} mgrs` },
             ].map((stat) => (
               <div key={stat.label} className="rounded-lg border border-slate-200 px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{stat.label}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{stat.label}</p>
                 <p className="mt-0.5 text-lg font-bold text-slate-900">{stat.value}</p>
               </div>
             ))}

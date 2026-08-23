@@ -147,7 +147,7 @@ export default function SelfieCapture({ latitude, longitude, accuracy, onComplet
         {captured ? (
           <>
             {latitude && longitude && (
-              <p className="text-xs text-slate-400 text-center">
+              <p className="text-xs text-slate-500 text-center">
                 📍 {latitude.toFixed(6)}, {longitude.toFixed(6)}
               </p>
             )}

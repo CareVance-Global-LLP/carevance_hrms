@@ -63,7 +63,7 @@ export default function RejectReasonModal({
           <button
             onClick={onClose}
             disabled={isLoading}
-            className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg disabled:opacity-40"
+            className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-lg disabled:opacity-40"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

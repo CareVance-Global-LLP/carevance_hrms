@@ -42,7 +42,21 @@ function Providers({ children }: { children: ReactNode }) {
 }
 
 /** A date inside the page's default two-week window. */
-const TODAY = new Date().toISOString().slice(0, 10);
+/*
+ * The LOCAL date, not the UTC one.
+ *
+ * toISOString() yields the UTC date, and in any timezone ahead of UTC that
+ * disagrees with the calendar the component renders between local midnight and
+ * the offset - in IST, every night from 00:00 to 05:30. The fixture then
+ * described a day the grid was not showing, so the rostered cell had nothing
+ * to render and the test failed overnight for a reason nothing on screen
+ * explains.
+ */
+const TODAY = (() => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+})();
 
 const day = (over: Record<string, unknown> = {}) => ({
   id: 1,

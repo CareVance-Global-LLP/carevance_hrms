@@ -136,7 +136,7 @@ export default function LeaveLedgerDrawer({
       ) : null}
 
       {isLoading ? (
-        <p className="py-6 text-center text-xs text-slate-400">Loading breakdown…</p>
+        <p className="py-6 text-center text-xs text-slate-500">Loading breakdown…</p>
       ) : error ? (
         /*
          * Nothing else. A failed load also has no rows, so falling through to

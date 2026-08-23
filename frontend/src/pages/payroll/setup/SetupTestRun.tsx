@@ -125,7 +125,7 @@ export default function SetupTestRun() {
               <InfoTooltip content="Total annual package including all benefits and employer contributions." title="CTC" />
             </div>
             <div className="relative">
-              <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <TextInput
                 type="number"
                 value={annualCtc}

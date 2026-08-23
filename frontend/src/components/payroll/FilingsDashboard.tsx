@@ -942,14 +942,14 @@ export default function FilingsDashboard() {
 
   const getDeadlineColor = (periodInfo: string): string => {
     const match = periodInfo.match(/Due:\s*(.+)/);
-    if (!match) return 'text-slate-400';
+    if (!match) return 'text-slate-500';
     const dateStr = match[1].trim();
     const currentYear = new Date().getFullYear();
     let deadline = new Date(dateStr + ' ' + currentYear);
-    if (isNaN(deadline.getTime())) return 'text-slate-400';
+    if (isNaN(deadline.getTime())) return 'text-slate-500';
     if (deadline < today) {
       deadline = new Date(dateStr + ' ' + (currentYear + 1));
-      if (isNaN(deadline.getTime())) return 'text-slate-400';
+      if (isNaN(deadline.getTime())) return 'text-slate-500';
     }
     const diffDays = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays < 0) return 'text-rose-600';

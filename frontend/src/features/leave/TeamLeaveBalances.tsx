@@ -97,26 +97,26 @@ export default function TeamLeaveBalances({ rows, isLoading, onRefresh, colorOf 
           onClick={onRefresh}
           disabled={isLoading}
           aria-label="Refresh team balances"
-          className="rounded p-1 text-slate-400 transition hover:text-slate-700 disabled:opacity-50"
+          className="rounded p-1 text-slate-500 transition hover:text-slate-700 disabled:opacity-50"
         >
           <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
         </button>
 
         <div className="relative ml-auto">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search team member"
             aria-label="Search team balances"
-            className="w-52 rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-52 rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
           />
           {query ? (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-slate-700"
             >
               <X className="h-3 w-3" />
             </button>
@@ -145,12 +145,12 @@ export default function TeamLeaveBalances({ rows, isLoading, onRefresh, colorOf 
                   className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition hover:bg-slate-50"
                 >
                   {open ? (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                   ) : (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                   )}
                   <span className="text-[13px] font-bold tracking-[-0.015em] text-slate-950">{group.name}</span>
-                  <span className="text-[10px] font-semibold tabular-nums text-slate-400">
+                  <span className="text-[10px] font-semibold tabular-nums text-slate-500">
                     {forceOpen ? `${group.visible.length} of ${group.total}` : group.total}
                   </span>
 
@@ -160,7 +160,7 @@ export default function TeamLeaveBalances({ rows, isLoading, onRefresh, colorOf 
                       {group.exhausted} with a category at zero
                     </span>
                   ) : (
-                    <span className="ml-auto text-[10px] font-semibold text-slate-400">all categories in credit</span>
+                    <span className="ml-auto text-[10px] font-semibold text-slate-500">all categories in credit</span>
                   )}
                 </button>
 
@@ -179,7 +179,7 @@ export default function TeamLeaveBalances({ rows, isLoading, onRefresh, colorOf 
                             <span className="block truncate text-[13px] font-semibold text-slate-950">
                               {row.user?.name || 'Unknown'}
                             </span>
-                            <span className="block truncate text-[11px] text-slate-400">
+                            <span className="block truncate text-[11px] text-slate-500">
                               {row.user?.email || '—'}
                               {row.user?.reporting_manager?.name ? ` · reports to ${row.user.reporting_manager.name}` : ''}
                             </span>

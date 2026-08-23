@@ -108,7 +108,7 @@ export default function EmployeePayrollForm({ onCalculationComplete }: EmployeeP
 
           <div>
             <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-slate-400" />
+              <MapPin className="h-4 w-4 text-slate-500" />
               <FieldLabel>State (for PT calculation)</FieldLabel>
             </div>
             <SelectInput
@@ -125,7 +125,7 @@ export default function EmployeePayrollForm({ onCalculationComplete }: EmployeeP
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Building className="h-4 w-4 text-slate-400" />
+              <Building className="h-4 w-4 text-slate-500" />
               <FieldLabel className="mb-0">Metro City (50% HRA)</FieldLabel>
             </div>
             <label className="relative inline-flex cursor-pointer items-center">

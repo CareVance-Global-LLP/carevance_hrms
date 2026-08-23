@@ -334,7 +334,7 @@ export default function ScreenshotFilmstrip({
               <span className="font-mono text-xs text-slate-500">
                 {isSingleDayRange ? group.hourLabel : `${group.dayLabel} · ${group.hourLabel}`}
               </span>
-              <span className="text-xs text-slate-400">{group.shots.length} shot{group.shots.length === 1 ? '' : 's'}</span>
+              <span className="text-xs text-slate-500">{group.shots.length} shot{group.shots.length === 1 ? '' : 's'}</span>
               {segments.length > 0 && (
                 <span className="flex min-w-[120px] max-w-[200px] flex-1 items-center gap-2">
                   <ShareBar segments={segments} size="sm" className="flex-1" />

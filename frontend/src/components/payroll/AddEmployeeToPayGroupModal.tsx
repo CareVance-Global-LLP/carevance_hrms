@@ -98,7 +98,7 @@ export default function AddEmployeeToPayGroupModal({
           </h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors"
+            className="text-slate-500 hover:text-slate-600 transition-colors"
             aria-label="Close"
           >
             <X className="h-5 w-5" />

@@ -366,7 +366,7 @@ export default function EmployeeMobileDashboard() {
           <div className="flex items-center justify-between mb-3">
             <button
               onClick={() => setMonth(lastMonth())}
-              className="text-slate-400 hover:text-slate-600 text-lg px-1"
+              className="text-slate-500 hover:text-slate-600 text-lg px-1"
             >
               ‹
             </button>
@@ -385,7 +385,7 @@ export default function EmployeeMobileDashboard() {
             </select>
             <button
               onClick={() => setMonth(nextMonth())}
-              className="text-slate-400 hover:text-slate-600 text-lg px-1"
+              className="text-slate-500 hover:text-slate-600 text-lg px-1"
             >
               ›
             </button>
@@ -434,7 +434,7 @@ export default function EmployeeMobileDashboard() {
                   You are currently outside <strong>{zone.name}</strong>.
                   Move inside the geofence zone to take your selfie and start the timer.
                 </p>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500">
                   Current location: {geo.latitude?.toFixed(6)}, {geo.longitude?.toFixed(6)}
                 </p>
               </div>

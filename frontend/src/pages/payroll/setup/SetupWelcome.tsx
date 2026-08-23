@@ -67,7 +67,7 @@ export default function SetupWelcome() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1">
                   <p className="text-sm font-medium text-slate-900 truncate">
-                    <span className="text-slate-400 mr-1.5">{idx + 2}.</span>
+                    <span className="text-slate-500 mr-1.5">{idx + 2}.</span>
                     {s.label}
                   </p>
                   <InfoTooltip content={s.tooltip} title={s.label} size="sm" />

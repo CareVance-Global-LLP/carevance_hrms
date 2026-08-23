@@ -124,7 +124,7 @@ export default function StatutoryOverrideForm({ employees, defaultMonth }: Statu
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </SelectInput>
-          {head && <p className="mt-1 text-[11px] text-slate-400">{head.hint}</p>}
+          {head && <p className="mt-1 text-[11px] text-slate-500">{head.hint}</p>}
         </div>
 
         <div>

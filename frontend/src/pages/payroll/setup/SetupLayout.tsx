@@ -127,7 +127,7 @@ export default function SetupLayout({ children, currentStep }: SetupLayoutProps)
                                   ? 'bg-emerald-100 text-emerald-700'
                                   : isActive || isCurrent
                                     ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-100 text-slate-400',
+                                    : 'bg-slate-100 text-slate-500',
                               )}
                             >
                               {isDone ? <CheckCircle2 className="h-4 w-4" /> : idx + 1}
@@ -141,7 +141,7 @@ export default function SetupLayout({ children, currentStep }: SetupLayoutProps)
                               >
                                 {step.label}
                               </p>
-                              <p className="text-xs text-slate-400 truncate">{step.description}</p>
+                              <p className="text-xs text-slate-500 truncate">{step.description}</p>
                             </div>
                             {(isActive || isCurrent) && (
                               <ChevronRight className="h-4 w-4 text-blue-600 flex-shrink-0 mt-1" />
@@ -218,7 +218,7 @@ export function StepHeader({
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
           Step {stepNumber} of {totalSteps}
         </span>
         {isComplete && (

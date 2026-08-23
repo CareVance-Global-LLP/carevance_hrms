@@ -30,7 +30,7 @@ export default function ProgressSteps({ steps, currentStep }: ProgressStepsProps
                       ? 'bg-emerald-500 text-white'
                       : isCurrent
                       ? 'bg-blue-600 text-white ring-4 ring-blue-100'
-                      : 'bg-slate-100 text-slate-400'
+                      : 'bg-slate-100 text-slate-500'
                   }`}
                 >
                   {isCompleted ? (
@@ -42,14 +42,14 @@ export default function ProgressSteps({ steps, currentStep }: ProgressStepsProps
                 <div className="mt-2 text-center">
                   <p
                     className={`text-sm font-medium ${
-                      isCompleted || isCurrent ? 'text-slate-900' : 'text-slate-400'
+                      isCompleted || isCurrent ? 'text-slate-900' : 'text-slate-500'
                     }`}
                   >
                     {step.label}
                   </p>
                   <p
                     className={`text-xs mt-0.5 ${
-                      isCompleted || isCurrent ? 'text-slate-500' : 'text-slate-400'
+                      isCompleted || isCurrent ? 'text-slate-500' : 'text-slate-500'
                     }`}
                   >
                     {step.description}
@@ -89,7 +89,7 @@ export default function ProgressSteps({ steps, currentStep }: ProgressStepsProps
                     ? 'bg-emerald-500 text-white'
                     : isCurrent
                     ? 'bg-blue-600 text-white'
-                    : 'bg-slate-200 text-slate-400'
+                    : 'bg-slate-200 text-slate-500'
                 }`}
               >
                 {isCompleted ? <Check className="h-4 w-4" /> : <span className="text-sm font-semibold">{index + 1}</span>}
@@ -97,7 +97,7 @@ export default function ProgressSteps({ steps, currentStep }: ProgressStepsProps
               <div>
                 <p
                   className={`text-sm font-medium ${
-                    isCompleted || isCurrent ? 'text-slate-900' : 'text-slate-400'
+                    isCompleted || isCurrent ? 'text-slate-900' : 'text-slate-500'
                   }`}
                 >
                   {step.label}

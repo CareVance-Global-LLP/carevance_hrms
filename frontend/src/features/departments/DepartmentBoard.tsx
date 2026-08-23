@@ -118,7 +118,7 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
           setOpen((current) => !current);
           setMoveOpen(false);
         }}
-        className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+        className="rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
       >
         <MoreVertical className="h-3.5 w-3.5" />
       </button>
@@ -137,14 +137,14 @@ function PersonMenu({ card, departments, onMove, onRemove }: PersonMenuProps) {
               className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50"
             >
               <span className="flex items-center gap-2">
-                <ArrowRightLeft className="h-3.5 w-3.5 text-slate-400" /> Move to department
+                <ArrowRightLeft className="h-3.5 w-3.5 text-slate-500" /> Move to department
               </span>
-              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+              <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
             </button>
             {moveOpen ? (
               <div className="absolute right-full top-0 mr-1 max-h-56 w-48 overflow-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-modal">
                 {others.length === 0 ? (
-                  <p className="px-2.5 py-2 text-xs text-slate-400">No other department yet</p>
+                  <p className="px-2.5 py-2 text-xs text-slate-500">No other department yet</p>
                 ) : (
                   others.map((dept) => (
                     <button
@@ -226,7 +226,7 @@ function PersonChipBase({ card, draggable, departments, onMove, onRemove }: Pers
         </span>
         <span
           className={`mt-0.5 block truncate text-[9px] font-bold uppercase tracking-[0.08em] ${
-            roleTier(card.user) === 'employee' ? 'text-slate-400' : 'text-blue-700'
+            roleTier(card.user) === 'employee' ? 'text-slate-500' : 'text-blue-700'
           }`}
         >
           {card.isLead ? `${roleLabel(card.user)} · dept lead` : roleLabel(card.user)}
@@ -284,9 +284,9 @@ function TeamZone({
         className="flex w-full items-center gap-1.5 px-1 pb-1 pt-2 text-left"
       >
         {collapsed ? (
-          <ChevronRight className="h-3 w-3 shrink-0 text-slate-400" />
+          <ChevronRight className="h-3 w-3 shrink-0 text-slate-500" />
         ) : (
-          <ChevronDown className="h-3 w-3 shrink-0 text-slate-400" />
+          <ChevronDown className="h-3 w-3 shrink-0 text-slate-500" />
         )}
         <span className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
           {group.name}
@@ -294,7 +294,7 @@ function TeamZone({
         {group.teamId !== null && !group.hasManager ? (
           <AlertTriangle className="h-3 w-3 shrink-0 text-accent-500" aria-label="No team manager" />
         ) : null}
-        <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums text-slate-400">
+        <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums text-slate-500">
           {group.cards.length}
         </span>
       </button>
@@ -302,7 +302,7 @@ function TeamZone({
       {collapsed ? null : (
         <div className="space-y-1">
           {group.cards.length === 0 ? (
-            <p className="px-1 py-2 text-[10px] text-slate-400">Drop someone here</p>
+            <p className="px-1 py-2 text-[10px] text-slate-500">Drop someone here</p>
           ) : (
             group.cards.map((card) => (
               <PersonChip
@@ -409,7 +409,7 @@ function Column({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((current) => !current)}
-              className="rounded-md p-1 text-slate-400 transition hover:bg-white/70 hover:text-slate-700"
+              className="rounded-md p-1 text-slate-500 transition hover:bg-white/70 hover:text-slate-700"
             >
               <MoreVertical className="h-3.5 w-3.5" />
             </button>
@@ -425,7 +425,7 @@ function Column({
                   onClick={() => { setMenuOpen(false); onOpen(dept.id); }}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-50"
                 >
-                  <UserRound className="h-3.5 w-3.5 text-slate-400" /> Open department
+                  <UserRound className="h-3.5 w-3.5 text-slate-500" /> Open department
                 </button>
                 {canManage ? (
                   <button
@@ -433,7 +433,7 @@ function Column({
                     onClick={() => { setMenuOpen(false); setAddingTeam(true); }}
                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-50"
                   >
-                    <FolderPlus className="h-3.5 w-3.5 text-slate-400" /> New team
+                    <FolderPlus className="h-3.5 w-3.5 text-slate-500" /> New team
                   </button>
                 ) : null}
                 {canCreateGroups ? (
@@ -515,7 +515,7 @@ function Column({
                 }
               }}
               placeholder="Team name, then Enter"
-              className="w-full rounded-lg border border-blue-300 px-2 py-1.5 text-[11px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              className="w-full rounded-lg border border-blue-300 px-2 py-1.5 text-[11px] text-slate-800 placeholder:text-slate-500 focus:outline-none"
             />
           ) : (
             <button
@@ -695,7 +695,7 @@ export default function DepartmentBoard({
             </span>
             <span>
               <span className="block text-xs font-semibold text-slate-800">{activeCard.user.name}</span>
-              <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">
+              <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-slate-500">
                 {roleLabel(activeCard.user)}
               </span>
             </span>

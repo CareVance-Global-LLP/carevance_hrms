@@ -408,7 +408,7 @@ export default function DepartmentWorkspace({
             type="button"
             onClick={() => setFeedback(null)}
             aria-label="Dismiss"
-            className="shrink-0 px-1 text-slate-400 transition hover:text-slate-700"
+            className="shrink-0 px-1 text-slate-500 transition hover:text-slate-700"
           >
             ×
           </button>
@@ -447,7 +447,7 @@ export default function DepartmentWorkspace({
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <TextInput
               aria-label="Search people or departments"
               value={groupDirectoryQuery}

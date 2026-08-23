@@ -153,11 +153,11 @@ export default function RecipientDetailsTable({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-xs font-semibold text-slate-700">
           Per-recipient details{' '}
-          <span className="font-normal text-slate-400">
+          <span className="font-normal text-slate-500">
             (optional — anything left on &ldquo;use default&rdquo; takes the values above)
           </span>
         </p>
-        <p className="text-[11px] text-slate-400">
+        <p className="text-[11px] text-slate-500">
           {emails.length} recipient{emails.length === 1 ? '' : 's'}
         </p>
       </div>
@@ -261,7 +261,7 @@ export default function RecipientDetailsTable({
       </div>
 
       {defaultJoiningDate ? (
-        <p className="mt-2 text-[11px] text-slate-400">
+        <p className="mt-2 text-[11px] text-slate-500">
           Blank joining dates use {defaultJoiningDate}, the default above.
         </p>
       ) : null}

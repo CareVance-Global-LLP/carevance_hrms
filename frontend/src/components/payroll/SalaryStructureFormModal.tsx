@@ -149,7 +149,7 @@ export default function SalaryStructureFormModal({ structure, onClose }: Props) 
           <h3 id="salary-structure-form-title" className="text-base font-semibold text-slate-900">
             {isEdit ? 'Edit Template' : 'New Template'}
           </h3>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-600 rounded">
+          <button onClick={onClose} className="p-1 text-slate-500 hover:text-slate-600 rounded">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -186,7 +186,7 @@ export default function SalaryStructureFormModal({ structure, onClose }: Props) 
 
             <div className="flex items-center gap-3 my-3">
               <div className="flex-1 border-t border-slate-200" />
-              <span className="text-[10px] text-slate-400 uppercase tracking-wide">Fixed Amounts</span>
+              <span className="text-[10px] text-slate-500 uppercase tracking-wide">Fixed Amounts</span>
               <div className="flex-1 border-t border-slate-200" />
             </div>
 
@@ -261,7 +261,7 @@ function PctRow({ label, value, onChange }: { label: string; value: number; onCh
           min={0}
           max={100}
         />
-        <span className="text-[11px] text-slate-400">%</span>
+        <span className="text-[11px] text-slate-500">%</span>
       </div>
     </div>
   );
@@ -274,7 +274,7 @@ function MoneyRow({ label, value, onChange }: { label: string; value: number; on
     <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
       <span className="text-xs text-slate-600">{label}</span>
       <div className="flex items-center gap-1">
-        <span className="text-[11px] text-slate-400">\u20B9</span>
+        <span className="text-[11px] text-slate-500">\u20B9</span>
         <input
           type="number"
           value={display}
@@ -305,7 +305,7 @@ function OtherSection({
     <div className="mt-3">
       <div className="flex items-center gap-3 mb-2">
         <div className="flex-1 border-t border-slate-200" />
-        <span className="text-[10px] text-slate-400 uppercase tracking-wide">{label}</span>
+        <span className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</span>
         <div className="flex-1 border-t border-slate-200" />
       </div>
       {items.map((item, idx) => (

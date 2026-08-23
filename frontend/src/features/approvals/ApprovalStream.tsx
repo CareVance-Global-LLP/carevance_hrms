@@ -281,7 +281,7 @@ export default function ApprovalStream({
               type="button"
               onClick={clearSelection}
               aria-label="Clear selection"
-              className="rounded p-1 text-slate-400 transition hover:text-slate-700"
+              className="rounded p-1 text-slate-500 transition hover:text-slate-700"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -290,7 +290,7 @@ export default function ApprovalStream({
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500">
           Loading approvals…
         </div>
       ) : cards.length === 0 ? (
@@ -342,7 +342,7 @@ export default function ApprovalStream({
                         {KIND_META[card.kind].label}
                       </span>
                     </span>
-                    <span className="block truncate text-[10px] text-slate-400">
+                    <span className="block truncate text-[10px] text-slate-500">
                       submitted {age === 0 ? 'today' : `${age}d ago`}
                       {card.reviewerName ? ` · reviewed by ${card.reviewerName}` : ''}
                     </span>
@@ -355,7 +355,7 @@ export default function ApprovalStream({
                   {view === 'pending' ? (
                     <span
                       className={`flex shrink-0 items-center gap-1 text-[10px] font-bold tabular-nums ${
-                        age > AGE_WARN_DAYS ? 'text-warning-800' : 'text-slate-400'
+                        age > AGE_WARN_DAYS ? 'text-warning-800' : 'text-slate-500'
                       }`}
                       title={age > AGE_WARN_DAYS ? `Waiting ${age} days` : undefined}
                     >
@@ -404,7 +404,7 @@ export default function ApprovalStream({
                     onClick={() => toggleExpand(key)}
                     aria-expanded={isOpen}
                     aria-label="Details"
-                    className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                    className="shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
                   >
                     {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   </button>

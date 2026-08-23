@@ -20,7 +20,7 @@ const statusConfig: Record<PayrollRunStatus, { label: string; color: string; bg:
   released: { label: 'Released', color: 'text-violet-600', bg: 'bg-violet-100' },
   disbursed: { label: 'Disbursed', color: 'text-emerald-700', bg: 'bg-emerald-200' },
   paid: { label: 'Paid', color: 'text-emerald-700', bg: 'bg-emerald-200' },
-  not_started: { label: 'Not Started', color: 'text-slate-400', bg: 'bg-slate-100' },
+  not_started: { label: 'Not Started', color: 'text-slate-500', bg: 'bg-slate-100' },
 };
 
 interface PayrollStatusBadgeProps {

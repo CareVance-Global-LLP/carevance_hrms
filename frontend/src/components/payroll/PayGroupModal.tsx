@@ -239,7 +239,7 @@ export default function PayGroupModal({
           </h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 transition-colors"
+            className="text-slate-500 hover:text-slate-600 transition-colors"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -285,7 +285,7 @@ export default function PayGroupModal({
               {/* Search */}
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
-                  <Search className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Search className="h-4 w-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={search}
@@ -355,7 +355,7 @@ export default function PayGroupModal({
                     employees.length === 0 && (
                       <div className="flex flex-col items-center justify-center p-10 text-center">
                         <div className="rounded-full bg-slate-100 p-3 mb-3">
-                          <UserX className="h-6 w-6 text-slate-400" />
+                          <UserX className="h-6 w-6 text-slate-500" />
                         </div>
                         <h4 className="text-sm font-medium text-slate-700 mb-1">
                           No employees found
@@ -423,7 +423,7 @@ export default function PayGroupModal({
                         <ChevronDown className="h-4 w-4 ml-1" />
                       </Button>
                     ) : (
-                      <span className="text-slate-400">End of results</span>
+                      <span className="text-slate-500">End of results</span>
                     )}
                   </div>
                 )}

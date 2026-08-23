@@ -140,7 +140,7 @@ export default function UsageAnalytics({
 
         <Panel title="Time by activity kind">
           {donutData.length === 0 ? (
-            <p className="py-10 text-center text-sm text-slate-400">No recorded activity in this range yet.</p>
+            <p className="py-10 text-center text-sm text-slate-500">No recorded activity in this range yet.</p>
           ) : (
             <div className="flex items-center gap-5">
               <div className="h-36 w-36 flex-none">
@@ -178,7 +178,7 @@ export default function UsageAnalytics({
 
       <Panel
         title={`Top tools · ${scopeLabel}`}
-        action={<span className="text-xs text-slate-400">{filteredTools.length} shown</span>}
+        action={<span className="text-xs text-slate-500">{filteredTools.length} shown</span>}
       >
         <div className="mb-3 flex flex-wrap items-center gap-1.5">
           {classChips.map((chip) => (
@@ -215,7 +215,7 @@ export default function UsageAnalytics({
         </div>
 
         {filteredTools.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">No tool usage matches these filters in this range.</p>
+          <p className="py-8 text-center text-sm text-slate-500">No tool usage matches these filters in this range.</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {filteredTools.map((tool) => {
@@ -228,7 +228,7 @@ export default function UsageAnalytics({
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-slate-800" title={tool.label}>{tool.label}</span>
-                      <span className="block text-[11px] text-slate-400">
+                      <span className="block text-[11px] text-slate-500">
                         {tool.type === 'website' ? 'website' : 'application'}
                         {tool.total_events ? ` · ${tool.total_events} events` : ''}
                         {tool.users_count ? ` · ${tool.users_count} ${tool.users_count === 1 ? 'person' : 'people'}` : ''}
@@ -279,7 +279,7 @@ export default function UsageAnalytics({
             })}
           </ul>
         )}
-        <p className="mt-3 text-xs text-slate-400">
+        <p className="mt-3 text-xs text-slate-500">
           Top 25 per classification by duration — ranked from tracked activity in the selected range.
           {canReclassify ? ' Reclassifying applies org-wide from the next processing run.' : ''}
         </p>
@@ -288,7 +288,7 @@ export default function UsageAnalytics({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
         <Panel title="People · productive time">
           {employeeRankings.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No tracked activity in this range yet.</p>
+            <p className="py-8 text-center text-sm text-slate-500">No tracked activity in this range yet.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {employeeRankings.slice(0, 15).map((row: any) => (
@@ -303,13 +303,13 @@ export default function UsageAnalytics({
             </ul>
           )}
           {employeeRankings.length > 15 && (
-            <p className="mt-2 text-xs text-slate-400">Showing 15 of {employeeRankings.length} tracked people.</p>
+            <p className="mt-2 text-xs text-slate-500">Showing 15 of {employeeRankings.length} tracked people.</p>
           )}
         </Panel>
 
         <Panel title="Departments · efficiency">
           {teamRankings.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No department groups configured yet.</p>
+            <p className="py-8 text-center text-sm text-slate-500">No department groups configured yet.</p>
           ) : (
             <div className="space-y-2.5">
               {teamRankings.slice(0, 8).map((team: any) => {

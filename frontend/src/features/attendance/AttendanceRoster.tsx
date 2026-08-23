@@ -250,7 +250,7 @@ export default function AttendanceRoster({
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400">
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500">
         Loading attendance…
       </div>
     );
@@ -281,7 +281,7 @@ export default function AttendanceRoster({
                   : 'border-slate-200 bg-white hover:border-slate-300'
               }`}
             >
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                 {candidate.label}
               </p>
               <p
@@ -305,20 +305,20 @@ export default function AttendanceRoster({
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search people"
             aria-label="Search attendance"
-            className="w-56 rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-56 rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
           />
           {query ? (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-slate-700"
             >
               <X className="h-3 w-3" />
             </button>
@@ -326,7 +326,7 @@ export default function AttendanceRoster({
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <ArrowUpDown className="h-3 w-3 text-slate-400" />
+          <ArrowUpDown className="h-3 w-3 text-slate-500" />
           {SORTS.map((option) => (
             <button
               key={option.key}
@@ -334,7 +334,7 @@ export default function AttendanceRoster({
               aria-pressed={sort === option.key}
               onClick={() => setSort(option.key)}
               className={`rounded-full px-2 py-1 text-[10px] font-bold transition ${
-                sort === option.key ? 'bg-blue-50 text-blue-800' : 'text-slate-400 hover:text-slate-700'
+                sort === option.key ? 'bg-blue-50 text-blue-800' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
               {option.label}
@@ -361,12 +361,12 @@ export default function AttendanceRoster({
                   className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition hover:bg-slate-50"
                 >
                   {open ? (
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                   ) : (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                   )}
                   <span className="text-[13px] font-bold tracking-[-0.015em] text-slate-950">{group.name}</span>
-                  <span className="text-[10px] font-semibold tabular-nums text-slate-400">
+                  <span className="text-[10px] font-semibold tabular-nums text-slate-500">
                     {forceOpen ? `${group.visible.length} of ${group.total}` : group.total}
                   </span>
 
@@ -394,7 +394,7 @@ export default function AttendanceRoster({
                 {open ? (
                   <div className="border-t border-slate-100">
                     {group.visible.length === 0 ? (
-                      <p className="px-4 py-5 text-center text-xs text-slate-400">
+                      <p className="px-4 py-5 text-center text-xs text-slate-500">
                         Nobody in {group.name} matches the current filter.
                       </p>
                     ) : (
@@ -433,13 +433,13 @@ export default function AttendanceRoster({
                                     </span>
                                   ) : null}
                                 </span>
-                                <span className="block truncate text-[11px] text-slate-400">{row.user.email}</span>
+                                <span className="block truncate text-[11px] text-slate-500">{row.user.email}</span>
                               </span>
                             </span>
 
                             <span className="text-xs tabular-nums text-slate-600">
                               <b className="font-bold text-slate-800">{row.days_present}</b>
-                              {denominator > 0 ? <span className="text-slate-400"> / {denominator}</span> : null}
+                              {denominator > 0 ? <span className="text-slate-500"> / {denominator}</span> : null}
                             </span>
 
                             <RateBar rate={row.attendance_rate} />
@@ -467,7 +467,7 @@ export default function AttendanceRoster({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-4 px-1 text-[10px] font-semibold text-slate-400">
+      <div className="flex flex-wrap items-center gap-4 px-1 text-[10px] font-semibold text-slate-500">
         {[
           { color: 'rgb(var(--brand-500))', label: 'Worked' },
           { color: 'rgb(var(--accent-500))', label: 'Idle' },

@@ -117,7 +117,7 @@ export default function GroupMultiSelect({
                   />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-slate-400" />
+                      <Users className="h-4 w-4 text-slate-500" />
                       <p className="text-sm font-semibold text-slate-950">{option.name}</p>
                       {option.isDefault ? (
                         <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">

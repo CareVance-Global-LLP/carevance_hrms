@@ -968,8 +968,17 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       {mode !== 'teams' && (
       <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{pageTitle.title}</h1>
-          <p className="mt-3 text-sm font-medium text-slate-900">{pageTitle.eyebrow}</p>
+          {/*
+            Eyebrow above the title, matching PageHeader.
+
+            This block duplicates PageHeader rather than using it, so it kept
+            the old order after that component was fixed: the eyebrow rendered
+            BELOW the h1 at almost the same weight and colour, and on this page
+            the two said the same thing - "Employee Management" under
+            "Employees".
+          */}
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{pageTitle.eyebrow}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">{pageTitle.title}</h1>
           <p className="mt-1 max-w-4xl text-xs text-slate-500">{pageTitle.description}</p>
         </div>
         {/* Add Employee and Export CSV live in the roster toolbar for this mode,
@@ -1248,7 +1257,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
                   header: 'Actions',
                   render: (row: any) => {
                     if (!row.can_resend && !row.can_revoke) {
-                      return <span className="text-slate-400">—</span>;
+                      return <span className="text-slate-500">—</span>;
                     }
 
                     const isBusy = (resendInviteMutation.isPending && resendInviteMutation.variables === row.id)

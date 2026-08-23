@@ -363,7 +363,7 @@ export default function ComponentOverrideGrid() {
           <div>
             <FieldLabel>Search</FieldLabel>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <TextInput
                 type="search"
                 className="pl-9"
@@ -396,7 +396,7 @@ export default function ComponentOverrideGrid() {
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1140px] text-sm">
-            <thead className="border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-slate-100 text-left text-[11px] uppercase tracking-wide text-slate-500">
               <tr>
                 <th scope="col" className="px-4 py-2.5 font-medium">
                   <button
@@ -437,7 +437,7 @@ export default function ComponentOverrideGrid() {
                       <p className="max-w-52 truncate font-medium text-slate-800" title={row.employee_name ?? undefined}>
                         {row.employee_name}
                       </p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[11px] text-slate-500">
                         {row.department ?? 'No department'}{row.salary_structure ? ` · ${row.salary_structure}` : ''}
                       </p>
                       {row.locked && (
@@ -460,7 +460,7 @@ export default function ComponentOverrideGrid() {
                       return (
                         <td key={target} className="px-4 py-2.5 text-right align-top">
                           {notApplicable ? (
-                            <span className="text-xs text-slate-400">Not Applicable</span>
+                            <span className="text-xs text-slate-500">Not Applicable</span>
                           ) : !cell?.overridable || row.locked ? (
                             <span className="tabular-nums text-slate-700">{show(cell?.annual)}</span>
                           ) : (
@@ -501,7 +501,7 @@ export default function ComponentOverrideGrid() {
                                 />
                               </div>
                               {target === 'basic' && edited && !overCeiling && (
-                                <p className="mt-1 text-[11px] text-slate-400">
+                                <p className="mt-1 text-[11px] text-slate-500">
                                   ₹1 of Basic costs ₹{projected.amplification.toFixed(4)} of allowance
                                 </p>
                               )}
@@ -523,7 +523,7 @@ export default function ComponentOverrideGrid() {
                                 </p>
                               )}
                               {target === 'hra' && projected.hraFollowsBasic && (
-                                <p className="mt-1 text-[11px] text-slate-400">follows basic → {show(projected.hra)}</p>
+                                <p className="mt-1 text-[11px] text-slate-500">follows basic → {show(projected.hra)}</p>
                               )}
                               {/*
                                 A saved request, shown next to the figure it has

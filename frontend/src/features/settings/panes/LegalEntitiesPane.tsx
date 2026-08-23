@@ -109,7 +109,7 @@ export default function LegalEntitiesPane() {
                 ['ESI code', entity.esi_code],
               ] as const).map(([label, value]) => (
                 <div key={label}>
-                  <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+                  <dt className="text-[10px] uppercase tracking-wide text-slate-500">{label}</dt>
                   {/* An absent identifier is called out, not left blank: a
                       filing generated without it reports "not configured"
                       rather than failing, so the gap is otherwise silent. */}

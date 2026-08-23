@@ -93,7 +93,7 @@ function ProfileGaps({ user }: { user: unknown }) {
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
         <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Profile record</h4>
-        <span className="text-[10px] font-bold tabular-nums text-slate-400">
+        <span className="text-[10px] font-bold tabular-nums text-slate-500">
           {completeness.filled}/{completeness.total}
         </span>
         {completeness.missingForPayroll.length > 0 ? (
@@ -109,7 +109,7 @@ function ProfileGaps({ user }: { user: unknown }) {
         <div className="divide-y divide-slate-100">
           {grouped.map(({ group, fields }) => (
             <div key={group} className="px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">
                 {FIELD_GROUP_LABEL[group]}
               </p>
               <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
@@ -311,7 +311,7 @@ export default function NewHiresPage() {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           )}
           <p className="flex-1">{feedback.message}</p>
-          <button type="button" onClick={() => setFeedback(null)} aria-label="Dismiss" className="text-slate-400">
+          <button type="button" onClick={() => setFeedback(null)} aria-label="Dismiss" className="text-slate-500">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -339,13 +339,13 @@ export default function NewHiresPage() {
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search joiners"
               aria-label="Search joiners"
-              className="w-52 rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+              className="w-52 rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
             />
           </div>
           <Button size="sm" iconLeft={<CalendarPlus className="h-4 w-4" />} onClick={() => setCreating(true)}>
@@ -377,8 +377,8 @@ export default function NewHiresPage() {
                   >
                     {band.label}
                   </h2>
-                  <span className="text-[10px] font-semibold tabular-nums text-slate-400">{rows.length}</span>
-                  <span className="text-[10px] text-slate-400">· {band.hint}</span>
+                  <span className="text-[10px] font-semibold tabular-nums text-slate-500">{rows.length}</span>
+                  <span className="text-[10px] text-slate-500">· {band.hint}</span>
                 </div>
 
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -414,7 +414,7 @@ export default function NewHiresPage() {
                         <span className="block text-[11px] font-bold text-slate-700">
                           {formatDate(journey.joining_date)}
                         </span>
-                        <span className="block text-[10px] font-semibold text-slate-400">
+                        <span className="block text-[10px] font-semibold text-slate-500">
                           {journey.days_until_joining === 0
                             ? 'Joins today'
                             : journey.days_until_joining > 0
@@ -466,7 +466,7 @@ export default function NewHiresPage() {
         }
       >
         {detailQuery.isLoading || !openJourney ? (
-          <p className="py-8 text-center text-sm text-slate-400">Loading journey…</p>
+          <p className="py-8 text-center text-sm text-slate-500">Loading journey…</p>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-2">
@@ -479,7 +479,7 @@ export default function NewHiresPage() {
                 { label: 'Blocking', value: openJourney.readiness.blocking_outstanding ?? openJourney.readiness.blocking_overdue },
               ].map((stat) => (
                 <div key={stat.label} className="rounded-lg border border-slate-200 px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{stat.label}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{stat.label}</p>
                   <p
                     className={`mt-0.5 text-sm font-bold tabular-nums ${
                       stat.label === 'Blocking' && Number(stat.value) > 0 ? 'text-warning-800' : 'text-slate-900'

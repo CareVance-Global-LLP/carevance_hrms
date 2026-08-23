@@ -110,7 +110,7 @@ export default function Hero() {
             </motion.div>
 
             {/* Trust badges */}
-            <motion.div variants={fadeSlideUp} className="mt-6 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+            <motion.div variants={fadeSlideUp} className="mt-6 flex flex-wrap items-center gap-4 text-xs text-slate-500">
               {trustBadges.map((badge) => (
                 <span key={badge.text} className="inline-flex items-center gap-1.5">
                   <badge.icon className="h-3.5 w-3.5" />
@@ -140,7 +140,7 @@ export default function Hero() {
                       <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                     </div>
-                    <span className="ml-3 text-xs font-medium text-slate-400">Live Dashboard</span>
+                    <span className="ml-3 text-xs font-medium text-slate-500">Live Dashboard</span>
                   </div>
                   <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Synced</span>
                 </div>
@@ -193,7 +193,7 @@ export default function Hero() {
                           ['14:30', 'Manager review'],
                         ].map(([time, title]) => (
                           <div key={time} className="flex items-center gap-3">
-                            <span className="w-10 text-[11px] font-medium text-slate-400">{time}</span>
+                            <span className="w-10 text-[11px] font-medium text-slate-500">{time}</span>
                             <div className="h-1.5 w-1.5 rounded-full bg-blue-400" />
                             <span className="text-xs text-slate-600">{title}</span>
                           </div>
@@ -213,7 +213,7 @@ export default function Hero() {
 
       {/* Trust logos marquee */}
       <div className="mx-auto mt-10 max-w-7xl">
-        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+        <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
           Trusted by forward-thinking teams
         </p>
         <Marquee speed={40} className="opacity-40">

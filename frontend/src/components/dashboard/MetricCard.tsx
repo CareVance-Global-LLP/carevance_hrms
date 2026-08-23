@@ -41,7 +41,7 @@ export default function MetricCard({
     <SurfaceCard className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
             {label}
           </p>
           <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>

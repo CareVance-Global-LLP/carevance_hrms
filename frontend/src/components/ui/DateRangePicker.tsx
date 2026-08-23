@@ -64,7 +64,7 @@ export function DateRangePicker({
       {isCustom && (
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg border border-border-strong bg-surface-card px-2 py-1.5">
-            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+            <Calendar className="h-3.5 w-3.5 text-slate-500" />
             <input
               type="date"
               value={startDate}
@@ -74,9 +74,9 @@ export function DateRangePicker({
               className="bg-transparent text-xs outline-none"
             />
           </div>
-          <span className="text-xs text-slate-400">to</span>
+          <span className="text-xs text-slate-500">to</span>
           <div className="flex items-center gap-1 rounded-lg border border-border-strong bg-surface-card px-2 py-1.5">
-            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+            <Calendar className="h-3.5 w-3.5 text-slate-500" />
             <input
               type="date"
               value={endDate}

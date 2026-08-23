@@ -111,7 +111,7 @@ export default function MonthPicker({ value, onChange, className }: MonthPickerP
         )}
       >
         <Calendar className="h-4 w-4 text-slate-500" />
-        <span className={cn('whitespace-nowrap', !value && 'text-slate-400')}>{label}</span>
+        <span className={cn('whitespace-nowrap', !value && 'text-slate-500')}>{label}</span>
         <ChevronDown className={cn('h-4 w-4 text-slate-500 transition-transform', open && 'rotate-180')} />
       </button>
 

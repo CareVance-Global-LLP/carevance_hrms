@@ -37,7 +37,7 @@ function Ladder({ roles, selectedId, clashes, onSelect }: LadderProps) {
         return (
           <div key={role.id}>
             {startsBand ? (
-              <p className="flex items-center gap-2 px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              <p className="flex items-center gap-2 px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                 {RANK_LABEL[rank]}
                 <span className="h-px flex-1 bg-slate-100" />
               </p>
@@ -64,7 +64,7 @@ function Ladder({ roles, selectedId, clashes, onSelect }: LadderProps) {
                 <span className="flex items-center gap-1.5">
                   <span className="truncate text-[13px] font-bold text-slate-900">{role.name}</span>
                   {role.is_system ? (
-                    <Lock className="h-3 w-3 shrink-0 text-slate-400" aria-label="System role" />
+                    <Lock className="h-3 w-3 shrink-0 text-slate-500" aria-label="System role" />
                   ) : null}
                   {!role.is_active ? (
                     <span className="shrink-0 rounded-full bg-accent-50 px-1.5 text-[9px] font-bold uppercase text-warning-800">
@@ -72,7 +72,7 @@ function Ladder({ roles, selectedId, clashes, onSelect }: LadderProps) {
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-0.5 flex items-center gap-2 text-[10px] font-semibold text-slate-400">
+                <span className="mt-0.5 flex items-center gap-2 text-[10px] font-semibold text-slate-500">
                   <span className="tabular-nums">Level {role.hierarchy_level}</span>
                   {clashes.has(role.hierarchy_level) ? (
                     <AlertTriangle className="h-2.5 w-2.5 text-accent-500" aria-label="Level shared with another role" />
@@ -166,7 +166,7 @@ function Editor({
           <h2 className="truncate text-lg font-bold tracking-[-0.025em] text-slate-950">
             {isCreating ? 'New role' : draft.name}
           </h2>
-          <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+          <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
             {RANK_LABEL[rank]} · level {level} · {draft.permissions.length} permission
             {draft.permissions.length === 1 ? '' : 's'}
             {draft.is_system ? ' · system role' : ''}
@@ -222,13 +222,13 @@ function Editor({
                 }
               }}
               disabled={saving || !canEdit || draft.is_system}
-              className={`w-full rounded-lg border px-3 py-2 text-sm tabular-nums text-slate-800 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400 ${
+              className={`w-full rounded-lg border px-3 py-2 text-sm tabular-nums text-slate-800 focus:outline-none disabled:bg-slate-50 disabled:text-slate-500 ${
                 fieldError('hierarchy_level')
                   ? 'border-danger-500 bg-danger-50'
                   : 'border-slate-200 focus:border-blue-400'
               }`}
             />
-            <p className="mt-1 text-[11px] text-slate-400">
+            <p className="mt-1 text-[11px] text-slate-500">
               Lower is more senior — Admin 10, Manager 50, Employee 100.
             </p>
             {fieldError('hierarchy_level') ? (
@@ -241,7 +241,7 @@ function Editor({
               </p>
             ) : null}
             {draft.is_system ? (
-              <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
+              <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
                 <Lock className="h-3 w-3" /> System roles keep a fixed level.
               </p>
             ) : null}
@@ -290,7 +290,7 @@ function Editor({
             <span className="text-xs font-bold text-slate-700">
               {(draft.is_active ?? true) ? 'Active' : 'Inactive'}
             </span>
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-slate-500">
               {(draft.is_active ?? true)
                 ? 'Can be assigned to people.'
                 : 'Hidden when assigning roles; people who already hold it keep it.'}
@@ -305,13 +305,13 @@ function Editor({
               {draft.permissions.length} granted
             </span>
             <div className="relative ml-auto">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search permissions"
                 aria-label="Search permissions"
-                className="w-48 rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+                className="w-48 rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
               />
             </div>
           </div>
@@ -323,7 +323,7 @@ function Editor({
           ))}
 
           {visibleGroups.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400">
+            <p className="py-6 text-center text-sm text-slate-500">
               {groups.length === 0 ? 'No permissions available on your plan.' : `Nothing matches “${query}”.`}
             </p>
           ) : (
@@ -338,9 +338,9 @@ function Editor({
                     <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
                       <h4 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                         {group.group}
-                        {locked ? <Lock className="h-2.5 w-2.5 text-slate-400" /> : null}
+                        {locked ? <Lock className="h-2.5 w-2.5 text-slate-500" /> : null}
                       </h4>
-                      <span className="text-[10px] font-bold tabular-nums text-slate-400">
+                      <span className="text-[10px] font-bold tabular-nums text-slate-500">
                         {count}/{group.permissions.length}
                       </span>
                       {canEdit && !locked ? (
@@ -352,7 +352,7 @@ function Editor({
                           {all ? 'Clear all' : 'Grant all'}
                         </button>
                       ) : locked ? (
-                        <span className="ml-auto text-[10px] font-semibold text-slate-400">
+                        <span className="ml-auto text-[10px] font-semibold text-slate-500">
                           Managed outside role settings
                         </span>
                       ) : null}
@@ -464,9 +464,9 @@ function Summary({
         <div className="min-w-0 flex-1">
           <h2 className="flex items-center gap-2 truncate text-lg font-bold tracking-[-0.025em] text-slate-950">
             {role.name}
-            {role.is_system ? <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : null}
+            {role.is_system ? <Lock className="h-3.5 w-3.5 shrink-0 text-slate-500" /> : null}
           </h2>
-          <p className="mt-0.5 text-[11px] font-semibold text-slate-400">
+          <p className="mt-0.5 text-[11px] font-semibold text-slate-500">
             {RANK_LABEL[rank]} · level {role.hierarchy_level}
           </p>
         </div>
@@ -489,7 +489,7 @@ function Summary({
             { label: 'Status', value: role.is_active ? 'Active' : 'Inactive' },
           ].map((stat) => (
             <div key={stat.label} className="rounded-lg border border-slate-200 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                 {stat.label}
               </p>
               <p
@@ -510,11 +510,11 @@ function Summary({
           </p>
         ) : null}
 
-        <p className="mt-5 mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+        <p className="mt-5 mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
           What this role can do
         </p>
         {used.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400">
+          <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-500">
             No permissions granted.
           </p>
         ) : (
@@ -526,7 +526,7 @@ function Summary({
                   <p className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
                     <Shield className="h-3 w-3 text-blue-600" />
                     {group.group}
-                    <span className="ml-auto tabular-nums text-slate-400">
+                    <span className="ml-auto tabular-nums text-slate-500">
                       {count}/{group.permissions.length}
                     </span>
                   </p>

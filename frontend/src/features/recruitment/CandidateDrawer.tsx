@@ -103,7 +103,7 @@ export default function CandidateDrawer({
       <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">History</h3>
 
       {eventsQuery.isLoading ? (
-        <p className="py-4 text-center text-xs text-slate-400">Loading history…</p>
+        <p className="py-4 text-center text-xs text-slate-500">Loading history…</p>
       ) : (
         <ol className="space-y-2">
           {(eventsQuery.data ?? []).map((event) => (
@@ -116,12 +116,12 @@ export default function CandidateDrawer({
                     {event.to_stage.name}
                   </span>
                 ) : null}
-                <span className="ml-auto tabular-nums text-slate-400">
+                <span className="ml-auto tabular-nums text-slate-500">
                   {new Date(event.created_at).toLocaleDateString()}
                 </span>
               </div>
               {event.note ? <p className="mt-0.5 text-slate-600">{event.note}</p> : null}
-              {event.actor ? <p className="mt-0.5 text-[10px] text-slate-400">by {event.actor.name}</p> : null}
+              {event.actor ? <p className="mt-0.5 text-[10px] text-slate-500">by {event.actor.name}</p> : null}
             </li>
           ))}
         </ol>

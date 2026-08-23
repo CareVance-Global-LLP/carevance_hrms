@@ -298,7 +298,7 @@ export default function ComplianceStatusBoard({ monthYear, onOpenFilings }: Comp
                       Generate
                     </Button>
                   ) : (
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-slate-500">
                       {monthRun ? '—' : 'Needs run'}
                     </span>
                   )}

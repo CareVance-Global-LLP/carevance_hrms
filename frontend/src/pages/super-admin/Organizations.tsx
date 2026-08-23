@@ -202,7 +202,7 @@ export default function SuperAdminOrganizations() {
           <div className="flex flex-col sm:flex-row gap-4">
             {/* Search Input */}
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 ref={searchInputRef}
                 type="text"
@@ -219,7 +219,7 @@ export default function SuperAdminOrganizations() {
                   onClick={clearSearch}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-slate-100 rounded-full transition-colors"
                 >
-                  <X className="h-4 w-4 text-slate-400" />
+                  <X className="h-4 w-4 text-slate-500" />
                 </button>
               )}
             </div>
@@ -281,7 +281,7 @@ export default function SuperAdminOrganizations() {
                   setStatusFilter('all');
                   setPage(1);
                 }}
-                className="text-xs text-slate-400 hover:text-slate-600 underline"
+                className="text-xs text-slate-500 hover:text-slate-600 underline"
               >
                 Clear all
               </button>
@@ -296,7 +296,7 @@ export default function SuperAdminOrganizations() {
             <span className="font-semibold text-slate-900">{pagination.total}</span> organizations
           </p>
           {hasActiveFilters && (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               Filtered results
             </p>
           )}
@@ -330,7 +330,7 @@ export default function SuperAdminOrganizations() {
                               <p className="font-medium text-slate-900">{org.name}</p>
                               <p className="text-xs text-slate-500">{org.slug}</p>
                               {org.owner && (
-                                <p className="text-xs text-slate-400 mt-0.5">
+                                <p className="text-xs text-slate-500 mt-0.5">
                                   Owner: {org.owner.name}
                                 </p>
                               )}

@@ -190,7 +190,7 @@ export default function TaxSimulatorPage() {
                     <div key={field.key}>
                       <label className="text-xs text-slate-500 flex items-center justify-between">
                         <span>{field.label}</span>
-                        {field.limit && <span className="text-slate-400">Max: {formatPayrollAmount(field.limit, { compact: true })}</span>}
+                        {field.limit && <span className="text-slate-500">Max: {formatPayrollAmount(field.limit, { compact: true })}</span>}
                       </label>
                       <TextInput
                         type="number"

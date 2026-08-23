@@ -259,7 +259,7 @@ export default function SuperAdminDashboard() {
               }}
             >
               <div className="flex items-center gap-3">
-                <Search className={`h-5 w-5 transition-colors ${isSearchOpen ? 'text-blue-500' : 'text-slate-400'}`} />
+                <Search className={`h-5 w-5 transition-colors ${isSearchOpen ? 'text-blue-500' : 'text-slate-500'}`} />
                 <input
                   ref={searchInputRef}
                   type="text"
@@ -269,7 +269,7 @@ export default function SuperAdminDashboard() {
                   className="flex-1 bg-transparent border-none outline-none text-slate-700 placeholder-slate-400"
                   onClick={(e) => e.stopPropagation()}
                 />
-                <div className="flex items-center gap-2 text-xs text-slate-400">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
                   <span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded">
                     <Command className="h-3 w-3" /> K
                   </span>
@@ -299,7 +299,7 @@ export default function SuperAdminDashboard() {
                   </div>
                 ) : searchResults.length > 0 ? (
                   <div className="py-2">
-                    <div className="px-4 py-2 text-xs font-medium text-slate-400 uppercase">
+                    <div className="px-4 py-2 text-xs font-medium text-slate-500 uppercase">
                       Results ({searchResults.length})
                     </div>
                     {searchResults.map((result) => (
@@ -410,7 +410,7 @@ export default function SuperAdminDashboard() {
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs text-slate-400">Click to manage all</span>
+                <span className="text-xs text-slate-500">Click to manage all</span>
                 <ArrowRight className="h-4 w-4 text-blue-600 group-hover:translate-x-1 transition-transform" />
               </div>
             </SurfaceCard>
@@ -447,7 +447,7 @@ export default function SuperAdminDashboard() {
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs text-slate-400">View all users</span>
+                <span className="text-xs text-slate-500">View all users</span>
                 <ArrowRight className="h-4 w-4 text-violet-600 group-hover:translate-x-1 transition-transform" />
               </div>
             </SurfaceCard>
@@ -478,7 +478,7 @@ export default function SuperAdminDashboard() {
                         {revenueGrowth}%
                       </span>
                     )}
-                    <span className="text-slate-400">vs last month</span>
+                    <span className="text-slate-500">vs last month</span>
                   </div>
                 </div>
                 <div className="p-3 bg-emerald-50 rounded-xl group-hover:scale-110 transition-transform">
@@ -486,7 +486,7 @@ export default function SuperAdminDashboard() {
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs text-slate-400">ARR: {formatCurrency(arr)}</span>
+                <span className="text-xs text-slate-500">ARR: {formatCurrency(arr)}</span>
                 <ArrowRight className="h-4 w-4 text-emerald-600 group-hover:translate-x-1 transition-transform" />
               </div>
             </SurfaceCard>
@@ -508,15 +508,15 @@ export default function SuperAdminDashboard() {
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                     <div>
                       <p className="text-lg font-semibold text-slate-900">{stats.new_signups_today}</p>
-                      <p className="text-xs text-slate-400">Today</p>
+                      <p className="text-xs text-slate-500">Today</p>
                     </div>
                     <div className="border-x border-slate-100">
                       <p className="text-lg font-semibold text-slate-900">{stats.new_signups_this_week}</p>
-                      <p className="text-xs text-slate-400">This Week</p>
+                      <p className="text-xs text-slate-500">This Week</p>
                     </div>
                     <div>
                       <p className="text-lg font-semibold text-slate-900">{stats.new_signups_this_month}</p>
-                      <p className="text-xs text-slate-400">This Month</p>
+                      <p className="text-xs text-slate-500">This Month</p>
                     </div>
                   </div>
                 </div>
@@ -525,7 +525,7 @@ export default function SuperAdminDashboard() {
                 </div>
               </div>
               <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs text-slate-400">View trial companies</span>
+                <span className="text-xs text-slate-500">View trial companies</span>
                 <ArrowRight className="h-4 w-4 text-amber-600 group-hover:translate-x-1 transition-transform" />
               </div>
             </SurfaceCard>
@@ -540,7 +540,7 @@ export default function SuperAdminDashboard() {
                   <Users className="h-5 w-5 text-violet-600" />
                   <h3 className="text-lg font-semibold text-slate-900">User Distribution</h3>
                 </div>
-                <span className="text-sm text-slate-400">By Role</span>
+                <span className="text-sm text-slate-500">By Role</span>
               </div>
               
               <div className="space-y-4">
@@ -557,7 +557,7 @@ export default function SuperAdminDashboard() {
                         </div>
                         <div>
                           <p className="font-medium text-slate-900">{role.label}</p>
-                          <p className="text-xs text-slate-400">
+                          <p className="text-xs text-slate-500">
                             {((role.count / role.total) * 100).toFixed(1)}% of total
                           </p>
                         </div>
@@ -728,7 +728,7 @@ export default function SuperAdminDashboard() {
           </SurfaceCard>
 
           {/* Footer Info */}
-          <div className="text-center text-sm text-slate-400 pt-4">
+          <div className="text-center text-sm text-slate-500 pt-4">
             <div className="flex items-center justify-center gap-6">
               <span className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />

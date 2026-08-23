@@ -161,7 +161,7 @@ export default function OfferPanel({ applicationId }: { applicationId: number })
       {offers.map((offer: JobOffer) => (
         <div key={offer.id} className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <FileText className="h-3.5 w-3.5 text-slate-400" />
+            <FileText className="h-3.5 w-3.5 text-slate-500" />
             <span className="font-medium text-slate-950">{offer.designation}</span>
             <span className="tabular-nums text-slate-700">
               ₹ {new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Number(offer.annual_ctc))}

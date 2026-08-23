@@ -800,7 +800,7 @@ export default function EmployeePayrollWizard({
                 <p className="text-base font-semibold text-slate-900 mt-0.5">
                   {paidLeaveDays || '0'} paid leave day{paidLeaveDays === '1' ? '' : 's'}
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   LOP: {lOPDays || '0'} day{(lOPDays === '0' || lOPDays === '1') ? '' : 's'}
                 </p>
               </div>
@@ -813,7 +813,7 @@ export default function EmployeePayrollWizard({
         <div className="border-t border-slate-200 pt-6">
           <div className="flex items-center justify-between mb-4">
             <h4 className="text-sm font-medium text-slate-900 flex items-center gap-2">
-              <Calculator className="h-4 w-4 text-slate-400" />
+              <Calculator className="h-4 w-4 text-slate-500" />
               Auto-fetched Attendance Data
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
                 {monthYear}
@@ -861,7 +861,7 @@ onClick={() => {
                 disabled={!isEditingAttendance}
                 className={!isEditingAttendance ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : ''}
               />
-              <p className="text-xs text-slate-400 mt-1">Auto-calculated from tracked hours (8h/day)</p>
+              <p className="text-xs text-slate-500 mt-1">Auto-calculated from tracked hours (8h/day)</p>
             </div>
             <div className={`p-4 rounded-lg border ${isEditingAttendance ? 'bg-white border-slate-300' : 'bg-emerald-50 border-emerald-200'}`}>
               <div className="flex items-center justify-between mb-1">
@@ -883,7 +883,7 @@ onClick={() => {
                 disabled={!isEditingAttendance}
                 className={!isEditingAttendance ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : ''}
               />
-              <p className="text-xs text-slate-400 mt-1">Auto-fetched from attendance tracking</p>
+              <p className="text-xs text-slate-500 mt-1">Auto-fetched from attendance tracking</p>
             </div>
             <div className={`p-4 rounded-lg border ${isEditingAttendance ? 'bg-white border-slate-300' : 'bg-emerald-50 border-emerald-200'}`}>
               <div className="flex items-center justify-between mb-1">
@@ -905,7 +905,7 @@ onClick={() => {
                 disabled={!isEditingAttendance}
                 className={!isEditingAttendance ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : ''}
               />
-              <p className="text-xs text-slate-400 mt-1">Auto-calculated from attendance gaps</p>
+              <p className="text-xs text-slate-500 mt-1">Auto-calculated from attendance gaps</p>
             </div>
                <div className={`p-4 rounded-lg border ${isEditingAttendance ? 'bg-white border-slate-300' : 'bg-emerald-50 border-emerald-200'}`}>
                  <div className="flex items-center justify-between mb-1">
@@ -924,7 +924,7 @@ onClick={() => {
                    disabled={!isEditingAttendance}
                    className={!isEditingAttendance ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : ''}
                  />
-                 <p className="text-xs text-slate-400 mt-1">Enter overtime hours manually</p>
+                 <p className="text-xs text-slate-500 mt-1">Enter overtime hours manually</p>
                </div>
           </div>
         </div>
@@ -960,7 +960,7 @@ onClick={() => {
             <InfoTooltip content="Total annual package — Basic + HRA + allowances + employer PF/ESI/gratuity. The headline number in offer letters. Not what hits the bank account." title="CTC" />
           </div>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">₹</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">₹</span>
             <TextInput
               type="number"
               value={annualCtc}
@@ -1030,7 +1030,7 @@ onClick={() => {
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
-              <MapPin className="h-3 w-3 text-slate-400" />
+              <MapPin className="h-3 w-3 text-slate-500" />
               <FieldLabel className="mb-0">State (Professional Tax)</FieldLabel>
               <InfoTooltip content="PT is a state subject — rates vary by state (₹0–₹200/mo). Pick the state where your office is registered." title="PT State" />
             </div>
@@ -1048,7 +1048,7 @@ onClick={() => {
         {/* Tax Regime & Metro */}
         <div className="flex flex-wrap items-center gap-6 mb-6 p-4 bg-slate-50 rounded-lg">
           <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-slate-400" />
+            <Building2 className="h-4 w-4 text-slate-500" />
             <span className="text-sm text-slate-700">Tax Regime:</span>
             <InfoTooltip content="New: lower rates, fewer exemptions. Old: higher rates, full 80C/80D/HRA deductions." title="Tax regime" />
             <SelectInput
@@ -1088,11 +1088,11 @@ onClick={() => {
                   {item.label}
                   <InfoTooltip content={item.tooltip} title={item.label} size="sm" />
                 </span>
-                <p className="text-xs text-slate-400">{item.desc}</p>
+                <p className="text-xs text-slate-500">{item.desc}</p>
               </div>
               <button
                 onClick={() => handleToggleDeduction(item.key as keyof EmployeePayrollTemplate, !template[item.key as keyof EmployeePayrollTemplate])}
-                className={template[item.key as keyof EmployeePayrollTemplate] ? 'text-blue-600' : 'text-slate-400'}
+                className={template[item.key as keyof EmployeePayrollTemplate] ? 'text-blue-600' : 'text-slate-500'}
               >
                 {template[item.key as keyof EmployeePayrollTemplate] ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
               </button>
@@ -1111,13 +1111,13 @@ onClick={() => {
               <span className="text-sm text-slate-600">Hours</span>
               <span className="text-sm font-semibold text-slate-900 tabular-nums">
                 {parseFloat(overtimeHours).toLocaleString('en-IN', { maximumFractionDigits: 2 })}h
-                <span className="ml-2 text-xs font-normal text-slate-400">(read-only)</span>
+                <span className="ml-2 text-xs font-normal text-slate-500">(read-only)</span>
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-600">Overtime Pay</span>
               <div className="flex items-center gap-1.5">
-                <span className="text-sm text-slate-400">₹</span>
+                <span className="text-sm text-slate-500">₹</span>
                 <TextInput
                   type="number"
                   value={overtimePayAmount}
@@ -1135,7 +1135,7 @@ onClick={() => {
         <div className="mt-6">
           <div className="flex items-center gap-3 my-3">
             <div className="flex-1 border-t border-slate-200"></div>
-            <span className="text-xs text-slate-400 whitespace-nowrap">Other Earnings</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">Other Earnings</span>
             <div className="flex-1 border-t border-slate-200"></div>
           </div>
 
@@ -1169,7 +1169,7 @@ onClick={() => {
                     <option value="percentage">% Basic</option>
                   </select>
                   <div className="flex items-center gap-1">
-                    {item.type === 'fixed' && <span className="text-sm text-slate-400">₹</span>}
+                    {item.type === 'fixed' && <span className="text-sm text-slate-500">₹</span>}
                     <input
                       type="number"
                       value={item.value === 0 ? '' : item.value}
@@ -1184,7 +1184,7 @@ onClick={() => {
                                  [&::-webkit-outer-spin-button]:appearance-none"
                       min={0}
                     />
-                    {item.type === 'percentage' && <span className="text-sm text-slate-400">%</span>}
+                    {item.type === 'percentage' && <span className="text-sm text-slate-500">%</span>}
                   </div>
                   <button
                     onClick={() => setStep2CustomEarnings(step2CustomEarnings.filter((_, j) => j !== idx))}
@@ -1213,7 +1213,7 @@ onClick={() => {
         <div className="mt-6">
           <div className="flex items-center gap-3 my-3">
             <div className="flex-1 border-t border-slate-200"></div>
-            <span className="text-xs text-slate-400 whitespace-nowrap">Other Deductions</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">Other Deductions</span>
             <div className="flex-1 border-t border-slate-200"></div>
           </div>
 
@@ -1247,7 +1247,7 @@ onClick={() => {
                     <option value="percentage">% Basic</option>
                   </select>
                   <div className="flex items-center gap-1">
-                    {item.type === 'fixed' && <span className="text-sm text-slate-400">₹</span>}
+                    {item.type === 'fixed' && <span className="text-sm text-slate-500">₹</span>}
                     <input
                       type="number"
                       value={item.value === 0 ? '' : item.value}
@@ -1262,7 +1262,7 @@ onClick={() => {
                                  [&::-webkit-outer-spin-button]:appearance-none"
                       min={0}
                     />
-                    {item.type === 'percentage' && <span className="text-sm text-slate-400">%</span>}
+                    {item.type === 'percentage' && <span className="text-sm text-slate-500">%</span>}
                   </div>
                   <button
                     onClick={() => setStep2CustomDeductions(step2CustomDeductions.filter((_, j) => j !== idx))}
@@ -1673,7 +1673,7 @@ onClick={() => {
                         <p className="text-sm font-semibold text-emerald-600 tabular-nums">
                           {currency} {available.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
-                        <p className="text-[10px] text-slate-400">Available</p>
+                        <p className="text-[10px] text-slate-500">Available</p>
                       </div>
                     </li>
                   );
@@ -1777,7 +1777,7 @@ onClick={() => {
                         <p className="text-sm font-semibold text-rose-600 tabular-nums">
                           ₹ {emi.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / mo
                         </p>
-                        <p className="text-[10px] text-slate-400">EMI deduction</p>
+                        <p className="text-[10px] text-slate-500">EMI deduction</p>
                       </div>
                     </div>
                     {/* Progress bar */}
@@ -1791,7 +1791,7 @@ onClick={() => {
                         aria-valuemax={100}
                       />
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1">
+                    <p className="text-[10px] text-slate-500 mt-1">
                       {paid} / {total} installments paid ({pct}%) · Remaining ₹ {remaining.toLocaleString('en-IN')}
                     </p>
                   </li>
@@ -2080,7 +2080,7 @@ onClick={() => {
               ) : (
                 <div className="text-center py-6">
                   <DollarSign className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     Complete Salary Structure to see breakdown
                   </p>
                 </div>

@@ -159,7 +159,7 @@ export default function ScimTokensSection() {
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-medium text-slate-950">{token.name}</span>
                 {token.token_hint ? (
-                  <span className="font-mono text-[10px] text-slate-400">…{token.token_hint}</span>
+                  <span className="font-mono text-[10px] text-slate-500">…{token.token_hint}</span>
                 ) : null}
                 <span
                   className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${

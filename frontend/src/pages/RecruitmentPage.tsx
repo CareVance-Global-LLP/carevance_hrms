@@ -154,9 +154,9 @@ export default function RecruitmentPage() {
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+                  <Briefcase className="h-3.5 w-3.5 text-slate-500" />
                   <span className="text-sm font-medium text-slate-950">{opening.title}</span>
-                  <span className="font-mono text-[10px] text-slate-400">{opening.code}</span>
+                  <span className="font-mono text-[10px] text-slate-500">{opening.code}</span>
                 </span>
                 <span className="mt-0.5 block text-[11px] text-slate-500">
                   {STATUS_LABEL[opening.status]} · {opening.active_applications_count ?? 0} in play

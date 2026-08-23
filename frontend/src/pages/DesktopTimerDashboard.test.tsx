@@ -10,6 +10,24 @@ import {
 import DesktopTimerDashboard from '@/pages/DesktopTimerDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+/**
+ * The LOCAL calendar date, matching desktopTimerSession's getLocalDateString.
+ *
+ * These tests built the date with toISOString(), which yields the UTC
+ * date. In any timezone ahead of UTC those disagree between local midnight and
+ * the offset - in IST, every night from 00:00 to 05:30. The test then wrote the
+ * worked-time snapshot under one date while the component looked it up under
+ * the other, the snapshot was correctly discarded as stale, and the timer never
+ * restored. Green all day, red overnight, for a reason nothing on screen
+ * explains.
+ */
+const localToday = () => {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+};
+
+
 const mocks = vi.hoisted(() => ({
   summaryMock: vi.fn(),
   attendanceTodayMock: vi.fn(),
@@ -524,7 +542,7 @@ describe('DesktopTimerDashboard', () => {
     });
     mocks.attendanceTodayMock.mockReset();
     mocks.attendanceTodayMock.mockResolvedValue({
-      data: { shift_target_seconds: 28800, record: { worked_seconds: 0, is_checked_in: false, attendance_date: new Date().toISOString().split('T')[0] } },
+      data: { shift_target_seconds: 28800, record: { worked_seconds: 0, is_checked_in: false, attendance_date: localToday() } },
     });
     mocks.todayMock.mockReset();
     mocks.todayMock.mockResolvedValue({
@@ -548,7 +566,7 @@ describe('DesktopTimerDashboard', () => {
   });
 
   it('keeps paused shift context after reload when backend totals are not updated yet', async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localToday();
     suppressAutoStart(1);
     setWorkedBaselineSnapshot(1, 120, today);
     sessionStorage.clear();
@@ -593,7 +611,7 @@ describe('DesktopTimerDashboard', () => {
 
   it('keeps today entries and worked totals when task options request fails', async () => {
     suppressAutoStart(1);
-    const today = new Date().toISOString().split('T')[0];
+    const today = localToday();
 
     mocks.summaryMock.mockReset();
     mocks.summaryMock.mockResolvedValue({
@@ -703,7 +721,7 @@ describe('DesktopTimerDashboard', () => {
   });
 
   it('keeps overtime context after reload when summary endpoints fail', async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = localToday();
     suppressAutoStart(1);
     setWorkedBaselineSnapshot(1, 32400, today);
     sessionStorage.clear();

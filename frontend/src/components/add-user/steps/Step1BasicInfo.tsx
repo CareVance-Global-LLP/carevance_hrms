@@ -244,7 +244,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label htmlFor={fieldId('f1')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+            <Briefcase className="h-3.5 w-3.5 text-slate-500" />
             First Name <span className="text-red-400">*</span>
           </label>
           <TextInput
@@ -263,7 +263,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
         <div>
           <label htmlFor={fieldId('f1m')} className="block text-sm font-medium text-slate-700 mb-1.5">
-            Middle Name <span className="text-slate-400 font-normal">(optional)</span>
+            Middle Name <span className="text-slate-500 font-normal">(optional)</span>
           </label>
           <TextInput
             id={fieldId('f1m')}
@@ -294,7 +294,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label htmlFor={fieldId('f3')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Mail className="h-3.5 w-3.5 text-slate-400" />
+            <Mail className="h-3.5 w-3.5 text-slate-500" />
             Email Address <span className="text-red-400">*</span>
           </label>
           <TextInput
@@ -345,7 +345,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
         <div>
           <label htmlFor={fieldId('f4')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Lock className="h-3.5 w-3.5 text-slate-400" />
+            <Lock className="h-3.5 w-3.5 text-slate-500" />
             Temporary Password <span className="text-red-400">*</span>
           </label>
           <TextInput
@@ -401,7 +401,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
         <div>
           <label htmlFor={fieldId('f5')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Phone className="h-3.5 w-3.5 text-slate-400" />
+            <Phone className="h-3.5 w-3.5 text-slate-500" />
             Phone Number <span className="text-red-400">*</span>
           </label>
           <TextInput
@@ -431,7 +431,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Building2 className="h-3.5 w-3.5 text-slate-400" />
+            <Building2 className="h-3.5 w-3.5 text-slate-500" />
             Role <span className="text-red-400">*</span>
           </label>
           <CustomSelect
@@ -443,7 +443,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
         <div>
           <label htmlFor={fieldId('f7')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Briefcase className="h-3.5 w-3.5 text-slate-400" />
+            <Briefcase className="h-3.5 w-3.5 text-slate-500" />
             Designation <span className="text-red-400">*</span>
           </label>
           <TextInput
@@ -466,8 +466,8 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Employee Code (optional) */}
       <div>
         <label htmlFor={fieldId('f8')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-          <Hash className="h-3.5 w-3.5 text-slate-400" />
-          Employee Code <span className="text-xs text-slate-400 font-normal">(optional)</span>
+          <Hash className="h-3.5 w-3.5 text-slate-500" />
+          Employee Code <span className="text-xs text-slate-500 font-normal">(optional)</span>
         </label>
         <TextInput
             id={fieldId('f8')}
@@ -483,16 +483,16 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         {errors.employeeCode ? (
           <p className="mt-1 text-xs text-red-500">{errors.employeeCode}</p>
         ) : (
-          <p className="mt-1 text-xs text-slate-400">Unique identifier for this employee</p>
+          <p className="mt-1 text-xs text-slate-500">Unique identifier for this employee</p>
         )}
       </div>
 
       {/* Department (Multi-select chips) — FROM BACKEND API */}
       <div>
         <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-2">
-          <Building2 className="h-3.5 w-3.5 text-slate-400" />
+          <Building2 className="h-3.5 w-3.5 text-slate-500" />
           Department <span className="text-red-400">*</span>
-          <span className="text-xs text-slate-400 font-normal">
+          <span className="text-xs text-slate-500 font-normal">
             {maxDepartmentsFor(form.role) === 1 ? 'select one' : 'select one or more'}
           </span>
         </label>
@@ -535,7 +535,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
         <div>
           <label htmlFor={fieldId('f10')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Calendar className="h-3.5 w-3.5 text-slate-400" />
+            <Calendar className="h-3.5 w-3.5 text-slate-500" />
             Date of Joining <span className="text-red-400">*</span>
           </label>
           <TextInput
@@ -562,7 +562,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         </div>
         <div>
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <MapPin className="h-3.5 w-3.5 text-slate-400" />
+            <MapPin className="h-3.5 w-3.5 text-slate-500" />
             Work Location <span className="text-red-400">*</span>
           </label>
           <CustomSelect
@@ -577,7 +577,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
       {/* Timezone */}
       <div>
         <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-          <Globe className="h-3.5 w-3.5 text-slate-400" />
+          <Globe className="h-3.5 w-3.5 text-slate-500" />
           Timezone <span className="text-red-400">*</span>
         </label>
         <CustomSelect
@@ -592,7 +592,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         {errors.timezone ? (
           <p className="mt-1 text-xs text-red-500">{errors.timezone}</p>
         ) : (
-          <p className="mt-1 text-xs text-slate-400">Auto-detected from browser. Change if needed.</p>
+          <p className="mt-1 text-xs text-slate-500">Auto-detected from browser. Change if needed.</p>
         )}
       </div>
 
@@ -603,8 +603,8 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         {/* Annual CTC */}
         <div className="mb-4">
           <label htmlFor={fieldId('f13')} className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <IndianRupee className="h-3.5 w-3.5 text-slate-400" />
-            Annual CTC <span className="text-xs text-slate-400 font-normal">(optional)</span>
+            <IndianRupee className="h-3.5 w-3.5 text-slate-500" />
+            Annual CTC <span className="text-xs text-slate-500 font-normal">(optional)</span>
           </label>
           <TextInput
             id={fieldId('f13')}
@@ -615,14 +615,14 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
             onChange={(e) => setForm((p) => ({ ...p, annualCtc: e.target.value ? Number(e.target.value) : null }))}
             placeholder="e.g., 600000"
           />
-          <p className="mt-1 text-xs text-slate-400">Annual cost to company in INR</p>
+          <p className="mt-1 text-xs text-slate-500">Annual cost to company in INR</p>
         </div>
 
         {/* Pay Group */}
         <div className="mb-4">
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <Users className="h-3.5 w-3.5 text-slate-400" />
-            Pay Group <span className="text-xs text-slate-400 font-normal">(optional)</span>
+            <Users className="h-3.5 w-3.5 text-slate-500" />
+            Pay Group <span className="text-xs text-slate-500 font-normal">(optional)</span>
           </label>
           {payGroupsLoading ? (
             <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
@@ -650,8 +650,8 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
         {/* Salary Structure */}
         <div className="mb-4">
           <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700 mb-1.5">
-            <FileStack className="h-3.5 w-3.5 text-slate-400" />
-            Salary Structure <span className="text-xs text-slate-400 font-normal">(optional)</span>
+            <FileStack className="h-3.5 w-3.5 text-slate-500" />
+            Salary Structure <span className="text-xs text-slate-500 font-normal">(optional)</span>
           </label>
           {salaryStructuresLoading ? (
             <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
@@ -672,7 +672,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
                 placeholder="Select salary structure"
                 dropDirection="down"
               />
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-slate-500">
                 Default structure is auto-selected. Change if needed.
               </p>
             </>
@@ -773,7 +773,7 @@ export function Step1BasicInfo({ form, setForm, errors, setErrors, onResumeFromS
               <button
                 type="button"
                 onClick={() => setShowIncompleteModal(false)}
-                className="w-full px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-600 transition-colors"
+                className="w-full px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-600 transition-colors"
               >
                 Cancel
               </button>

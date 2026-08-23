@@ -31,7 +31,7 @@ export const OUTCOME_TONE_CLASS: Record<DayOutcomeTone, string> = {
   warning: 'border-warning-100 bg-warning-50 text-warning-800',
   danger: 'border-danger-100 bg-danger-50 text-danger-700',
   off: 'border-slate-300 bg-slate-100 text-slate-600',
-  muted: 'border-slate-100 bg-white text-slate-400',
+  muted: 'border-slate-100 bg-white text-slate-500',
 };
 
 /** The chips for one day. Each keeps its own tone — never a shared one. */
@@ -84,7 +84,7 @@ export default function DayOutcomeLedger({ days, isLoading, personName }: DayOut
         <h2 className="font-semibold text-gray-900">
           What this month cost{personName ? ` — ${personName}` : ''}
         </h2>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
           {rows.length} to review
         </span>
       </div>

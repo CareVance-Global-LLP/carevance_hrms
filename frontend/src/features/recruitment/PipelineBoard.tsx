@@ -175,7 +175,7 @@ export default function PipelineBoard({
                 ))}
 
                 {cards.length === 0 ? (
-                  <p className="rounded border border-dashed border-slate-200 px-2 py-4 text-center text-[11px] text-slate-400">
+                  <p className="rounded border border-dashed border-slate-200 px-2 py-4 text-center text-[11px] text-slate-500">
                     Nobody here
                   </p>
                 ) : null}

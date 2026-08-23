@@ -218,7 +218,7 @@ export default function MonitoringOverview({
           {trendLoading ? (
             <div className="h-36 animate-pulse rounded-lg bg-slate-100" aria-label="Loading trend" />
           ) : trendData.length === 0 ? (
-            <p className="py-10 text-center text-sm text-slate-400">No tracked days in this range yet.</p>
+            <p className="py-10 text-center text-sm text-slate-500">No tracked days in this range yet.</p>
           ) : (
             <ResponsiveContainer width="100%" height={150}>
               <BarChart data={trendData} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
@@ -243,7 +243,7 @@ export default function MonitoringOverview({
 
         <Panel title="Departments · efficiency">
           {teamRankings.length === 0 ? (
-            <p className="py-10 text-center text-sm text-slate-400">No department groups configured yet.</p>
+            <p className="py-10 text-center text-sm text-slate-500">No department groups configured yet.</p>
           ) : (
             <div className="space-y-2.5">
               {teamRankings.slice(0, 6).map((team: any) => {
@@ -266,13 +266,13 @@ export default function MonitoringOverview({
       <Panel
         title={`People · ranked by ${focus === 'unproductive' ? 'unproductive' : 'productive'} time`}
         action={
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-slate-500">
             {peopleRows.length} shown{presenceFilter !== 'all' ? ` · ${PRESENCE_META[presenceFilter].label.toLowerCase()} only` : ''}
           </span>
         }
       >
         {peopleRows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-400">
+          <p className="py-8 text-center text-sm text-slate-500">
             {presenceFilter === 'all'
               ? 'No tracked activity in this range yet.'
               : `Nobody is ${PRESENCE_META[presenceFilter].label.toLowerCase()} right now.`}
@@ -307,7 +307,7 @@ export default function MonitoringOverview({
                     </span>
                     <span className="min-w-0">
                       {untracked ? (
-                        <span className="text-xs text-slate-400">No tracked time in this range</span>
+                        <span className="text-xs text-slate-500">No tracked time in this range</span>
                       ) : (
                         renderPersonBar(row)
                       )}
@@ -328,7 +328,7 @@ export default function MonitoringOverview({
             })}
           </ul>
         )}
-        <p className="mt-3 text-xs text-slate-400">
+        <p className="mt-3 text-xs text-slate-500">
           Ranked from tracked activity in the selected range · top 100 by duration.
         </p>
       </Panel>
@@ -396,7 +396,7 @@ export default function MonitoringOverview({
                     .sort((a, b) => Number(b.total_duration || 0) - Number(a.total_duration || 0))
                     .slice(0, 6);
                   return toolRows.length === 0 ? (
-                    <p className="text-sm text-slate-400">No classified tool usage in this range.</p>
+                    <p className="text-sm text-slate-500">No classified tool usage in this range.</p>
                   ) : (
                     <ul className="space-y-1.5">
                       {toolRows.map((tool: any) => (

@@ -71,7 +71,7 @@ function HierarchyNode({
               <Icon className="h-3 w-3" /> {member.role_name || '—'}
             </p>
             {member.department ? <p className="mt-0.5 truncate text-[11px] text-slate-500">{member.department}</p> : null}
-            {member.designation ? <p className="mt-0.5 truncate text-[10px] text-slate-400">{member.designation}</p> : null}
+            {member.designation ? <p className="mt-0.5 truncate text-[10px] text-slate-500">{member.designation}</p> : null}
           </div>
         </div>
         {children.length > 0 ? (
@@ -353,19 +353,19 @@ export default function MyTeam() {
             <SectionTitle title="Department hierarchy" subtitle={`${members.length} member${members.length === 1 ? '' : 's'} • ${managed_departments.length} department${managed_departments.length === 1 ? '' : 's'}`} />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative flex-1 sm:w-72">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search by name, email, role…"
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm shadow-sm outline-none transition placeholder:text-slate-500 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
                 />
                 {search ? (
                   <button
                     type="button"
                     onClick={() => setSearch('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-600"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -432,7 +432,7 @@ export default function MyTeam() {
           )}
 
           <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
-            <Network className="mr-1 inline h-3 w-3 text-slate-400" />
+            <Network className="mr-1 inline h-3 w-3 text-slate-500" />
             Cards with a blue ring are you. Lines show direct reporting — if no manager is set, the system falls back to the nearest higher-ranked colleague in the same department. Custom roles determine card colour (admin / manager / employee).
           </p>
         </SurfaceCard>

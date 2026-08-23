@@ -49,7 +49,7 @@ export default function SwapPanel({ canManage, currentUserId }: { canManage: boo
   const swaps = query.data?.data ?? [];
 
   if (query.isLoading) {
-    return <p className="py-3 text-center text-xs text-slate-400">Loading swaps…</p>;
+    return <p className="py-3 text-center text-xs text-slate-500">Loading swaps…</p>;
   }
 
   return (

@@ -188,7 +188,7 @@ export default function SupportPage() {
                       value={name}
                       onChange={(event) => setName(event.target.value)}
                       required={!user}
-                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-500 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
                       placeholder="Your name"
                     />
                   </div>
@@ -202,7 +202,7 @@ export default function SupportPage() {
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       required
-                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-500 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
                       placeholder="you@company.com"
                     />
                   </div>
@@ -237,7 +237,7 @@ export default function SupportPage() {
                       value={summary}
                       onChange={(event) => setSummary(event.target.value)}
                       required
-                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                      className="block w-full rounded-[22px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-500 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
                       placeholder="Short description of the issue"
                     />
                   </div>
@@ -253,7 +253,7 @@ export default function SupportPage() {
                     onChange={(event) => setDescription(event.target.value)}
                     required
                     rows={6}
-                    className="block w-full rounded-[24px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-400 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
+                    className="block w-full rounded-[24px] border border-white/10 bg-white px-4 py-3.5 text-sm text-slate-950 placeholder:text-slate-500 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/20"
                     placeholder="Tell us what happened, what you expected, and any steps that reproduce it."
                   />
                 </div>

@@ -43,7 +43,7 @@ const SECTIONS: Array<{
   match: (person: PresencePerson) => boolean;
 }> = [
   { key: 'in', label: 'In', icon: LogIn, tone: 'text-emerald-600', match: (p) => p.status === 'in' || p.status === 'on_break' },
-  { key: 'not_in', label: 'Not in', icon: Minus, tone: 'text-slate-400', match: (p) => p.status === 'not_in' },
+  { key: 'not_in', label: 'Not in', icon: Minus, tone: 'text-slate-500', match: (p) => p.status === 'not_in' },
   { key: 'on_leave', label: 'On leave', icon: Palmtree, tone: 'text-amber-600', match: (p) => p.status === 'on_leave' },
 ];
 
@@ -93,7 +93,7 @@ export default function TeamPresenceBoard({
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-400">
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500">
         Loading your team…
       </div>
     );
@@ -122,21 +122,21 @@ export default function TeamPresenceBoard({
           </p>
         </div>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <input
             type="search"
             aria-label="Search your team"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by name"
-            className="w-56 rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-56 rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
           />
           {query ? (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-slate-700"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -168,7 +168,7 @@ export default function TeamPresenceBoard({
               </div>
 
               {members.length === 0 ? (
-                <p className="px-1 py-3 text-xs text-slate-400">Nobody</p>
+                <p className="px-1 py-3 text-xs text-slate-500">Nobody</p>
               ) : (
                 <ul className="space-y-1">
                   {members.map((person) => {
@@ -211,14 +211,14 @@ export default function TeamPresenceBoard({
         className="rounded-xl border border-slate-200 bg-white p-3"
       >
         <div className="mb-2 flex items-center gap-2">
-          <CalendarDays className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+          <CalendarDays className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
           <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
             Off in the next two weeks
           </span>
         </div>
 
         {offSoon.length === 0 ? (
-          <p className="px-1 py-2 text-xs text-slate-400">Nobody is off in the next two weeks.</p>
+          <p className="px-1 py-2 text-xs text-slate-500">Nobody is off in the next two weeks.</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {offSoon.map((entry, index) => (

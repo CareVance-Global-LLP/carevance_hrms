@@ -299,7 +299,7 @@ export default function SetupCompliance() {
                   onChange={(e) => setRate(item.key, e.target.value)}
                   min="0"
                 />
-                <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
+                <p className="text-xs text-slate-500 mt-1">{item.desc}</p>
               </div>
             );
           })}

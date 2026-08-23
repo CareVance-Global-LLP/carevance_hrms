@@ -65,14 +65,14 @@ export default function LeaveBalanceCards({
           onClick={onRefresh}
           disabled={isLoading}
           aria-label="Refresh balances"
-          className="rounded p-1 text-slate-400 transition hover:text-slate-700 disabled:opacity-50"
+          className="rounded p-1 text-slate-500 transition hover:text-slate-700 disabled:opacity-50"
         >
           <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
         </button>
       </div>
 
       {isLoading && categories.length === 0 ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-xs text-slate-500">
           Loading balances…
         </div>
       ) : categories.length === 0 ? (
@@ -154,7 +154,7 @@ export function CategoryBars({
   colorOf: (code?: string | null) => string;
 }) {
   if (!categories.length) {
-    return <span className="text-xs text-slate-400">No policy</span>;
+    return <span className="text-xs text-slate-500">No policy</span>;
   }
 
   return (
@@ -174,7 +174,7 @@ export function CategoryBars({
                 }`}
               >
                 {remaining.toFixed(1)}
-                <span className="font-normal text-slate-400">/{quota.toFixed(1)}</span>
+                <span className="font-normal text-slate-500">/{quota.toFixed(1)}</span>
               </span>
             </span>
             <span className="block h-2.5 overflow-hidden rounded-full bg-slate-100">

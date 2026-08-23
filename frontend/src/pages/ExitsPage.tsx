@@ -159,7 +159,7 @@ export default function ExitsPage() {
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           )}
           <p className="flex-1">{feedback.message}</p>
-          <button type="button" onClick={() => setFeedback(null)} aria-label="Dismiss" className="text-slate-400">
+          <button type="button" onClick={() => setFeedback(null)} aria-label="Dismiss" className="text-slate-500">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -187,13 +187,13 @@ export default function ExitsPage() {
 
         <div className="ml-auto flex items-center gap-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search people"
               aria-label="Search exits"
-              className="w-52 rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+              className="w-52 rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
             />
           </div>
         </div>
@@ -216,8 +216,8 @@ export default function ExitsPage() {
               <section key={stage.key}>
                 <div className="mb-2 flex items-baseline gap-2">
                   <h2 className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{stage.label}</h2>
-                  <span className="text-[10px] font-semibold tabular-nums text-slate-400">{rows.length}</span>
-                  <span className="text-[10px] text-slate-400">· {stage.hint}</span>
+                  <span className="text-[10px] font-semibold tabular-nums text-slate-500">{rows.length}</span>
+                  <span className="text-[10px] text-slate-500">· {stage.hint}</span>
                 </div>
 
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -250,7 +250,7 @@ export default function ExitsPage() {
                           <span className="block text-[11px] font-bold text-slate-700">
                             {formatDate(exit.last_working_date)}
                           </span>
-                          <span className="block text-[10px] font-semibold text-slate-400">
+                          <span className="block text-[10px] font-semibold text-slate-500">
                             {exit.days_remaining > 0
                               ? `${exit.days_remaining} day${exit.days_remaining === 1 ? '' : 's'} left`
                               : exit.days_remaining === 0
@@ -271,7 +271,7 @@ export default function ExitsPage() {
 
                         {exit.access_revoked_at ? (
                           <span title="Access revoked">
-                            <ShieldOff className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <ShieldOff className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                           </span>
                         ) : null}
                       </button>
@@ -322,7 +322,7 @@ export default function ExitsPage() {
         }
       >
         {detailQuery.isLoading || !openExit ? (
-          <p className="py-8 text-center text-sm text-slate-400">Loading exit…</p>
+          <p className="py-8 text-center text-sm text-slate-500">Loading exit…</p>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-2">
@@ -336,7 +336,7 @@ export default function ExitsPage() {
                 },
               ].map((stat) => (
                 <div key={stat.label} className="rounded-lg border border-slate-200 px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{stat.label}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{stat.label}</p>
                   <p
                     className={`mt-0.5 text-sm font-bold tabular-nums ${
                       stat.warn ? 'text-warning-800' : 'text-slate-900'
@@ -378,7 +378,7 @@ export default function ExitsPage() {
             />
 
             <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Exit interview</p>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Exit interview</p>
               {openExit.interview?.submitted_at ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                   <p className="font-semibold capitalize text-slate-800">
@@ -408,7 +408,7 @@ export default function ExitsPage() {
                     onChange={(event) => setComments(event.target.value)}
                     rows={3}
                     placeholder="What would have made them stay?"
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400"
+                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-500"
                   />
                   <Button size="sm" disabled={!reason} onClick={() => void saveInterview()}>
                     Save interview

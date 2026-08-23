@@ -108,7 +108,7 @@ export default function SetupDepartments() {
 
       {isLoading ? (
         <SurfaceCard className="p-8 text-center">
-          <Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-400" />
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-500" />
         </SurfaceCard>
       ) : departments.length === 0 ? (
         <SurfaceCard className="p-8 text-center">

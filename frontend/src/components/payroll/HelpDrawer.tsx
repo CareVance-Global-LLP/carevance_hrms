@@ -61,7 +61,7 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
         </div>
 
         <div className="px-[22px] py-[18px]">
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2.5">
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
             How It Works
           </div>
           <div className="rounded-lg border border-slate-200 overflow-hidden mb-3.5">
@@ -107,7 +107,7 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
             )}
           </div>
 
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2.5">
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
             Glossary
           </div>
           <div className="flex flex-col gap-2 mb-4">
@@ -121,7 +121,7 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
 
           <div className="h-px bg-slate-200 my-4" />
 
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2.5">
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
             Statutory Deadlines
           </div>
           <p className="text-[12px] text-slate-500 mb-2">

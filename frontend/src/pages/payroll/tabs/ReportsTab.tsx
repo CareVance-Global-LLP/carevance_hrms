@@ -315,7 +315,7 @@ function PayrollRegisterPanel() {
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
           </div>
         ) : rows.length === 0 ? (
           <div className="text-center py-12">
@@ -413,7 +413,7 @@ function PayrollRegisterPanel() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-6 text-xs text-slate-400">
+            <div className="text-center py-6 text-xs text-slate-500">
               No bank batches found for this period
             </div>
           )}

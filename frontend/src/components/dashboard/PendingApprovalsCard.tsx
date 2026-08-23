@@ -147,10 +147,10 @@ export default function PendingApprovalsCard() {
                       {item.count}
                     </span>
                   ) : (
-                    <span className="text-sm text-slate-400">—</span>
+                    <span className="text-sm text-slate-500">—</span>
                   )}
                 </div>
-                <p className={`text-sm truncate ${hasItems ? 'text-slate-500' : 'text-slate-400'}`}>
+                <p className={`text-sm truncate ${hasItems ? 'text-slate-500' : 'text-slate-500'}`}>
                   {hasItems ? item.description : 'No pending requests'}
                 </p>
               </div>

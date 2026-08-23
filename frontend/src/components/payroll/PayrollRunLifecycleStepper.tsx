@@ -84,7 +84,7 @@ export default function PayrollRunLifecycleStepper({
                     'h-8 w-8 rounded-full flex items-center justify-center border-2 transition-colors',
                     isCompleted && 'bg-emerald-500 border-emerald-500 text-white',
                     isCurrent && 'bg-white border-blue-500 text-blue-600',
-                    isFuture && 'bg-slate-50 border-slate-200 text-slate-400',
+                    isFuture && 'bg-slate-50 border-slate-200 text-slate-500',
                   )}
                   aria-current={isCurrent ? 'step' : undefined}
                 >
@@ -107,7 +107,7 @@ export default function PayrollRunLifecycleStepper({
                       ? 'text-blue-700'
                       : isCompleted
                         ? 'text-slate-900'
-                        : 'text-slate-400',
+                        : 'text-slate-500',
                   )}
                 >
                   {step.label}
@@ -120,7 +120,7 @@ export default function PayrollRunLifecycleStepper({
                 {ts ? (
                   <p className="text-[11px] text-slate-500 mt-0.5">{formatTimestamp(ts)}</p>
                 ) : isFuture ? (
-                  <p className="text-[11px] text-slate-400 mt-0.5">Pending</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Pending</p>
                 ) : null}
               </div>
             </li>

@@ -135,7 +135,7 @@ export default function FbpDashboard() {
         >
             <div className="flex items-center justify-between mb-4">
               <h3 id="fbp-allocate-title" className="text-sm font-semibold text-slate-900">Allocate FBP Component</h3>
-              <button onClick={() => setShowAllocate(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowAllocate(false)} className="text-slate-500 hover:text-slate-600">
                 <X className="h-4 w-4" />
               </button>
             </div>

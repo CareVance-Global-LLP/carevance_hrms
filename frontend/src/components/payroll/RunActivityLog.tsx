@@ -64,7 +64,7 @@ export default function RunActivityLog({ runId, className }: RunActivityLogProps
       </div>
 
       {entries.length === 0 ? (
-        <div className="text-center py-6 text-xs text-slate-400">
+        <div className="text-center py-6 text-xs text-slate-500">
           <FileText className="h-8 w-8 mx-auto mb-2 text-slate-300" />
           No actions recorded yet for this run.
         </div>
@@ -92,7 +92,7 @@ export default function RunActivityLog({ runId, className }: RunActivityLogProps
                     {entry.actor_name ? ` · ${entry.actor_name}` : ''}
                   </p>
                   {entry.ip_address && (
-                    <p className="text-[10px] text-slate-400 font-mono">from {entry.ip_address}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">from {entry.ip_address}</p>
                   )}
                 </div>
               </li>

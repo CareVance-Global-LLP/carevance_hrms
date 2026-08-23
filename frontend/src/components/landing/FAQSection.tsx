@@ -62,7 +62,7 @@ export default function FAQSection() {
                     transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                     className="shrink-0"
                   >
-                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                    <ChevronDown className="h-4 w-4 text-slate-500" />
                   </motion.span>
                 </button>
                 <AnimatePresence initial={false}>

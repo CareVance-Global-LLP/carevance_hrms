@@ -233,11 +233,24 @@ describe('Sidebar frequent shortcuts', () => {
   });
 });
 
+/**
+ * The search row belongs to the COLLAPSED rail only.
+ *
+ * Expanded, it sat under a header that already carries a wider
+ * "Search or jump to…" trigger for the same command bar with the same
+ * shortcut - two entry points, one function, a couple of hundred pixels apart,
+ * on every screen. Narrow, the header trigger still exists but this is the
+ * only affordance inside the nav itself, so it stays.
+ */
 describe('Sidebar command bar row', () => {
-  it('opens the command bar', async () => {
-    const { onOpenCommandBar, user } = setup();
-    // The accessible name includes the shortcut, which is the point of the row.
-    await user.click(screen.getByRole('button', { name: /search.*(ctrl|⌘)/i }));
+  it('is absent when the rail is expanded, where the header already offers it', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: /search.*(ctrl|⌘)/i })).not.toBeInTheDocument();
+  });
+
+  it('opens the command bar from the collapsed rail', async () => {
+    const { onOpenCommandBar, user } = setup({ collapsed: true });
+    await user.click(screen.getByRole('button', { name: /search/i }));
     expect(onOpenCommandBar).toHaveBeenCalledTimes(1);
   });
 

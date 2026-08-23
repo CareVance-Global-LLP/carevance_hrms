@@ -251,7 +251,7 @@ function PanelSummary({ interview, applicationId }: { interview: Interview; appl
           </ul>
         </>
       ) : (
-        <p className="text-[11px] text-slate-400">Loading feedback…</p>
+        <p className="text-[11px] text-slate-500">Loading feedback…</p>
       )}
 
       <form

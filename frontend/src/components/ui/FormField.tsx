@@ -20,7 +20,7 @@ import useFloatingDropdown from '@/components/ui/useFloatingDropdown';
 // `border-strong` rather than `border-slate-200` because a control boundary has
 // to clear 3:1 against its surface, which a hairline divider colour does not.
 const baseControlClassName =
-  'w-full rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate-400';
+  'w-full rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-500 focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate-500';
 
 export function FieldLabel({
   children,
@@ -52,7 +52,7 @@ export function FieldLabel({
       >
         {children}
       </label>
-      {hint ? <span className="shrink-0 text-xs text-slate-400">{hint}</span> : null}
+      {hint ? <span className="shrink-0 text-xs text-slate-500">{hint}</span> : null}
     </div>
   );
 }

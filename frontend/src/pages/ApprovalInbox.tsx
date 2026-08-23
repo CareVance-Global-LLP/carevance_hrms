@@ -1011,7 +1011,7 @@ export default function ApprovalInbox() {
       >
         {showInsights ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         Leave insights
-        <span className="font-medium text-slate-400">trends and department splits, out of the way until you need them</span>
+        <span className="font-medium text-slate-500">trends and department splits, out of the way until you need them</span>
       </button>
 
       {showInsights ? (
@@ -1229,4 +1229,4 @@ export default function ApprovalInbox() {
       />
     </div>
   );
-}
+}

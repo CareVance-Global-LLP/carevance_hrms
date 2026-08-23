@@ -911,7 +911,7 @@ export default function Layout() {
                         onClick={() => setProfileOpen(false)}
                         className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        <Settings className="h-4 w-4 text-slate-400" />
+                        <Settings className="h-4 w-4 text-slate-500" />
                         Settings
                       </Link>
                       <Link
@@ -919,7 +919,7 @@ export default function Layout() {
                         onClick={() => setProfileOpen(false)}
                         className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        <LifeBuoy className="h-4 w-4 text-slate-400" />
+                        <LifeBuoy className="h-4 w-4 text-slate-500" />
                         Help
                       </Link>
                       <button
@@ -1074,7 +1074,7 @@ export default function Layout() {
                       onClick={() => setProfileOpen(false)}
                       className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                     >
-                      <Settings className="h-4 w-4 text-slate-400" />
+                      <Settings className="h-4 w-4 text-slate-500" />
                       Settings
                     </Link>
                     <Link
@@ -1082,7 +1082,7 @@ export default function Layout() {
                       onClick={() => setProfileOpen(false)}
                       className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                     >
-                      <LifeBuoy className="h-4 w-4 text-slate-400" />
+                      <LifeBuoy className="h-4 w-4 text-slate-500" />
                       Help
                     </Link>
                     {isDesktopShell ? (
@@ -1095,7 +1095,7 @@ export default function Layout() {
                         }}
                         className="relative flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        <Sparkles className="h-4 w-4 text-slate-400" />
+                        <Sparkles className="h-4 w-4 text-slate-500" />
                         Updates
                         {hasUnreadDesktopUpdate ? (
                           <span className="ml-auto h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500" />
