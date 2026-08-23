@@ -35,6 +35,13 @@ const apiMocks = vi.hoisted(() => ({
   notificationList: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
   markAllRead: vi.fn().mockResolvedValue({}),
   markRead: vi.fn().mockResolvedValue({}),
+  // The rail owns a timer now, and an unmocked endpoint here does not fail
+  // fast - axios retries and holds the whole render empty past the timeout,
+  // which reads as a navigation bug rather than a missing mock.
+  timerActive: vi.fn().mockResolvedValue({ data: null }),
+  timerStop: vi.fn().mockResolvedValue({}),
+  reimbursementInboxCount: vi.fn().mockResolvedValue({ data: { manager_inbox: 0, admin_inbox: 0 } }),
+  billingCurrent: vi.fn().mockResolvedValue({ data: null }),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -54,6 +61,9 @@ vi.mock('@/services/api', async () => {
     attendanceTimeEditApi: { list: apiMocks.attendanceTimeEditList },
     userApi: { getAll: apiMocks.userGetAll },
     searchApi: { query: apiMocks.searchQuery },
+    timeEntryApi: { ...actual.timeEntryApi, active: apiMocks.timerActive, stop: apiMocks.timerStop },
+    payrollApi: { ...actual.payrollApi, reimbursementInboxCount: apiMocks.reimbursementInboxCount },
+    billingApi: { ...actual.billingApi, current: apiMocks.billingCurrent },
     notificationApi: {
       list: apiMocks.notificationList,
       markAllRead: apiMocks.markAllRead,
@@ -75,6 +85,10 @@ describe('Layout navigation', () => {
     apiMocks.notificationList.mockResolvedValue({ data: { data: [], unread_count: 0 } });
     apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.markRead.mockResolvedValue({});
+    apiMocks.timerActive.mockResolvedValue({ data: null });
+    apiMocks.timerStop.mockResolvedValue({});
+    apiMocks.reimbursementInboxCount.mockResolvedValue({ data: { manager_inbox: 0, admin_inbox: 0 } });
+    apiMocks.billingCurrent.mockResolvedValue({ data: null });
     authState.value = {
       organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
@@ -211,36 +225,33 @@ describe('Layout navigation', () => {
     expect(screen.getByText('zeel@test.com · Quality Assurance')).toBeInTheDocument();
   });
 
-  it('highlights only the selected settings subpage', async () => {
-    renderWithProviders(<Layout />, { route: '/settings/integrations' });
-
-    const integrationLinks = await screen.findAllByRole('link', { name: /^integrations$/i });
-    const settingsLinks = screen.getAllByRole('link', { name: /^settings$/i });
-    const customFieldLinks = screen.getAllByRole('link', { name: /^custom fields$/i });
-
-    expect(integrationLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
-    expect(settingsLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
-    expect(customFieldLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
-  });
-
+  /*
+   * Removed: 'highlights only the selected settings subpage'.
+   *
+   * Integrations and Custom Fields are panes inside the Settings screen now,
+   * not sidebar entries, so there is no subpage link left to highlight. The
+   * rule it was really protecting - that /settings matches EXACTLY and does not
+   * stay lit while you are inside it - moved to Sidebar.test.tsx, next to the
+   * matcher that implements it.
+   */
   it('keeps projects and tasks navigation states separate', async () => {
     renderWithProviders(<Layout />, { route: '/projects' });
 
     const projectLinks = await screen.findAllByRole('link', { name: /^projects$/i });
     const taskLinks = screen.getAllByRole('link', { name: /^tasks$/i });
 
-    expect(projectLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
-    expect(taskLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(projectLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+    expect(taskLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('highlights departments without also highlighting employees', async () => {
     renderWithProviders(<Layout />, { route: '/employees/teams' });
 
     const employeeLinks = await screen.findAllByRole('link', { name: /^employees$/i });
-    const departmentLinks = screen.getAllByRole('link', { name: /^departments$/i });
+    const departmentLinks = screen.getAllByRole('link', { name: /^department$/i });
 
-    expect(departmentLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
-    expect(employeeLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(departmentLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+    expect(employeeLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('shows contextual report links in attendance and payroll sections', async () => {
@@ -248,7 +259,8 @@ describe('Layout navigation', () => {
 
     expect(await screen.findByRole('link', { name: /^screenshots$/i })).toHaveAttribute('href', '/monitoring/screenshots');
     expect(await screen.findByRole('link', { name: /^attendance report$/i })).toHaveAttribute('href', '/reports/attendance');
-    expect(screen.getByRole('link', { name: /^payroll report$/i })).toHaveAttribute('href', '/payroll/reports');
+    // Payroll reports moved inside the Payroll screen's own tabs, so there is
+    // no longer a contextual nav entry for them to assert.
   });
 
   it('does not highlight the generic reports link when attendance report is active', async () => {
@@ -257,8 +269,8 @@ describe('Layout navigation', () => {
     const attendanceReportLink = await screen.findByRole('link', { name: /^attendance report$/i });
     const genericReportLinks = screen.getAllByRole('link', { name: /^reports$/i });
 
-    expect(attendanceReportLink.className).toContain('bg-blue-600');
-    expect(genericReportLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(attendanceReportLink.getAttribute('aria-current')).toBe('page');
+    expect(genericReportLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('hides admin-only navigation items for employees', async () => {
@@ -322,8 +334,15 @@ describe('Layout navigation', () => {
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
     expect(await screen.findByRole('link', { name: /attendance/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
+    /*
+     * Attendance is a GROUP in the rail now, so a button by that name is
+     * expected rather than forbidden - the old assertion described a flat list
+     * of links. What still matters is that the entry itself is gone: the label
+     * was renamed from Edit Time to Overtime, and checking only the old name
+     * would pass while the link sat there in plain sight.
+     */
     expect(screen.queryByText('Edit Time')).not.toBeInTheDocument();
+    expect(screen.queryByText('Overtime')).not.toBeInTheDocument();
   });
 
   it('hides edit time navigation in desktop shell when employee time edits are disabled', async () => {
@@ -389,7 +408,7 @@ describe('Layout navigation', () => {
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
     expect(await screen.findByRole('link', { name: /overtime/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
+    // The group button by that name stays - it is the section, not the page.
     expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
   });
 
@@ -512,8 +531,9 @@ describe('Layout navigation', () => {
     await waitFor(() => {
       const chatLink = screen.getByRole('link', { name: /chat/i });
       const badge = within(chatLink).getByText('4');
+      // The count is the promise; its colour is a theme token now, and a
+      // class-name probe here tested the palette rather than the badge.
       expect(badge).toBeInTheDocument();
-      expect(badge.className).toContain('bg-rose-600');
     });
   });
 
@@ -559,18 +579,27 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
+    /*
+     * Excluded SERVER-side rather than filtered out of the reply: the limit is
+     * applied before the filter, so a busy chat thread would otherwise fill the
+     * page and leave the panel empty with approvals still waiting.
+     *
+     * This used to assert two calls, back when a second poller fed the desktop
+     * popups. One request feeds both now, so the count was describing the
+     * plumbing rather than the promise.
+     */
     await waitFor(() => {
-      expect(apiMocks.notificationList).toHaveBeenCalledTimes(2);
+      expect(apiMocks.notificationList).toHaveBeenCalledWith({
+        limit: 20,
+        exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
+      });
     });
 
-    expect(apiMocks.notificationList).toHaveBeenNthCalledWith(1, {
-      limit: 20,
-      exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
-    });
-    expect(apiMocks.notificationList).toHaveBeenNthCalledWith(2, {
-      limit: 20,
-      exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
-    });
+    // And no native popup for a chat message - chat has its own screen, and an
+    // OS notification per message is what makes people mute the app.
+    expect(window.desktopTracker?.showNotification).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'message' })
+    );
 
     await user.click(await screen.findByRole('button', { name: /notifications/i }));
 
@@ -657,6 +686,15 @@ describe('Layout navigation', () => {
     expect(await screen.findByText('1')).toBeInTheDocument();
 
     await user.click(await screen.findByRole('button', { name: /notifications/i }));
+
+    /*
+     * Opening the panel no longer marks everything read on its own - both
+     * shells now require the explicit button, so a glance at the bell does not
+     * silently clear items nobody looked at. The chat exclusion is the part
+     * that still matters: chat is read in the chat screen, and sweeping it up
+     * here would mark messages read that were never opened.
+     */
+    await user.click(await screen.findByRole('button', { name: /mark all read/i }));
 
     await waitFor(() => {
       expect(apiMocks.markAllRead).toHaveBeenCalledWith({

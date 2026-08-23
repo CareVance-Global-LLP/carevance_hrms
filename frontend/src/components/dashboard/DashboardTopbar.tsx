@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Menu, MoreHorizontal, X } from 'lucide-react';
+import { Bell, Menu, MoreHorizontal, X } from 'lucide-react';
 import type { User } from '@/types';
 import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import TopNavigation from '@/components/dashboard/TopNavigation';
@@ -27,6 +27,14 @@ interface DashboardTopbarProps {
   onCloseMobileNavigation: () => void;
   onOpenExternal?: (path: string) => void;
   notificationPanel?: ReactNode;
+  /**
+   * Must wrap the bell AND the panel. The outside-click handler that closes the
+   * panel lives in Layout and tests containment against this node - with the
+   * ref on the panel alone, clicking the bell reads as an outside click, which
+   * closes the panel a moment before onClick reopens it. The panel then never
+   * closes from its own button.
+   */
+  notificationsRef?: RefObject<HTMLDivElement | null>;
   profilePanel?: ReactNode;
   profileHasUnreadUpdate?: boolean;
 }
@@ -46,6 +54,7 @@ export default function DashboardTopbar({
   onCloseMobileNavigation,
   onOpenExternal,
   notificationPanel,
+  notificationsRef,
   profilePanel,
   profileHasUnreadUpdate = false,
 }: DashboardTopbarProps) {
@@ -135,6 +144,39 @@ export default function DashboardTopbar({
             <div className="flex shrink-0 items-center justify-end gap-2 sm:gap-2.5">
               <OfflineStatusIndicator />
               <ThemeToggle className="h-11 w-11" />
+
+              {/*
+                The desktop shell took its notifications, the unread count and
+                the panel as props and rendered none of them, so the tracker had
+                no way to reach a notification at all - an approval request
+                simply never surfaced for anybody working in the desktop app.
+                Same control and same accessible name as the web shell, so the
+                two shells stay describable in one sentence.
+              */}
+              <div className="relative" ref={notificationsRef}>
+                <button
+                  type="button"
+                  onClick={onToggleNotifications}
+                  aria-haspopup="menu"
+                  aria-expanded={notificationsOpen}
+                  aria-label="Notifications"
+                  className={cn(
+                    'relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white/80',
+                    notificationsOpen
+                      ? 'border-sky-200 bg-sky-50 text-sky-700'
+                      : 'border-slate-200 bg-white contrast-text-secondary hover:bg-white'
+                  )}
+                >
+                  <Bell className="h-5 w-5" aria-hidden="true" />
+                  {unreadNotifications > 0 ? (
+                    <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {unreadNotifications > 99 ? '99+' : unreadNotifications}
+                    </span>
+                  ) : null}
+                </button>
+                {notificationPanel}
+              </div>
+
               <div className="relative">
                 <button
                   type="button"

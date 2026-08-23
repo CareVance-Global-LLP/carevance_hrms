@@ -330,3 +330,82 @@ describe('Sidebar tooltips', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Which link lights up.
+ *
+ * This moved here from Layout.test.tsx, which asserted `bg-blue-600` on a flat
+ * navigation that no longer exists. The rail resolves colour through CSS
+ * variables now, so a class-name probe tested the theme rather than the
+ * behaviour; `aria-current` is what the component actually promises, and it is
+ * what a screen reader announces.
+ *
+ * Two rules are doing the work, and both are easy to regress:
+ *   - longest match wins, so /reports/attendance beats /reports
+ *   - /settings, /reports and /analytics match EXACTLY, so a landing page does
+ *     not stay lit while you are three levels inside it
+ */
+describe('Sidebar active route', () => {
+  const PRECEDENCE: NavGroup[] = [
+    { label: 'Settings', to: '/settings', icon: LayoutDashboard },
+    { label: 'Reports', to: '/reports', icon: LayoutDashboard },
+    {
+      label: 'People',
+      icon: Users,
+      items: [
+        { label: 'Employees', to: '/employees', icon: Users },
+        { label: 'Departments', to: '/employees/teams', icon: Users },
+      ],
+    },
+    {
+      label: 'Work',
+      icon: Wallet,
+      items: [
+        { label: 'Projects', to: '/projects', icon: Wallet },
+        { label: 'Tasks', to: '/tasks', icon: Wallet },
+      ],
+    },
+    {
+      label: 'Insight',
+      icon: Wallet,
+      items: [{ label: 'Attendance report', to: '/reports/attendance', icon: Wallet }],
+    },
+  ];
+
+  const current = () =>
+    screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('aria-current') === 'page')
+      .map((link) => link.textContent?.trim());
+
+  it('lights the deepest match, not its parent section', () => {
+    setup({ navigation: PRECEDENCE }, '/employees/teams');
+
+    // Both /employees and /employees/teams match the path; only the longer one
+    // is the page you are on.
+    expect(current()).toEqual(['Departments']);
+  });
+
+  it('keeps sibling sections out of each other', () => {
+    setup({ navigation: PRECEDENCE }, '/projects');
+
+    expect(current()).toEqual(['Projects']);
+  });
+
+  it('does not keep a landing page lit inside its own subpage', () => {
+    setup({ navigation: PRECEDENCE }, '/reports/attendance');
+
+    /*
+     * /reports is a real page in its own right rather than a prefix, so the
+     * generic entry going dark is the point - two lit rows cannot both be
+     * "where you are".
+     */
+    expect(current()).toEqual(['Attendance report']);
+  });
+
+  it('lights the landing page itself when that is where you are', () => {
+    setup({ navigation: PRECEDENCE }, '/reports');
+
+    expect(current()).toEqual(['Reports']);
+  });
+});
