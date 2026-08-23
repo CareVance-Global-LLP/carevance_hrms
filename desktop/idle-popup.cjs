@@ -110,9 +110,29 @@ const revealPopup = (window) => {
   window.setAlwaysOnTop(true, 'screen-saver');
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   // showInactive, never show: the person may be typing in another application,
-  // and a window that grabs focus would eat those keystrokes. It also cannot
-  // help — the popup is read, not typed into.
+  // and a window that grabs focus would eat those keystrokes.
   window.showInactive();
+};
+
+/**
+ * Hand the popup keyboard focus, on request.
+ *
+ * The popup deliberately never takes focus by itself, which left somebody
+ * without a mouse no route at all to the two buttons that decide whether their
+ * idle time is paid — the page even styles button:focus-visible, which was
+ * unreachable. This is the deliberate opposite: a shortcut the PERSON presses,
+ * so focus moves only when they ask for it. The page maps Enter to the primary
+ * action and Escape to the secondary once it arrives.
+ */
+const focusPopup = () => {
+  if (!popupWindow || popupWindow.isDestroyed() || !popupWindow.isVisible()) {
+    return false;
+  }
+
+  popupWindow.focus();
+  popupWindow.webContents.focus();
+
+  return true;
 };
 
 /**
@@ -194,4 +214,5 @@ module.exports = {
   POPUP_PAGE,
   POPUP_WIDTH,
   POPUP_HEIGHT,
+  focusPopup,
 };

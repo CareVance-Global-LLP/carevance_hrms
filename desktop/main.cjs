@@ -20,7 +20,7 @@ if (fs.existsSync(frontendEnvPath)) {
   console.log('[Desktop] No .env file found, using existing environment variables');
 }
 
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, globalShortcut, ipcMain, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const { execSync } = require('child_process');
@@ -32,6 +32,7 @@ const {
   hideIdlePopup,
   destroyIdlePopup,
   onIdlePopupAction,
+  focusPopup,
 } = require('./idle-popup.cjs');
 const {
   getBrowserTrackingManagerUrl,
@@ -239,6 +240,19 @@ const THEME_STATE_FILENAME = 'desktop-theme.json';
 const SHELL_BACKGROUND = { light: '#F5F7F8', dark: '#0E141A' };
 let mainWindow = null;
 let tray = null;
+
+/*
+ * What the tray is currently saying.
+ *
+ * The tray is the surface somebody watches all day - it is what you glance at
+ * INSTEAD of restoring the window. It used to be inert: setToolTip was called
+ * once at creation with the literal string 'CareVance Tracker' and never again,
+ * so the one question a tracker's tray exists to answer - is my timer running -
+ * could only be answered by opening the app, which is the interaction a tray
+ * exists to remove.
+ */
+let trayTimerState = { running: false, startedAt: null, label: null };
+let trayRefreshInterval = null;
 let allowWindowClose = false;
 let closePreparationInProgress = false;
 let closePreparationTimeout = null;
@@ -1592,43 +1606,37 @@ const revealMainWindow = () => {
     targetWindow.setFullScreen(false);
   }
 
-  if (!targetWindow.isMaximized()) {
-    targetWindow.maximize();
-  }
-
+  /*
+   * Restore, show, focus. Nothing else.
+   *
+   * This used to force-maximize any window that was not already maximized,
+   * pin the app above everything at 'screen-saver' level for three seconds,
+   * flash the taskbar button, and call bringToFront() three times - at 0ms,
+   * 150ms and 500ms. Clicking a chat notification therefore destroyed whatever
+   * window size the person had chosen, planted the app over their other
+   * applications, and made the window visibly jump twice while it settled.
+   *
+   * A native app restores the window to where it was and gives it focus. The
+   * OS already owns "this window wants attention"; flashFrame stays only for
+   * the case where the platform refuses the focus request, and the OS clears
+   * it on activation.
+   */
   if (!targetWindow.isVisible()) {
     targetWindow.show();
   }
 
   targetWindow.setSkipTaskbar(false);
   targetWindow.setFocusable(true);
-  targetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-  targetWindow.flashFrame(true);
 
-  const bringToFront = () => {
-    if (targetWindow.isDestroyed()) {
-      return;
-    }
+  app.focus();
+  targetWindow.show();
+  targetWindow.focus();
+  targetWindow.webContents.focus();
 
-    app.focus();
-    targetWindow.show();
-    if (typeof targetWindow.moveTop === 'function') {
-      targetWindow.moveTop();
-    }
-    targetWindow.focus();
-    targetWindow.webContents.focus();
-  };
-
-  bringToFront();
-  setTimeout(bringToFront, 150);
-  setTimeout(bringToFront, 500);
-
-  setTimeout(() => {
-    if (!targetWindow.isDestroyed()) {
-      targetWindow.setAlwaysOnTop(false);
-      targetWindow.flashFrame(false);
-    }
-  }, 3000);
+  // Only if the OS declined to hand over focus.
+  if (!targetWindow.isFocused()) {
+    targetWindow.flashFrame(true);
+  }
 
   return true;
 };
@@ -1650,16 +1658,45 @@ const openOrRevealMainWindow = () => {
   void createWindow();
 };
 
-const createTray = () => {
-  if (process.platform !== 'win32') return;
+/** hh:mm:ss since a start timestamp, for the tray tooltip. */
+const elapsedSince = (startedAt) => {
+  if (!startedAt) return null;
 
-  const trayIconPath = path.join(__dirname, 'tray-icon.ico');
-  const iconPath = fs.existsSync(trayIconPath) ? trayIconPath : APP_ICON;
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  const pad = (n) => String(n).padStart(2, '0');
 
-  tray = new Tray(iconPath);
-  tray.setToolTip('CareVance Tracker');
+  return `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}`;
+};
 
-  const contextMenu = Menu.buildFromTemplate([
+/*
+ * Repaint the tray from trayTimerState.
+ *
+ * Tooltip and menu together, because they answer the same question at two
+ * levels of effort: the tooltip on hover, the menu on right-click. The first
+ * menu row is a disabled status line rather than an action - the main process
+ * cannot start or stop a timer on its own, and offering a control that has to
+ * round-trip through a window that may be closed would be a worse lie than
+ * saying nothing.
+ */
+const applyTrayState = () => {
+  if (!tray || tray.isDestroyed?.()) return;
+
+  const elapsed = elapsedSince(trayTimerState.startedAt);
+
+  tray.setToolTip(
+    trayTimerState.running
+      ? `CareVance — running${elapsed ? ` ${elapsed}` : ''}${trayTimerState.label ? ` · ${trayTimerState.label}` : ''}`
+      : 'CareVance — timer stopped'
+  );
+
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: trayTimerState.running
+        ? `Running${elapsed ? ` ${elapsed}` : ''}${trayTimerState.label ? ` · ${trayTimerState.label}` : ''}`
+        : 'No timer running',
+      enabled: false,
+    },
+    { type: 'separator' },
     {
       label: 'Open CareVance Tracker',
       click: () => {
@@ -1674,9 +1711,48 @@ const createTray = () => {
         app.quit();
       },
     },
-  ]);
+  ]));
+};
 
-  tray.setContextMenu(contextMenu);
+/**
+ * Called by the renderer whenever the timer starts, stops or changes task.
+ *
+ * The elapsed figure keeps ticking on a 30s interval while running - Windows
+ * re-reads the tooltip on hover, so a finer cadence would burn wakeups nobody
+ * can see. The interval is cleared on stop so an idle app is not waking up
+ * every half minute forever.
+ */
+const setTrayTimerState = (next = {}) => {
+  trayTimerState = {
+    running: Boolean(next.running),
+    startedAt: next.running ? (next.startedAt || new Date().toISOString()) : null,
+    label: next.label || null,
+  };
+
+  if (trayRefreshInterval) {
+    clearInterval(trayRefreshInterval);
+    trayRefreshInterval = null;
+  }
+
+  if (trayTimerState.running) {
+    trayRefreshInterval = setInterval(applyTrayState, 30000);
+    if (typeof trayRefreshInterval.unref === 'function') trayRefreshInterval.unref();
+  }
+
+  applyTrayState();
+};
+
+const createTray = () => {
+  if (process.platform !== 'win32') return;
+
+  const trayIconPath = path.join(__dirname, 'tray-icon.ico');
+  const iconPath = fs.existsSync(trayIconPath) ? trayIconPath : APP_ICON;
+
+  tray = new Tray(iconPath);
+
+  // Tooltip and menu both come from applyTrayState, so there is one place that
+  // decides what the tray says.
+  applyTrayState();
 
   tray.on('double-click', () => {
     openOrRevealMainWindow();
@@ -1995,6 +2071,18 @@ ipcMain.handle('desktop:get-active-window-context', async () => {
 ipcMain.handle('desktop:get-all-window-contexts', async () => {
   const processes = await getAllProcessesWithWindows();
   return processes;
+});
+
+/*
+ * The renderer telling the tray what the timer is doing.
+ *
+ * Deliberately a fire-and-forget report rather than the main process polling:
+ * only the renderer knows the timer, and it already tracks every start, stop
+ * and task change.
+ */
+ipcMain.handle('desktop:set-timer-state', async (_event, state = {}) => {
+  setTrayTimerState(state);
+  return true;
 });
 
 ipcMain.handle('desktop:reveal-window', async () => {
@@ -2413,6 +2501,45 @@ ipcMain.handle('desktop:offline-get-queue-details', async () => {
 
 if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
+  /*
+   * No application menu at all.
+   *
+   * autoHideMenuBar only HIDES Electron's stock File/Edit/View/Window/Help
+   * bar - pressing Alt brings it back, and View carries Reload, Force Reload
+   * and Toggle Developer Tools. On a tracker that is both an odd thing for an
+   * employee to find and a route into the renderer of an app that records
+   * attendance. None of those menus does anything this product needs; the
+   * shortcuts people actually expect (copy, paste, select-all) keep working
+   * without a menu bar.
+   */
+  Menu.setApplicationMenu(null);
+
+  /*
+   * A keyboard route to the idle prompt.
+   *
+   * The popup is shown with showInactive() and skipTaskbar, so it never takes
+   * focus and has no Alt-Tab entry - deliberate, because it must not eat the
+   * keystrokes of whatever somebody is typing. The cost was that a keyboard-only
+   * user had no way at all to answer the two buttons deciding whether their
+   * idle time is paid.
+   *
+   * This is the opposite of grabbing focus: the person presses the shortcut,
+   * and only then does focus move. Registration failing is not fatal - another
+   * application may already own the combination - so it is logged and the
+   * mouse path continues to work.
+   */
+  try {
+    const bound = globalShortcut.register('CommandOrControl+Alt+I', () => {
+      focusPopup();
+    });
+
+    if (!bound) {
+      console.warn('[desktop] Ctrl+Alt+I is taken; the idle prompt stays mouse-only');
+    }
+  } catch (error) {
+    console.warn('[desktop] Could not register the idle-prompt shortcut:', error?.message);
+  }
+
   // Registered here rather than at module scope because nativeTheme is only
   // safe to touch after ready, same as powerMonitor below. Only fires on a real
   // OS change: under an explicit light/dark choice shouldUseDarkColors is
@@ -2587,6 +2714,15 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  // Electron releases these on exit anyway, but an explicit unregister keeps
+  // the combination free if the app is restarted before the OS has caught up.
+  globalShortcut.unregisterAll();
+
+  if (trayRefreshInterval) {
+    clearInterval(trayRefreshInterval);
+    trayRefreshInterval = null;
+  }
+
   if (pendingSessionsStore) {
     pendingSessionsStore.dispose();
   }

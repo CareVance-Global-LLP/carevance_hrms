@@ -117,6 +117,8 @@ declare global {
       Id: number;
     }>>;
     revealWindow: () => Promise<boolean>;
+    /** Optional: added in the build that gave the tray a timer status. */
+    setTimerState?: (state: { running: boolean; startedAt?: string | null; label?: string | null }) => Promise<boolean>;
     showNotification?: (payload: {
       id?: number;
       title: string;

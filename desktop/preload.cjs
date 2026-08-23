@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   getSystemLockState: () => ipcRenderer.invoke('desktop:get-system-lock-state'),
   getActiveWindowContext: () => ipcRenderer.invoke('desktop:get-active-window-context'),
   getAllWindowContexts: () => ipcRenderer.invoke('desktop:get-all-window-contexts'),
+  // Report the timer to the tray, which is the only status surface somebody
+  // watching this all day actually looks at.
+  setTimerState: (state) => ipcRenderer.invoke('desktop:set-timer-state', state),
   revealWindow: () => ipcRenderer.invoke('desktop:reveal-window'),
   showNotification: (payload) => ipcRenderer.invoke('desktop:show-notification', payload),
   // The idle warning, as a real always-on-top window. The in-app countdown it

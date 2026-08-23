@@ -53,6 +53,15 @@
     user-select: none;
   }
 
+  .brand {
+    margin: 0 0 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
   .head { display: flex; align-items: flex-start; gap: 10px; }
 
   /*
@@ -119,6 +128,17 @@
 </style>
 </head>
 <body>
+  <!--
+    The wordmark is not decoration.
+
+    This is a frameless, taskbar-less 360x208 box that appears bottom-right and
+    asks whether the last twelve minutes count as paid work. Unlabelled, on a
+    machine running three other tools, there is nothing telling somebody which
+    application is asking - and "I don't know what this is" is a bad state for
+    a prompt with money attached.
+  -->
+  <p class="brand">CareVance</p>
+
   <div class="head">
     <span class="badge" aria-hidden="true">&#9201;</span>
     <div>
@@ -202,6 +222,30 @@
       return;
     }
   }
+
+  /*
+   * Keyboard answers.
+   *
+   * The window is created with skipTaskbar and revealed with showInactive() so
+   * it never steals keystrokes - correct, but it left no route to these two
+   * buttons for anyone not using a mouse. The CSS even styles
+   * button:focus-visible, which was unreachable. Enter takes the primary
+   * action, Escape the secondary; both only once the buttons are populated, so
+   * a keypress before the state arrives cannot answer a question that has not
+   * been asked yet.
+   */
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' && !primaryEl.hidden) {
+      event.preventDefault();
+      primaryEl.click();
+      return;
+    }
+
+    if (event.key === 'Escape' && !secondaryEl.hidden) {
+      event.preventDefault();
+      secondaryEl.click();
+    }
+  });
 
   window.idlePopup.onState(render);
   window.idlePopup.ready();
