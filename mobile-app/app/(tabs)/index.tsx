@@ -54,7 +54,10 @@ export default function DashboardScreen() {
   const [pendingCount, setPendingCount] = useState<number | null>(null);
   const [banner, setBanner] = useState<{ title: string; message?: string; route: string; key: number } | null>(null);
   const prevAnnouncementIds = useRef<Set<number>>(new Set());
-  const isManager = isManager(user);
+  // Renamed from `isManager`, which shadowed the import above and was then
+  // called in its own initialiser - a temporal dead zone violation, so this
+  // screen threw ReferenceError before it painted anything.
+  const showManagerUi = isManager(user);
 
   const s = useMemo(() => styles(colors), [colors]);
 
@@ -92,7 +95,7 @@ export default function DashboardScreen() {
         prevAnnouncementIds.current = newIds;
         setAnnouncements(newAnnouncements);
       }
-      if (isManager) {
+      if (showManagerUi) {
         Promise.all([
           approvalApi.pendingLeaves().catch(() => null),
           approvalApi.pendingTimeEdits().catch(() => null),
@@ -203,7 +206,7 @@ export default function DashboardScreen() {
         )}
       </View>
 
-      {isManager && pendingCount !== null && pendingCount > 0 && (
+      {showManagerUi && pendingCount !== null && pendingCount > 0 && (
         <TouchableOpacity style={s.pendingCard} onPress={() => router.push('/approval-inbox')}>
           <View style={s.pendingRow}>
             <Ionicons name="checkmark-done-outline" size={18} color="#fff" />

@@ -19,7 +19,10 @@ export default function MoreScreen() {
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [switchValue, setSwitchValue] = useState(isDark);
-  const isManager = isManager(user);
+  // Renamed from `isManager`, which shadowed the import above and was then
+  // called in its own initialiser - a temporal dead zone violation, so this
+  // screen threw ReferenceError before it painted anything.
+  const showManagerUi = isManager(user);
 
   useEffect(() => { setSwitchValue(isDark); }, [isDark]);
 
@@ -95,7 +98,7 @@ export default function MoreScreen() {
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
 
-      {isManager && (
+      {showManagerUi && (
         <TouchableOpacity style={s.menuCard} onPress={() => router.push('/approval-inbox')}>
           <View style={s.menuRow}>
             <Ionicons name="checkmark-done-outline" size={20} color={colors.warning} />
@@ -105,7 +108,7 @@ export default function MoreScreen() {
         </TouchableOpacity>
       )}
 
-      {isManager && (
+      {showManagerUi && (
         <TouchableOpacity style={s.menuCard} onPress={() => router.push('/notifications/publish')}>
           <View style={s.menuRow}>
             <Ionicons name="megaphone-outline" size={20} color={colors.warning} />

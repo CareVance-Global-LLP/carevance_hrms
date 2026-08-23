@@ -22,7 +22,10 @@ export default function ApprovalInboxScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const s = useMemo(() => styles(colors), [colors]);
-  const canApprove = canApprove(user);
+  // Same shadowing bug as the two tab screens: `canApprove` shadowed the
+  // import and called itself. The `canApprove` parameters on the render
+  // helpers below are ordinary arguments and are left alone.
+  const userCanApprove = canApprove(user);
   const [activeTab, setActiveTab] = useState<TabType>('leave');
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
   const [timeEdits, setTimeEdits] = useState<TimeEditRequest[]>([]);
@@ -109,9 +112,9 @@ export default function ApprovalInboxScreen() {
           ))}
         </View>
 
-      {activeTab === 'leave' && renderList(leaves, 'leave', s, colors, handleApprove, openReject, actionLoading, canApprove)}
-      {activeTab === 'time_edit' && renderTimeEditList(timeEdits, s, colors, handleApprove, openReject, actionLoading, canApprove)}
-      {activeTab === 'expense' && renderExpenseList(expenses, s, colors, handleApprove, openReject, actionLoading, canApprove)}
+      {activeTab === 'leave' && renderList(leaves, 'leave', s, colors, handleApprove, openReject, actionLoading, userCanApprove)}
+      {activeTab === 'time_edit' && renderTimeEditList(timeEdits, s, colors, handleApprove, openReject, actionLoading, userCanApprove)}
+      {activeTab === 'expense' && renderExpenseList(expenses, s, colors, handleApprove, openReject, actionLoading, userCanApprove)}
       </ScrollView>
 
       <Modal visible={!!rejectTarget} transparent animationType="fade" onRequestClose={() => setRejectTarget(null)}>
