@@ -23,6 +23,10 @@ class PayrollFiling extends Model
         'acknowledgment_number', 'generated_at', 'submitted_at', 'approved_at',
         'filed_at', 'acknowledged_at', 'generated_by', 'submitted_by', 'approved_by',
         'filed_by', 'reviewer_user_id', 'review_note', 'meta_data', 'notes',
+        // The acknowledgement the portal hands back, and the deadline this
+        // filing was judged against. See the 2026_08_23_210000 migration.
+        'receipt_path', 'receipt_original_filename', 'receipt_uploaded_at',
+        'receipt_uploaded_by', 'due_date', 'source',
     ];
 
     protected $casts = [
@@ -31,6 +35,14 @@ class PayrollFiling extends Model
         'approved_at' => 'datetime',
         'filed_at' => 'datetime',
         'acknowledged_at' => 'datetime',
+        'receipt_uploaded_at' => 'datetime',
+        /*
+         * date:Y-m-d, never a plain 'date'. A plain date cast serialises as a
+         * UTC datetime, so a return due on the 15th reaches an IST client as
+         * the 14th - and a deadline that renders a day early turns every
+         * on-time filing into an overdue one on screen.
+         */
+        'due_date' => 'date:Y-m-d',
         'meta_data' => 'array',
     ];
 
@@ -55,6 +67,33 @@ class PayrollFiling extends Model
 
     // Portal-side state for the semi-auto "upload to portal" flow.
     const PORTAL_STATUSES = ['pending_upload', 'uploaded', 'paid', 'error'];
+
+    // Where the artefact came from. A consultant-prepared return is still the
+    // organisation's filing; refusing to record it makes the history wrong.
+    const SOURCES = ['generated', 'uploaded'];
+
+    /** Whether the portal's acknowledgement document is on file. */
+    public function hasReceipt(): bool
+    {
+        return ! empty($this->receipt_path);
+    }
+
+    /**
+     * Overdue means the deadline passed and it was never filed.
+     *
+     * Deliberately not "past due_date" alone: a filing made on time stays on
+     * time forever, and one with no known deadline is not overdue, it is
+     * unscheduled. Both of those rendering red would train people to ignore the
+     * colour.
+     */
+    public function isOverdue(?\Carbon\Carbon $asOf = null): bool
+    {
+        if ($this->filed_at || ! $this->due_date) {
+            return false;
+        }
+
+        return $this->due_date->endOfDay()->isBefore($asOf ?? now());
+    }
 
     /**
      * Statuses where the filing is still in the internal maker-checker pipeline

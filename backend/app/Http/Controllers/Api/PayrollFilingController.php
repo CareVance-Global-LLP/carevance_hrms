@@ -727,6 +727,18 @@ class PayrollFilingController extends Controller
             'acknowledgment_number' => 'required|string|max:100',
             'portal_status' => 'nullable|in:pending_upload,uploaded,paid,error',
             'notes' => 'nullable|string',
+            /*
+             * The date it was filed ON, which is often not today: people record
+             * a filing after the fact, and back-dating it correctly is the
+             * difference between "filed on time" and "filed late".
+             */
+            'filed_on' => 'nullable|date',
+            /*
+             * The portal's acknowledgement, in the SAME request. Splitting it
+             * into a second step means the second step gets skipped, and a
+             * filing nobody can evidence is what this table exists to prevent.
+             */
+            'receipt' => 'nullable|file|max:10240|mimes:pdf,png,jpg,jpeg',
         ]);
 
         $filing = PayrollFiling::where('id', $id)
@@ -738,16 +750,274 @@ class PayrollFilingController extends Controller
         }
 
         $filing->status = 'filed';
-        $filing->filed_at = now();
+        $filing->filed_at = ! empty($data['filed_on'])
+            ? \Carbon\Carbon::parse($data['filed_on'])
+            : now();
         $filing->filed_by = auth()->id();
         $filing->acknowledgment_number = $data['acknowledgment_number'];
         $filing->portal_status = $data['portal_status'] ?? 'paid';
         if (! empty($data['notes'])) {
             $filing->notes = $data['notes'];
         }
+
+        if ($request->hasFile('receipt')) {
+            $this->storeReceipt($filing, $request->file('receipt'));
+        }
+
         $filing->save();
 
-        return response()->json(['filing' => $filing, 'message' => 'Filing recorded as filed.']);
+        return response()->json(['filing' => $filing->fresh(), 'message' => 'Filing recorded as filed.']);
+    }
+
+    /**
+     * Attach the acknowledgement the portal handed back.
+     *
+     * Separate from markFiled because the receipt often arrives later — EPFO
+     * returns the challan immediately, ESIC sometimes the next day — and
+     * forcing them into one step means people either wait (and forget to record
+     * the filing at all) or record it and never come back with the evidence.
+     */
+    public function uploadFilingReceipt(Request $request, int $id)
+    {
+        $request->validate([
+            'receipt' => 'required|file|max:10240|mimes:pdf,png,jpg,jpeg',
+        ]);
+
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if (! $filing->filed_at) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Record this as filed first — an acknowledgement with no filing behind it has nothing to acknowledge.',
+            ], 422);
+        }
+
+        $this->storeReceipt($filing, $request->file('receipt'));
+        $filing->save();
+
+        return response()->json([
+            'success' => true,
+            'filing' => $filing->fresh(),
+            'message' => 'Acknowledgement attached.',
+        ]);
+    }
+
+    public function downloadFilingReceipt(int $id)
+    {
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if (! $filing->receipt_path || ! Storage::disk('local')->exists($filing->receipt_path)) {
+            return response()->json(['error' => 'No acknowledgement on file'], 404);
+        }
+
+        return Storage::disk('local')->download(
+            $filing->receipt_path,
+            $filing->receipt_original_filename ?: 'acknowledgement.pdf'
+        );
+    }
+
+    /**
+     * The last state: the authority has confirmed receipt.
+     *
+     * `acknowledged` and `acknowledged_at` were declared on the model, cast,
+     * and written by nothing in the codebase — so the lifecycle stopped at
+     * "filed", and the difference between "we uploaded it" and "they accepted
+     * it" could not be recorded. That difference is the entire question during
+     * an inspection.
+     */
+    public function acknowledgeFiling(Request $request, int $id)
+    {
+        $data = $request->validate([
+            'acknowledgment_number' => 'nullable|string|max:100',
+            'acknowledged_on' => 'nullable|date',
+            'notes' => 'nullable|string',
+        ]);
+
+        $filing = PayrollFiling::where('id', $id)
+            ->where('organization_id', auth()->user()->organization_id)
+            ->firstOrFail();
+
+        if ($filing->status !== 'filed') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only a filed return can be acknowledged.',
+            ], 422);
+        }
+
+        $filing->status = 'acknowledged';
+        $filing->acknowledged_at = ! empty($data['acknowledged_on'])
+            ? \Carbon\Carbon::parse($data['acknowledged_on'])
+            : now();
+
+        // The number is often only final at acknowledgement, so allow it to be
+        // corrected here rather than making somebody withdraw and refile.
+        if (! empty($data['acknowledgment_number'])) {
+            $filing->acknowledgment_number = $data['acknowledgment_number'];
+        }
+
+        if (! empty($data['notes'])) {
+            $filing->notes = $data['notes'];
+        }
+
+        $filing->save();
+
+        return response()->json([
+            'success' => true,
+            'filing' => $filing->fresh(),
+            'message' => 'Filing acknowledged.',
+        ]);
+    }
+
+    /**
+     * Record a return that was prepared outside this system.
+     *
+     * A consultant-prepared 24Q is still the organisation's filing. Refusing to
+     * record it does not make it go away — it means the compliance history on
+     * this screen is wrong, and the one place somebody would look to answer
+     * "did we file August" says no when the answer is yes.
+     */
+    public function uploadFiling(Request $request)
+    {
+        $data = $request->validate([
+            'type' => 'required|string|in:'.implode(',', PayrollFiling::TYPES),
+            'period_month' => 'nullable|string|max:2',
+            'period_year' => 'required|integer|min:2000|max:2100',
+            'period_type' => 'nullable|string|in:monthly,quarterly,annual',
+            'document' => 'required|file|max:10240|mimes:pdf,txt,csv,xlsx,xls,png,jpg,jpeg',
+            'notes' => 'nullable|string',
+        ]);
+
+        $organizationId = auth()->user()->organization_id;
+        $file = $request->file('document');
+        $stored = $file->store("filings/{$organizationId}/uploaded", 'local');
+
+        $filing = PayrollFiling::create([
+            'organization_id' => $organizationId,
+            'type' => $data['type'],
+            'period_type' => $data['period_type'] ?? 'monthly',
+            'period_month' => $data['period_month'] ?? null,
+            'period_year' => $data['period_year'],
+            'status' => 'generated',
+            /*
+             * Never 'ready'. We did not produce this file and cannot vouch for
+             * its format — claiming otherwise is exactly the overclaim this
+             * column exists to prevent.
+             */
+            'compliance_status' => 'reference_only',
+            'file_path' => $stored,
+            'original_filename' => $file->getClientOriginalName(),
+            'source' => 'uploaded',
+            'generated_at' => now(),
+            'generated_by' => auth()->id(),
+            'notes' => $data['notes'] ?? null,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'filing' => $filing,
+            'message' => 'Return recorded.',
+        ], 201);
+    }
+
+    /**
+     * What is due this period, and whether it has been dealt with.
+     *
+     * Status is joined against the real filing rows, so an empty tenant
+     * correctly shows everything as not generated rather than inventing
+     * progress. Deadlines come from FilingDueDates, which carries the provision
+     * each date is drawn from.
+     */
+    public function filingCalendar(Request $request, \App\Services\Payroll\FilingDueDates $dueDates)
+    {
+        $data = $request->validate([
+            'month_year' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
+        ]);
+
+        $monthYear = $data['month_year'] ?? now()->format('Y-m');
+        [$year, $month] = explode('-', $monthYear);
+        $organizationId = auth()->user()->organization_id;
+
+        /*
+         * The states this organisation actually pays PT in — never a default.
+         * Professional tax is state-levied and several states levy none, so
+         * assuming one invents a deadline for a return that does not exist.
+         */
+        $ptStates = \App\Models\EmployeePayrollTemplate::where('organization_id', $organizationId)
+            ->whereNotNull('pt_state')
+            ->distinct()
+            ->pluck('pt_state')
+            ->filter()
+            ->values();
+
+        $existing = PayrollFiling::where('organization_id', $organizationId)
+            ->where('period_year', (int) $year)
+            ->where(function ($q) use ($month) {
+                $q->where('period_month', $month)->orWhereNull('period_month');
+            })
+            ->get()
+            ->keyBy('type');
+
+        $registry = new \App\Services\Payroll\FilingGeneratorRegistry();
+        $catalogue = $registry->all();
+        $rows = [];
+
+        foreach ($dueDates->scheduledTypes() as $type) {
+            if (! isset($catalogue[$type])) {
+                continue;
+            }
+
+            $state = $type === 'pt_return' ? $ptStates->first() : null;
+            $filing = $existing->get($type);
+
+            $rows[] = array_merge(
+                $dueDates->assess($type, $monthYear, $state, $filing?->filed_at),
+                [
+                    'type' => $type,
+                    'label' => $catalogue[$type]['label'],
+                    'available' => $catalogue[$type]['available'],
+                    'status' => $filing?->status ?? 'not_generated',
+                    'filing_id' => $filing?->id,
+                    'acknowledgment_number' => $filing?->acknowledgment_number,
+                    'has_receipt' => (bool) $filing?->receipt_path,
+                    'state' => $state,
+                ]
+            );
+        }
+
+        // Soonest first, but anything already overdue leads.
+        usort($rows, function ($a, $b) {
+            $rank = fn ($r) => match ($r['urgency']) {
+                'overdue' => 0, 'critical' => 1, 'due_soon' => 2, 'scheduled' => 3, default => 4,
+            };
+
+            return [$rank($a), $a['due_date'] ?? '9999-99-99'] <=> [$rank($b), $b['due_date'] ?? '9999-99-99'];
+        });
+
+        return response()->json([
+            'success' => true,
+            'month_year' => $monthYear,
+            'data' => $rows,
+            'overdue_count' => count(array_filter($rows, fn ($r) => $r['urgency'] === 'overdue')),
+        ]);
+    }
+
+    /**
+     * Persist an uploaded acknowledgement against a filing.
+     *
+     * Deliberately NOT written to file_path: that column holds the return we
+     * generated, and overwriting it would destroy the very document the
+     * acknowledgement is evidence for.
+     */
+    private function storeReceipt(PayrollFiling $filing, $file): void
+    {
+        $filing->receipt_path = $file->store("filings/{$filing->organization_id}/receipts", 'local');
+        $filing->receipt_original_filename = $file->getClientOriginalName();
+        $filing->receipt_uploaded_at = now();
+        $filing->receipt_uploaded_by = auth()->id();
     }
 
     /**

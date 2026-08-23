@@ -971,7 +971,7 @@ function ReviewStep({
         comment: decision.comment || '',
       }));
 
-      const response = await payrollApi.submitRunReviewDecisions(0, decisionList);
+      const response = await payrollApi.submitRunReviewDecisions(0, decisionList, monthYear);
       if (!response.data?.success) {
         throw new Error(response.data?.message || 'Failed to submit review decisions.');
       }

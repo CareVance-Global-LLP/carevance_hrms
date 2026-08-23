@@ -37,6 +37,32 @@ Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->gr
         // as a filing id and 404 on every request the dashboard makes.
         Route::get('/catalogue', [PayrollFilingController::class, 'catalogue']);
 
+        /*
+         * The compliance calendar. Also registered before '/{id}' — "calendar"
+         * would otherwise be read as a filing id.
+         *
+         * There was a calendar before this on PayrollDashboardController, on no
+         * route at all, computing PF and ESI as the 15th of the PERIOD month
+         * rather than the month after — so every deadline it produced was a
+         * month early and every filing permanently overdue. It is replaced,
+         * not wired up.
+         */
+        Route::get('/calendar', [PayrollFilingController::class, 'filingCalendar']);
+
+        // A return prepared outside this system is still the organisation's
+        // filing; not recording it just makes the history wrong.
+        Route::post('/upload', [PayrollFilingController::class, 'uploadFiling']);
+
+        /*
+         * The maker-checker half of the lifecycle.
+         *
+         * submitForReview, approveFiling, rejectFiling and reviewQueue have
+         * been complete in the controller all along with no routes registered,
+         * so the reachable lifecycle was literally generated -> filed and the
+         * review columns on payroll_filings were written by nothing.
+         */
+        Route::get('/review-queue', [PayrollFilingController::class, 'reviewQueue']);
+
         Route::get('/', [PayrollFilingController::class, 'listFilings']);
         Route::get('/{id}/download', [PayrollFilingController::class, 'downloadFiling']);
         Route::get('/{id}/portal', [PayrollFilingController::class, 'portalInfo']);
@@ -95,8 +121,22 @@ Route::prefix('payroll')->middleware(['plan.payroll', 'role:admin,manager'])->gr
 
         // Generate All
         Route::post('/generate/all', [PayrollFilingController::class, 'generateAllFilings']);
-        // Mark filed
+        /*
+         * The rest of the lifecycle: generated -> [submitted -> approved] ->
+         * filed (with the portal's acknowledgement attached) -> acknowledged.
+         *
+         * Four of these columns already existed on payroll_filings and were
+         * written by nothing, so a filing could be produced and downloaded but
+         * never evidenced. "We filed this in September" is an assertion until
+         * the challan is on file beside it.
+         */
+        Route::post('/{id}/submit', [PayrollFilingController::class, 'submitForReview']);
+        Route::post('/{id}/approve', [PayrollFilingController::class, 'approveFiling']);
+        Route::post('/{id}/reject', [PayrollFilingController::class, 'rejectFiling']);
         Route::post('/{id}/mark-filed', [PayrollFilingController::class, 'markFiled']);
+        Route::post('/{id}/receipt', [PayrollFilingController::class, 'uploadFilingReceipt']);
+        Route::get('/{id}/receipt', [PayrollFilingController::class, 'downloadFilingReceipt']);
+        Route::post('/{id}/acknowledge', [PayrollFilingController::class, 'acknowledgeFiling']);
     });
 
     // ===== Flexible Benefits Plan (FBP) =====

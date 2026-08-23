@@ -3748,9 +3748,33 @@ class PayrollDepartmentController extends Controller
     {
         $organizationId = $request->user()->organization_id;
 
-        $run = PayrollMonthlyRun::where('organization_id', $organizationId)
-            ->where('id', $runId)
-            ->firstOrFail();
+        /*
+         * A runId of 0 means "the run for this month".
+         *
+         * The review screen calls getRunReviewData(0, {payGroupId, monthYear}),
+         * which resolves from the pay group and month and needs no run at all -
+         * so the screen renders, decisions get made, and only the SUBMIT knew
+         * an id was required. firstOrFail() on id 0 then returned a bare 404 on
+         * the primary Run Payroll path, at the exact step where somebody holds
+         * a leaver's payout.
+         *
+         * Resolve it the same way the read does, and when there genuinely is no
+         * run, say which act is missing rather than 404ing.
+         */
+        $run = $runId > 0
+            ? PayrollMonthlyRun::where('organization_id', $organizationId)
+                ->where('id', $runId)
+                ->first()
+            : PayrollMonthlyRun::where('organization_id', $organizationId)
+                ->where('month_year', (string) $request->input('month_year'))
+                ->first();
+
+        if (! $run) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No payroll run exists for this month yet. Create the run first, then apply review decisions.',
+            ], 422);
+        }
 
         $data = $request->validate([
             'decisions' => 'required|array',

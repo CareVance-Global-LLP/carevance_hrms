@@ -3536,13 +3536,19 @@ export const payrollApi = {
     }>('/payroll/review-data', { params });
   },
 
+  /*
+   * monthYear is what makes runId 0 work. The review screen reads with
+   * getRunReviewData(0, ...), which resolves from pay group and month, so the
+   * submit has to resolve the same way - otherwise the whole screen is
+   * reachable and only its primary button 404s.
+   */
   submitRunReviewDecisions: (runId: number, decisions: Array<{
     user_id: number; action: 'process' | 'hold_processing' | 'hold_payout' | 'void'; comment?: string;
-  }>) =>
+  }>, monthYear?: string) =>
     api.post<{
       success: boolean; message: string;
       counts: { processed: number; hold_processing: number; hold_payout: number; void: number };
-    }>(`/payroll/runs/${runId}/review`, { decisions }),
+    }>(`/payroll/runs/${runId}/review`, { decisions, month_year: monthYear }),
 
   processRunPayment: (runId: number, paymentMethod?: string, payDate?: string) =>
     api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/process-payment`, { payment_method: paymentMethod, pay_date: payDate }),
@@ -3684,6 +3690,76 @@ export const payrollApi = {
     * merges this over its own card list so the screen cannot advertise a
     * return whose statutory template has not been written.
     */
+  /**
+   * What is due this period, and whether it has been dealt with.
+   *
+   * Deadlines come from FilingDueDates on the server, which carries the
+   * statutory provision each date is drawn from — so a due date on this screen
+   * can be traced to a rule rather than to a literal somebody typed into a
+   * component. Status is joined against the real filing rows, which is why an
+   * empty tenant correctly reports nothing rather than showing progress.
+   */
+  getFilingCalendar: async (monthYear?: string): Promise<{
+    month_year: string;
+    overdue_count: number;
+    data: Array<{
+      type: string;
+      label: string;
+      available: boolean;
+      due_date: string | null;
+      days_remaining: number | null;
+      urgency: 'overdue' | 'critical' | 'due_soon' | 'scheduled' | 'unscheduled' | 'filed_on_time' | 'filed_late';
+      authority: string | null;
+      status: string;
+      filing_id: number | null;
+      acknowledgment_number: string | null;
+      has_receipt: boolean;
+      state: string | null;
+    }>;
+  }> => {
+    const response = await api.get('/payroll/filings/calendar', {
+      params: monthYear ? { month_year: monthYear } : undefined,
+    });
+
+    return response.data ?? { month_year: '', overdue_count: 0, data: [] };
+  },
+
+  /** Attach the acknowledgement the portal handed back. */
+  uploadFilingReceipt: (filingId: number, receipt: File) => {
+    const body = new FormData();
+    body.append('receipt', receipt);
+
+    return api.post(`/payroll/filings/${filingId}/receipt`, body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  downloadFilingReceipt: (filingId: number) =>
+    api.get(`/payroll/filings/${filingId}/receipt`, { responseType: 'blob' }),
+
+  /** The authority has confirmed receipt — the last state. */
+  acknowledgeFiling: (filingId: number, payload: { acknowledgment_number?: string; acknowledged_on?: string; notes?: string }) =>
+    api.post(`/payroll/filings/${filingId}/acknowledge`, payload),
+
+  /**
+   * Record a return prepared outside this system.
+   *
+   * Stored as `reference_only` whatever it is: we did not produce the file and
+   * cannot vouch for its format.
+   */
+  uploadPreparedFiling: (payload: { type: string; period_month?: string; period_year: number; document: File; notes?: string }) => {
+    const body = new FormData();
+    body.append('type', payload.type);
+    body.append('period_year', String(payload.period_year));
+    if (payload.period_month) body.append('period_month', payload.period_month);
+    if (payload.notes) body.append('notes', payload.notes);
+    body.append('document', payload.document);
+
+    return api.post('/payroll/filings/upload', body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
    getFilingCatalogue: async (): Promise<
      Record<string, { label: string; available: boolean; unavailable_reason: string | null }>
    > => {
@@ -3793,6 +3869,30 @@ export const payrollApi = {
     api.post<any>(`/payroll/filings/${id}/approve`),
   rejectFiling: (id: number, reason: string) =>
     api.post<any>(`/payroll/filings/${id}/reject`, { reason }),
+  /**
+   * Record a filing, with its acknowledgement, in one request.
+   *
+   * The receipt goes in the SAME call deliberately. Split into two steps, the
+   * second one gets skipped - and a filing nobody can evidence is exactly what
+   * the acknowledgement columns exist to prevent.
+   */
+  markFilingFiledWithReceipt: (id: number, payload: {
+    acknowledgment_number: string;
+    filed_on?: string;
+    portal_status?: string;
+    receipt?: File | null;
+  }) => {
+    const body = new FormData();
+    body.append('acknowledgment_number', payload.acknowledgment_number);
+    if (payload.filed_on) body.append('filed_on', payload.filed_on);
+    if (payload.portal_status) body.append('portal_status', payload.portal_status);
+    if (payload.receipt) body.append('receipt', payload.receipt);
+
+    return api.post<any>(`/payroll/filings/${id}/mark-filed`, body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   markFilingFiled: (id: number, acknowledgmentNumber: string, portalStatus?: string) =>
     api.post<any>(`/payroll/filings/${id}/mark-filed`, {
       acknowledgment_number: acknowledgmentNumber,
