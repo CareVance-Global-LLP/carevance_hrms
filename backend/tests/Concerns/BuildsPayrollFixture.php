@@ -106,6 +106,10 @@ trait BuildsPayrollFixture
 
             \App\Models\EmployeeWorkInfo::factory()->create([
                 'user_id' => $user->id,
+                // Without this the factory mints a NEW organization, the global
+                // scope hides the row, and every test runs against an employee
+                // who silently has no work info at all.
+                'organization_id' => $this->organization->id,
                 'employee_code' => 'EMP'.str_pad($user->id, 4, '0', STR_PAD_LEFT),
                 'designation' => 'Software Engineer',
                 'joining_date' => now()->subYears(2)->format('Y-m-d'),
@@ -113,6 +117,10 @@ trait BuildsPayrollFixture
 
             \App\Models\EmployeeBankAccount::factory()->create([
                 'user_id' => $user->id,
+                // Same trap as the work info above: the factory would otherwise
+                // mint a new organization and the scope would hide the account,
+                // making every fixture employee look unbanked.
+                'organization_id' => $this->organization->id,
                 'account_number' => '1234567890'.$user->id,
                 'ifsc_swift' => 'HDFC0001234',
                 'bank_name' => 'HDFC Bank',

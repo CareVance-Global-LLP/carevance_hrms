@@ -1637,7 +1637,7 @@ class PayrollFilingService
                 'pan' => $item->user?->statutoryId('pan') ?? '',
                 'uan' => $item->user?->statutoryId('uan') ?? '',
                 'esi_ip' => $item->user?->statutoryId('esi') ?? '',
-                'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
+                'joining_date' => $item->user?->employeeWorkInfo?->joining_date?->format('d/m/Y') ?? '',
                 'designation' => $item->user->employeeWorkInfo->designation ?? '',
                 'department' => $item->user->employeeWorkInfo->department ?? '',
                 'gross_salary' => (float) $item->gross_salary,
@@ -1753,7 +1753,7 @@ class PayrollFilingService
                 'employee' => $item->user->name ?? '',
                 'pan' => $item->user?->statutoryId('pan') ?? '',
                 'uan' => $item->user?->statutoryId('uan') ?? '',
-                'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
+                'joining_date' => $item->user?->employeeWorkInfo?->joining_date?->format('d/m/Y') ?? '',
                 'gross_salary' => (float) $item->gross_salary,
             ];
         }
@@ -1800,7 +1800,7 @@ class PayrollFilingService
                 'pan' => $pan,
                 'uan' => $uan,
                 'uan_status' => !empty($uan) ? 'activated' : 'pending',
-                'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
+                'joining_date' => $item->user?->employeeWorkInfo?->joining_date?->format('d/m/Y') ?? '',
             ];
         }
 
@@ -1876,7 +1876,7 @@ class PayrollFilingService
                 'employee' => $item->user->name ?? '',
                 'pan' => $item->user?->statutoryId('pan') ?? '',
                 'uan' => $item->user?->statutoryId('uan') ?? '',
-                'joining_date' => $item->user->employeeWorkInfo->joining_date ? $item->user->employeeWorkInfo->joining_date->format('d/m/Y') : '',
+                'joining_date' => $item->user?->employeeWorkInfo?->joining_date?->format('d/m/Y') ?? '',
                 'gross_salary' => (float) $item->gross_salary,
             ];
         }

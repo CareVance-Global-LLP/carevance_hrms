@@ -59,30 +59,31 @@ class FilingCatalogueTest extends TestCase
         }
     }
 
-    public function test_the_ten_known_missing_declaration_forms_are_unavailable(): void
+    /**
+     * Every PDF filing is available.
+     *
+     * Two tests used to live here: one asserting three PDF filings worked and
+     * one asserting ten were unavailable for want of a template. The ten
+     * templates were written in Aug 2026, so the split no longer describes
+     * anything and the pair has become a single list of thirteen.
+     *
+     * Kept as an explicit roster rather than a loop over the catalogue - that
+     * loop already exists above. This is the list a person can read against
+     * the statute to see what the product claims to produce.
+     */
+    public function test_every_pdf_filing_is_available(): void
     {
         $registry = new FilingGeneratorRegistry();
 
         foreach ([
-            'form_19', 'form_31', 'form_1', 'form_2', 'form_6',
+            'form_12ba', 'form_16', 'form_16_annual',
+            'form_19', 'form_31', 'form_1', 'form_2', 'form_6', 'form_124',
             'eshram_registration', 'uan_activation', 'se_registration',
-            'shram_card_registration', 'form_124',
+            'shram_card_registration',
         ] as $type) {
-            $this->assertFalse(
-                $registry->isAvailable($type),
-                "{$type} has no blade view and must report unavailable."
-            );
-        }
-    }
-
-    public function test_the_three_implemented_pdf_filings_are_available(): void
-    {
-        $registry = new FilingGeneratorRegistry();
-
-        foreach (['form_12ba', 'form_16', 'form_16_annual'] as $type) {
             $this->assertTrue(
                 $registry->isAvailable($type),
-                "{$type} has a blade view on disk and must report available."
+                "{$type} must have a blade view on disk and report available."
             );
         }
     }

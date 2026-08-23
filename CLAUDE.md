@@ -295,17 +295,16 @@ Real, and deliberately not yet built:
 > it cost real marks in a customer evaluation for features that already
 > shipped. When you close a gap, delete the line in the same commit.
 
-- **Ten filing generators have no blade view** — `form1`, `form2`, `form6`, `form19`, `form31`, `form124`, `eshram_registration`, `se_registration`, `shram_card_registration`, `uan_activation`. Only `form12ba`, `form16` and `form16_annual` exist under `resources/views/filings/`. `FilingGeneratorRegistry` resolves availability from the filesystem, so these are now reported as *unavailable* rather than attempted and failed — writing a template is the whole act of shipping its filing. This is real statutory work, not a stub.
+- **Four filings are schedules rather than statutory returns.** All nineteen generators now produce output: the ten declaration forms have templates under `resources/views/filings/`. But `eshram_registration`, `shram_card_registration`, `se_registration` and `form_1` are **preparation sheets**, not returns — e-SHRAM covers unorganised workers so most of a PF-deducting payroll is ineligible, and S&E registration is state legislation filed on each state's own form. Each says so on its face. Nothing here submits anything: every filing is a document a human uploads.
 - **SCIM has no group provisioning.** Users sync and deprovision, and a token is issued from Settings → Single sign-on. `/Groups` is unimplemented, so people sync but the roles they should get do not.
-- **No offer letter, e-signature or background verification.**
 - **Recruitment has no careers page, and BGV has no vendor integration.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, a signed offer letter, and consent-gated background verification all exist and all have screens. What is missing is a public careers page a candidate can browse and apply from, and a connection to AuthBridge/IDfy — today a human records the BGV findings. No engagement surveys or HR helpdesk either.
 - **Rostering has no drag-and-drop calendar.** Patterns, generation, publishing, coverage and swaps all have a screen at `/roster` (see below). What is missing is direct manipulation — a manager sets a one-off day through the API rather than by dragging a shift onto a cell.
 - **No biometric device ingestion beyond ADMS push.** The push protocol is implemented (see below), which covers eSSL, ZKTeco, Biomax and Matrix terminals configured to post to a cloud server. Devices that only offer SDK pull, or that sit on a LAN with no outbound route, still cannot talk to this.
-- **Accounting export has no UI and no direct API push.** A payroll run exports to Tally XML and a Zoho Books journal CSV as a file (see below); what is missing is a screen to preview and download it, and a live connection that posts into Zoho rather than producing a file somebody imports.
+- **Accounting export has no direct API push.** A payroll run exports to Tally XML and a Zoho Books journal CSV, previewed and downloaded from Payroll → Reports → Accounting (`AccountingExportPicker`). What is missing is a live connection that posts into Zoho or Tally rather than producing a file somebody imports by hand.
 - **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.
 - **0 Laravel policies.** Authorization is inline in controllers, though the `Role`/`Permission` schema and `hasPermission()` are real and maker-checker now covers the full payroll chain.
 - **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.
-- **One error boundary for the whole app.** See `frontend/src/main.tsx`.
+- **Error boundaries are per-route, not per-widget.** `RouteErrorBoundary` wraps the routed area and resets on `location.pathname`, so a crash costs one page and navigating away clears it; `RootErrorBoundary` in `main.tsx` remains the last resort. What is still missing is boundaries around individual widgets — one failing card still takes its whole page.
 
 ### Not gaps — these were on this list and are built
 
