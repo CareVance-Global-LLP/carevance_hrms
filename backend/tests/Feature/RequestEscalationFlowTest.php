@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Carbon\Carbon;
 use App\Models\AppNotification;
 use App\Models\AttendanceTimeEditRequest;
 use App\Models\Group;
@@ -15,6 +16,26 @@ use Tests\TestCase;
 class RequestEscalationFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * Pin the clock to a Monday.
+     *
+     * Every request here is dated now(), and a leave request that covers no
+     * working day is refused with a 422 - correctly. So the leave test passed
+     * from Monday to Friday and failed every weekend, which is both invisible
+     * on a weekday and impossible to reproduce when somebody looks on Monday.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Carbon::setTestNow(Carbon::parse('2026-08-24 09:00:00'));
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
 
     private function makeHierarchy(Organization $organization): array
     {
