@@ -1100,7 +1100,37 @@ class PayrollFilingController extends Controller
             $query->where('period_year', $request->period_year);
         }
 
-        return response()->json($query->orderBy('created_at', 'desc')->paginate(20));
+        /*
+         * Counts over the WHOLE filtered set, not the page.
+         *
+         * The screen's metric cards used to count the rows it had been handed,
+         * which is a page of twenty — so an organisation with 141 filings read
+         * "Generated 20 · Awaiting filing 20" and would have read exactly that
+         * for ever, however many it filed. A number that stops moving is worse
+         * than no number, because people go on trusting it.
+         *
+         * Cloned before pagination so the filters still apply.
+         */
+        $counts = (clone $query)
+            ->selectRaw('status, COUNT(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $page = $query->orderBy('created_at', 'desc')->paginate(20);
+
+        return response()->json(array_merge($page->toArray(), [
+            'counts' => [
+                'all' => (int) $counts->sum(),
+                // Produced, and still sitting with us.
+                'awaiting_filing' => (int) ($counts['generated'] ?? 0)
+                    + (int) ($counts['submitted'] ?? 0)
+                    + (int) ($counts['approved'] ?? 0),
+                'filed' => (int) ($counts['filed'] ?? 0),
+                'acknowledged' => (int) ($counts['acknowledged'] ?? 0),
+                'failed' => (int) ($counts['error'] ?? 0),
+                'by_status' => $counts,
+            ],
+        ]));
     }
 
     public function downloadFiling(int $id)

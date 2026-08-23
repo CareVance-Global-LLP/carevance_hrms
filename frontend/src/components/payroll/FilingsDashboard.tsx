@@ -102,149 +102,168 @@ const FILING_CARDS: Array<{
   needsBonusPercent?: boolean;
   complianceStatus: ComplianceStatus;
   tooltip: string;
-  pattern: 'A' | 'B' | 'C';
   nextAction: string;
   deadlineRule: string;
 }> = [
   {
     key: 'pf_ecr', relevance: 'blue_collar', label: 'PF — ECR', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'ready',
     nextAction: 'Download → Upload to EPFO portal → Mark Filed',
     deadlineRule: '15th of the next month',
     tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO. Generated in EPFO\'s actual ECR text format (UAN, wages, PF/EPS splits, 11-column ||-delimited). Upload-ready. Due by the 15th of the next month.',
   },
   {
     key: 'esi_challan', relevance: 'blue_collar', label: 'ESI — Challan', needsRun: true,
-    complianceStatus: 'reference_only', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to ESIC portal → Mark Filed',
     deadlineRule: '15th of the next month',
     tooltip: 'An Excel (.xls) template matching the ESIC portal upload format with columns: IP Number, IP Name, No of Days, Total Monthly Wages, Reason Code, Last Working Day. Employer Code is entered separately on the portal.',
   },
   {
     key: 'form_24q', relevance: 'staff', label: 'TDS — 24Q', needsRun: true,
-    complianceStatus: 'reference_only', pattern: 'B',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload via NSDL RPU → Mark Filed',
     deadlineRule: '15 days after quarter end',
     tooltip: 'Generated in NSDL FVU format — a ^-delimited ASCII .txt file with \\r\\n line endings, containing FH/BH/CD/DD/SD record types. Ready for upload to TDS-CPC after validation.',
   },
   {
     key: 'form_16', relevance: 'staff', label: 'Form 16', needsRun: false,
-    complianceStatus: 'needs_external_input', pattern: 'C',
+    complianceStatus: 'needs_external_input',
     nextAction: 'Generate Part B → Download TRACES Part A → Attach',
     deadlineRule: '15 June (annual)',
     tooltip: 'Form 16 Part B (Salary Statement) — generated as a real PDF from the employee\'s aggregated FY payroll. Part A (with the TRACES certificate number) must be downloaded from TRACES after quarterly TDS filing and attached separately; this system cannot mint that number.',
   },
   {
     key: 'pt_return', relevance: 'blue_collar', label: 'PT', needsRun: true, needsState: true,
-    complianceStatus: 'reference_only', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to state tax portal → Mark Filed',
     deadlineRule: 'Varies by state',
     tooltip: 'State-level Professional Tax contribution summary for manual entry / reference. The actual PT payment/return is made on the state commercial tax department portal. Due dates vary by state.',
   },
   {
     key: 'lwf_return', relevance: 'blue_collar', label: 'LWF', needsRun: true, needsState: true,
-    complianceStatus: 'not_configured', pattern: 'A',
+    complianceStatus: 'not_configured',
     nextAction: 'Select state → Download → Upload to state portal → Mark Filed',
     deadlineRule: 'State-dependent',
     tooltip: 'Labour Welfare Fund is a state subject with no universal formula. Pick your state to generate; if your state\'s rate is not configured, you\'ll see a clear "Not configured" message instead of a wrong number. Periodicity varies (monthly / bi-annual) by state.',
   },
   {
     key: 'bonus_form_c', relevance: 'blue_collar', label: 'Bonus — Form C', needsRun: true, needsBonusPercent: true,
-    complianceStatus: 'not_configured', pattern: 'B',
+    complianceStatus: 'not_configured',
     nextAction: 'Download → Upload to portal → Mark Filed',
     deadlineRule: 'By 15 June (annual)',
     tooltip: 'Annual Return under the Payment of Bonus Act — Form C. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. Generated as a text summary of annual wages and bonus amounts.',
   },
   {
     key: 'bonus_form_d', relevance: 'blue_collar', label: 'Bonus — Form D', needsRun: true, needsBonusPercent: true,
-    complianceStatus: 'not_configured', pattern: 'B',
+    complianceStatus: 'not_configured',
     nextAction: 'Download → Maintain as employer record',
     deadlineRule: 'By 15 June (annual)',
     tooltip: 'Register of Bonus Paid/Claimable under the Payment of Bonus Act — Form D. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. A statutory record maintained by the employer.',
   },
   {
     key: 'form_19', relevance: 'blue_collar', label: 'Form 19', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'On termination',
     tooltip: 'Final Settlement statement for employees who have left the organization. Includes settlement amount, gratuity, and exit details.',
   },
   {
     key: 'form_31', relevance: 'staff', label: 'Form 31', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'On transfer',
     tooltip: 'Transfer Application form for employees changing departments or locations. Includes transfer details and salary information.',
   },
   {
     key: 'form_1', relevance: 'registration', label: 'Form 1', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'On joining',
     tooltip: 'Employer Registration form containing organization details, PAN, TAN, and statutory registration numbers.',
   },
   {
     key: 'form_2', relevance: 'blue_collar', label: 'Form 2', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Monthly',
     tooltip: 'Employee Registration form listing all active employees with their statutory details (PAN, UAN, ESI, joining date).',
   },
   {
     key: 'form_6', relevance: 'blue_collar', label: 'Form 6', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Monthly',
     tooltip: 'Monthly Return summarizing employee contributions (PF, ESI, TDS) for the payroll period.',
   },
   {
     key: 'eshram_registration', relevance: 'registration', label: 'e-SHRAM', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to e-SHRAM portal',
     deadlineRule: 'On joining',
     tooltip: 'e-SHRAM registration details for the organization and its employees, submitted to the ESIC portal.',
   },
   {
     key: 'uan_activation', relevance: 'blue_collar', label: 'UAN Activation', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to UAN portal',
     deadlineRule: 'On joining',
     tooltip: 'UAN activation status for employees — tracks which employees have activated their Universal Account Numbers.',
   },
   {
     key: 'se_registration', relevance: 'registration', label: 'S&E Registration', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Annual',
     tooltip: 'State & Employer registration details for statutory compliance reporting.',
   },
   {
     key: 'shram_card_registration', relevance: 'registration', label: 'Shram Card', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to labour portal',
     deadlineRule: 'On joining',
     tooltip: 'Shram Card registration details for employees, submitted to the labour department portal.',
   },
   {
     key: 'form_124', relevance: 'staff', label: 'Form 124', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Monthly',
     tooltip: 'Form 124 — monthly statutory return with employee salary and TDS details.',
   },
   {
     key: 'full_ecr', relevance: 'staff', label: 'Full ECR', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to EPFO portal → Mark Filed',
     deadlineRule: '15th of the next month',
     tooltip: 'Full Electronic Challan cum Return with extended employee details (UAN, bank account, designation). Generated in EPFO\'s ||-delimited text format.',
   },
 ];
 
-const PATTERN_BADGE: Record<'A' | 'B' | 'C', { label: string; className: string; borderColor: string }> = {
-  A: { label: 'Pattern A: Upload-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', borderColor: 'border-emerald-500' },
-  B: { label: 'Pattern B: Reference', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
-  C: { label: 'Pattern C: External input', className: 'bg-orange-50 text-orange-700 border-orange-200', borderColor: 'border-orange-500' },
+/*
+ * ONE classification, not two.
+ *
+ * Each card used to carry a hand-written `pattern` A/B/C *and* a
+ * `complianceStatus`, both answering "can I upload this straight to the
+ * portal?". Five of nineteen disagreed with themselves - ESI read
+ * "Pattern A: Upload-ready" beside "Reference only - manual portal entry
+ * required", on the same card, at the same time.
+ *
+ * The badge is now derived from complianceStatus, so the two cannot drift
+ * apart again. complianceStatus itself mirrors what the generator stores on
+ * the filing row; if you change one, change the other.
+ */
+const PATTERN_BADGE: Record<ComplianceStatus, { label: string; className: string; borderColor: string }> = {
+  ready: { label: 'Upload-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', borderColor: 'border-emerald-500' },
+  reference_only: { label: 'Reference only', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
+  needs_external_input: { label: 'Needs external input', className: 'bg-orange-50 text-orange-700 border-orange-200', borderColor: 'border-orange-500' },
+  not_configured: { label: 'Not configured', className: 'bg-slate-100 text-slate-600 border-slate-200', borderColor: 'border-slate-400' },
+  // A generator whose statutory template has not been written. It cannot be
+  // produced at all, so "upload-ready" is not a question that applies.
+  unavailable: { label: 'Not available yet', className: 'bg-slate-100 text-slate-600 border-slate-200', borderColor: 'border-slate-300' },
+  // Correct figures for an employer's own records, drawn from payroll data,
+  // but not a prescribed return.
+  source_data_only: { label: 'Source data only', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
 };
 
 type FilingGuidance = {
@@ -740,12 +759,28 @@ export default function FilingsDashboard() {
 
   const payGroups = (payGroupSettingsData as any)?.pay_groups ?? [];
 
-  const filingStats = {
-    generated: filingsList.length,
-    filed: filingsList.filter((f: any) => f.status === 'filed' || f.status === 'acknowledged').length,
-    pending: filingsList.filter((f: any) => f.status === 'generated' || f.status === 'pending').length,
-    failed: filingsList.filter((f: any) => f.status === 'failed').length,
-  };
+  /*
+   * Counted by the server over every filing, not by us over one page.
+   *
+   * These four used to be computed from `filingsList`, which is a page of
+   * twenty - so an organisation with 141 filings read "Generated 20 · Awaiting
+   * filing 20" and would have read exactly that for ever. The fallback keeps
+   * the old page-local arithmetic only for a server that predates `counts`.
+   */
+  const serverCounts = (filingsData as any)?.counts;
+  const filingStats = serverCounts
+    ? {
+        generated: serverCounts.all ?? 0,
+        filed: (serverCounts.filed ?? 0) + (serverCounts.acknowledged ?? 0),
+        pending: serverCounts.awaiting_filing ?? 0,
+        failed: serverCounts.failed ?? 0,
+      }
+    : {
+        generated: filingsList.length,
+        filed: filingsList.filter((f: any) => f.status === 'filed' || f.status === 'acknowledged').length,
+        pending: filingsList.filter((f: any) => f.status === 'generated' || f.status === 'pending').length,
+        failed: filingsList.filter((f: any) => f.status === 'failed').length,
+      };
 
   // When a run is selected, find its pay group and populate state defaults from filing_details
   const selectedRunData = runsList.find((r: any) => r.id === selectedRun);
@@ -1193,7 +1228,7 @@ export default function FilingsDashboard() {
                 const badge = card.available
                   ? FILING_DISPLAY[state]
                   : COMPLIANCE_BADGE.unavailable;
-                const patternBadge = PATTERN_BADGE[card.pattern];
+                const patternBadge = PATTERN_BADGE[card.complianceStatus] ?? PATTERN_BADGE.reference_only;
                 const runReady = runValidation?.ready === true || (selectedRunData?.status && ['locked', 'approved', 'processed'].includes(selectedRunData.status));
                 const runBlocked = !!selectedRun && !runReady;
                 const disabled = generateSingleMutation.isPending || !!runBlocked;
@@ -1242,10 +1277,22 @@ export default function FilingsDashboard() {
                       </p>
                     )}
                     {card.available ? (
-                      <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
-                        <HelpCircle className="h-3 w-3" />
-                        {card.nextAction}
-                      </p>
+                      /*
+                       * Only while there is still something to do.
+                       *
+                       * This is a fixed "Download → Upload to the portal → Mark
+                       * Filed" line, so an ACKNOWLEDGED return went on
+                       * instructing somebody to file it. A card that tells you
+                       * to do what you have already done is worse than a card
+                       * that says nothing: it makes the reader doubt the status
+                       * chip sitting directly above it.
+                       */
+                      isFiled ? null : (
+                        <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                          <HelpCircle className="h-3 w-3" />
+                          {card.nextAction}
+                        </p>
+                      )
                     ) : (
                       <p className="text-xs text-slate-600 mb-2 flex items-start gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
                         <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />

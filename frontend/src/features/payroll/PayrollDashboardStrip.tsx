@@ -68,6 +68,25 @@ export default function PayrollDashboardStrip({ monthYear }: { monthYear?: strin
   const hasRun = Boolean(figures?.status);
   const runStatus = String(figures?.status ?? '');
 
+  /*
+   * Does gross minus deductions actually equal net?
+   *
+   * Found on a real run: gross 1,20,795, deductions 1,47,964, net 0. That row
+   * predates the current calculator and lumps the LOP deduction into the
+   * total, so the same wages come off twice and the arithmetic on screen
+   * cannot be made to work.
+   *
+   * Three impossible numbers side by side is the worst thing to put in front
+   * of a finance person, because the only available reading is that the
+   * product cannot add up. So when they do not reconcile the figures are NOT
+   * presented as fact - the discrepancy is named and pointed at the run, which
+   * is where it can be fixed. Tolerance is a rupee, for rounding.
+   */
+  const gross = Number(figures?.total_gross ?? 0);
+  const deductions = Number(figures?.total_deductions ?? 0);
+  const net = Number(figures?.total_net_pay ?? 0);
+  const reconciles = hasRun ? Math.abs(gross - deductions - net) <= 1 : true;
+
   const readiness = [
     { label: 'No bank account', value: attention?.attention?.missing_bank_details ?? 0, to: '/employees' },
     { label: 'Missing PAN or UAN', value: attention?.attention?.missing_pan_uan ?? 0, to: '/employees' },
@@ -122,6 +141,23 @@ export default function PayrollDashboardStrip({ monthYear }: { monthYear?: strin
             </p>
             <Link to="/payroll" className="text-xs font-medium text-blue-600 hover:text-blue-700">
               Create this month&rsquo;s run
+            </Link>
+          </div>
+        ) : !reconciles ? (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-medium text-amber-900">
+              This run&rsquo;s totals don&rsquo;t reconcile.
+            </p>
+            <p className="mt-1 text-xs text-amber-800">
+              Gross {money(gross)} less deductions {money(deductions)} does not equal the recorded net
+              pay of {money(net)}. The figures are withheld rather than shown, because a total nobody
+              can reconcile is worse than no total.
+            </p>
+            <Link
+              to="/payroll"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-900 underline underline-offset-2"
+            >
+              Open the run to see which employees are affected <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
         ) : (
