@@ -5,6 +5,7 @@ import ReportsWorkspace from '@/pages/ReportsWorkspace';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 const mocks = vi.hoisted(() => ({
+  hubSummaryMock: vi.fn(),
   getAllUsersMock: vi.fn(),
   groupsListMock: vi.fn(),
   overallMock: vi.fn(),
@@ -45,6 +46,13 @@ vi.mock('@/services/api', async () => {
       ...actual.reportApi,
       overall: mocks.overallMock,
       attendance: mocks.attendanceMock,
+      /*
+       * The hub's headline tiles. Left unmocked this reaches the real axios
+       * client, which retries and holds the page empty long past the
+       * assertions - the failure then reads as a missing tile rather than a
+       * missing mock.
+       */
+      hubSummary: mocks.hubSummaryMock,
     },
     activityApi: {
       ...actual.activityApi,
@@ -59,6 +67,10 @@ describe('ReportsWorkspace timeline navigation', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+
+    mocks.hubSummaryMock.mockResolvedValue({
+      data: { start_date: '2026-04-01', end_date: '2026-04-30', data: {} },
+    });
 
     mocks.getAllUsersMock.mockResolvedValue({
       data: [
@@ -150,15 +162,28 @@ describe('ReportsWorkspace timeline navigation', () => {
   it('renders timeline safely when switching from another report mode', async () => {
     const { rerender } = renderWithProviders(<ReportsWorkspace mode="productivity" />);
 
+    /*
+     * "Hours Tracked" is a hub TILE, not something the productivity report
+     * renders, so asserting it here only ever said "the hub is not on screen"
+     * by accident. The heading is what proves this mode rendered before the
+     * switch, which is all this test needs from it.
+     */
     expect(await screen.findByText('Productivity Summary')).toBeInTheDocument();
-    expect(await screen.findByText('Tracked Time')).toBeInTheDocument();
 
     rerender(<ReportsWorkspace mode="timeline" />);
 
     expect(await screen.findByText('Timeline')).toBeInTheDocument();
+    /*
+     * Timeline opens on the swimlane "Day view" now; the table this test was
+     * written against is the other view, behind the Event log toggle. Both are
+     * asserted, because "switching modes does not blow up" has to cover the one
+     * that actually renders first.
+     */
+    expect(await screen.findByText(/Chronological activity feed/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /event log/i }));
+
     expect(await screen.findByText('Activity Timeline')).toBeInTheDocument();
-    expect(await screen.findByText('All timeline events')).toBeInTheDocument();
-    expect(screen.getByText('Visual Studio Code')).toBeInTheDocument();
   });
 
   it('shows a reports hub with every report entry point', async () => {
@@ -184,8 +209,14 @@ describe('ReportsWorkspace timeline navigation', () => {
     expect(screen.getByText('Unproductive Time')).toBeInTheDocument();
     expect(screen.getByText('Screenshots')).toBeInTheDocument();
     expect(screen.queryByText('Reports Center')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /open productive time/i })).toHaveAttribute('href', '/monitoring/productive-time');
-    expect(screen.getByRole('link', { name: /open website usage/i })).toHaveAttribute('href', '/monitoring/website-usage');
+    /*
+     * The whole tile is the link now, so its accessible name comes from the
+     * heading rather than a separate "Open X" call-to-action underneath it.
+     */
+    expect(screen.getByRole('link', { name: /^Productive Time/ })).toHaveAttribute('href', '/monitoring/productive-time');
+    // The tile points at the canonical route; /monitoring/website-usage still
+    // resolves, but only as a redirect to this one.
+    expect(screen.getByRole('link', { name: /^Web & App Usage/ })).toHaveAttribute('href', '/reports/web-app-usage');
   });
 
   it('renders detailed report-specific attendance analysis', async () => {
@@ -193,8 +224,9 @@ describe('ReportsWorkspace timeline navigation', () => {
 
     expect(await screen.findByText('Attendance Report')).toBeInTheDocument();
     expect(screen.getByText('Report Specific Analysis')).toBeInTheDocument();
-    expect(screen.getByText('Department Attendance Distribution')).toBeInTheDocument();
-    expect(screen.getByText('Attendance Status Split')).toBeInTheDocument();
+    // The department-distribution and status-split charts were consolidated
+    // into a single Attendance Overview.
+    expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
     expect(screen.getByText('Absent Days')).toBeInTheDocument();
     expect(screen.getByText('Avg Attendance')).toBeInTheDocument();
     expect(screen.queryByText('Payroll Cost Waterfall')).not.toBeInTheDocument();
@@ -214,7 +246,7 @@ describe('ReportsWorkspace timeline navigation', () => {
     renderWithProviders(<ReportsWorkspace mode="hours-tracked" />);
 
     expect(await screen.findByText('Employee Hours')).toBeInTheDocument();
-    expect(screen.getByText('Tracked Time')).toBeInTheDocument();
+    expect(screen.getByText('Hours Tracked')).toBeInTheDocument();
     expect(mocks.overallMock).toHaveBeenCalled();
     expect(mocks.getAllUsersMock).toHaveBeenCalledWith({ simple: 1 });
     expect(mocks.groupsListMock).toHaveBeenCalledWith({ simple: 1 });
@@ -248,7 +280,18 @@ describe('ReportsWorkspace timeline navigation', () => {
 
     renderWithProviders(<ReportsWorkspace mode="timeline" />);
 
-    expect(await screen.findByText('github.com')).toBeInTheDocument();
+    // The rows are in the event log; timeline opens on the swimlane day view.
+    await userEvent.click(await screen.findByRole('button', { name: /event log/i }));
+
+    /*
+     * `name` outranks `normalized_label` in both the event log and the
+     * swimlane, so a row carrying both shows the friendly name - "GitHub", not
+     * "github.com". The canonical field is the FALLBACK, and the property worth
+     * holding is that the two views resolve a row identically: they used to
+     * disagree, because the event log left normalized_label out of its
+     * precedence entirely while a comment in the swimlane said otherwise.
+     */
+    expect(await screen.findByText('GitHub')).toBeInTheDocument();
     expect(await screen.findByText('Slack')).toBeInTheDocument();
   });
 

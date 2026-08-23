@@ -216,7 +216,7 @@ describe('DesktopTimerDashboard', () => {
     mocks.todayMock.mockResolvedValue({ data: { time_entries: [], total_duration: 0 } });
   });
 
-  it('removes the project selector and updates the running timer from the task selector only', async () => {
+  it('removes the project selector and splits the untasked stretch into its own entry', async () => {
     const user = userEvent.setup();
 
     renderWithProviders(<DesktopTimerDashboard />);
@@ -232,9 +232,22 @@ describe('DesktopTimerDashboard', () => {
     await user.click(screen.getByRole('button', { name: /active timer task/i }));
     await user.click(screen.getByRole('option', { name: /write sync logic - digital marketing/i }));
 
+    /*
+     * Attaching a task to a timer that had none STOPS and restarts rather than
+     * updating in place. Updating in place would retroactively relabel time
+     * already worked without a task, so the untasked stretch stays its own
+     * entry and the new task starts clean.
+     *
+     * The task's move to in_progress is no longer done from here: the start
+     * endpoint does it server-side (TimeEntryController, for employees), and
+     * asserting the old client-side call would have this test failing on
+     * duplication that was correctly removed.
+     */
     await waitFor(() => {
-      expect(mocks.updateMock).toHaveBeenCalledWith(99, expect.objectContaining({ project_id: 7, task_id: 42 }));
-      expect(mocks.updateTaskStatusMock).toHaveBeenCalledWith(42, 'in_progress');
+      expect(mocks.stopMock).toHaveBeenCalled();
+      expect(mocks.startMock).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: 7, task_id: 42 })
+      );
     });
   });
 
@@ -246,7 +259,11 @@ describe('DesktopTimerDashboard', () => {
 
     expect(await screen.findByText(/timer running/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /active timer task/i })).toBeDisabled();
-    expect(screen.getByText(/no tasks are currently available for your assigned groups/i)).toBeInTheDocument();
+    // The wording widened from "your assigned groups" to cover the project
+    // filter as well - the empty list has two causes and used to name only one.
+    expect(
+      screen.getByText(/no tasks are available for the selected project and your assigned access/i)
+    ).toBeInTheDocument();
   });
 
   it('keeps the timer stopped after a manual stop', async () => {
@@ -356,7 +373,15 @@ describe('DesktopTimerDashboard', () => {
     });
 
     expect(screen.getAllByText('00:00:00').length).toBeGreaterThan(0);
-    expect(screen.getByText(/today's attendance worked: 0h 15m/i)).toBeInTheDocument();
+    /*
+     * The 15 minutes already worked survive the stop. That used to read
+     * "Today's attendance worked: 0h 15m"; the figure now drives Shift
+     * Remaining instead, so 8h target minus 15m worked is the same fact on the
+     * surface that still shows it. "Work Time" is a DIFFERENT number - work net
+     * of idle, off today_work_time in the summary - and asserting that one here
+     * would pass on a fixture that never mentioned attendance at all.
+     */
+    expect(screen.getByText('07:45:00')).toBeInTheDocument();
 
     await waitFor(() => {
       expect(mocks.startMock).toHaveBeenCalledTimes(1);
@@ -437,7 +462,10 @@ describe('DesktopTimerDashboard', () => {
 
     expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
     expect(screen.getAllByText('00:00:00').length).toBeGreaterThan(0);
-    expect(screen.getByText(/today's attendance worked: 1h 0m/i)).toBeInTheDocument();
+    // Same fact, current surface: the worked figure drives Shift Remaining now
+    // rather than a "today's attendance worked" line of its own. 8h target less
+    // the hour already worked.
+    expect(screen.getByText('07:00:00')).toBeInTheDocument();
     expect(localStorage.getItem('active_timer_snapshot')).toBeNull();
   });
 
@@ -557,8 +585,10 @@ describe('DesktopTimerDashboard', () => {
 
     expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
     expect(screen.getByText(/timer paused/i)).toBeInTheDocument();
+    // 8h target less the two minutes held in the persisted baseline, which is
+    // the whole point here: the backend still says zero, and the countdown must
+    // not jump back to a full shift because of it.
     expect(screen.getByText('07:58:00')).toBeInTheDocument();
-    expect(screen.getByText(/today's attendance worked: 0h 2m/i)).toBeInTheDocument();
   });
 
   it('keeps today entries and worked totals when task options request fails', async () => {
@@ -613,7 +643,10 @@ describe('DesktopTimerDashboard', () => {
 
     expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
     expect(screen.getByText(/prepare campaign brief/i)).toBeInTheDocument();
-    expect(screen.getByText(/today's attendance worked: 0h 5m/i)).toBeInTheDocument();
+    // Same fact, current surface: 8h target less the five minutes worked. The
+    // point is that a failed task-options request does not take the worked
+    // total down with it.
+    expect(screen.getByText('07:55:00')).toBeInTheDocument();
     expect(screen.getByText(/some dashboard data could not be loaded/i)).toBeInTheDocument();
   });
 
@@ -692,8 +725,10 @@ describe('DesktopTimerDashboard', () => {
 
     expect(await screen.findByRole('button', { name: /start timer/i })).toBeInTheDocument();
     expect(screen.getByText(/timer paused/i)).toBeInTheDocument();
+    // Nine hours held in the baseline against an eight-hour target, so the hour
+    // of overtime survives all three endpoints being down. That is the fact
+    // worth holding: a failed reload must not erase overtime already worked.
     expect(screen.getByText('01:00:00')).toBeInTheDocument();
-    expect(screen.getByText(/today's attendance worked: 9h 0m/i)).toBeInTheDocument();
   });
 
   it('shows a leave-specific red error when timer start is blocked by approved leave', async () => {

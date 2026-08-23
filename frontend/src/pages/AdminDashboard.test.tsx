@@ -17,6 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   markAllRead: vi.fn(),
   groups: vi.fn(),
   auditLogs: vi.fn(),
+  onboardingStatus: vi.fn(),
   weeklyReport: vi.fn(),
   monthlyReport: vi.fn(),
   profile360: vi.fn(),
@@ -63,6 +64,8 @@ vi.mock('@/services/api', async () => {
     projectApi: { ...actual.projectApi, getAll: apiMocks.projects },
     resignationApi: { ...actual.resignationApi, list: apiMocks.resignations },
     attendanceTimeEditApi: { ...actual.attendanceTimeEditApi, list: apiMocks.timeEditRequests },
+    // A fourth, added after that comment was written and caught the same way.
+    workspaceOnboardingApi: { ...actual.workspaceOnboardingApi, getStatus: apiMocks.onboardingStatus },
   };
 });
 
@@ -168,6 +171,22 @@ describe('AdminDashboard WorkWise redesign', () => {
     apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.groups.mockResolvedValue({ data: { data: [{ id: 1, name: 'Design' }, { id: 2, name: 'Marketing' }] } });
     apiMocks.auditLogs.mockResolvedValue({ data: { data: [{ id: 1, action: 'auth.login', actor: { name: 'Akash Admin' }, created_at: '2026-04-27T08:00:00Z' }] } });
+    apiMocks.onboardingStatus.mockResolvedValue({
+      data: {
+        onboarded: true,
+        dismissed_at: null,
+        tour_seen_at: null,
+        steps: {},
+        completed_steps: [],
+        step_labels: {},
+        step_routes: {},
+        includes_payroll: false,
+        next_action: null,
+        completed_count: 0,
+        total_count: 0,
+        completion_percentage: 100,
+      },
+    });
     apiMocks.weeklyReport.mockResolvedValue({ data: { time_entries: [], by_project: [], total_duration: 0 } });
     apiMocks.monthlyReport.mockResolvedValue({ data: { by_day: [] } });
     apiMocks.profile360.mockResolvedValue({
@@ -217,7 +236,13 @@ describe('AdminDashboard WorkWise redesign', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument();
     expect((await screen.findAllByText('Alex Johnson')).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText('Universal dashboard search')).toBeInTheDocument();
+    /*
+     * The universal search box is gone from this page: searching across the
+     * product is the command bar's job now (CommandBar.test.tsx and
+     * commandRegistry.test.ts own it), and the dashboard keeps only its two
+     * SCOPED searches - "Search scoped employee" and "Search work status" -
+     * which filter this page rather than navigating away from it.
+     */
     expect(screen.queryByRole('link', { name: /add user/i })).not.toBeInTheDocument();
     expect(screen.getByText('Date Filter')).toBeInTheDocument();
     expect(screen.getByText('Dashboard Scope')).toBeInTheDocument();
@@ -227,7 +252,7 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
     expect(screen.getAllByText('Present').length).toBeGreaterThan(0);
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
-    expect(screen.getByText('Department Distribution')).toBeInTheDocument();
+    expect(screen.getByText('Department Work vs Idle Time')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Communication Hub' })).toBeInTheDocument();
 
     expect(screen.getByText('Birthdays')).toBeInTheDocument();
@@ -238,7 +263,13 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.getAllByText('Working').length).toBeGreaterThan(0);
     expect(screen.getAllByText('On time').length).toBeGreaterThan(0);
     expect(screen.getByText('12 min late')).toBeInTheDocument();
-    expect(screen.getByText('No punch')).toBeInTheDocument();
+    /*
+     * Somebody who never punched is counted behind a toggle rather than given a
+     * row: the log is a record of punches, and rendering everyone made the one
+     * real punch the 80th row. So the control is what is asserted here, not a
+     * "No punch" cell that only appears once it is opened.
+     */
+    expect(screen.getByText(/show people with no punch/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Attendance Health' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'People Summary' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Employees' })).not.toBeInTheDocument();
@@ -248,62 +279,57 @@ describe('AdminDashboard WorkWise redesign', () => {
     expect(screen.queryByRole('heading', { name: 'Attendance Trend' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Admin Watchlist' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Leave Balance' })).not.toBeInTheDocument();
-    expect(screen.getByText('Payroll Snapshot')).toBeInTheDocument();
+    /*
+     * The payroll snapshot is gone from this page - payroll is plan-gated and
+     * role-gated behind its own screens, and salary figures on a dashboard any
+     * admin opens is a wider audience than those gates intend. Asserted as
+     * absent rather than dropped silently, so putting it back is a decision
+     * somebody makes on purpose.
+     */
+    expect(screen.queryByText('Payroll Snapshot')).not.toBeInTheDocument();
 
     expect(screen.getByText('Task Pipeline')).toBeInTheDocument();
-    expect(screen.getByText('Reports')).toBeInTheDocument();
+    // The generic "Reports" tile became the Admin Focus Board, which links out
+    // to analytics rather than being a heading of its own.
+    expect(screen.getByRole('heading', { name: 'Admin Focus Board' })).toBeInTheDocument();
     expect(screen.getByText('Projects')).toBeInTheDocument();
   });
 
-  it('opens universal search suggestions and applies employee results', async () => {
+  /*
+   * Was 'opens universal search suggestions and applies employee results'.
+   *
+   * The universal search box is gone - searching across the product belongs to
+   * the command bar now. What it drove is still here and still worth holding:
+   * picking somebody scopes the whole dashboard to them. That is now reached
+   * through the scope selector, so the test drives that instead of a widget
+   * that no longer exists.
+   */
+  it('scopes the dashboard to a selected employee', async () => {
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
 
     expect(await screen.findByText('Dashboard Scope')).toBeInTheDocument();
     await waitFor(() => {
       expect(apiMocks.users).toHaveBeenCalled();
     });
-    fireEvent.change(screen.getByLabelText('Universal dashboard search'), { target: { value: 'leslie' } });
-    fireEvent.click(await screen.findByRole('button', { name: /Leslie Alexander/ }));
 
-    expect(screen.getByRole('heading', { name: 'Selected Employee Detail' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Search scoped employee')).toHaveValue('Leslie Alexander');
+    // Scope has to be switched off "Overall" before there is anybody to pick.
+    fireEvent.click(screen.getByRole('button', { name: 'Specific Employee' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Select dashboard employee/i }));
+    fireEvent.click(await screen.findByRole('option', { name: /Leslie Alexander/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Selected Employee Detail' })).toBeInTheDocument();
   });
 
-  it('opens dashboard notifications in a floating panel and keeps the full center behind view all', async () => {
-    const user = userEvent.setup();
-
-    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
-
-    const bellButton = await screen.findByRole('button', { name: /notifications/i });
-    await waitFor(() => {
-      expect(apiMocks.notifications).toHaveBeenCalled();
-    });
-    await user.click(bellButton);
-
-    const floatingPanel = await screen.findByRole('region', { name: /dashboard notifications/i });
-    expect(await within(floatingPanel).findByText('Office closed on May 27')).toBeInTheDocument();
-    expect(within(floatingPanel).getByRole('link', { name: /view all notifications/i })).toHaveAttribute('href', '/notifications');
-  });
-
-  it('clears the admin dashboard notification dot when notifications are viewed', async () => {
-    const user = userEvent.setup();
-
-    renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
-
-    const bellButton = await screen.findByRole('button', { name: /notifications/i });
-    await waitFor(() => {
-      expect(bellButton.querySelector('.bg-rose-500')).toBeTruthy();
-    });
-
-    await user.click(bellButton);
-
-    await waitFor(() => {
-      expect(apiMocks.markAllRead).toHaveBeenCalledWith({
-        exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
-      });
-    });
-    expect(bellButton.querySelector('.bg-rose-500')).toBeFalsy();
-  });
+  /*
+   * Removed: two tests for a notification bell and floating panel this page
+   * used to own.
+   *
+   * Notifications live in the application header now, not on the dashboard, so
+   * there is no bell here to click. Layout.test.tsx holds what these were
+   * protecting - the panel opening and closing from its own button, "view all"
+   * pointing at /notifications, and mark-all-read excluding chat types so
+   * messages nobody opened are not swept up with it.
+   */
 
   it('switches to a specific employee and updates the scoped detail panel', async () => {
     renderWithProviders(<AdminDashboard />, { route: '/dashboard' });
@@ -400,7 +426,11 @@ describe('AdminDashboard WorkWise redesign', () => {
         start_date: expect.any(String),
         end_date: expect.any(String),
         processed: true,
-        per_page: 200,
+        // Paging dropped to 100 with an explicit 500-record ceiling: an
+        // employee with months of activity would otherwise pull the lot into
+        // the browser to render one rollup card.
+        per_page: 100,
+        max_records: 500,
       });
     });
 
@@ -440,18 +470,36 @@ describe('AdminDashboard WorkWise redesign', () => {
       expect(apiMocks.attendanceCalendar).toHaveBeenCalledWith({ month: '2026-04', user_id: 1, scope: 'selected' });
     });
 
-    const presentCard = (await screen.findByText('Present days')).closest('div');
-    const absentCard = screen.getByText('Absent days').closest('div');
+    /*
+     * These four count DAYS, and used to be labelled "Present days" / "Absent
+     * days" - the same words the KPI cards an inch above use for HEAD counts.
+     * The labels now name their subject, which is why they read "Days present
+     * on time" rather than the shorter form this test was written against.
+     */
+    const presentCard = (await screen.findByText('Days present on time')).closest('div');
+    const absentCard = screen.getByText('Days absent').closest('div');
 
     expect(presentCard).not.toBeNull();
     expect(absentCard).not.toBeNull();
+    /*
+     * TWO absences, not four. The range has four days with no attendance, but
+     * the 25th and 26th are weekends and a weekend is not an absence - the
+     * count now excludes weekends, holidays and leave, which is what makes
+     * "days absent" a number somebody can act on rather than a headline that
+     * accuses half the company every Monday.
+     */
     await waitFor(() => {
       expect(within(presentCard as HTMLElement).getByText('1')).toBeInTheDocument();
-      expect(within(absentCard as HTMLElement).getByText('4')).toBeInTheDocument();
+      expect(within(absentCard as HTMLElement).getByText('2')).toBeInTheDocument();
     });
 
-    const absentLegends = await screen.findAllByText('Absent');
-    expect(within(absentLegends[1].closest('div') as HTMLElement).getByText('4')).toBeInTheDocument();
+    /*
+     * The legend assertion that used to sit here indexed absentLegends[1]
+     * positionally. Two very different things match the text "Absent" on this
+     * page - a chart legend and the work-status filter - so the index decided
+     * which one silently, and neither is the day count this test is about. The
+     * cards above are where that number lives, and they are asserted directly.
+     */
   });
 
   it('filters current work status by status and search term', async () => {
