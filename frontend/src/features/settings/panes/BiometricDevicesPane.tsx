@@ -108,7 +108,7 @@ export default function BiometricDevicesPane() {
 
           <div className="mt-2 space-y-2">
             {unmapped.map((row) => (
-              <div key={row.device_user_id} className="rounded border border-amber-200 bg-white p-2">
+              <div key={row.device_user_id} className="rounded border border-amber-200 bg-surface-card p-2">
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="font-mono font-medium text-slate-900">ID {row.device_user_id}</span>
                   <span className="text-xs text-slate-600 tabular-nums">
@@ -161,7 +161,7 @@ export default function BiometricDevicesPane() {
 
       <div className="space-y-2">
         {devices.map((device) => (
-          <div key={device.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div key={device.id} className="rounded-lg border border-slate-200 bg-surface-card p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Fingerprint className="h-4 w-4 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-950">{device.name}</span>

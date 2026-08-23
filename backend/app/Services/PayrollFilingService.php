@@ -1614,7 +1614,8 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': form_1 is an establishment-particulars registration sheet whose own template leaves PAN, PF code and ESI code blank.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
@@ -1775,7 +1776,8 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': e-SHRAM covers UNORGANISED workers and excludes EPFO members, so most of a PF-deducting payroll is ineligible.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
@@ -1821,7 +1823,8 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': this is a worklist of members needing a UAN, not a return anybody files.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
@@ -1854,7 +1857,8 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': Shops & Establishment is state legislation, filed on each state's own form.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
@@ -1898,7 +1902,8 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': same exclusion as e-SHRAM: EPFO members are not unorganised workers.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
@@ -1941,7 +1946,8 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': there is no central Form 124 for salary TDS; this is an internal statement.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
@@ -1964,12 +1970,21 @@ class PayrollFilingService
         $pfEstablishment = $entity?->pf_establishment_code
             ?: $this->orgStatutoryId($org, 'establishmentCode', ['pf_establishment_code', 'pf_code']);
 
+        /*
+         * Bare member rows. No banner, no column header, no totals footer.
+         *
+         * This file used to open with four title lines and a pipe-delimited
+         * header, and close with a rule and a totals line. EPFO's ECR upload
+         * parses the first line as a member record and rejects the file there -
+         * so a "Full ECR" that looked more complete than the plain PF ECR was
+         * the one that could not be uploaded. generatePfEcr already emits bare
+         * rows, which is why that one works.
+         *
+         * The establishment id and month are not lost: they identify the file
+         * through its filename and the filing row, which is where the portal
+         * expects them.
+         */
         $lines = [];
-        $lines[] = "FULL ECR - ELECTRONIC CHALLAN CUM RETURN";
-        $lines[] = "ESTABLISHMENT: {$org->name}";
-        $lines[] = "ESTABLISHMENT ID: {$pfEstablishment}";
-        $lines[] = "MONTH: {$run->month_year}";
-        $lines[] = "UAN||NAME||GROSS_WAGES||EPF_WAGES||EPS_WAGES||EDLI_WAGES||EPF_EE||EPS_ER||EPF_ER||NCP_DAYS||REFUND||EMPLOYEE_CODE||DESIGNATION||BANK_AC";
 
         $totalWages = 0;
         $totalEpf = 0;
@@ -2008,8 +2023,9 @@ class PayrollFilingService
             $totalEpf += (float) $item->pf_employee;
         }
 
-        $lines[] = str_repeat('-', 80);
-        $lines[] = sprintf("TOTAL EMPLOYEES: %d\tTOTAL GROSS: %.2f\tTOTAL EPF EE: %.2f", $items->count(), $totalWages, $totalEpf);
+        // The rule and the totals line used to be appended here. EPFO's parser
+        // reads them as member records, so they are recorded on the filing's
+        // meta_data below instead of inside the upload file.
 
         $content = implode("\n", $lines);
         $filename = sprintf('full_ecr_%s_%s.txt', $org->code ?? 'org', $run->month_year);
@@ -2023,14 +2039,20 @@ class PayrollFilingService
             'period_month' => explode('-', $run->month_year)[1] ?? date('m'),
             'period_year' => explode('-', $run->month_year)[0] ?? date('Y'),
             'status' => 'generated',
-            'compliance_status' => 'ready',
+            // Not 'ready': Full ECR duplicates PF ECR and is not the portal upload file.
+            'compliance_status' => 'reference_only',
             'file_path' => $path,
             'original_filename' => $filename,
             'generated_at' => now(),
             'generated_by' => $userId,
             'meta_data' => [
                 'format' => 'EPFO Full ECR with extended employee details',
-                'filing_ready' => true,
+                /*
+                 * False, and it contradicted compliance_status when it read
+                 * true. PF ECR is the file EPFO takes; this carries extra
+                 * columns for internal use and is not the portal upload.
+                 */
+                'filing_ready' => false,
                 'total_employees' => $items->count(),
                 'total_gross_wages' => $totalWages,
                 'total_epf_ee' => $totalEpf,

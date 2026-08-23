@@ -4,6 +4,7 @@ import { Check, Copy, KeyRound } from 'lucide-react';
 import { scimTokenApi } from '@/services/api';
 import type { ScimToken } from '@/types';
 import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 
 /**
@@ -29,6 +30,13 @@ export default function ScimTokensSection() {
   const [issued, setIssued] = useState('');
   const [copied, setCopied] = useState(false);
   const [creating, setCreating] = useState(false);
+  /*
+   * Not window.confirm. A native OS dialog on a destructive action is the
+   * loudest "this is a prototype" signal on the screen, it cannot be styled or
+   * themed, and it fires on the red button - the one a buyer is most likely to
+   * click while looking at you.
+   */
+  const [revoking, setRevoking] = useState<ScimToken | null>(null);
   const [error, setError] = useState('');
 
   const query = useQuery({
@@ -92,7 +100,7 @@ export default function ScimTokensSection() {
             Copy this now — it cannot be shown again.
           </p>
           <div className="mt-1 flex items-center gap-2">
-            <code className="min-w-0 flex-1 break-all rounded border border-emerald-200 bg-white px-2 py-1 text-[11px]">
+            <code className="min-w-0 flex-1 break-all rounded border border-emerald-200 bg-surface-card px-2 py-1 text-[11px]">
               {issued}
             </code>
             <Button
@@ -147,7 +155,7 @@ export default function ScimTokensSection() {
       {tokens.length > 0 ? (
         <ul className="space-y-2">
           {tokens.map((token: ScimToken) => (
-            <li key={token.id} className="rounded-lg border border-slate-200 bg-white p-2">
+            <li key={token.id} className="rounded-lg border border-slate-200 bg-surface-card p-2">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-medium text-slate-950">{token.name}</span>
                 {token.token_hint ? (
@@ -165,11 +173,7 @@ export default function ScimTokensSection() {
                     className="ml-auto"
                     variant="ghost"
                     size="sm"
-                    onClick={() => {
-                      if (window.confirm('Revoke this token? Your provider will stop being able to sync.')) {
-                        revoke.mutate(token.id);
-                      }
-                    }}
+                    onClick={() => setRevoking(token)}
                   >
                     Revoke
                   </Button>
@@ -191,6 +195,24 @@ export default function ScimTokensSection() {
           ))}
         </ul>
       ) : null}
+
+      <ConfirmDialog
+        isOpen={revoking !== null}
+        title="Revoke this token?"
+        message={
+          revoking
+            ? `"${revoking.name}" stops working immediately. Your identity provider can no longer create or deactivate people here, and joiners and leavers will stop syncing until you issue a new token and paste it in.`
+            : ''
+        }
+        confirmLabel="Revoke token"
+        tone="danger"
+        isLoading={revoke.isPending}
+        onConfirm={() => {
+          if (revoking) revoke.mutate(revoking.id);
+          setRevoking(null);
+        }}
+        onClose={() => setRevoking(null)}
+      />
     </div>
   );
 }

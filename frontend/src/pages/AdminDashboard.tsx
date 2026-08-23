@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import PayrollDashboardStrip from '@/features/payroll/PayrollDashboardStrip';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -2100,6 +2101,17 @@ export default function AdminDashboard() {
           </div>
         ) : null}
       </Card>
+
+      {/*
+        Payroll leads.
+
+        This file is 3,263 lines in which the word "payroll" did not appear
+        once — an administrator opening a payroll product landed on attendance
+        and screenshot-tracker widgets. Money, statutory deadlines and the
+        defects blocking this month's run go above them. No new backend: both
+        endpoints were already routed and already returned these fields.
+      */}
+      <PayrollDashboardStrip />
 
       <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
         <KpiCard loading={isDashboardInitialLoading} to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600"
