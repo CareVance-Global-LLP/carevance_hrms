@@ -1141,7 +1141,10 @@ export default function FilingsDashboard() {
                   <option value="">Choose a payroll run...</option>
                   {runsList.map((run: any) => (
                     <option key={run.id} value={run.id}>
-                      {run.month_year} — {run.status} ({run.total_employees || run.employee_count || 0} employees)
+                      {run.month_year} — {run.status} ({(() => {
+                        const n = run.total_employees || run.employee_count || 0;
+                        return `${n} ${n === 1 ? 'employee' : 'employees'}`;
+                      })()})
                     </option>
                   ))}
                 </SelectInput>
