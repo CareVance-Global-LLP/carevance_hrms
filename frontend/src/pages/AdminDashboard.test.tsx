@@ -244,11 +244,20 @@ describe('AdminDashboard WorkWise redesign', () => {
      * which filter this page rather than navigating away from it.
      */
     expect(screen.queryByRole('link', { name: /add user/i })).not.toBeInTheDocument();
-    expect(screen.getByText('Date Filter')).toBeInTheDocument();
+    /*
+     * The "Date Filter" card is gone. It carried seven preset buttons and the
+     * resolved range as text, directly under a header pill showing that same
+     * range - so the range rendered twice and the control sat nowhere near it.
+     * One labelled control in the header now does both.
+     */
+    expect(screen.getByLabelText('Date range')).toBeInTheDocument();
     expect(screen.getByText('Dashboard Scope')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Overall' })).toBeInTheDocument();
     expect(screen.getByText('Scope Summary')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Last 7 days' })).toBeInTheDocument();
+    // A custom listbox: the options exist only while it is open.
+    fireEvent.click(screen.getByLabelText('Date range'));
+    expect(screen.getByRole('option', { name: 'Last 7 days' })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement || document.body, { key: 'Escape' });
     expect(screen.getByText('Total Employees')).toBeInTheDocument();
     expect(screen.getAllByText('Present').length).toBeGreaterThan(0);
     expect(screen.getByText('Attendance Overview')).toBeInTheDocument();
@@ -352,7 +361,8 @@ describe('AdminDashboard WorkWise redesign', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Specific Employee' }));
     fireEvent.change(screen.getByLabelText('Search scoped employee'), { target: { value: 'leslie' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Last 7 days' }));
+    fireEvent.click(screen.getByLabelText('Date range'));
+    fireEvent.click(screen.getByRole('option', { name: 'Last 7 days' }));
 
     await waitFor(() => {
       expect(screen.getByRole('link', { name: 'Open Monitoring' })).toHaveAttribute(
@@ -418,7 +428,8 @@ describe('AdminDashboard WorkWise redesign', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Specific Employee' }));
     fireEvent.change(screen.getByLabelText('Search scoped employee'), { target: { value: 'leslie' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Last 15 days' }));
+    fireEvent.click(screen.getByLabelText('Date range'));
+    fireEvent.click(screen.getByRole('option', { name: 'Last 15 days' }));
 
     await waitFor(() => {
       expect(apiMocks.activitiesAllPages).toHaveBeenCalledWith({

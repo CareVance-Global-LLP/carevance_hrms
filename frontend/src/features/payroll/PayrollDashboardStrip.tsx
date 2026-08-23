@@ -144,21 +144,62 @@ export default function PayrollDashboardStrip({ monthYear }: { monthYear?: strin
             </Link>
           </div>
         ) : !reconciles ? (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
-            <p className="text-sm font-medium text-amber-900">
-              This run&rsquo;s totals don&rsquo;t reconcile.
-            </p>
-            <p className="mt-1 text-xs text-amber-800">
-              Gross {money(gross)} less deductions {money(deductions)} does not equal the recorded net
-              pay of {money(net)}. The figures are withheld rather than shown, because a total nobody
-              can reconcile is worse than no total.
-            </p>
-            <Link
-              to="/payroll"
-              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-amber-900 underline underline-offset-2"
-            >
-              Open the run to see which employees are affected <ArrowRight className="h-3 w-3" />
-            </Link>
+          /*
+           * Show the figures AS figures, and mark the one that is wrong.
+           *
+           * This was three lines of prose explaining why the numbers were being
+           * withheld. Somebody opening a payroll dashboard is looking for
+           * amounts, and a paragraph where the amounts should be reads as an
+           * error message about an error - it buried the problem inside an
+           * explanation of itself.
+           *
+           * Same four cells as a healthy run, so the eye lands in the same
+           * place, with the failing ones flagged and the arithmetic spelled out
+           * underneath in one short line.
+           */
+          <div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                { label: 'Gross', value: money(gross), bad: false },
+                { label: 'Deductions', value: money(deductions), bad: deductions > gross },
+                { label: 'Net pay', value: money(net), bad: true },
+                {
+                  label: 'Employees paid',
+                  value: `${figures.processed_employees ?? 0} of ${figures.total_employees ?? 0}`,
+                  bad: false,
+                },
+              ].map((cell) => (
+                <div
+                  key={cell.label}
+                  className={`rounded-lg border p-3 ${
+                    cell.bad ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-surface-card'
+                  }`}
+                >
+                  <p className={`text-[11px] font-medium uppercase tracking-wide ${cell.bad ? 'text-amber-800' : 'text-slate-500'}`}>
+                    {cell.label}
+                  </p>
+                  <p className={`mt-0.5 text-lg font-semibold tabular-nums tracking-[-0.02em] ${cell.bad ? 'text-amber-900' : 'text-slate-950'}`}>
+                    {cell.value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden="true" />
+              <span className="text-amber-900">
+                <span className="tabular-nums">{money(gross)}</span> less{' '}
+                <span className="tabular-nums">{money(deductions)}</span> should be{' '}
+                <span className="font-semibold tabular-nums">{money(gross - deductions)}</span>, not{' '}
+                <span className="font-semibold tabular-nums">{money(net)}</span>.
+              </span>
+              <Link
+                to="/payroll"
+                className="inline-flex items-center gap-1 font-semibold text-amber-900 underline underline-offset-2"
+              >
+                Open the run <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

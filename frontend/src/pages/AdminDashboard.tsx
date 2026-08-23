@@ -1959,11 +1959,72 @@ export default function AdminDashboard() {
           <p className="mt-3 text-sm font-medium text-slate-900">{greetUser(user?.name)}!</p>
           <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization for the selected date range.</p>
         </div>
+        {/*
+          One date control, where the date was already being shown.
+
+          There used to be a full-width "Date Filter" card carrying seven
+          preset buttons AND the resolved range as text, directly below a
+          header pill that displayed the same range again - the range rendered
+          twice, the control nowhere near it. Narrowing that card to sit beside
+          Dashboard Scope then wrapped the seven buttons onto two rows and
+          truncated its own label to "Last 2 days: Aug 23, 202…".
+
+          A range is picked rarely and read constantly, so it belongs in the
+          header as one compact control, not as a row of buttons occupying the
+          top of the page.
+        */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700">
-            <Calendar className="h-4 w-4 text-blue-600" />
-            {dateLabel}
+          <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-surface-card px-3 text-xs font-medium text-slate-700">
+            <Calendar className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+            <span className="tabular-nums">{dateLabel}</span>
           </div>
+
+          <div className="w-[11.5rem]">
+            <SelectInput
+              aria-label="Date range"
+              value={datePreset}
+              onChange={(event) => setDatePreset(event.target.value as DatePreset)}
+              className="h-10"
+            >
+              {datePresetOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </SelectInput>
+          </div>
+
+          {datePreset === 'custom' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="sr-only" htmlFor="dash-range-start">Start date</label>
+              <input
+                id="dash-range-start"
+                type="date"
+                value={customRange.startDate}
+                max={todayIso()}
+                onChange={(event) => setCustomRange((current) => {
+                  const nextStart = clampIsoDateToToday(event.target.value);
+                  const nextEnd = current.endDate < nextStart ? nextStart : clampIsoDateToToday(current.endDate);
+                  return { startDate: nextStart, endDate: nextEnd };
+                })}
+                className="h-10 rounded-lg border border-slate-200 bg-surface-card px-3 text-xs text-slate-700 outline-none focus:border-blue-400"
+              />
+              <span className="text-xs text-slate-500">to</span>
+              <label className="sr-only" htmlFor="dash-range-end">End date</label>
+              <input
+                id="dash-range-end"
+                type="date"
+                value={customRange.endDate}
+                max={todayIso()}
+                onChange={(event) => setCustomRange((current) => {
+                  const nextEnd = clampIsoDateToToday(event.target.value);
+                  return {
+                    startDate: current.startDate > nextEnd ? nextEnd : current.startDate,
+                    endDate: nextEnd,
+                  };
+                })}
+                className="h-10 rounded-lg border border-slate-200 bg-surface-card px-3 text-xs text-slate-700 outline-none focus:border-blue-400"
+              />
+            </div>
+          ) : null}
 
           <Link
             aria-label="Settings"
@@ -1988,65 +2049,6 @@ export default function AdminDashboard() {
         appeared. They are the same kind of thing - what am I looking at, and
         over what period - so they read as one band and take half the height.
       */}
-      <div className="grid gap-3 xl:grid-cols-2">
-      <Card id="date-filter" className="scroll-mt-24 p-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Date Filter</p>
-            <p className="mt-1 truncate text-sm font-medium text-slate-900">{selectedRangePresetLabel}: {selectedRangeLabel}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {datePresetOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setDatePreset(option.value)}
-                className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${datePreset === option.value ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {datePreset === 'custom' ? (
-          <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,180px)_minmax(0,180px)_1fr] sm:items-end">
-            <label className="text-xs font-medium text-slate-600">
-              Start date
-              <input
-                type="date"
-                value={customRange.startDate}
-                max={todayIso()}
-                onChange={(event) => setCustomRange((current) => {
-                  const nextStart = clampIsoDateToToday(event.target.value);
-                  const nextEnd = current.endDate < nextStart ? nextStart : clampIsoDateToToday(current.endDate);
-                  return { startDate: nextStart, endDate: nextEnd };
-                })}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
-              />
-            </label>
-            <label className="text-xs font-medium text-slate-600">
-              End date
-              <input
-                type="date"
-                value={customRange.endDate}
-                max={todayIso()}
-                onChange={(event) => setCustomRange((current) => {
-                  const nextEnd = clampIsoDateToToday(event.target.value);
-                  return {
-                    startDate: current.startDate > nextEnd ? nextEnd : current.startDate,
-                    endDate: nextEnd,
-                  };
-                })}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
-              />
-            </label>
-            <p className="text-xs leading-5 text-slate-500">
-              Custom ranges automatically apply after you choose dates. If the dates are reversed, the dashboard reads them in the correct order.
-            </p>
-          </div>
-        ) : null}
-      </Card>
-
       <Card id="dashboard-scope" className="scroll-mt-24 p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
@@ -2110,7 +2112,6 @@ export default function AdminDashboard() {
           </div>
         ) : null}
       </Card>
-      </div>
 
       {/*
         Payroll leads.
