@@ -27,14 +27,23 @@ class CloseIdleTimers extends Command
 
         $this->line("Checking running timers idle since before {$cutoff->toIso8601String()} ({$idleMinutes} min threshold)");
 
-        // Get all currently running timers.
+        // Get all currently running timers, across every organization.
+        //
+        // withoutOrganizationScope() is explicit on purpose: this is the
+        // system-wide idle backstop the scheduler runs every minute (see
+        // routes/console.php), and it must see every tenant's running timers,
+        // not just one. It would already do that as an unauthenticated
+        // console command — BelongsToOrganization's scope is a no-op with no
+        // Auth::user() — but leaving it implicit means it would silently start
+        // filtering to one tenant the moment anything in this process sets an
+        // authenticated user. Cross-tenant access stays greppable instead.
         //
         // is_break is excluded deliberately. A break has no activity rows, so it
         // always looked maximally idle and got force-closed and stamped
         // auto_stopped_for_idle — while the paired break_times row, which this
         // command knows nothing about, stayed open forever and permanently 409'd
         // the user out of break tracking.
-        $runningTimers = TimeEntry::query()
+        $runningTimers = TimeEntry::withoutOrganizationScope()
             ->whereNull('end_time')
             ->where('is_break', false)
             ->where('start_time', '<', $cutoff)

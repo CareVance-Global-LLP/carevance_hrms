@@ -146,7 +146,8 @@ leaving two validators in the tree is how a second, silent code path appears.
 **Files:**
 - Create: `backend/database/migrations/2026_08_24_000001_add_organization_id_to_tracker_tables.php`
 - Modify: `backend/app/Models/Activity.php`, `ActivitySession.php`, `Screenshot.php`, `TimeEntry.php`
-- Modify: `backend/app/Console/Commands/CloseIdleTimers.php`, `SanitizeCapturedUrls.php`, `ValidateIdleTimeData.php`, `backend/app/Jobs/ReclassifyProductivityJob.php`
+- Modify: `backend/app/Console/Commands/CloseIdleTimers.php`, `CloseStaleTimers.php`, `backend/app/Jobs/ReclassifyProductivityJob.php`, `backend/app/Services/Attendance/AttendanceService.php` (the writer audit decides the final list — these are the ones known to need it)
+- Modify: `backend/app/Services/Ai/SchemaIntrospector.php` (table-level exclusion, see below)
 - Test: `backend/tests/Feature/TrackerTenancyTest.php`
 
 **Interfaces:**
@@ -176,6 +177,34 @@ second matters more than this plan:
 **The migration and the traits must land in the SAME commit.** The moment a table gains
 `organization_id`, `TenantIsolationTest` starts requiring the trait on its model — split
 them and the suite breaks between the two commits.
+
+**`screenshots` gets tenancy but NOT a place in the AI catalogue, and that exclusion
+lands in this same commit too.** Deriving entities from trait-using models means the
+trait is also the switch that makes a table AI-queryable — so scoping `Screenshot`
+would otherwise hand the assistant an entity whose columns are `filename`, `thumbnail`,
+`captured_at` and `device_id`. The global exclusion list is column-level and covers
+passwords, tokens, PAN, Aadhaar and bank details; nothing in it blocks a filename. An
+admin could then ask the assistant to list employee screenshot records.
+
+Screenshots are needed by no metric in this plan. They are in Task 0 solely because
+employee monitoring images relying on a join for tenant isolation is a gap worth
+closing. So `SchemaIntrospector` gains a **table-level** exclusion beside its
+column-level one:
+
+```php
+/**
+ * Tables that are scoped, but are not vocabulary. The trait is what makes a
+ * table derivable, so a table that needs tenancy but must not be queryable
+ * needs saying so here — otherwise fixing its isolation silently widens what
+ * the assistant can see.
+ */
+private const EXCLUDED_TABLES = ['screenshots'];
+```
+
+Applied in `tenantScopedModels()`, and asserted: `derive()` must have no `screenshots`
+key, and `SemanticLayer::entity('screenshots')` must be null. Excluding it wholesale is
+correct rather than excluding `filename` — there is no question about screenshots this
+tool should answer, so there is no column set worth curating.
 
 - [ ] **Step 1: Write the failing test**
 

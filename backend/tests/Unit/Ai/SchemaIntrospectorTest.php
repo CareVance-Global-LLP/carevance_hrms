@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Ai;
 
+use App\Models\Screenshot;
 use App\Services\Ai\SchemaIntrospector;
+use App\Services\Ai\SemanticLayer;
 use App\Traits\BelongsToOrganization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -311,6 +313,37 @@ class SchemaIntrospectorTest extends TestCase
         $this->assertArrayNotHasKey('users', $entities);
         $this->assertArrayNotHasKey('invitations', $entities);
         $this->assertArrayNotHasKey('organization_stats', $entities);
+    }
+
+    /**
+     * The trait does two jobs — it grants tenant isolation AND it admits a
+     * table to the AI vocabulary. screenshots needs the first and must not
+     * have the second: its columns are filename, thumbnail, captured_at and
+     * device_id, which trip none of the column-level exclusions covered
+     * above (those cover passwords, tokens, PAN, Aadhaar and bank details).
+     * Without a table-level exclusion, fixing screenshots' isolation gap
+     * would silently hand the assistant a way to list employee monitoring
+     * records.
+     */
+    public function test_screenshots_keeps_tenancy_but_is_excluded_from_the_ai_catalogue(): void
+    {
+        // The right fix filters the TABLE out of derivation, not the trait
+        // off the model — Screenshot must still carry structural tenancy.
+        $this->assertContains(
+            BelongsToOrganization::class,
+            class_uses_recursive(Screenshot::class),
+            'Screenshot lost its organization scope. Exclude the table from '.
+            'derivation, not the trait from the model.'
+        );
+
+        $this->assertArrayNotHasKey('screenshots', SchemaIntrospector::derive());
+        $this->assertNull(SemanticLayer::entity('screenshots'));
+
+        // Surgical, not a filter that swallowed the whole layer: a known-good
+        // entity must still be present, or the assertions above could pass
+        // for the wrong reason.
+        $this->assertArrayHasKey('payroll_items', SchemaIntrospector::derive());
+        $this->assertArrayHasKey('attendance_records', SchemaIntrospector::derive());
     }
 
     public function test_every_derived_entity_declares_the_shape_the_executor_relies_on(): void

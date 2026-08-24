@@ -7,6 +7,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -40,6 +41,12 @@ class ReportPerformanceTest extends TestCase
                 'organization_id' => $organization->id,
             ]);
         }
+
+        // Stamps organization_id on the entries seedWeekEntries() creates
+        // below, the same way BelongsToOrganization would from a real
+        // authenticated request. $admin's organization is every employee's
+        // organization too.
+        Auth::setUser($admin);
 
         return [$organization, $admin, $employees, $this->apiHeadersFor($admin)];
     }
@@ -168,6 +175,10 @@ class ReportPerformanceTest extends TestCase
             'organization_id' => $organization->id,
         ]);
         $headers = $this->apiHeadersFor($user);
+
+        // Stamps organization_id the same way BelongsToOrganization would
+        // from a real authenticated request.
+        Auth::setUser($user);
 
         $month = '2026-03';
         TimeEntry::create([

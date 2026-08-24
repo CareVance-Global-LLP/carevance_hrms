@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Monitoring\IdleResolutionService;
 use App\Services\Monitoring\TrackerPolicyResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -64,6 +65,10 @@ class IdleResolutionPolicyTest extends TestCase
 
     private function startedEntry(User $user): TimeEntry
     {
+        // Stamps organization_id the same way BelongsToOrganization would
+        // from a real authenticated request.
+        Auth::setUser($user);
+
         return TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => now()->subHour(),

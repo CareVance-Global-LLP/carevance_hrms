@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\Reports\WorkedTimeService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -35,13 +36,20 @@ class WorkedTimeInvariantTest extends TestCase
             ['name' => 'Org Worked Time']
         );
 
-        return User::create([
+        $user = User::create([
             'name' => 'Employee',
             'email' => $email,
             'password' => Hash::make('password123'),
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call, the same way BelongsToOrganization would from a real
+        // authenticated request.
+        Auth::setUser($user);
+
+        return $user;
     }
 
     private function workedTime(User $user, Carbon $at): array

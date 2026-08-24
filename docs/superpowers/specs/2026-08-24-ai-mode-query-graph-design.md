@@ -60,6 +60,17 @@ implementation plan, not a footnote — and it is worth doing whether or not AI 
 ships, because employee monitoring data with no structural org scoping is a gap in its
 own right.
 
+**Scoping a table is also what makes it queryable, so the two decisions must be taken
+separately.** Derivation reads trait-using models, which means the trait doubles as the
+switch that admits a table to the vocabulary. `screenshots` needs the first and must not
+get the second: no metric here touches it, and its columns (`filename`, `thumbnail`,
+`captured_at`, `device_id`) would let an admin ask the assistant to list employee
+monitoring records. The exclusion list in §10 is column-level and blocks none of those.
+
+So §10 gains a **table-level** exclusion alongside its column-level one, and
+`screenshots` is its first entry. Fixing an isolation gap must never widen what the
+assistant can see as a side effect.
+
 Exactly three things are not answerable, and each one says which it is:
 
 | Refusal | Meaning | Example |

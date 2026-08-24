@@ -6,6 +6,7 @@ use App\Models\Organization;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 class EmployeeInsightsLiveCountsTest extends TestCase
@@ -30,6 +31,11 @@ class EmployeeInsightsLiveCountsTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]));
+
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        // Any user of this organization does — all twelve employees are in it.
+        Auth::setUser($admin);
 
         // Give every employee an open timer so all 12 report a working status —
         // more than the 10-row cap on the live arrays.

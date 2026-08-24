@@ -15,6 +15,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -405,6 +406,10 @@ class AttendanceAndTimerFlowTest extends TestCase
             'status' => 'in_progress',
             'priority' => 'medium',
         ]);
+
+        // Stamps organization_id the same way BelongsToOrganization would
+        // from a real authenticated request.
+        Auth::setUser($employee);
 
         TimeEntry::create([
             'user_id' => $employee->id,

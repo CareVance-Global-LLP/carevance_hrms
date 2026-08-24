@@ -7,6 +7,7 @@ use App\Models\Screenshot;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -52,6 +53,11 @@ class EmployeeScreenshotDeletionTest extends TestCase
     private function closedEntry(User $user, int $hoursAgo = 3): TimeEntry
     {
         $start = now()->subHours($hoursAgo);
+
+        // Stamps organization_id on this and the screenshot(s) created
+        // against it below, the same way BelongsToOrganization would from a
+        // real authenticated request.
+        Auth::setUser($user);
 
         return TimeEntry::create([
             'user_id' => $user->id,
@@ -107,6 +113,7 @@ class EmployeeScreenshotDeletionTest extends TestCase
         $user = $this->employee($organization);
 
         $start = now()->subHours(6);
+        Auth::setUser($user);
         $entry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => $start,
@@ -152,6 +159,7 @@ class EmployeeScreenshotDeletionTest extends TestCase
         // A short entry whose stored duration is smaller than the span the
         // capture nominally covers. Payroll reads this column.
         $start = now()->subHours(2);
+        Auth::setUser($user);
         $entry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => $start,

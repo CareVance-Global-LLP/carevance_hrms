@@ -7,6 +7,7 @@ use App\Models\Organization;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 /**
@@ -23,9 +24,9 @@ class IdleResolutionTest extends TestCase
 
     private array $headers = [];
 
-    private function employee(): User
+    private function employee(?Organization $organization = null): User
     {
-        $organization = Organization::create([
+        $organization ??= Organization::create([
             'name' => 'CareVance',
             'slug' => 'carevance-idle-'.uniqid(),
         ]);
@@ -39,6 +40,11 @@ class IdleResolutionTest extends TestCase
         ]);
 
         $this->headers = $this->apiHeadersFor($user);
+
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call, the same way BelongsToOrganization would from a real
+        // authenticated request.
+        Auth::setUser($user);
 
         return $user;
     }
@@ -191,8 +197,12 @@ class IdleResolutionTest extends TestCase
         $idle = $this->idleRow($owner, $entry, 600);
 
         // A manager deciding on someone's behalf that they were slacking is
-        // exactly the dynamic the prompt exists to remove.
-        $other = $this->employee();
+        // exactly the dynamic the prompt exists to remove. Same organization
+        // as $owner on purpose: this pins the app-level ownership check
+        // (only the person the idle span belongs to may answer for it), which
+        // is a real, separate guard from organization scoping — a coworker on
+        // the very same team still may not resolve it.
+        $other = $this->employee($owner->organization);
 
         $this->postJson("/api/activities/{$idle->id}/resolve-idle", ['action' => 'discarded'], $this->headers)
             ->assertForbidden();

@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\URL;
 
 class Screenshot extends Model
 {
-    protected $fillable = ['time_entry_id', 'filename', 'thumbnail', 'local_id', 'device_id', 'captured_at'];
+    use BelongsToOrganization;
+
+    protected $fillable = ['organization_id', 'time_entry_id', 'filename', 'thumbnail', 'local_id', 'device_id', 'captured_at'];
 
     protected $casts = [
         'captured_at' => 'datetime',

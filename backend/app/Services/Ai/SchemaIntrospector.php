@@ -31,6 +31,12 @@ use Illuminate\Support\Facades\Schema;
  *    excluded column is not a dimension, not a list column, not a metric and
  *    not filterable, on any table, at any role.
  *
+ * 3. **Scoping a table and admitting it to the vocabulary are different
+ *    decisions.** The trait doubles as both switches, so a table that needs
+ *    tenant isolation but must not be queryable — `screenshots`, whose
+ *    columns carry no statutory or credential token but are still nobody's
+ *    business to list — needs a table-level exclusion, not a column one.
+ *
  * Derivation is pure and deterministic — same schema, same output — so it can
  * be cached and rebuilt on migration rather than computed per request.
  */
@@ -79,6 +85,22 @@ final class SchemaIntrospector
         ['swift'],
         ['google'],
     ];
+
+    /**
+     * Tables that are scoped, but are not vocabulary. The trait is what makes a
+     * table derivable, so a table that needs tenancy but must not be queryable
+     * needs saying so here — otherwise fixing its isolation silently widens what
+     * the assistant can see.
+     *
+     * screenshots is the first entry: it needs BelongsToOrganization for
+     * structural tenant isolation (Task 0), but its columns — filename,
+     * thumbnail, captured_at, device_id — trip none of the column-level
+     * exclusions above, and no metric in this design touches it. Excluding the
+     * whole table is correct rather than excluding filename: there is no
+     * question about screenshots this tool should answer, so there is no
+     * column set worth curating.
+     */
+    private const EXCLUDED_TABLES = ['screenshots'];
 
     /**
      * Columns that are structure rather than data.
@@ -246,6 +268,10 @@ final class SchemaIntrospector
             }
 
             $table = $model->getTable();
+
+            if (in_array($table, self::EXCLUDED_TABLES, true)) {
+                continue;
+            }
 
             if (! $this->hasTable($table) || isset($models[$table])) {
                 continue;

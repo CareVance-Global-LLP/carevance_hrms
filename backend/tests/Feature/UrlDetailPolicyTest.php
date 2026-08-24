@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Monitoring\TrackerPolicyResolver;
 use App\Support\CapturedUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 /**
@@ -39,6 +40,10 @@ class UrlDetailPolicyTest extends TestCase
             'organization_id' => $organization->id,
             'settings' => $userSettings,
         ]);
+
+        // Stamps organization_id on the fixture below the same way a real
+        // request would: BelongsToOrganization reads the acting user off Auth.
+        Auth::setUser($user);
 
         $entry = TimeEntry::create([
             'user_id' => $user->id,

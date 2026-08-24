@@ -2,17 +2,20 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TimeEntry extends Model
 {
+    use BelongsToOrganization;
+
     // local_id / device_id are the offline-sync idempotency keys. They were
     // missing from $fillable, so the values IdempotentSync merges into the
     // request were silently discarded on create and every replayed sync
     // inserted a fresh row.
-    protected $fillable = ['description', 'project_id', 'task_id', 'start_time', 'end_time', 'duration', 'billable', 'user_id', 'timer_slot', 'is_break', 'break_type_id', 'auto_stopped_for_idle', 'stop_reason', 'idle_seconds', 'trailing_idle_seconds', 'last_activity_at', 'duration_reconciled_at', 'local_id', 'device_id'];
+    protected $fillable = ['organization_id', 'description', 'project_id', 'task_id', 'start_time', 'end_time', 'duration', 'billable', 'user_id', 'timer_slot', 'is_break', 'break_type_id', 'auto_stopped_for_idle', 'stop_reason', 'idle_seconds', 'trailing_idle_seconds', 'last_activity_at', 'duration_reconciled_at', 'local_id', 'device_id'];
 
     protected $casts = [
         'start_time' => 'datetime',
