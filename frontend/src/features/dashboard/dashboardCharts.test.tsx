@@ -196,6 +196,45 @@ describe('attendance heatmap', () => {
     expect(holiday.className).not.toMatch(/bg-red/);
     expect(screen.getByTitle(/2026-08-03 — 85 of 93 in/)).toBeInTheDocument();
   });
+
+  it('refuses to paint a wall of red when barely anybody is tracked', async () => {
+    // The real tenant: 91 employees, 3 with any record, best day 2 punches.
+    calendar.mockResolvedValue({
+      data: {
+        month: '2026-08',
+        user_id: 0,
+        days: [1, 2, 3, 4, 5].map((d) => ({
+          date: `2026-08-0${d}`,
+          status: 'present',
+          is_weekend: false,
+          late_minutes: 0,
+          worked_seconds: 0,
+          present_count: d === 3 ? 2 : 1,
+          late_count: 0,
+          absent_count: 89,
+          total_employees: 91,
+        })),
+      },
+    });
+
+    render(
+      <Providers>
+        <AttendanceHeatmap />
+      </Providers>,
+    );
+
+    /*
+     * present/total is under 3% every day, so a headcount denominator paints
+     * every cell red. That is not bad turnout - it is 88 people with no punch
+     * data - and describing them as absent is a false statement about what is
+     * really a device and roster problem.
+     */
+    expect(await screen.findByText(/attendance is recorded for 2 of 91 people/i)).toBeInTheDocument();
+
+    const cells = document.querySelectorAll('[title*="punched in"]');
+    expect(cells.length).toBeGreaterThan(0);
+    cells.forEach((c) => expect(c.className).not.toMatch(/bg-red/));
+  });
 });
 
 describe('people movement', () => {

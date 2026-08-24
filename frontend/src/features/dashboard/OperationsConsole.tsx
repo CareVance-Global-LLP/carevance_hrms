@@ -8,6 +8,8 @@ import AttendanceHeatmap from './AttendanceHeatmap';
 import ArrivalCurve from './ArrivalCurve';
 import PeopleMovement from './PeopleMovement';
 import PayrollDashboardStrip from '@/features/payroll/PayrollDashboardStrip';
+import DataHealth from './DataHealth';
+import DepartmentSplit from './DepartmentSplit';
 
 /**
  * The admin landing screen.
@@ -109,6 +111,17 @@ export default function OperationsConsole() {
         </h2>
         <div className="grid gap-3.5">
           <HeadcountChart />
+          <div className="grid gap-3.5 lg:grid-cols-2">
+            <DepartmentSplit />
+            {/*
+              Set-up gaps sit beside the org split rather than in the attention
+              strip on purpose: the strip is work waiting on a person today,
+              and these are configuration debts. Mixing them would put a
+              six-month-old data gap next to a leave request somebody is
+              waiting on this morning.
+            */}
+            <DataHealth />
+          </div>
           <PeopleMovement />
         </div>
       </section>

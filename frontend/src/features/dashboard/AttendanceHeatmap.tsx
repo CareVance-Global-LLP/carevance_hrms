@@ -23,6 +23,27 @@ export default function AttendanceHeatmap() {
     staleTime: 10 * 60_000,
   });
 
+  /*
+   * How much of the workforce this month's attendance actually covers.
+   *
+   * The rate below is present/total_employees, and total_employees is the
+   * whole headcount. On a tenant where only three of ninety-one people punch —
+   * because the rest are on a roster nobody has wired to a device yet — every
+   * single day computes under 5% and the grid renders as a wall of red.
+   *
+   * That is not bad turnout, it is missing data, and colouring it as a failure
+   * is a false statement about eighty-eight people. When coverage is thin the
+   * grid switches to comparing days against the best day observed, and says so
+   * in words underneath rather than implying a headcount denominator it does
+   * not have.
+   */
+  const coverage = useMemo(() => {
+    const days = data?.days ?? [];
+    const head = days.find((d) => (d.total_employees ?? 0) > 0)?.total_employees ?? 0;
+    const best = Math.max(0, ...days.map((d) => (d.present_count ?? 0) + (d.late_count ?? 0)));
+    return { head, best, thin: head > 0 && best / head < 0.5 };
+  }, [data]);
+
   const weeks = useMemo(() => {
     const days = data?.days ?? [];
     if (days.length === 0) return [];
@@ -30,7 +51,10 @@ export default function AttendanceHeatmap() {
     const cells = days.map((d) => {
       const total = d.total_employees ?? 0;
       const present = (d.present_count ?? 0) + (d.late_count ?? 0);
-      const rate = total > 0 ? present / total : null;
+      // Against headcount normally; against the best day observed when
+      // attendance covers only a sliver of the workforce.
+      const denominator = coverage.thin ? coverage.best : total;
+      const rate = denominator > 0 ? present / denominator : null;
       return {
         date: d.date,
         dow: new Date(`${d.date}T00:00:00`).getDay(),
@@ -53,7 +77,7 @@ export default function AttendanceHeatmap() {
     const out: Array<Array<(typeof cells)[number] | null>> = [];
     for (let i = 0; i < padded.length; i += 7) out.push(padded.slice(i, i + 7));
     return out.slice(-5);
-  }, [data]);
+  }, [data, coverage]);
 
   if (isLoading) {
     return <div className="h-[230px] animate-pulse rounded-xl bg-surface-sunken" />;
@@ -70,7 +94,9 @@ export default function AttendanceHeatmap() {
 
   const shade = (rate: number | null) => {
     if (rate === null) return 'bg-slate-200';
-    if (rate < 0.8) return 'bg-red-500/55';
+    // No red in thin-coverage mode: "under 80% of the best day" is not a
+    // shortfall anybody should be paged about.
+    if (rate < 0.8) return coverage.thin ? 'bg-blue-500/12' : 'bg-red-500/55';
     if (rate < 0.88) return 'bg-blue-500/25';
     if (rate < 0.94) return 'bg-blue-500/45';
     return 'bg-blue-500/70';
@@ -98,7 +124,9 @@ export default function AttendanceHeatmap() {
               title={
                 cell.label
                   ? `${cell.date} — ${cell.label}`
-                  : `${cell.date} — ${cell.present} of ${cell.total} in`
+                  : coverage.thin
+                    ? `${cell.date} — ${cell.present} punched in`
+                    : `${cell.date} — ${cell.present} of ${cell.total} in`
               }
               className={`aspect-square rounded ${
                 cell.off
@@ -118,13 +146,30 @@ export default function AttendanceHeatmap() {
           <i className="inline-block h-3 w-3 rounded-sm bg-blue-500/70" />
           High
         </span>
-        <span className="flex items-center gap-1">
-          <i className="inline-block h-3 w-3 rounded-sm bg-red-500/55" /> Under 80%
-        </span>
+        {/* The red key only appears when red can actually be drawn. */}
+        {coverage.thin ? null : (
+          <span className="flex items-center gap-1">
+            <i className="inline-block h-3 w-3 rounded-sm bg-red-500/55" /> Under 80%
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <i className="inline-block h-3 w-3 rounded-sm border border-slate-200" /> Weekend or holiday
         </span>
       </div>
+
+      {coverage.thin ? (
+        <p className="mt-2.5 rounded-lg bg-amber-500/[0.09] px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-700">
+          {/*
+            Said plainly, because the alternative is a grid that looks like a
+            catastrophe. The number the admin needs here is not a turnout rate,
+            it is how many people are being tracked at all.
+          */}
+          <b>Attendance is recorded for {coverage.best} of {coverage.head} people.</b> Shading compares
+          days with each other, not against headcount — a turnout percentage would describe the{' '}
+          {Math.max(coverage.head - coverage.best, 0)} people with no punch data as absent, which is
+          a device and roster question rather than an attendance one.
+        </p>
+      ) : null}
     </div>
   );
 }
