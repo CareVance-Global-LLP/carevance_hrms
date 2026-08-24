@@ -112,26 +112,72 @@ class SemanticLayerTest extends TestCase
         // pre-release model. Nothing identifying may be reachable through them.
         //
         // Matched on word boundaries, not substring: "designation" contains
-        // "esi" and is a job title, not an identifier — the ~80 derived
+        // "esi" and is a job title, not an identifier — the ~140 derived
         // entities now genuinely expose columns like it, so a plain substring
-        // scan flags real, harmless columns. SchemaIntrospector::isExcludedColumn()
-        // already proves the same guarantee by word; this asserts it from the
-        // consumer side, the same way SchemaIntrospectorTest does.
+        // scan flags real, harmless columns.
+        //
+        // Covers all three buckets that name a column — dimensions, list
+        // columns and metric columns — because this is the "withheld by
+        // policy" guarantee and a hole in any one of them is the whole hole.
+        // See exposedColumnExpressions() for why this stays independent of
+        // SchemaIntrospector::isExcludedColumn() rather than calling it.
         $forbidden = ['password', 'pan', 'uan', 'esi', 'account', 'ifsc'];
 
         foreach (SemanticLayer::entities() as $entityKey => $entity) {
-            foreach ($entity['dimensions'] as $dimensionKey => $dimension) {
-                $tokens = preg_split('/[^a-z0-9]+/', strtolower($dimension['select']), -1, PREG_SPLIT_NO_EMPTY);
+            foreach (self::exposedColumnExpressions($entity) as $where => $expression) {
+                $tokens = preg_split('/[^a-z0-9]+/', strtolower($expression), -1, PREG_SPLIT_NO_EMPTY);
 
                 foreach ($forbidden as $needle) {
                     $this->assertNotContains(
                         $needle,
                         $tokens,
-                        "{$entityKey}.{$dimensionKey} exposes {$needle}"
+                        "{$entityKey}.{$where} exposes {$needle}"
                     );
                 }
             }
         }
+    }
+
+    /**
+     * Every column expression an entity can put in front of the model, from all
+     * THREE buckets that carry one.
+     *
+     * This used to walk `dimensions` only, which was the whole exposed surface
+     * back when the layer was six hand-written entities. Derivation added
+     * `list_columns` as a second bucket and multiplied both across 149
+     * entities, and a metric's `column` is a third — a metric named
+     * innocuously still names its column to the executor.
+     *
+     * `SemanticLayerDerivationTest` does cover `list_columns`, but through
+     * `SchemaIntrospector::isExcludedColumn()` — the same function that decided
+     * what to expose. That is self-consistency, not verification: a bug in the
+     * pattern passes both sides. The scan in this test is deliberately
+     * independent — its own forbidden list, its own tokenisation — so it can
+     * disagree with the introspector, which is the only way it can catch it.
+     *
+     * @param  array<string, mixed>  $entity
+     * @return array<string, string>
+     */
+    private static function exposedColumnExpressions(array $entity): array
+    {
+        $exposed = [];
+
+        foreach ($entity['dimensions'] as $name => $dimension) {
+            $exposed["dimensions.{$name}"] = (string) $dimension['select'];
+        }
+
+        foreach ($entity['list_columns'] as $name => $column) {
+            $exposed["list_columns.{$name}"] = (string) $column['select'];
+        }
+
+        foreach ($entity['metrics'] as $name => $metric) {
+            // A count names no column, and `leave_days_taken` computes a span.
+            if (($metric['column'] ?? null) !== null) {
+                $exposed["metrics.{$name}"] = (string) $metric['column'];
+            }
+        }
+
+        return $exposed;
     }
 
     public function test_every_metric_declares_the_shape_the_executor_relies_on(): void

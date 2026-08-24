@@ -28,11 +28,6 @@ use Illuminate\Support\Facades\Cache;
 final class SemanticLayer
 {
     /**
-     * Concept key => the table it owns. A table claimed here does NOT also
-     * appear under its own table name — one table, one entity, or the
-     * retriever offers the planner the same table twice.
-     */
-    /**
      * The cache key, STATIC by design — see `cached()` for why a computed key
      * was the wrong shape. Bump the version suffix if the shape of an entity
      * changes, so a deployed cache holding the old shape is abandoned rather
@@ -40,6 +35,19 @@ final class SemanticLayer
      */
     private const CACHE_KEY = 'ai.semantic-layer.v1';
 
+    /**
+     * What separates the aggregate prefixes from the columns they apply to in a
+     * derived-metric pattern line. Named because `promptCatalogueFor()` tests
+     * for it to decide whether the notation needs its legend, and a literal in
+     * two places is how those two silently stop agreeing.
+     */
+    private const PATTERN_JOINER = ' over ';
+
+    /**
+     * Concept key => the table it owns. A table claimed here does NOT also
+     * appear under its own table name — one table, one entity, or the
+     * retriever offers the planner the same table twice.
+     */
     private const CONCEPT_TABLES = [
         'employees' => 'employee_work_infos',
         'payroll' => 'payroll_items',
@@ -505,6 +513,8 @@ final class SemanticLayer
     public static function promptCatalogueFor(array $entityKeys): string
     {
         $lines = [];
+        $usesAggregatePattern = false;
+        $usesGroupings = false;
 
         foreach ($entityKeys as $key) {
             $entity = self::entity($key);
@@ -521,13 +531,59 @@ final class SemanticLayer
             }
 
             foreach (self::derivedMetricPatterns($entity['metrics']) as $pattern) {
+                $usesAggregatePattern = $usesAggregatePattern || str_contains($pattern, self::PATTERN_JOINER);
                 $lines[] = '    metrics: '.$pattern;
             }
 
-            array_push($lines, ...self::groupableAndListableLines($entity));
+            $groupings = self::groupableAndListableLines($entity);
+            $usesGroupings = $usesGroupings || $groupings !== [];
+            array_push($lines, ...$groupings);
         }
 
-        return implode("\n", $lines);
+        if ($lines === []) {
+            return '';
+        }
+
+        return implode("\n", array_merge(self::legend($usesAggregatePattern, $usesGroupings), $lines));
+    }
+
+    /**
+     * The key to the notation, without which the compression is a refusal.
+     *
+     * `QueryPlanner`'s prompt says "You may only use these entities, metrics
+     * and group_by dimensions" and "Never invent an entity, metric or
+     * dimension that is not listed above". Compressing 300 derived metrics
+     * into `sum_/avg_ over net_pay, basic` obeys the budget but means no
+     * derived metric name appears literally anywhere — so assembling one is
+     * indistinguishable from the inventing the prompt forbids, and a
+     * well-behaved planner refuses rather than guesses. `PlanValidator` would
+     * catch a guess by name, so the failure is safe; it is still a failure, and
+     * the identical one truncating the list would have caused.
+     *
+     * So the notation is DECLARED, not left to be inferred. Roughly 150
+     * characters against an 8,000-character budget, and it buys back the ~300
+     * metrics on `payroll` alone plus every metric on the 141 non-concept
+     * entities.
+     *
+     * Emitted only for the notation actually used, and pinned by
+     * `test_the_pattern_notation_is_never_emitted_without_its_legend()` so the
+     * key and the thing it explains cannot drift apart.
+     *
+     * @return list<string>
+     */
+    private static function legend(bool $usesAggregatePattern, bool $usesGroupings): array
+    {
+        $legend = [];
+
+        if ($usesAggregatePattern) {
+            $legend[] = '# Notation: "sum_/avg_ over x, y" means the metrics sum_x, avg_x, sum_y and avg_y all exist — join a prefix to a column name. Every metric it spells out is listed and may be used.';
+        }
+
+        if ($usesGroupings) {
+            $legend[] = '# "per" lists the group_by dimensions; "columns" lists the fields a row listing can show.';
+        }
+
+        return $legend;
     }
 
     /**
@@ -586,7 +642,7 @@ final class SemanticLayer
 
         foreach ($columnsBySignature as $signature => $columns) {
             $prefixes = implode('/', array_map(fn (string $a) => $a.'_', explode(',', $signature)));
-            $lines[] = sprintf('%s over %s', $prefixes, implode(', ', $columns));
+            $lines[] = $prefixes.self::PATTERN_JOINER.implode(', ', $columns);
         }
 
         return $lines;

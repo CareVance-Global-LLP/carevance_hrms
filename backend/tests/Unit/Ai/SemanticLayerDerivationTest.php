@@ -5,7 +5,9 @@ namespace Tests\Unit\Ai;
 use App\Services\Ai\SchemaIntrospector;
 use App\Services\Ai\SemanticLayer;
 use Illuminate\Database\Events\MigrationsEnded;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -259,5 +261,106 @@ class SemanticLayerDerivationTest extends TestCase
         // And it rebuilt into something usable, rather than merely emptying.
         $this->assertNotNull($metric, 'the rebuilt layer answered nothing');
         $this->assertSame('curated', $metric['origin']);
+    }
+
+    /**
+     * Compressing derived metrics to a pattern only preserves coverage if the
+     * planner can DECODE the pattern.
+     *
+     * QueryPlanner's prompt says "You may only use these entities, metrics and
+     * group_by dimensions" and "Never invent an entity, metric or dimension
+     * that is not listed above". No derived metric name appears literally in
+     * the catalogue any more — `sum_basic` is deliberately absent, asserted two
+     * tests above — so without a legend, assembling one from the pattern is
+     * indistinguishable from the inventing the prompt forbids, and the correct
+     * response to the catalogue is to refuse. That is the same lost coverage
+     * truncating the list would have caused, arriving by a quieter route.
+     *
+     * So: wherever the notation appears, its key must appear with it. Asserted
+     * over several entity sets rather than one, because the legend is emitted
+     * conditionally and a single sample would not notice it going missing for
+     * the sets it was not sampled on.
+     */
+    public function test_the_pattern_notation_is_never_emitted_without_its_legend(): void
+    {
+        $sets = [
+            'the worst case' => ['payroll'],
+            'a small entity' => ['assets'],
+            'all eight concepts' => ['employees', 'payroll', 'attendance', 'leave', 'assets', 'work', 'hiring', 'activity'],
+            'a derived-only entity' => ['groups'],
+        ];
+
+        $sawNotationAtLeastOnce = false;
+
+        foreach ($sets as $label => $keys) {
+            $text = SemanticLayer::promptCatalogueFor($keys);
+
+            if (! str_contains($text, ' over ')) {
+                continue;
+            }
+
+            $sawNotationAtLeastOnce = true;
+
+            $this->assertStringContainsString(
+                'sum_x, avg_x',
+                $text,
+                "{$label}: the catalogue uses pattern notation but never explains it — every derived metric is unusable"
+            );
+        }
+
+        $this->assertTrue($sawNotationAtLeastOnce, 'fixture assumption: no set exercised the pattern notation at all');
+    }
+
+    /**
+     * The other half: the legend is not free, and an empty catalogue must not
+     * pay for notation it never used. Guards the budget from the fix to the
+     * budget's own coverage problem.
+     */
+    public function test_an_empty_catalogue_carries_no_legend(): void
+    {
+        $this->assertSame('', SemanticLayer::promptCatalogueFor([]));
+        $this->assertSame('', SemanticLayer::promptCatalogueFor(['no_such_entity']));
+    }
+
+    /**
+     * The listener must never be able to fail a rollback that SUCCEEDED.
+     *
+     * CACHE_STORE defaults to `database` (.env.example, config/cache.php), so
+     * forgetCached() issues a DELETE against the `cache` TABLE. MigrationsEnded
+     * fires for 'down' as well as 'up', so `migrate:reset` drops that table and
+     * then this listener queries it — the migration work is already done and
+     * committed, and the command still exits with a QueryException.
+     *
+     * No ordinary test can see that, because phpunit.xml pins
+     * CACHE_STORE=array, which has no table to lose. So the store is made to
+     * throw the way the database store would, and the assertion is that the
+     * dispatch survives it. Without the `rescue()` in
+     * AppServiceProvider::boot() this fails with the QueryException escaping,
+     * which is exactly what a real `migrate:reset` would print.
+     */
+    public function test_a_rollback_that_dropped_the_cache_table_still_succeeds(): void
+    {
+        Cache::shouldReceive('forget')
+            ->once()
+            ->andThrow(new QueryException(
+                'sqlite',
+                'delete from "cache" where "key" = ?',
+                ['ai.semantic-layer.v1'],
+                new \Exception('no such table: cache')
+            ));
+
+        $escaped = null;
+
+        try {
+            // The rollback has already finished; this is the notification.
+            event(new MigrationsEnded('down'));
+        } catch (\Throwable $e) {
+            $escaped = $e;
+        }
+
+        $this->assertNull(
+            $escaped,
+            'the MigrationsEnded listener threw out of a COMPLETED rollback: '.$escaped?->getMessage()
+        );
     }
 }

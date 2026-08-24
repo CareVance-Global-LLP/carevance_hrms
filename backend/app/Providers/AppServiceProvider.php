@@ -88,10 +88,25 @@ class AppServiceProvider extends ServiceProvider
          * The day-long TTL on the entry is the backstop for the case this
          * cannot see — a schema changed outside a migration, which has happened
          * in this codebase before (bank_transfer_batches).
+         *
+         * DO NOT REMOVE THE rescue() AS DEFENSIVE NOISE. It guards one specific
+         * failure. forgetCached() calls Cache::forget(), and CACHE_STORE
+         * defaults to `database` (.env.example, config/cache.php), so that is a
+         * query against the `cache` TABLE. MigrationsEnded fires for 'down' as
+         * well as 'up', so `migrate:reset` or a full rollback drops that table
+         * and then this listener queries it — turning a rollback that SUCCEEDED
+         * into a QueryException thrown after all the work was done. The suite
+         * cannot catch it because phpunit.xml pins CACHE_STORE=array.
+         *
+         * rescue() rather than skipping 'down': a rollback changes the schema
+         * too, so the vocabulary is just as stale afterwards, and it should
+         * still be forgotten whenever the store is actually reachable. rescue()
+         * reports to the exception handler rather than swallowing silently, so
+         * this stays visible in logs rather than becoming a bare catch.
          */
         \Illuminate\Support\Facades\Event::listen(
             \Illuminate\Database\Events\MigrationsEnded::class,
-            fn () => \App\Services\Ai\SemanticLayer::forgetCached(),
+            fn () => rescue(fn () => \App\Services\Ai\SemanticLayer::forgetCached()),
         );
 
         /*
