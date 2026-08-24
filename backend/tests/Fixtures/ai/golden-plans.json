@@ -1,0 +1,28 @@
+{
+  "accepted": [
+    { "question": "headcount by department",              "plan": {"entity":"employees","metric":"headcount","group_by":"department"} },
+    { "question": "how many people do we have",            "plan": {"entity":"employees","metric":"headcount"} },
+    { "question": "headcount by employment type",          "plan": {"entity":"employees","metric":"headcount","group_by":"employment_type"} },
+    { "question": "compare average net pay by department", "plan": {"entity":"payroll","metric":"avg_net_pay","group_by":"department","sort":"metric_desc","limit":10} },
+    { "question": "total gross by month",                  "plan": {"entity":"payroll","metric":"total_gross","group_by":"month"} },
+    { "question": "average net pay",                       "plan": {"entity":"payroll","metric":"avg_net_pay"} },
+    { "question": "absences by department",                "plan": {"entity":"attendance","metric":"absent_days"} },
+    { "question": "how many late arrivals this month",     "plan": {"entity":"attendance","metric":"late_count"} },
+    { "question": "attendance by status",                  "plan": {"entity":"attendance","metric":"absent_days","group_by":"status"} },
+    { "question": "leave days taken by type",              "plan": {"entity":"leave","metric":"leave_days_taken","group_by":"leave_type"} },
+    { "question": "leave requests by status",              "plan": {"entity":"leave","metric":"leave_requests","group_by":"status"} },
+    { "question": "how many assets do we have",            "plan": {"entity":"assets","metric":"asset_count"} },
+    { "question": "assets by status",                      "plan": {"entity":"assets","metric":"asset_count","group_by":"status"} },
+    { "question": "tasks by status",                       "plan": {"entity":"work","metric":"task_count","group_by":"status"} }
+  ],
+  "refused": [
+    { "question": "what is the weather in Mumbai",  "plan": {"error":"Weather is not HR data."} },
+    { "question": "headcount by nationality",       "plan": {"entity":"employees","metric":"headcount","group_by":"nationality"} },
+    { "question": "everyone's PAN number",          "plan": {"entity":"employees","metric":"pan"} },
+    { "question": "average bonus percentage",       "plan": {"entity":"payroll","metric":"avg_bonus_percentage"} },
+    { "question": "net pay by blood group",         "plan": {"entity":"payroll","metric":"avg_net_pay","group_by":"blood_group"} },
+    { "question": "attendance for a made-up thing", "plan": {"entity":"telepathy","metric":"headcount"} },
+    { "question": "net pay on the attendance table","plan": {"entity":"attendance","metric":"avg_net_pay"} },
+    { "question": "employees filtered by salary band","plan": {"entity":"employees","metric":"headcount","filters":{"salary_band":"senior"}} }
+  ]
+}

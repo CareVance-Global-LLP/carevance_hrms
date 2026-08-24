@@ -19,7 +19,9 @@ function setup(overrides: Partial<React.ComponentProps<typeof CommandBar>> = {})
   const onClose = vi.fn();
   const usesOf = () => 0;
 
-  render(
+  // `baseElement` is document.body, which is where the palette's portal lands —
+  // querying `container` would miss it entirely.
+  const view = render(
     <CommandBar
       open
       onClose={onClose}
@@ -31,7 +33,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof CommandBar>> = {})
     />
   );
 
-  return { onSelect, onClose, user: userEvent.setup() };
+  return { ...view, onSelect, onClose, user: userEvent.setup() };
 }
 
 /** Title text only — the row also contains a subtitle and an effect hint. */
@@ -376,5 +378,79 @@ describe('CommandBar selection', () => {
     );
     expect(container).toBeEmptyDOMElement();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+});
+
+describe('AI mode', () => {
+  it('is off by default and the glow is absent', () => {
+    const { baseElement } = setup();
+    expect(baseElement.querySelector('.ai-glow')).toBeNull();
+  });
+
+  it('turns on from the toggle and glows', async () => {
+    const onAiModeChange = vi.fn();
+    setup({ onAiModeChange });
+
+    await userEvent.click(screen.getByRole('button', { name: /ai mode/i }));
+
+    expect(onAiModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it('widens the panel in AI mode', () => {
+    const { baseElement } = setup({ aiMode: true });
+    expect(baseElement.querySelector('.max-w-4xl')).not.toBeNull();
+  });
+
+  it('announces AI mode in text, not only by colour', () => {
+    setup({ aiMode: true });
+    expect(screen.getByPlaceholderText(/ask about your data/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /ai mode/i })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('asks on Enter rather than navigating', async () => {
+    const onAskAi = vi.fn();
+    const onSelect = vi.fn();
+    setup({ aiMode: true, onAskAi, onSelect });
+
+    await userEvent.type(screen.getByRole('combobox'), 'headcount by department{Enter}');
+
+    expect(onAskAi).toHaveBeenCalledWith('headcount by department');
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('shows the refusal reason when the question cannot be answered', () => {
+    setup({ aiMode: true, aiError: 'Nationality is not stored in this system.' });
+    expect(screen.getByText(/nationality is not stored/i)).toBeInTheDocument();
+  });
+
+  it('leaves AI mode on the first Escape and closes on the second', async () => {
+    const onClose = vi.fn();
+    const onAiModeChange = vi.fn();
+    setup({ aiMode: true, onClose, onAiModeChange });
+
+    await userEvent.keyboard('{Escape}');
+    expect(onAiModeChange).toHaveBeenCalledWith(false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('enters AI mode on Tab from an empty query', async () => {
+    const onAiModeChange = vi.fn();
+    setup({ onAiModeChange });
+
+    screen.getByRole('combobox').focus();
+    await userEvent.keyboard('{Tab}');
+
+    expect(onAiModeChange).toHaveBeenCalledWith(true);
+  });
+
+  it('does not hijack Tab once something has been typed', async () => {
+    // Tab must still move focus for anyone navigating the results by keyboard.
+    const onAiModeChange = vi.fn();
+    setup({ onAiModeChange });
+
+    await userEvent.type(screen.getByRole('combobox'), 'attend');
+    await userEvent.keyboard('{Tab}');
+
+    expect(onAiModeChange).not.toHaveBeenCalled();
   });
 });

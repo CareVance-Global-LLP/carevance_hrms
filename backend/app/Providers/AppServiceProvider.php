@@ -241,6 +241,10 @@ class AppServiceProvider extends ServiceProvider
                 ->by((string) (optional($request->user())->getAuthIdentifier() ?? $request->ip())),
         ]);
 
+        RateLimiter::for('search.ask', fn (Request $request) => [
+            Limit::perMinute(20)->by($request->user()?->id ?: $request->ip()),
+        ]);
+
         RateLimiter::for('desktop.download', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_DESKTOP_DOWNLOAD_PER_MINUTE', 10))->by($request->ip()),
         ]);
