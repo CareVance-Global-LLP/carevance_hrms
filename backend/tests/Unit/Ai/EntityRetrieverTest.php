@@ -4,6 +4,7 @@ namespace Tests\Unit\Ai;
 
 use App\Services\Ai\EntityRetriever;
 use App\Services\Ai\SemanticLayer;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionClass;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -20,6 +21,12 @@ use Tests\TestCase;
  */
 class EntityRetrieverTest extends TestCase
 {
+    // Only test_compare_average_net_pay_by_department_ranks_payroll_first
+    // touches the real SemanticLayer::entities(), which now derives from the
+    // schema — everything else here runs against the hand-built fixtures
+    // below and does not need a migrated database.
+    use RefreshDatabase;
+
     /**
      * A catalogue keyed the way §4 hand-writes it, with column sets taken from
      * the real tables so the synonym map is tested against real noise:

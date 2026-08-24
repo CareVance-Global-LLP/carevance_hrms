@@ -4,15 +4,21 @@ namespace Tests\Feature\Ai;
 
 use App\Services\Ai\QueryPlanner;
 use App\Services\Ai\UnsupportedQuestionException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
  * The vendor is faked here on purpose: this asserts our parsing and prompt
  * contract, not OpenRouter's uptime.
+ *
+ * RefreshDatabase: the system prompt is built from SemanticLayer::promptCatalogue(),
+ * which now derives from the real schema.
  */
 class QueryPlannerTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();

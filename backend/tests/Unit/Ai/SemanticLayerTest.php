@@ -3,22 +3,31 @@
 namespace Tests\Unit\Ai;
 
 use App\Services\Ai\SemanticLayer;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
  * The metric definitions ARE the product. A wrong one produces a confident
  * wrong number, which is the single failure mode this design exists to
  * prevent — so they are asserted literally, not smoke-tested.
+ *
+ * RefreshDatabase: entities() now derives from the real schema.
  */
 class SemanticLayerTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_avg_net_pay_excludes_unprocessed_items(): void
     {
         $metric = SemanticLayer::metric('payroll', 'avg_net_pay');
 
         $this->assertSame('avg', $metric['aggregate']);
         $this->assertSame('net_pay', $metric['column']);
-        $this->assertContains(['net_pay', '>', 0], $metric['where']);
+        // Table-qualified: MetricOverrides supersedes the entity's own
+        // unqualified where clause now that derivation can join other
+        // tables onto the same query, where a bare `net_pay` would be
+        // ambiguous.
+        $this->assertContains(['payroll_items.net_pay', '>', 0], $metric['where']);
         $this->assertNotNull($metric['note']);
     }
 
@@ -28,7 +37,7 @@ class SemanticLayerTest extends TestCase
         // status = 'late'. Defining lateness by status undercounts by 33%.
         $metric = SemanticLayer::metric('attendance', 'late_count');
 
-        $this->assertContains(['late_minutes', '>', 0], $metric['where']);
+        $this->assertContains(['attendance_records.late_minutes', '>', 0], $metric['where']);
 
         foreach ($metric['where'] as $clause) {
             $this->assertNotSame('status', $clause[0], 'late_count must not filter on status');
@@ -41,7 +50,7 @@ class SemanticLayerTest extends TestCase
         // counting every row overstates leave taken by nearly 3x.
         $metric = SemanticLayer::metric('leave', 'leave_days_taken');
 
-        $this->assertContains(['status', '=', 'approved'], $metric['where']);
+        $this->assertContains(['leave_requests.status', '=', 'approved'], $metric['where']);
     }
 
     public function test_department_dimension_joins_groups_not_a_departments_table(): void
@@ -74,15 +83,25 @@ class SemanticLayerTest extends TestCase
         $this->assertNull(SemanticLayer::dimension('employees', 'blood_group'));
     }
 
-    public function test_prompt_catalogue_lists_every_entity_and_metric(): void
+    public function test_prompt_catalogue_lists_every_entity_and_names_every_curated_metric(): void
     {
+        // Curated metrics are listed by NAME — a planner has to pick one by
+        // name, and their definitions are hand-verified rather than obvious
+        // from the column. Derived metrics are compressed to a pattern
+        // instead of enumerated (SemanticLayerDerivationTest pins the budget
+        // that compression exists to protect), so a derived metric's own
+        // compound key is deliberately NOT required here.
         $catalogue = SemanticLayer::promptCatalogue();
 
         foreach (SemanticLayer::entities() as $key => $entity) {
             $this->assertStringContainsString($key, $catalogue);
 
-            foreach (array_keys($entity['metrics']) as $metric) {
-                $this->assertStringContainsString($metric, $catalogue);
+            foreach ($entity['metrics'] as $metric => $definition) {
+                if (($definition['origin'] ?? null) !== 'curated') {
+                    continue;
+                }
+
+                $this->assertStringContainsString($metric, $catalogue, "{$key}.{$metric} is curated and must be named");
             }
         }
     }
@@ -91,14 +110,23 @@ class SemanticLayerTest extends TestCase
     {
         // The planner prompt is built from these strings and goes to a cloaked
         // pre-release model. Nothing identifying may be reachable through them.
-        $forbidden = ['password', 'pan', 'uan', 'esi', 'account_number', 'ifsc'];
+        //
+        // Matched on word boundaries, not substring: "designation" contains
+        // "esi" and is a job title, not an identifier — the ~80 derived
+        // entities now genuinely expose columns like it, so a plain substring
+        // scan flags real, harmless columns. SchemaIntrospector::isExcludedColumn()
+        // already proves the same guarantee by word; this asserts it from the
+        // consumer side, the same way SchemaIntrospectorTest does.
+        $forbidden = ['password', 'pan', 'uan', 'esi', 'account', 'ifsc'];
 
         foreach (SemanticLayer::entities() as $entityKey => $entity) {
             foreach ($entity['dimensions'] as $dimensionKey => $dimension) {
+                $tokens = preg_split('/[^a-z0-9]+/', strtolower($dimension['select']), -1, PREG_SPLIT_NO_EMPTY);
+
                 foreach ($forbidden as $needle) {
-                    $this->assertStringNotContainsString(
+                    $this->assertNotContains(
                         $needle,
-                        strtolower($dimension['select']),
+                        $tokens,
                         "{$entityKey}.{$dimensionKey} exposes {$needle}"
                     );
                 }
@@ -114,11 +142,14 @@ class SemanticLayerTest extends TestCase
 
                 $this->assertArrayHasKey('label', $metric, $where);
                 $this->assertContains($metric['type'], ['money', 'number'], $where);
-                $this->assertContains($metric['aggregate'], ['avg', 'sum', 'count'], $where);
+                // min/max join derivation's own allowed set (SchemaIntrospectorTest)
+                // now that entities() carries the ~80 derived tables alongside
+                // the curated ones.
+                $this->assertContains($metric['aggregate'], ['avg', 'sum', 'count', 'min', 'max'], $where);
                 $this->assertIsArray($metric['where'], $where);
 
-                // A sum or avg with no column is a query the executor cannot build.
-                if (in_array($metric['aggregate'], ['avg', 'sum'], true) && $metricKey !== 'leave_days_taken') {
+                // A sum/avg/min/max with no column is a query the executor cannot build.
+                if (in_array($metric['aggregate'], ['avg', 'sum', 'min', 'max'], true) && $metricKey !== 'leave_days_taken') {
                     $this->assertNotNull($metric['column'], "{$where} aggregates but names no column");
                 }
             }

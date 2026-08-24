@@ -4,6 +4,7 @@ namespace Tests\Unit\Ai;
 
 use App\Services\Ai\PlanValidator;
 use App\Services\Ai\UnsupportedQuestionException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
@@ -11,9 +12,14 @@ use Tests\TestCase;
  * rejected by name — never coerced into the nearest match, because a silently
  * substituted metric is exactly the confident-wrong-number failure the whole
  * design is built to avoid.
+ *
+ * RefreshDatabase: PlanValidator resolves every plan through SemanticLayer,
+ * which now derives from the real schema.
  */
 class PlanValidatorTest extends TestCase
 {
+    use RefreshDatabase;
+
     private PlanValidator $validator;
 
     protected function setUp(): void

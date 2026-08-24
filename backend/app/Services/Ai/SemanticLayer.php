@@ -8,23 +8,66 @@ use App\Models\LeaveRequest;
 use App\Models\PayrollItem;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * What AI mode is allowed to be asked about, and what each number MEANS.
  *
- * The model picks a metric by name. It never decides how a number is computed,
- * because the obvious computation is measurably wrong more often than not:
- * AVG(net_pay) over every payroll item returns 76,313.27 where the right answer
- * is 91,575.93, and counting attendance lateness by `status` misses a third of
- * it. Those definitions live here, once, next to the reason.
+ * Seven hand-written entities covered under 10% of a 221-table schema, so
+ * coverage is now DERIVED from the schema itself (`SchemaIntrospector::derive()`,
+ * keyed by table) and correctness is CURATED on top of it (`MetricOverrides`,
+ * keyed by concept, plus the hand-written definitions below): a derived
+ * `AVG(net_pay)` answers 76,313.27 where the truth is 91,575.93, and this is
+ * the seam that stops that number reaching anyone.
  *
- * Adding a metric means adding a test that asserts its number against a known
- * fixture. Metrics are payroll code and get payroll care.
+ * The model picks a metric by name. It never decides how a number is computed,
+ * because the obvious computation is measurably wrong more often than not.
+ * Adding a curated metric means adding a test that asserts its number against
+ * a known fixture. Metrics are payroll code and get payroll care.
  */
 final class SemanticLayer
 {
-    /** @return array<string, array<string, mixed>> */
-    public static function entities(): array
+    /**
+     * Concept key => the table it owns. A table claimed here does NOT also
+     * appear under its own table name — one table, one entity, or the
+     * retriever offers the planner the same table twice.
+     */
+    private const CONCEPT_TABLES = [
+        'employees' => 'employee_work_infos',
+        'payroll' => 'payroll_items',
+        'attendance' => 'attendance_records',
+        'leave' => 'leave_requests',
+        'assets' => 'assets',
+        'work' => 'tasks',
+        'hiring' => 'candidates',
+        'activity' => 'activity_sessions',
+    ];
+
+    /**
+     * The original hand-written metrics and dimensions, kept byte-for-byte as
+     * they were verified against the live database. Re-deriving any of these
+     * is how a correct number becomes a wrong one again — so `curate()` merges
+     * them over the derived base per metric/dimension key, never wholesale.
+     * `list_columns` is the one addition: derivation introduces that concept,
+     * and `employees` needs one entry (see below) that could not have existed
+     * before it.
+     *
+     * `employees`' `label` and `model` matter beyond cosmetics: the table this
+     * concept derives from is `employee_work_infos`, but `QueryPlanExecutor`
+     * builds its base query on `users` and joins `employee_work_infos` onto
+     * it (`applyEntityJoins()`), so the entity's `model` has to stay
+     * `User::class` or that join has no base table to attach to.
+     *
+     * `MetricOverrides::forEntity()` is merged over this in turn where the two
+     * disagree — `avg_net_pay`, `total_gross` and `late_count` here are
+     * unqualified column names, and `MetricOverrides` holds the table-qualified
+     * versions that are safe once a dimension can join another table onto the
+     * same query.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function legacyEntities(): array
     {
         return [
             'employees' => [
@@ -55,6 +98,17 @@ final class SemanticLayer
                         'join' => null,
                         'select' => 'employee_work_infos.employment_type',
                         'null_label' => '(not set)',
+                    ],
+                ],
+                // Derivation runs off employee_work_infos, which has no `name`
+                // column of its own — the name is on `users`, which is what
+                // this entity's model (User::class, above) actually queries.
+                // No join needed: it is the base table.
+                'list_columns' => [
+                    'name' => [
+                        'label' => 'Name',
+                        'select' => 'users.name',
+                        'type' => 'text',
                     ],
                 ],
             ],
@@ -226,6 +280,86 @@ final class SemanticLayer
         ];
     }
 
+    /**
+     * The keying decision, stated once so nothing downstream has to guess it.
+     *
+     * `derive()` keys by table (`payroll_items`); `MetricOverrides` keys by
+     * concept (`payroll`). This returns BOTH: the eight concept keys keep their
+     * curated definitions, built as `derive()[table]` with the legacy
+     * hand-written entity and then `MetricOverrides::forEntity(concept)`
+     * merged over the top — every other org-scoped table appears under its own
+     * table-name key, and a table claimed by a concept does NOT also appear
+     * under its table name.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public static function entities(): array
+    {
+        $derived = SchemaIntrospector::derive();
+        $legacy = self::legacyEntities();
+        $entities = [];
+
+        foreach (self::CONCEPT_TABLES as $concept => $table) {
+            $base = $derived[$table] ?? null;
+
+            if ($base === null) {
+                continue; // the table is absent in this deployment; say nothing about it
+            }
+
+            $entities[$concept] = self::curate($concept, $base, $legacy[$concept] ?? null);
+            unset($derived[$table]);   // one table, one entity
+        }
+
+        foreach ($derived as $table => $entity) {
+            $entities[$table] = self::stampOrigins($entity);
+        }
+
+        return $entities;
+    }
+
+    /**
+     * Merge PER KEY, never per entity. Replacing $base['metrics'] wholesale
+     * would delete every derived metric on the table beside the one being
+     * corrected. Order matters: the legacy hand-written definition lands
+     * first (it is what was verified), and MetricOverrides lands last so it
+     * wins where the two disagree — MetricOverrides holds the newer,
+     * table-qualified version of the same fix.
+     */
+    private static function curate(string $concept, array $base, ?array $legacy): array
+    {
+        $entity = self::stampOrigins($base);
+
+        if ($legacy !== null) {
+            $entity['label'] = $legacy['label'];
+            $entity['model'] = $legacy['model'];
+
+            foreach (['metrics', 'dimensions', 'list_columns'] as $bucket) {
+                foreach ($legacy[$bucket] ?? [] as $name => $definition) {
+                    $entity[$bucket][$name] = $definition + ['origin' => 'curated'];
+                }
+            }
+        }
+
+        $overrides = MetricOverrides::forEntity($concept);
+
+        foreach (['metrics', 'dimensions'] as $bucket) {
+            foreach ($overrides[$bucket] as $name => $definition) {
+                $entity[$bucket][$name] = $definition + ['origin' => 'curated'];
+            }
+        }
+
+        return $entity;
+    }
+
+    private static function stampOrigins(array $entity): array
+    {
+        foreach ($entity['metrics'] as $name => $metric) {
+            $entity['metrics'][$name] = $metric + ['origin' => 'derived'];
+        }
+
+        return $entity;
+    }
+
     public static function entity(string $key): ?array
     {
         return self::entities()[$key] ?? null;
@@ -241,28 +375,211 @@ final class SemanticLayer
         return self::entity($entity)['dimensions'][$dimension] ?? null;
     }
 
+    public static function listColumn(string $entity, string $column): ?array
+    {
+        return self::entity($entity)['list_columns'][$column] ?? null;
+    }
+
     /**
-     * The catalogue the planner sees. Names and labels only — no rows, no
-     * column values, nothing that could carry employee data to the model.
+     * The whole layer, cached for a day and rebuilt the moment the schema
+     * changes.
+     *
+     * Schema-level, not tenant-level: the catalogue holds table and column
+     * names and no tenant data, so one cache serves every organization.
+     * Keying it on organization_id would multiply one identical catalogue by
+     * the tenant count.
+     *
+     * The `static` memo is not merely an optimisation on top of `Cache::remember`
+     * — `schemaFingerprint()` itself has to run to know which cache key to
+     * check, and that fingerprint walks every table's columns. Without the
+     * memo, a cache HIT would still cost a full schema walk on every call.
+     * With it, only the first call in a process does any of that work.
+     *
+     * @return array<string, array<string, mixed>>
      */
-    public static function promptCatalogue(): string
+    public static function cached(): array
+    {
+        static $memo = null;
+
+        return $memo ??= Cache::remember(
+            'ai.semantic-layer.'.self::schemaFingerprint(),
+            now()->addDay(),
+            fn () => self::entities(),
+        );
+    }
+
+    /**
+     * A cheap, deterministic signature of everything derivation depends on.
+     * Table names alone are not enough — a migration that only adds a column
+     * changes what gets derived without changing which tables exist, so the
+     * column names have to be part of the key too.
+     */
+    private static function schemaFingerprint(): string
+    {
+        $signature = collect(Schema::getTables())
+            ->pluck('name')
+            ->sort()
+            ->map(function (string $table) {
+                $columns = collect(Schema::getColumns($table))->pluck('name')->sort()->implode(',');
+
+                return $table.':'.$columns;
+            })
+            ->implode('|');
+
+        return md5($signature);
+    }
+
+    /**
+     * The catalogue for a SPECIFIC set of entities — what the retriever hands
+     * the planner once it has narrowed 80 entities down to the handful a
+     * question is actually about. Names and labels only — no rows, no column
+     * values, nothing that could carry employee data to the model.
+     *
+     * Curated metrics are listed BY NAME — a planner has to pick one by name,
+     * and their definitions are hand-verified rather than obvious from the
+     * column. Derived metrics are compressed to the PATTERN that produced
+     * them instead: `payroll` alone carries 300+ derived sum/avg/min/max
+     * metrics, one set per numeric column, and spelling every one out blew
+     * the retrieved-entity catalogue past 4,000 tokens on a single entity.
+     * The pattern conveys the identical vocabulary — every `{aggregate}_{col}`
+     * name is still choosable, just not enumerated — in a fraction of the
+     * space. Truncating the list instead would silently turn coverage into
+     * "the model can't see that metric", which is the one failure this
+     * design exists to prevent.
+     *
+     * @param  array<int, string>  $entityKeys
+     */
+    public static function promptCatalogueFor(array $entityKeys): string
     {
         $lines = [];
 
-        foreach (self::entities() as $key => $entity) {
-            $metrics = [];
-            foreach ($entity['metrics'] as $metricKey => $metric) {
-                $metrics[] = $metricKey . ' (' . $metric['label'] . ')';
+        foreach ($entityKeys as $key) {
+            $entity = self::entity($key);
+
+            if ($entity === null) {
+                continue;
             }
 
-            $lines[] = sprintf(
-                "- %s: metrics = [%s]; group_by = [%s]",
-                $key,
-                implode(', ', $metrics),
-                implode(', ', array_keys($entity['dimensions']))
-            );
+            $lines[] = sprintf('- %s (%s)', $key, $entity['label']);
+
+            $curated = self::curatedMetricNames($entity['metrics']);
+            if ($curated !== []) {
+                $lines[] = '    metrics: '.implode(', ', $curated);
+            }
+
+            foreach (self::derivedMetricPatterns($entity['metrics']) as $pattern) {
+                $lines[] = '    metrics: '.$pattern;
+            }
+
+            array_push($lines, ...self::groupableAndListableLines($entity));
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $metrics
+     * @return list<string>
+     */
+    private static function curatedMetricNames(array $metrics): array
+    {
+        $names = [];
+
+        foreach ($metrics as $name => $metric) {
+            if (($metric['origin'] ?? null) === 'curated') {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Derived metrics, one line per distinct aggregate pattern rather than
+     * one line per metric. `count` (no column) stands alone; every other
+     * derived metric is grouped by its underlying column, and columns that
+     * share the identical set of aggregates share one line — the common
+     * case, since SchemaIntrospector always derives sum/avg/min/max together
+     * for a measurable column, so it is usually one line for the whole
+     * entity rather than four per column.
+     *
+     * @param  array<string, array<string, mixed>>  $metrics
+     * @return list<string>
+     */
+    private static function derivedMetricPatterns(array $metrics): array
+    {
+        $lines = [];
+        $columnsByAggregateSet = [];
+
+        foreach ($metrics as $metric) {
+            if (($metric['origin'] ?? null) !== 'derived') {
+                continue;
+            }
+
+            if ($metric['aggregate'] === 'count') {
+                $lines[] = 'count';
+
+                continue;
+            }
+
+            $columnsByAggregateSet[$metric['column']][] = $metric['aggregate'];
+        }
+
+        $columnsBySignature = [];
+        foreach ($columnsByAggregateSet as $column => $aggregates) {
+            sort($aggregates);
+            $columnsBySignature[implode(',', $aggregates)][] = $column;
+        }
+
+        foreach ($columnsBySignature as $signature => $columns) {
+            $prefixes = implode('/', array_map(fn (string $a) => $a.'_', explode(',', $signature)));
+            $lines[] = sprintf('%s over %s', $prefixes, implode(', ', $columns));
+        }
+
+        return $lines;
+    }
+
+    /**
+     * `per` (dimensions) and `columns` (list_columns) come from the SAME
+     * per-column loop in SchemaIntrospector, so on a wide table they are
+     * nearly the same ~90 names twice — that duplication, not metrics, is
+     * what pushed `payroll` alone over budget once the metrics were
+     * compressed. The names shared by both buckets are printed once; a name
+     * that is only groupable or only listable is called out separately, so
+     * nothing is lost — every key still appears under whichever line(s) it
+     * genuinely belongs to.
+     *
+     * @return list<string>
+     */
+    private static function groupableAndListableLines(array $entity): array
+    {
+        $dimensionKeys = array_keys($entity['dimensions']);
+        $columnKeys = array_keys($entity['list_columns']);
+
+        $shared = array_values(array_intersect($dimensionKeys, $columnKeys));
+        $dimensionOnly = array_values(array_diff($dimensionKeys, $columnKeys));
+        $columnOnly = array_values(array_diff($columnKeys, $dimensionKeys));
+
+        $lines = [];
+
+        if ($shared !== []) {
+            $lines[] = sprintf('    per/columns: %s', implode(', ', $shared));
+        }
+
+        if ($dimensionOnly !== []) {
+            $lines[] = sprintf('    per (group-by only): %s', implode(', ', $dimensionOnly));
+        }
+
+        if ($columnOnly !== []) {
+            $lines[] = sprintf('    columns (list only): %s', implode(', ', $columnOnly));
+        }
+
+        return $lines;
+    }
+
+    /** The full catalogue, unfiltered. Kept for callers that have not adopted retrieval yet. */
+    public static function promptCatalogue(): string
+    {
+        return self::promptCatalogueFor(array_keys(self::cached()));
     }
 }
