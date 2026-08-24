@@ -3098,6 +3098,32 @@ class ReportController extends Controller
         return (string) ($departments->first() ?? 'Unassigned');
     }
 
+    /**
+     * Joiners, leavers and a running headcount, by month.
+     *
+     * Two grouped queries. The running total is walked BACKWARDS from today's
+     * real headcount rather than accumulated forwards from zero - see the
+     * service comment: joining dates do not reach back to the organisation's
+     * founding, so counting up produces a curve that is wrong everywhere
+     * except its last point.
+     */
+    public function headcountSeries(Request $request, \App\Services\Reports\HeadcountSeriesService $series)
+    {
+        $data = $request->validate([
+            'from' => 'nullable|date',
+            'to' => 'nullable|date',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $series->monthly(
+                $request->user()->organization_id,
+                $data['from'] ?? null,
+                $data['to'] ?? null
+            ),
+        ]);
+    }
+
     public function attendance(Request $request)
     {
         $this->normalizeDepartmentIdsFilter($request);

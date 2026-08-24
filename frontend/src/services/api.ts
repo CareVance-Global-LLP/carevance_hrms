@@ -2210,6 +2210,73 @@ export const dashboardApi = {
   summary: () => api.get('/dashboard'),
 };
 
+/**
+ * The admin dashboard's own feed.
+ *
+ * Three calls that between them replace roughly a dozen. Each one exists
+ * because the dashboard was previously either doing the aggregation in the
+ * browser or paying one query per employee to get a scalar.
+ */
+export const opsDashboardApi = {
+  /**
+   * The whole organisation, today, as scalars.
+   *
+   * Replaces six of the seven calls the census strip used to make.
+   * `attendanceApi.summary` builds a row per employee and runs an
+   * AttendanceRecord query with a punches eager-load inside the map - a
+   * roster table's cost paid to render six numbers.
+   *
+   * `roster.published` is load-bearing: false means the absence figure is
+   * UNKNOWABLE, not zero. A green "0 absent" on a tenant that never published
+   * a roster is the exact thing this flag prevents.
+   */
+  todaySummary: (params?: { date?: string }) =>
+    api.get<{
+      success: boolean;
+      data: {
+        date: string;
+        headcount: number;
+        present_on_time: { count: number; user_ids: number[] };
+        late: { count: number; user_ids: number[]; total_minutes: number };
+        on_leave: { count: number; user_ids: number[]; half_day: number };
+        rostered_absent: { count: number; user_ids: number[] };
+        working_now: { count: number; user_ids: number[] };
+        roster: { published: boolean; rostered: number; rest_day: number; not_rostered: number };
+      };
+    }>('/attendance/today-summary', { params }),
+
+  /** Joiners, leavers and a running headcount by month. Two grouped queries. */
+  headcountSeries: (params?: { from?: string; to?: string }) =>
+    api.get<{
+      success: boolean;
+      data: {
+        from: string;
+        to: string;
+        current_headcount: number;
+        months: Array<{ month: string; joined: number; left: number; headcount: number }>;
+      };
+    }>('/reports/headcount-series', { params }),
+
+  /**
+   * Every approval queue as one number each.
+   *
+   * A null means "not counted" - the table is absent on this tenant - and must
+   * never be rendered as a zero, which reads as "nothing is waiting on you".
+   */
+  pendingCounts: () =>
+    api.get<{
+      success: boolean;
+      data: {
+        leave: number | null;
+        time_edits: number | null;
+        resignations: number | null;
+        reimbursements: number | null;
+        filings_overdue: number | null;
+        total: number;
+      };
+    }>('/approvals/pending-counts'),
+};
+
 export const attendanceApi = {
   /**
    * The presence board an ordinary employee sees of their own department.
@@ -2608,6 +2675,41 @@ export const aiChatApi = {
   // the reader can go and check. Empty when the answer needed no tool.
   chat: (data: { message: string; history?: Array<{ role: string; content: string }>; context?: 'admin' | 'landing' }) =>
     api.post<{ reply: string; sources: Array<{ label: string; route: string }> }>('/ai/chat', data),
+};
+
+export type AskColumn = { key: string; label: string; type: 'text' | 'money' | 'number' };
+
+export type AskPlan = {
+  entity: string;
+  metric: string;
+  group_by: string | null;
+  filters: Record<string, unknown>;
+  sort: string | null;
+  limit: number;
+};
+
+export type AskRow = Record<string, string | number | null>;
+
+export type AskResponse = {
+  plan: AskPlan;
+  columns: AskColumn[];
+  rows: AskRow[];
+  /** Metric caveats — e.g. which rows an average deliberately excludes. */
+  notes: string[];
+  /** Always null here; filled by the separate summary call. */
+  summary: string | null;
+  truncated: boolean;
+};
+
+export const searchAskApi = {
+  // Returns the derived plan alongside the rows on purpose: a payroll figure
+  // nobody can check is worse than no figure.
+  ask: (question: string) => api.post<AskResponse>('/search/ask', { question }),
+
+  // Split from ask() so the table renders at ~3.5s instead of waiting ~9s for
+  // a sentence that is an enrichment, not the answer.
+  summary: (data: { question: string; columns: AskColumn[]; rows: AskRow[] }) =>
+    api.post<{ summary: string | null }>('/search/ask/summary', data),
 };
 
 export const notificationApi = {

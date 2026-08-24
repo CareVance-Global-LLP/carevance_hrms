@@ -7,6 +7,7 @@ use App\Http\Requests\Api\Attendance\AttendanceCalendarRequest;
 use App\Http\Requests\Api\Attendance\AttendanceSummaryRequest;
 use App\Services\Attendance\AttendanceService;
 use App\Services\Attendance\TeamPresenceService;
+use App\Services\Attendance\TodaySnapshotService;
 use Illuminate\Http\Request;
 
 use Illuminate\Support\Facades\Log;
@@ -82,6 +83,45 @@ class AttendanceController extends Controller
         );
 
         return response()->json($result['payload'], $result['status']);
+    }
+
+    /**
+     * The whole organisation, today, as scalars.
+     *
+     * Replaces six of the seven calls the dashboard's census strip used to
+     * make. `summary()` below builds a row per employee and runs an
+     * AttendanceRecord query with a punches eager-load inside the map — fine
+     * for a roster table, a true N+1 for six numbers.
+     */
+    public function todaySummary(Request $request, TodaySnapshotService $snapshot)
+    {
+        $data = $request->validate([
+            'date' => 'nullable|date',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $snapshot->forOrganization(
+                $request->user()->organization_id,
+                $data['date'] ?? null
+            ),
+        ]);
+    }
+
+    /**
+     * Every queue waiting on an administrator, in one call.
+     *
+     * The attention strip made six round trips across three counting
+     * conventions — a pre-limit paginator total, a data.length under a hard
+     * 200-row cap, and a bare unpaginated array. These are COUNT queries, so
+     * no cap applies and a count is a count.
+     */
+    public function pendingApprovals(Request $request, \App\Services\PendingApprovalsService $approvals)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $approvals->withTotal($request->user()->organization_id),
+        ]);
     }
 
     public function calendar(AttendanceCalendarRequest $request)

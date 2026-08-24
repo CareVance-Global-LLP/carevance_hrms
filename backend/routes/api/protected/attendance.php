@@ -14,6 +14,23 @@ use Illuminate\Support\Facades\Route;
 Route::get('/attendance/today', [AttendanceController::class, 'today']);
 Route::post('/attendance/check-in', [AttendanceController::class, 'checkIn']);
 Route::post('/attendance/check-out', [AttendanceController::class, 'checkOut']);
+/*
+ * Org-wide scalars for today. Registered beside the calendar because they
+ * answer the same question at two resolutions - this one for the dashboard's
+ * census strip, the calendar for the trend behind it.
+ *
+ * It exists to replace AttendanceController::summary on that strip: summary
+ * runs one AttendanceRecord query per employee, which is a roster table's
+ * cost paid to render six numbers.
+ */
+Route::get('/attendance/today-summary', [AttendanceController::class, 'todaySummary']);
+
+/*
+ * Every approval queue as one number each. Six badges used to cost six round
+ * trips across three counting conventions; these are COUNT queries, so the
+ * 200-row cap on time-edit requests cannot render as a confident "200".
+ */
+Route::get('/approvals/pending-counts', [AttendanceController::class, 'pendingApprovals']);
 Route::get('/attendance/calendar', [AttendanceController::class, 'calendar']);
 // The calendar says what happened; this says what it COST and why. Kept apart
 // because a month of penalisation outcomes walks an exemption cycle per day.
