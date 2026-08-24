@@ -213,17 +213,6 @@ export default function EmployeeDetailsSection({
     payout_method: 'bank_transfer',
     is_default: true,
   });
-  const [docForm, setDocForm] = useState<Record<string, any>>({
-    title: '',
-    category: 'other',
-    review_status: 'pending',
-    file: null,
-    // Off by default. A record holds warning letters and background checks as
-    // readily as offer letters, and nothing on the row tells them apart — so
-    // sharing is a decision somebody makes, never the fallback.
-    visible_to_employee: false,
-  });
-
   const canEditOwnProfile = editable ? true : false;
   const { hasFeature } = usePlan();
   const hasPayrollFeature = hasFeature('payroll');
@@ -237,6 +226,28 @@ export default function EmployeeDetailsSection({
    * would let one overwrite the other.
    */
   const workspaceQueryKey = selfService ? ['my-employee-records'] : ['employee-workspace', id];
+
+  /**
+   * Refresh this record AND anything reading the onboarding checklist.
+   *
+   * A document upload can complete a checklist item on the server, and until
+   * the panels showing that checklist are told, they keep rendering the pending
+   * circle they cached. That is the whole reason ticking felt manual: the
+   * backend had already completed the item and no screen went back to look.
+   *
+   * All three onboarding keys, because this one component is the upload surface
+   * for every side — the joiner's own Settings page, and both admin views of
+   * somebody else's record — and the tick has to land wherever it is being
+   * watched.
+   */
+  const invalidateRecordAndOnboarding = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: workspaceQueryKey }),
+      queryClient.invalidateQueries({ queryKey: ['my-onboarding'] }),
+      queryClient.invalidateQueries({ queryKey: ['onboarding-journey'] }),
+      queryClient.invalidateQueries({ queryKey: ['onboarding-journeys'] }),
+    ]);
+  };
 
   const workspaceQuery = useQuery({
     queryKey: workspaceQueryKey,
@@ -361,7 +372,7 @@ export default function EmployeeDetailsSection({
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Government ID saved successfully.' });
       setGovForm({ id_type: 'aadhaar', id_number: '', status: 'pending' });
-      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+      await invalidateRecordAndOnboarding();
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save government ID.' });
@@ -376,7 +387,7 @@ export default function EmployeeDetailsSection({
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Education record saved.' });
       setEducationForm({ qualification: '', certificate_file: null });
-      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+      await invalidateRecordAndOnboarding();
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save the education record.' });
@@ -432,7 +443,7 @@ export default function EmployeeDetailsSection({
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Experience document uploaded.' });
       setExperienceForm({ title: '', file: null });
-      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+      await invalidateRecordAndOnboarding();
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not upload the experience document.' });
@@ -446,42 +457,10 @@ export default function EmployeeDetailsSection({
     }),
     onSuccess: async () => {
       setFeedback({ tone: 'success', message: 'Bank details saved successfully.' });
-      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
+      await invalidateRecordAndOnboarding();
     },
     onError: (error: any) => {
       setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not save bank details.' });
-    },
-  });
-
-  const saveDocMutation = useMutation({
-    // See saveExperienceMutation: the client assembles the FormData, so it has
-    // to be given the fields, not a FormData.
-    mutationFn: async () => {
-      if (!docForm.file) {
-        throw new Error('Choose a file to upload.');
-      }
-
-      const payload = {
-        title: docForm.title,
-        category: docForm.category,
-        file: docForm.file as File,
-      };
-
-      return selfService
-        ? myEmployeeRecordApi.uploadDocument(payload)
-        : employeeWorkspaceApi.uploadDocument(id, {
-            ...payload,
-            review_status: docForm.review_status,
-            visible_to_employee: Boolean(docForm.visible_to_employee),
-          });
-    },
-    onSuccess: async () => {
-      setFeedback({ tone: 'success', message: 'Document uploaded successfully.' });
-      setDocForm({ title: '', category: 'other', review_status: 'pending', file: null, visible_to_employee: false });
-      await queryClient.invalidateQueries({ queryKey: workspaceQueryKey });
-    },
-    onError: (error: any) => {
-      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Could not upload document.' });
     },
   });
 
@@ -1505,7 +1484,7 @@ export default function EmployeeDetailsSection({
           <p className="mt-1 text-sm text-slate-500">
             {selfService
               ? 'Documents on your record. Ask HR to add or replace anything here.'
-              : 'Upload and manage employee documents.'}
+              : 'Documents on this record. They are filed by the section each belongs to — Government IDs, Bank, Education, Experience.'}
           </p>
 
           {generalDocuments.length > 0 && (
@@ -1566,98 +1545,31 @@ export default function EmployeeDetailsSection({
           )}
 
           {/*
-            Uploading is HR's, not the employee's.
+            There is no upload form here, deliberately.
 
-            They still SEE this section — their offer letter, their ID proofs,
-            anything shared with them — and can open and download it. What they
-            cannot do is add to it, which keeps one hand on what ends up on a
-            personnel record.
+            Every category it offered had a section of its own by the end:
+            Identity and Address Proof duplicated Government IDs, where a PAN or
+            an Aadhaar is recorded WITH its proof and the checklist can tell one
+            from the other. Education and Experience had already been removed
+            for the same reason. What was left filed a scan under a free-text
+            title next to a structured record of the same fact, and an admin had
+            to guess which of the two places was the real one.
+
+            The list above still shows everything on the record, whichever
+            section put it there.
           */}
-          {!selfService && (canEditOwnProfile || canEditWorkInfo) && (
-            <div className="mt-6 border-t border-slate-200 pt-6">
-              <p className="text-sm font-medium text-slate-900">Upload New Document</p>
-              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
-                <div>
-                  <FieldLabel>Document Title</FieldLabel>
-                  <TextInput
-                    value={docForm.title || ''}
-                    onChange={(event) => setDocForm((current) => ({ ...current, title: event.target.value }))}
-                    placeholder="e.g., Experience Certificate"
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Category</FieldLabel>
-                  {/*
-                    Education and Experience were removed from this list. Both
-                    now have a section of their own, and leaving them here gave
-                    an admin two different places to upload a degree
-                    certificate — one that recorded the qualification and one
-                    that filed the scan under a free-text title.
 
-                    The two remaining values are id_proof and address_proof,
-                    not 'identity' and 'address'. Those were what this dropdown
-                    wrote, and they match nothing already stored: the database
-                    holds 99 id_proof and 30 address_proof rows, so every
-                    upload through this form landed in a category of its own
-                    and grouped with none of them.
-                  */}
-                  <SelectInput
-                    value={docForm.category || 'other'}
-                    onChange={(event) => setDocForm((current) => ({ ...current, category: event.target.value }))}
-                  >
-                    <option value="id_proof">Identity</option>
-                    <option value="address_proof">Address Proof</option>
-                    <option value="other">Other</option>
-                  </SelectInput>
-                </div>
-                <div>
-                  <FieldLabel>File</FieldLabel>
-                  <input
-                    type="file"
-                    className="block min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-                    onChange={(event) => setDocForm((current) => ({ ...current, file: event.target.files?.[0] || null }))}
-                  />
-                </div>
-              </div>
-              {/*
-                Who the upload is for.
-
-                Everything on this record is equally invisible to the employee
-                until somebody says otherwise, which is what keeps an internal
-                note internal. The cost is that their offer letter and Form 16
-                also need ticking, so the control sits next to the file rather
-                than behind a menu.
-
-                Absent on the employee's own panel: nobody decides whether they
-                may see a file they just uploaded themselves, and the /me route
-                sets it regardless of what the form sends.
-              */}
-              {!selfService && (
-              <label className="mt-4 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-0.5"
-                  checked={Boolean(docForm.visible_to_employee)}
-                  onChange={(event) => setDocForm((current) => ({ ...current, visible_to_employee: event.target.checked }))}
-                />
-                <span>
-                  <span className="font-medium text-slate-900">Share with this employee</span>
-                  <span className="mt-0.5 block text-slate-500">
-                    It appears in their own Settings &rarr; Profile. Leave this unticked for
-                    anything internal.
-                  </span>
-                </span>
-              </label>
-              )}
-              <div className="mt-4">
-                <Button
-                  onClick={() => saveDocMutation.mutate()}
-                  disabled={saveDocMutation.isPending || !docForm.title || !docForm.file}
-                >
-                  {saveDocMutation.isPending ? 'Uploading...' : 'Upload Document'}
-                </Button>
-              </div>
-            </div>
+          {/*
+            An empty state, because the upload form used to occupy this space.
+            Without it the section renders as a bare heading over nothing, which
+            reads as a page that failed to load rather than a record with no
+            general documents on it yet.
+          */}
+          {generalDocuments.length === 0 && (
+            <p className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              No general documents on file. Anything added under Government IDs,
+              Bank, Education or Experience appears in its own section above.
+            </p>
           )}
         </section>
       )}

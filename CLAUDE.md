@@ -150,6 +150,56 @@ Hiring opens a journey automatically (`UserController::openOnboardingJourney` �
 - Future joining dates are **valid** — pre-boarding is the normal path.
 - A joiner reads their own journey via `GET /api/onboarding/my-journey`, and can complete only `owner_kind = 'employee'` items.
 
+**Items complete themselves from evidence — nobody ticks them.**
+
+`ChecklistEvidenceSync` reconciles a journey's outstanding document items against
+what is actually on the employee's record. It runs on journey open, on
+`linkUser`, on every document upload, and on **every read** of the checklist from
+either panel. Read-time reconciliation is what retro-fits existing tenants with
+no backfill migration and no queue worker — the first person to open either
+screen fixes that journey.
+
+- **Two kinds of evidence, and a document wins.** `DocumentChecklistMatcher`
+  answers from uploads; `ProfileRecordChecklistMatcher` answers from recorded
+  details — a PAN via `statutoryId('pan')`, a non-PAN government ID, a bank
+  account that `SalaryAccountResolver` says is payable. Requiring a file was
+  wrong: four of eight live journeys had a PAN, an Aadhaar and a bank account
+  with `employee_document_id = NULL`, so their blocking items could never clear
+  while the profile panel displayed the data.
+- **A hand-tick is refused for anything evidence can satisfy**, by the API and
+  not merely by hiding the checkbox — `ChecklistEvidenceSync::isEvidenceBacked()`
+  gates `completeItem`. "Add PAN details ✓" against a record with no PAN is not
+  a status, it is a false statement, and payroll is what finds out. `contract`
+  and the acknowledgement items stay hand-tickable: neither has any other
+  mechanism, so withdrawing the tick would make them impossible.
+- **`evidence_kind` / `evidence_label` keep three cases apart** — a file did it,
+  a record did it, or a human did. Collapse them and a hand-tick is
+  indistinguishable from real evidence. Both panels render "From …" only when
+  something is actually behind the tick, so a bare tick looks bare.
+- **Stamps come from the evidence, never the reader.** `completed_at` is the
+  upload's or the record's own timestamp and `completed_by` its uploader or the
+  employee — otherwise a sync months later records "completed today by whoever
+  opened New Hires".
+- **The three titles say "Add", not "Upload"**, because a typed detail satisfies
+  them. `employment` and `contract` keep "Upload"; both still need the file.
+- **`contract` is unsatisfiable by design.** No upload path produces that
+  category and no recorded fact stands in for a signature. Guessing at one would
+  clear a blocking gate because somebody filed an unrelated file.
+- **One file cannot clear two gates.** The pan/identity split holds on both the
+  document and the record side — a PAN is not proof of address, and it has an
+  item of its own.
+- **Documents are filed by the section they belong to**, never a generic
+  uploader. Government IDs, Bank, Education and Experience each capture the file
+  *with* its structured record; the Documents block is display-only. A second
+  place to file the same fact means an admin has to guess which one is real —
+  the same reasoning that removed Education and Experience from that dropdown
+  earlier.
+- **Identity is "proof of identity and address", never "Aadhaar".** *Puttaswamy*
+  struck down s.57 of the Aadhaar Act and the 2019 Amendment permits Aadhaar
+  only voluntarily, with informed consent; a private employer cannot compel it
+  and must accept a passport, voter ID or licence. Naming the fact rather than
+  the document is what keeps the item lawful.
+
 ### Payroll
 
 Run status: `draft → locked → approved → released → disbursed`.
@@ -311,6 +361,18 @@ Real, and deliberately not yet built:
 - **Rostering has no drag-and-drop calendar.** Patterns, generation, publishing, coverage and swaps all have a screen at `/roster` (see below). What is missing is direct manipulation — a manager sets a one-off day through the API rather than by dragging a shift onto a cell.
 - **No biometric device ingestion beyond ADMS push.** The push protocol is implemented (see below), which covers eSSL, ZKTeco, Biomax and Matrix terminals configured to post to a cloud server. Devices that only offer SDK pull, or that sit on a LAN with no outbound route, still cannot talk to this.
 - **Accounting export has no direct API push.** A payroll run exports to Tally XML and a Zoho Books journal CSV, previewed and downloaded from Payroll → Reports → Accounting (`AccountingExportPicker`). What is missing is a live connection that posts into Zoho or Tally rather than producing a file somebody imports by hand.
+- **Employee documents have no expiry, and no verification queue.** Onboarding
+  now collects them and ticks itself from them (see Onboarding above), but three
+  things a document system is expected to do are absent. `employee_documents`
+  has no expiry column at all — a passport expiry is tracked on
+  `employee_government_ids`, a work permit filed as a document is not, and
+  nothing warns before either lapses. `review_status` exists with
+  `pending|verified|rejected` and **nothing surfaces it**, so no one can mark a
+  document verified or see what is waiting; it is a dead column, not a feature.
+  And there is no document *purpose* — Keka separates collected from
+  acknowledged from signed, whereas here one free-text `category` covers all
+  three, with signing implemented only for offer letters. No OCR extraction and
+  no folders either, though those matter less.
 - **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.
 - **0 Laravel policies.** Authorization is inline in controllers, though the `Role`/`Permission` schema and `hasPermission()` are real and maker-checker now covers the full payroll chain.
 - **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.

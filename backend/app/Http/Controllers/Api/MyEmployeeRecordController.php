@@ -371,6 +371,10 @@ class MyEmployeeRecordController extends Controller
             'title' => 'required|string|max:255',
             'category' => 'required|string|max:80',
             'notes' => 'nullable|string',
+            // Which kind of ID a government_id_proof proves. The category alone
+            // cannot tell a PAN card from an Aadhaar, and the checklist matcher
+            // reads exactly this to decide which item the upload answers.
+            'id_type' => 'nullable|string|max:80',
             'file' => 'required|file|max:15360',
         ]);
 
@@ -378,6 +382,13 @@ class MyEmployeeRecordController extends Controller
         $data['review_status'] = 'pending';
         // Their own upload; hiding it from them would be absurd.
         $data['visible_to_employee'] = true;
+
+        // Carried on the document, mirroring how the government-ID controllers
+        // stamp it: the proof is written before any row that would link back to
+        // it, so the type has to travel with the file.
+        if (! empty($data['id_type'])) {
+            $data['meta'] = ['id_type' => $data['id_type']];
+        }
 
         $document = $this->employeeWorkspaceService->storeDocument($user, $user, $data, $request->file('file'));
         $this->employeeWorkspaceService->recordActivity(

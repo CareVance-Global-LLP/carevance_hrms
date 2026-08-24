@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Circle, Loader2, PartyPopper } from 'lucide-react';
+import { CheckCircle2, Circle, FileCheck2, Loader2, PartyPopper } from 'lucide-react';
 import { onboardingApi, type ChecklistItem } from '@/services/api';
 import { formatDate } from '@/lib/dateTime';
+import { isEvidenceBacked } from '@/features/lifecycle/checklistEvidence';
 
 /**
  * A new joiner's own onboarding, on their dashboard.
@@ -19,8 +20,17 @@ export default function MyOnboardingCard() {
   const { data, isLoading } = useQuery({
     queryKey: ['my-onboarding'],
     queryFn: async () => (await onboardingApi.myJourney()).data.data,
-    // A joiner's checklist changes when HR or they act on it, not by the second.
-    staleTime: 60_000,
+    /*
+     * Always refetched on mount, and never served stale.
+     *
+     * The read is what reconciles the checklist against the documents on file,
+     * so a cached answer is not merely old — it is the answer from before the
+     * upload the joiner just made. With a 60s staleTime they uploaded their PAN
+     * card in Settings, came back to the dashboard, and saw the same pending
+     * circle, which reads as "the upload did not work".
+     */
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const completeItem = useMutation({
@@ -79,13 +89,30 @@ export default function MyOnboardingCard() {
           {items.map((item) => {
             const done = item.status === 'done';
             const busy = completeItem.isPending && completeItem.variables?.id === item.id;
+            // A manual tick leaves both empty, and then there is nothing
+            // truthful to name.
+            const evidence = item.evidence_label ?? item.document?.title ?? null;
+            /*
+             * The joiner does not tick these either.
+             *
+             * "Add PAN details" ticked by the person who was asked for the PAN,
+             * without the PAN, is the least useful record in the system — and
+             * the API refuses it, so offering the control would only produce an
+             * error. Uploading it in Settings → Profile is what completes it.
+             */
+            const evidenceOnly = isEvidenceBacked(item);
 
             return (
               <li key={item.id}>
                 <button
                   type="button"
-                  disabled={done || busy}
+                  disabled={done || busy || evidenceOnly}
                   onClick={() => completeItem.mutate(item)}
+                  title={
+                    evidenceOnly && !done
+                      ? 'Completes itself once you add this in Settings → Profile.'
+                      : undefined
+                  }
                   className="flex w-full items-start gap-2.5 rounded-lg border border-transparent bg-white px-3 py-2.5 text-left transition hover:border-sky-200 disabled:cursor-default disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-sky-500"
                 >
                   {busy ? (
@@ -100,11 +127,35 @@ export default function MyOnboardingCard() {
                       {item.title}
                     </span>
                     <span className="mt-0.5 block text-[11px] text-slate-500">
-                      {item.is_blocking && !done && (
-                        <span className="font-semibold text-warning-800">Required</span>
+                      {/*
+                        What satisfied it — a file, or a detail already on their
+                        record. Without this a done item looks identical whether
+                        the evidence cleared it or somebody clicked, and the
+                        joiner cannot see that what they supplied was what
+                        counted.
+                      */}
+                      {done && evidence ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-700">
+                          <FileCheck2 className="h-3 w-3 shrink-0" />
+                          <span className="truncate">From {evidence}</span>
+                        </span>
+                      ) : (
+                        <>
+                          {item.is_blocking && !done && (
+                            <span className="font-semibold text-warning-800">Required</span>
+                          )}
+                          {item.is_blocking && !done && item.due_date ? <span> · </span> : null}
+                          {item.due_date ? <span>by {formatDate(item.due_date)}</span> : null}
+                          {/*
+                            Where to go, since the row is no longer a control.
+                            Without this the joiner is left with an item they
+                            cannot act on and no hint that it completes itself.
+                          */}
+                          {evidenceOnly ? (
+                            <span className="mt-0.5 block text-sky-700">Add this in Settings → Profile</span>
+                          ) : null}
+                        </>
                       )}
-                      {item.is_blocking && !done && item.due_date ? <span> · </span> : null}
-                      {item.due_date ? <span>by {formatDate(item.due_date)}</span> : null}
                     </span>
                   </span>
                 </button>

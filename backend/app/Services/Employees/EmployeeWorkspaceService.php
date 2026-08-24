@@ -20,8 +20,7 @@ use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\Reimbursement;
 use App\Models\User;
-use App\Services\Lifecycle\ChecklistService;
-use App\Services\Lifecycle\DocumentChecklistMatcher;
+use App\Services\Lifecycle\ChecklistEvidenceSync;
 use App\Services\Lifecycle\PayrollReadinessService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
@@ -301,7 +300,7 @@ class EmployeeWorkspaceService
             'visible_to_employee' => (bool) ($data['visible_to_employee'] ?? false),
         ])->fresh('uploader');
 
-        $this->tickChecklistItemsFor($employee, $actor, $document);
+        $this->tickChecklistItemsFor($employee);
 
         return $document;
     }
@@ -314,15 +313,17 @@ class EmployeeWorkspaceService
      * already on disk and the row already written by this point, so an
      * exception here would report failure for something that plainly succeeded.
      */
-    private function tickChecklistItemsFor(User $employee, User $actor, EmployeeDocument $document): void
+    private function tickChecklistItemsFor(User $employee): void
     {
         try {
-            $matcher = app(DocumentChecklistMatcher::class);
-            $checklist = app(ChecklistService::class);
-
-            foreach ($matcher->pendingItemsFor($employee, $document) as $item) {
-                $checklist->completeFromDocument($item, $actor, $document);
-            }
+            // Reconciled against every document on file, not just the one that
+            // just arrived. The new upload is in that set, so this does
+            // everything the single-document match did — and it also picks up
+            // anything an earlier request missed, which is the whole reason
+            // items used to sit pending next to a file that plainly answered
+            // them. `completed_by` and `completed_at` come off each document,
+            // so for this upload they are still this actor and now.
+            app(ChecklistEvidenceSync::class)->syncForEmployee($employee);
         } catch (\Throwable $exception) {
             report($exception);
         }

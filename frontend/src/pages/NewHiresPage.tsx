@@ -504,6 +504,13 @@ export default function NewHiresPage() {
               busyItemId={busyItemId}
               onComplete={(item) => void toggleItem(item, true)}
               onReopen={(item) => void toggleItem(item, false)}
+              // Only once an account exists — a pre-boarding journey has nobody
+              // to file a document against.
+              uploadFor={openJourney.user_id ? { userId: openJourney.user_id } : null}
+              onUploaded={() => {
+                setFeedback({ tone: 'success', message: 'Uploaded. The item completes itself from the file.' });
+                void invalidate();
+              }}
             />
           </div>
         )}

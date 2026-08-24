@@ -400,8 +400,19 @@ class EmployeeWorkspaceController extends Controller
             // meant for the employee; a warning letter on the same record is
             // not, and the row itself cannot tell them apart.
             'visible_to_employee' => 'nullable|boolean',
+            // Which kind of ID a government_id_proof proves. The category alone
+            // cannot tell a PAN card from an Aadhaar, and the checklist matcher
+            // reads exactly this to decide which item the upload answers.
+            'id_type' => 'nullable|string|max:80',
             'file' => 'required|file|max:15360',
         ]);
+
+        // Carried on the document, mirroring how the government-ID controllers
+        // stamp it: the proof is written before any row that would link back to
+        // it, so the type has to travel with the file.
+        if (! empty($data['id_type'])) {
+            $data['meta'] = ['id_type' => $data['id_type']];
+        }
 
         $document = $this->employeeWorkspaceService->storeDocument($employee, $currentUser, $data, $request->file('file'));
         $this->employeeWorkspaceService->recordActivity($employee, $currentUser, 'employee.document_uploaded', 'Uploaded a document.', [

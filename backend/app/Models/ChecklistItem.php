@@ -34,6 +34,8 @@ class ChecklistItem extends Model
         'completed_by',
         'notes',
         'employee_document_id',
+        'evidence_kind',
+        'evidence_label',
         'asset_assignment_id',
         'sort_order',
     ];
