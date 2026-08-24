@@ -360,9 +360,27 @@ final class SemanticLayer
         return $entity;
     }
 
+    /**
+     * The read path, and the reason `cached()` exists.
+     *
+     * This reads `cached()`, NOT `entities()`. `metric()`, `dimension()` and
+     * `listColumn()` all resolve through here, `PlanValidator` and
+     * `QueryPlanExecutor` make about eight such lookups between them for a
+     * single question, and `entities()` walks every table and column in the
+     * schema on every call — measured at 0.95s each against Postgres, with no
+     * amortisation whatsoever, so one question spent roughly 7.6 seconds
+     * deriving the same 149 entities eight times before a single row was read.
+     * The spec's wording is `never computed per request`, and pointing the
+     * accessors at the derivation rather than the cache is precisely how that
+     * happens.
+     *
+     * SQLite makes derivation nearly free, so no test can catch this by being
+     * slow — `test_a_lookup_never_touches_the_database()` asserts the real
+     * property instead: after the layer is warm, a lookup issues no query.
+     */
     public static function entity(string $key): ?array
     {
-        return self::entities()[$key] ?? null;
+        return self::cached()[$key] ?? null;
     }
 
     public static function metric(string $entity, string $metric): ?array
@@ -389,23 +407,52 @@ final class SemanticLayer
      * Keying it on organization_id would multiply one identical catalogue by
      * the tenant count.
      *
-     * The `static` memo is not merely an optimisation on top of `Cache::remember`
-     * — `schemaFingerprint()` itself has to run to know which cache key to
-     * check, and that fingerprint walks every table's columns. Without the
-     * memo, a cache HIT would still cost a full schema walk on every call.
-     * With it, only the first call in a process does any of that work.
+     * The in-process memo (`self::$memo`) is not merely an optimisation on top
+     * of `Cache::remember` — `schemaFingerprint()` itself has to run to know
+     * which cache key to check, and that fingerprint walks every table's
+     * columns. Without the memo, a cache HIT would still cost a full schema
+     * walk on every call. With it, only the first call in a process does any of
+     * that work, which is what makes `entity()` safe to call in a loop.
      *
      * @return array<string, array<string, mixed>>
      */
     public static function cached(): array
     {
-        static $memo = null;
-
-        return $memo ??= Cache::remember(
+        return self::$memo ??= Cache::remember(
             'ai.semantic-layer.'.self::schemaFingerprint(),
             now()->addDay(),
             fn () => self::entities(),
         );
+    }
+
+    /**
+     * Dropped by `forgetCached()`. A class property rather than a function
+     * `static` for exactly that reason: a function static cannot be reset from
+     * outside, and this one has to be.
+     *
+     * @var array<string, array<string, mixed>>|null
+     */
+    private static ?array $memo = null;
+
+    /**
+     * Drop the in-process memo so the next call re-reads the schema.
+     *
+     * The memo deliberately does not re-check the fingerprint on a hit — that
+     * check IS the expensive schema walk, so validating it per call would give
+     * back everything the memo saves. The consequence is that the memo cannot
+     * notice a schema that changed underneath it, which never happens inside a
+     * request but happens constantly across a test run: a test that touches the
+     * layer before its database is migrated would memoise an empty catalogue
+     * and serve it to every later test in the same PHP process.
+     *
+     * `Tests\TestCase::setUp()` calls this beside its existing `Cache::flush()`,
+     * for the same reason that flush is there — a cached value must not outlive
+     * the schema it was computed from. Weakening the caching to make tests safe
+     * would have meant giving up the thing this method exists to protect.
+     */
+    public static function forgetCached(): void
+    {
+        self::$memo = null;
     }
 
     /**

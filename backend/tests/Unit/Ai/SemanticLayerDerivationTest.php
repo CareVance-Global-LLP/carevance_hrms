@@ -2,7 +2,6 @@
 
 namespace Tests\Unit\Ai;
 
-use App\Services\Ai\MetricOverrides;
 use App\Services\Ai\SchemaIntrospector;
 use App\Services\Ai\SemanticLayer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -156,5 +155,68 @@ class SemanticLayerDerivationTest extends TestCase
         // Not enumerated: the compound key must NOT appear literally, or the
         // catalogue is back to spelling out every aggregate per column.
         $this->assertStringNotContainsString('sum_basic', $text);
+    }
+
+    /**
+     * The spec says derivation is `never computed per request`, and this is the
+     * assertion that means it.
+     *
+     * `entity()` read `entities()` rather than `cached()`, so every lookup
+     * re-derived all 149 entities from the live schema — 0.95s each against
+     * Postgres, with no amortisation, and about eight lookups between
+     * PlanValidator and QueryPlanExecutor for one question. The cache was
+     * correct and nothing used it.
+     *
+     * Asserted as "issues no query", NOT as a duration. A timing assertion
+     * would be flaky on CI, and worse, it could not fail here at all: the suite
+     * runs on :memory: SQLite where deriving the whole schema is nearly free,
+     * which is exactly why this defect survived a green suite.
+     */
+    public function test_a_lookup_never_touches_the_database(): void
+    {
+        // Warm the layer once, the way the first lookup in a request does.
+        SemanticLayer::cached();
+
+        DB::enableQueryLog();
+
+        $entity = SemanticLayer::entity('payroll');
+        $metric = SemanticLayer::metric('payroll', 'avg_net_pay');
+        $late = SemanticLayer::metric('attendance', 'late_count');
+        $department = SemanticLayer::dimension('payroll', 'department');
+        $status = SemanticLayer::dimension('leave', 'status');
+        $name = SemanticLayer::listColumn('employees', 'name');
+
+        $this->assertSame(
+            [],
+            DB::getQueryLog(),
+            'a warm lookup went back to the schema — entity() is reading entities() instead of cached()'
+        );
+
+        // Every lookup must still ANSWER. Without this, an entity() that
+        // returned null for everything would satisfy the assertion above
+        // perfectly, and the test would be pinning a broken layer.
+        foreach (compact('entity', 'metric', 'late', 'department', 'status', 'name') as $what => $value) {
+            $this->assertNotNull($value, "{$what} resolved to null — the layer answered nothing");
+        }
+    }
+
+    /**
+     * The memo in front of the cache is what makes the lookups above free, and
+     * it is also the one thing `Cache::flush()` cannot clear. It deliberately
+     * does not revalidate its fingerprint on a hit — that check IS the schema
+     * walk — so it can only be made safe across a test run by being droppable,
+     * which `Tests\TestCase::setUp()` relies on for every test in the suite.
+     */
+    public function test_the_memo_can_be_dropped_so_a_stale_layer_cannot_outlive_its_schema(): void
+    {
+        $before = SemanticLayer::cached();
+
+        SemanticLayer::forgetCached();
+
+        DB::enableQueryLog();
+        $after = SemanticLayer::cached();
+
+        $this->assertNotSame([], DB::getQueryLog(), 'forgetCached() did not drop the memo');
+        $this->assertSame(array_keys($before), array_keys($after), 'the rebuilt layer disagrees with the dropped one');
     }
 }
