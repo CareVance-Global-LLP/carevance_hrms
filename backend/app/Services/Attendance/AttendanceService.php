@@ -351,13 +351,25 @@ class AttendanceService
      * rather than crediting every hour since. Without the bound, a tap today
      * would close a punch abandoned last week and pay out the whole gap.
      */
-    private function recordToCheckOutOf(?User $user): ?AttendanceRecord
+    private function recordToCheckOutOf(?User $user, ?Carbon $at = null): ?AttendanceRecord
     {
         if (!$user) {
             return null;
         }
 
-        $today = now()->toDateString();
+        /*
+         * Anchored on the punch, not on the clock.
+         *
+         * For a live tap these are the same instant and nothing changes. For a
+         * punch buffered by an offline tracker or a biometric terminal they are
+         * not: resolveSyncTimestamp already recovers the time the employee
+         * actually clocked out, and measuring "today" and the ownership window
+         * from now() instead threw that away. A reading uploaded the next
+         * morning looked for an open punch on the wrong day, found none, and
+         * refused a punch-out for a day that was plainly still open.
+         */
+        $anchor = $at ? $at->copy() : now();
+        $today = $anchor->toDateString();
 
         $todayRecord = AttendanceRecord::where('user_id', $user->id)
             ->whereDate('attendance_date', $today)
@@ -368,7 +380,7 @@ class AttendanceService
             return $todayRecord;
         }
 
-        $earliestStillOwned = now()->subHours(
+        $earliestStillOwned = $anchor->copy()->subHours(
             max(1, (int) config('attendance.auto_close_max_hours', 16))
         );
 
@@ -431,7 +443,12 @@ class AttendanceService
             }
         }
 
-        $record = $this->recordToCheckOutOf($user);
+        // Resolved before the lookup, because it decides which day the lookup
+        // is for. A buffered punch-out belongs to the day it was made, not the
+        // day the queue happened to drain.
+        $checkOutAt = $this->resolveSyncTimestamp($syncContext['punch_out_at'] ?? null);
+
+        $record = $this->recordToCheckOutOf($user, $checkOutAt);
 
         if (!$record || !$record->check_in_at) {
             return ['status' => 422, 'payload' => ['message' => 'Please check in first']];
@@ -441,8 +458,6 @@ class AttendanceService
         if (!$openPunch) {
             return ['status' => 422, 'payload' => ['message' => 'No active punch-in found.']];
         }
-
-        $checkOutAt = $this->resolveSyncTimestamp($syncContext['punch_out_at'] ?? null);
 
         // A buffered punch-out cannot predate its own punch-in: clock skew on
         // the tracker machine would otherwise produce a negative session.

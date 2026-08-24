@@ -1,9 +1,3 @@
-src/components/Layout.test.tsx::Layout navigation > clears the notification badge when the desktop notification panel is viewed
-src/components/Layout.test.tsx::Layout navigation > excludes chat messages from notification center and desktop notification polling
-src/components/Layout.test.tsx::Layout navigation > hides the add user button for admins in the desktop shell
-src/components/Layout.test.tsx::Layout navigation > shows a direct payroll navigation item in desktop shell for admins only
-src/components/Layout.test.tsx::Layout navigation > shows the unread chat badge on the chat navigation item
-src/components/Layout.test.tsx::Layout navigation > toggles the desktop notification menu from the bell button
 src/contexts/AuthContext.test.tsx::AuthProvider > does not arm auto-start on employee login in the browser and keeps the timer running on logout
 src/lib/searchSuggestions.test.ts::search suggestion helpers > matches employee suggestions by name only, not by email text
 src/pages/AdminDashboard.test.tsx::AdminDashboard WorkWise redesign > clears the admin dashboard notification dot when notifications are viewed

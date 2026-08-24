@@ -114,7 +114,20 @@ class IdleAccountingScenarioTest extends TestCase
 
             $this->assertSame(120, $summary['track_time'], 'Only the 2 real minutes are tracked');
             $this->assertSame(120, $summary['work_time'], '2 minutes worked');
-            $this->assertSame(0, $summary['idle_time'], 'The idle tail sits outside the entry, so it is not double-subtracted');
+            /*
+             * The property this line has always been about is that the idle
+             * tail is not subtracted TWICE - the entry was already rewound past
+             * it. That property is now carried by idle_time_billable.
+             *
+             * `idle_time` reports the measurement instead, because reporting the
+             * deducted figure as the observation is what made one afternoon
+             * show as ten minutes on the desktop, five on the dashboard and
+             * fifteen in the email. The person was idle for five minutes; the
+             * amount still owed against tracked time is zero. Both are true and
+             * they are different numbers.
+             */
+            $this->assertSame(0, $summary['idle_time_billable'], 'The idle tail sits outside the entry, so it is not double-subtracted');
+            $this->assertSame(300, $summary['idle_time'], 'The person was idle for five minutes and the report should say so');
         } finally {
             Carbon::setTestNow();
         }

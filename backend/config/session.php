@@ -19,7 +19,9 @@ return [
     */
 
     // Redis when it is configured, database otherwise — see config/cache.php.
-    'driver' => env('SESSION_DRIVER', env('REDIS_HOST') ? 'redis' : 'database'),
+    // Opt-in only — see the note in config/cache.php on why the presence of
+    // REDIS_HOST must not select a driver.
+    'driver' => env('SESSION_DRIVER', 'database'),
 
     /*
     |--------------------------------------------------------------------------

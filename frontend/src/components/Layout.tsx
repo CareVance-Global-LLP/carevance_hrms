@@ -7,7 +7,7 @@ import { useDesktopTracker } from '@/hooks/useDesktopTracker';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { CHAT_NOTIFICATION_TYPES, isChatNotification } from '@/lib/chatNotifications';
 import { usePlan } from '@/hooks/usePlan';
-import { hasAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasPayrollAdminAccess, hasStrictAdminAccess, hasSuperAdminAccess, hasEmployeeOrManagerAccess, isEmployeeUser, resolveUserRoleLabel, canAccess } from '@/lib/permissions';
 import { getNotificationDisplay, resolveNotificationRoute, isApprovalNotification } from '@/lib/notificationDisplay';
 import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
@@ -80,6 +80,7 @@ export default function Layout() {
   const seenNotificationIdsRef = useRef<Set<number>>(new Set());
   const isInitialLoadRef = useRef(true);
   const isAdminView = hasAdminAccess(user);
+  const isPayrollAdminView = hasPayrollAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
   const isSuperAdminView = hasSuperAdminAccess(user);
   const isEmployeeOrManagerView = hasEmployeeOrManagerAccess(user);
@@ -226,6 +227,28 @@ export default function Layout() {
               to: '/chat',
               icon: MessageSquare,
             },
+
+            /*
+             * Payroll opens in the browser rather than the tracker window, the
+             * same handoff Home uses: the payroll screens assume a full-width
+             * viewport, and the desktop shell's in-memory token is a cookie-auth
+             * placeholder, so the cached bearer goes across in the URL.
+             *
+             * Without this entry a payroll admin working in the tracker has no
+             * route to payroll at all - they have to know to open a browser and
+             * sign in again.
+             */
+            ...(isStrictAdminView && hasFeature('payroll')
+              ? [
+                  {
+                    label: 'Payroll',
+                    to: '/desktop-web-payroll',
+                    externalPath: '/payroll',
+                    external: true,
+                    icon: Wallet,
+                  },
+                ]
+              : []),
           ]
         : baseNavigation;
 
@@ -233,6 +256,7 @@ export default function Layout() {
         .filter((group) => {
           if (group.planFeature && !hasFeature(group.planFeature)) return false;
           if (group.permission && !canAccess(user, group.permission)) return false;
+          if (group.payrollAdminOnly) return isPayrollAdminView;
           if (group.strictAdminOnly) return isStrictAdminView;
           if (group.superAdminOnly) return isSuperAdminView;
           if (group.adminOnly) return isAdminView;
@@ -247,6 +271,7 @@ export default function Layout() {
             if (item.permission && !canAccess(user, item.permission)) return false;
             if (item.to === '/attendance' && !canAccessAttendance) return false;
             if (item.to === '/edit-time' && !canAccessEditTime) return false;
+            if (item.payrollAdminOnly) return isPayrollAdminView;
             if (item.strictAdminOnly) return isStrictAdminView;
             if (item.superAdminOnly) return isSuperAdminView;
             if (item.adminOnly) return isAdminView;
@@ -448,9 +473,16 @@ export default function Layout() {
             ])
           : Promise.resolve(null);
 
-        // Load all notifications (not just unread) for the panel, but exclude chat notifications
+        /*
+         * Chat is excluded SERVER-side, not just filtered out of the response.
+         * The limit applies before the filter, so fetching 20 unfiltered and
+         * dropping chat locally means a busy chat thread returns a page that is
+         * entirely chat - and the panel renders empty while approvals sit
+         * waiting. The local filter below stays as a backstop for a server that
+         * does not honour the parameter.
+         */
         const [notificationResponse, chatUnreadResponse, approvalResponses, reimbursementResponse] = await Promise.all([
-          notificationApi.list({ limit: 20 }),
+          notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
           chatApi.getUnreadSummary(),
           approvalPromise,
           payrollApi.reimbursementInboxCount(),
@@ -959,8 +991,9 @@ export default function Layout() {
           onCloseMobileNavigation={() => setMobileNavigationOpen(false)}
           onOpenExternal={openWebDashboard}
           profileHasUnreadUpdate={hasUnreadDesktopUpdate}
+          notificationsRef={notificationsRef}
           notificationPanel={
-            <div ref={notificationsRef}>
+            <>
             {notificationsOpen && (
               <AdaptiveSurface
                 className="absolute right-0 top-full z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[24px] border border-white/80 bg-white/95 shadow-[0_32px_90px_-48px_rgba(15,23,42,0.55)] backdrop-blur-2xl"
@@ -1021,7 +1054,7 @@ export default function Layout() {
                 </div>
               </AdaptiveSurface>
             )}
-            </div>
+            </>
           }
           profilePanel={
             <div ref={profileRef}>

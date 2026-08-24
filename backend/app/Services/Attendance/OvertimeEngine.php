@@ -61,6 +61,7 @@ class OvertimeEngine
     public function __construct(
         private readonly ShiftResolver $shifts,
         private readonly WeeklyOffResolver $weeklyOffs,
+        private readonly StatutoryWorkingTime $statute,
     ) {
     }
 
@@ -133,6 +134,29 @@ class OvertimeEngine
             default => ['1.00', OvertimeAssessment::MULTIPLIER_FROM_DEFAULT],
         };
 
+        /*
+         * The statutory floor, applied last.
+         *
+         * Last because it is a floor UNDER whatever the configuration worked
+         * out to, not another tier competing with it: a policy paying 2.5x on a
+         * holiday must keep paying 2.5x, and only a policy paying less than the
+         * law allows is lifted.
+         *
+         * And only lifted where the establishment has switched enforcement on.
+         * Raising a live payroll's overtime rate because somebody deployed a
+         * release is not a decision this engine is entitled to make - so with
+         * enforcement off the shortfall is recorded and reported, and pay is
+         * left exactly as configured.
+         */
+        $limits = $this->statute->forUser($user);
+        $configured = $multiplier;
+        $floor = $limits->overtimeMultiplierFloor;
+
+        if ($floor !== null && $limits->enforceOvertimeFloor && bccomp($configured, $floor, 2) < 0) {
+            $multiplier = $floor;
+            $multiplierSource = OvertimeAssessment::MULTIPLIER_FROM_STATUTORY_FLOOR;
+        }
+
         return new OvertimeAssessment(
             attendanceDate: $on,
             scope: $scope,
@@ -153,6 +177,8 @@ class OvertimeEngine
             policyId: $policy?->id !== null ? (int) $policy->id : null,
             scopeRateId: $rate?->id !== null ? (int) $rate->id : null,
             multiplierSource: $multiplierSource,
+            statutoryMultiplierFloor: $floor,
+            configuredMultiplier: $configured,
         );
     }
 

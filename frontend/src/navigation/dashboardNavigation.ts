@@ -29,6 +29,8 @@ import {
   SquareKanban,
   UserMinus,
   UserPlus,
+  Briefcase,
+  CalendarRange,
   Users,
   Wallet,
   Waypoints,
@@ -41,6 +43,8 @@ export type NavLinkItem = {
   section?: string;
   unreadCount?: number;
   adminOnly?: boolean;
+  /** Admin, HR and payroll_manager only — mirrors the API's `role:payroll`. */
+  payrollAdminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
@@ -59,6 +63,8 @@ export type NavGroup = {
   icon: LucideIcon;
   unreadCount?: number;
   adminOnly?: boolean;
+  /** Admin, HR and payroll_manager only — mirrors the API's `role:payroll`. */
+  payrollAdminOnly?: boolean;
   strictAdminOnly?: boolean;
   superAdminOnly?: boolean;
   employeeAndManagerOnly?: boolean;
@@ -86,6 +92,10 @@ export const topNavigation: NavGroup[] = [
     label: 'People',
     icon: Users,
     items: [
+      // Kept in step with condensedNavigation.ts.
+      { label: 'Hiring', to: '/hiring', icon: Briefcase, adminOnly: true },
+      // Kept in step with condensedNavigation.ts.
+      { label: 'Background Checks', to: '/hiring/background-checks', icon: ShieldCheck, adminOnly: true },
       { label: 'Employees', to: '/employees', icon: Users, adminOnly: true },
       // Kept in step with condensedNavigation.ts, which defines the same rail.
       { label: 'Invitations', to: '/employees/invitations', icon: MailPlus, adminOnly: true },
@@ -110,6 +120,8 @@ export const topNavigation: NavGroup[] = [
     icon: CalendarClock,
     items: [
       { label: 'Attendance', to: '/attendance', icon: CalendarClock },
+      // Kept in step with condensedNavigation.ts.
+      { label: 'Rota', to: '/roster', icon: CalendarRange },
       { label: 'Leave', to: '/leave', icon: CalendarClock, planFeature: 'leave_management' },
       { label: 'Approval Inbox', to: '/approval-inbox?section=leave&view=pending&leave_window=today', icon: Fingerprint, adminOnly: true },
       { label: 'Overtime', to: '/edit-time', icon: FileClock },
@@ -186,7 +198,21 @@ export const topNavigation: NavGroup[] = [
     icon: Wallet,
     planFeature: 'payroll',
     items: [
-      { label: 'Payroll', to: '/payroll', icon: Wallet, planFeature: 'payroll', adminOnly: true },
+      /*
+       * payrollAdminOnly mirrors the API's `role:payroll` — hierarchy level
+       * <= 20, i.e. admin, hr and payroll_manager.
+       *
+       * Neither existing flag fits. adminOnly is `< 100`, which put the whole
+       * company's pay one click away for every line manager. strictAdminOnly is
+       * `<= 10`, which hides the module from the HR users who run it — an
+       * outage already written up in User::getHierarchyLevel(). A level check
+       * rather than a role NAME check, so a custom role at payroll level sees
+       * it without being listed anywhere.
+       */
+      { label: 'Payroll', to: '/payroll', icon: Wallet, planFeature: 'payroll', payrollAdminOnly: true },
+      // Everyone keeps their own figures. This is the ESS view and is gated
+      // only by the plan feature.
+
       { label: 'My Payroll', to: '/my-payroll', icon: Wallet, planFeature: 'payroll' },
     ],
   },

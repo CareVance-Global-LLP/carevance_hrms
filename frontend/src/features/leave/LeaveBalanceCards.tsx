@@ -36,6 +36,11 @@ export interface LeaveBalanceCardsProps {
   isLoading: boolean;
   onRefresh: () => void;
   colorOf: (code?: string | null) => string;
+  /**
+   * Open the ledger behind a card. Optional: TeamLeaveBalances renders these
+   * same cards where there is nothing to open.
+   */
+  onExplain?: (code: string) => void;
 }
 
 /**
@@ -49,6 +54,7 @@ export default function LeaveBalanceCards({
   isLoading,
   onRefresh,
   colorOf,
+  onExplain,
 }: LeaveBalanceCardsProps) {
   return (
     <div>
@@ -75,23 +81,48 @@ export default function LeaveBalanceCards({
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {categories.map((category) => (
-            <div key={category.code} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <BalanceRing
-                remaining={Number(category.remaining || 0)}
-                quota={Number(category.annual_quota || 0)}
-                color={colorOf(category.code)}
-              />
-              <span className="min-w-0">
-                <span className="block truncate text-[13px] font-bold tracking-[-0.01em] text-slate-950">
-                  {category.name}
+          {categories.map((category) => {
+            const body = (
+              <>
+                <BalanceRing
+                  remaining={Number(category.remaining || 0)}
+                  quota={Number(category.annual_quota || 0)}
+                  color={colorOf(category.code)}
+                />
+                <span className="min-w-0 text-left">
+                  <span className="block truncate text-[13px] font-bold tracking-[-0.01em] text-slate-950">
+                    {category.name}
+                  </span>
+                  <span className="block text-[11px] font-semibold tabular-nums text-slate-500">
+                    of {Number(category.annual_quota || 0).toFixed(1)} · used {Number(category.used || 0).toFixed(1)}
+                  </span>
                 </span>
-                <span className="block text-[11px] font-semibold tabular-nums text-slate-500">
-                  of {Number(category.annual_quota || 0).toFixed(1)} · used {Number(category.used || 0).toFixed(1)}
-                </span>
-              </span>
-            </div>
-          ))}
+              </>
+            );
+
+            const shell = 'flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3';
+
+            /*
+             * A balance nobody can expand is one you end up arguing about. The
+             * card becomes a button only where there is a ledger to open, so
+             * nothing here promises a breakdown that does not exist.
+             */
+            return onExplain ? (
+              <button
+                key={category.code}
+                type="button"
+                onClick={() => onExplain(category.code)}
+                aria-label={`How the ${category.name} balance was earned`}
+                className={`${shell} text-left transition hover:border-slate-300 hover:shadow-sm`}
+              >
+                {body}
+              </button>
+            ) : (
+              <div key={category.code} className={shell}>
+                {body}
+              </div>
+            );
+          })}
 
           <div className="flex items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3">
             <span className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full border border-dashed border-slate-300 text-[13px] font-bold tabular-nums text-danger-700">

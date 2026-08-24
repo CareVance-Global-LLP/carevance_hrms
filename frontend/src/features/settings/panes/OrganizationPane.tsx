@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Minus, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
 import Button from '@/components/ui/Button';
 import { FieldLabel, SelectInput, TextInput } from '@/components/ui/FormField';
@@ -18,13 +18,12 @@ import BreakTypesSection from './BreakTypesSection';
 import { COMPANY_BILLING_FIELDS, COMPANY_INDUSTRY_OPTIONS, COMPANY_SIZE_OPTIONS } from '../types';
 import type { SettingsController } from '../useSettingsController';
 
-type OrgSection = 'identity' | 'company' | 'workday' | 'leave' | 'breaks' | 'monitoring' | 'danger';
+type OrgSection = 'identity' | 'company' | 'workday' | 'breaks' | 'monitoring' | 'danger';
 
 const SECTIONS: Array<{ id: OrgSection; label: string }> = [
   { id: 'identity', label: 'Identity' },
   { id: 'company', label: 'Company profile' },
   { id: 'workday', label: 'Workday' },
-  { id: 'leave', label: 'Leave policy' },
   { id: 'breaks', label: 'Breaks' },
   { id: 'monitoring', label: 'Monitoring' },
   { id: 'danger', label: 'Danger zone' },
@@ -176,10 +175,6 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     setOrgUrlDetailLevel,
     orgTimezone,
     setOrgTimezone,
-    leaveCategories,
-    updateLeaveCategory,
-    addLeaveCategory,
-    removeLeaveCategory,
     companyProfile,
     updateCompanyProfileField,
     deleteConfirmText,
@@ -189,12 +184,7 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
   } = controller;
 
   const [section, setSection] = useState<OrgSection>('identity');
-  const canEditLeave = isOrgEditable && isStrictAdminUser;
 
-  const leaveTotal = useMemo(
-    () => leaveCategories.reduce((total, category) => total + (Number(category.annual_quota) || 0), 0),
-    [leaveCategories]
-  );
 
   const idleConflict = validateIdleThresholds(orgIdleTrackSeconds, orgIdleAutoStopSeconds);
 
@@ -463,105 +453,6 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
               />
             </div>
           </div>
-        </SettingsCard>
-      ) : null}
-
-      {section === 'leave' ? (
-        <SettingsCard
-          title="Annual leave"
-          description="Once a quota is used up, further days are tracked as unpaid automatically."
-          aside={
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-              <span className="tabular-nums">{leaveTotal}</span> days total
-            </span>
-          }
-        >
-          <div className="space-y-2">
-            {leaveCategories.map((category, index) => (
-              <div
-                key={`${category.code || 'leave'}-${index}`}
-                className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-surface-sunken p-3"
-              >
-                <span className={`h-9 w-2 shrink-0 rounded-full ${SWATCHES[index % SWATCHES.length]}`} aria-hidden="true" />
-                <div className="min-w-[10rem] flex-1">
-                  <FieldLabel>Name</FieldLabel>
-                  <TextInput
-                    value={category.name}
-                    onChange={(event) => updateLeaveCategory(index, { name: event.target.value })}
-                    disabled={!canEditLeave}
-                  />
-                </div>
-                <div className="w-32">
-                  <FieldLabel>Code</FieldLabel>
-                  <TextInput
-                    value={category.code}
-                    onChange={(event) => updateLeaveCategory(index, { code: event.target.value })}
-                    disabled={!canEditLeave}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Days per year</FieldLabel>
-                  <div className="flex items-center overflow-hidden rounded-lg border border-border-strong bg-surface-card">
-                    <button
-                      type="button"
-                      aria-label={`Decrease ${category.name} quota`}
-                      disabled={!canEditLeave}
-                      onClick={() =>
-                        updateLeaveCategory(index, {
-                          annual_quota: String(Math.max(0, (Number(category.annual_quota) || 0) - 1)),
-                        })
-                      }
-                      className="flex h-11 w-9 items-center justify-center text-slate-600 transition hover:bg-surface-sunken hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </button>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={category.annual_quota}
-                      onChange={(event) => updateLeaveCategory(index, { annual_quota: event.target.value })}
-                      disabled={!canEditLeave}
-                      aria-label={`${category.name} days per year`}
-                      className="w-16 border-0 bg-transparent py-2.5 text-center text-sm font-semibold tabular-nums text-slate-900 outline-none disabled:text-slate-400"
-                    />
-                    <button
-                      type="button"
-                      aria-label={`Increase ${category.name} quota`}
-                      disabled={!canEditLeave}
-                      onClick={() =>
-                        updateLeaveCategory(index, {
-                          annual_quota: String((Number(category.annual_quota) || 0) + 1),
-                        })
-                      }
-                      className="flex h-11 w-9 items-center justify-center text-slate-600 transition hover:bg-surface-sunken hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-                {canEditLeave ? (
-                  <button
-                    type="button"
-                    onClick={() => removeLeaveCategory(index)}
-                    aria-label={`Remove ${category.name}`}
-                    className="mb-1 rounded-md p-2 text-slate-500 transition hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                ) : null}
-              </div>
-            ))}
-          </div>
-
-          {canEditLeave ? (
-            <Button variant="secondary" size="sm" className="mt-3" onClick={addLeaveCategory}>
-              Add leave type
-            </Button>
-          ) : (
-            <p className="mt-3 text-xs text-slate-600">Only an admin can edit leave policy categories.</p>
-          )}
         </SettingsCard>
       ) : null}
 

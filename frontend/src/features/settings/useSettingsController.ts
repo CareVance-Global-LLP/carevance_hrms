@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { hasAdminAccess, hasStrictAdminAccess, isEmployeeUser, canAccess } from '@/lib/permissions';
+import { hasAdminAccess, hasPayrollAdminAccess, hasStrictAdminAccess, isEmployeeUser, canAccess } from '@/lib/permissions';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { DEFAULT_APP_TIMEZONE, resolveTimeZone } from '@/lib/timezones';
 import { validateIdleThresholds } from './idlePolicy';
@@ -306,6 +306,13 @@ export function useSettingsController() {
    * manager, which is the mismatch that makes people think a feature is broken.
    */
   const canManageShifts = canManageSettings || hasAdminAccess(user);
+  /*
+   * Mirrors the API's `role:payroll` — hierarchy level <= 20, i.e. admin, hr
+   * and payroll_manager. Deliberately not the general settings gate: an
+   * entity's PAN and TAN decide which return every employee under it appears
+   * on, so this is the authority to run payroll, not to rename a workspace.
+   */
+  const canManagePayroll = hasPayrollAdminAccess(user);
 
   const visibleTabs = useMemo(() => {
     /*
@@ -326,9 +333,31 @@ export function useSettingsController() {
       'privacy',
       'help',
     ]);
+    if (canManagePayroll) {
+      /*
+       * The same gate as the administrative payroll area, not the general
+       * settings one: an entity's PAN and TAN decide which statutory return
+       * every employee under it appears on, which is the authority to run
+       * payroll rather than the authority to change a workspace name.
+       */
+      allowed.add('legal-entities');
+    }
     if (isStrictAdminUser) {
       allowed.add('organization');
       allowed.add('billing');
+      /*
+       * Same gate as the API's `role:admin` on these routes, and for the same
+       * reason: a registered serial number can post attendance into this
+       * tenant, and claiming a device id decides whose day a reading becomes.
+       */
+      allowed.add('biometric-devices');
+      /*
+       * Same gate again, and the sharpest reason for it: a connection decides
+       * which certificate is trusted to assert who anybody here is, so whoever
+       * can write one can point it at a provider they control and sign in as
+       * the payroll administrator.
+       */
+      allowed.add('single-sign-on');
       if (import.meta.env.DEV) {
         allowed.add('development');
       }
@@ -346,9 +375,12 @@ export function useSettingsController() {
       // policies here are the ones that used to be columns on the shift row,
       // and whoever may edit a shift is exactly who may edit them.
       allowed.add('working-time');
+      // Leave sits with the other working-rule policies: whoever may set a
+      // shift is who may set how leave is earned.
+      allowed.add('leave-types');
     }
     return SETTINGS_TABS.filter((tab) => allowed.has(tab.id));
-  }, [canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);
+  }, [canManagePayroll, canManageProductivity, canManageSettings, canManageShifts, isStrictAdminUser]);
 
   const allowedTabIds = useMemo(() => new Set(visibleTabs.map((tab) => tab.id)), [visibleTabs]);
 

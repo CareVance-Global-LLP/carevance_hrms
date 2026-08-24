@@ -23,6 +23,52 @@ Do not tell a customer otherwise.
 
 ---
 
+## 0. PHP extensions — the app will not boot without these
+
+Unlike everything below, this section is **not optional**. It is listed first because it
+is the one thing that stops `composer install` dead, and a deploy that cannot run
+`composer install` ships code against a stale `vendor/` — which fails at *boot*, not at
+the feature that needed the missing package.
+
+That happened in production on 20 Aug 2026. `ext-gd` was absent, so composer refused the
+whole install ("Your lock file does not contain a compatible set of packages"), so
+`sentry/sentry-laravel` was never written to `vendor/`, so `bootstrap/app.php` threw
+`Class "Sentry\Laravel\Integration" not found` on **every request** — login included —
+and on the scheduler every minute, which silently stopped idle timers from closing. One
+missing extension, and there was no way into the application at all.
+
+```bash
+# Ubuntu, PHP 8.4. Match the version to `php -v`.
+sudo apt-get update
+sudo apt-get install -y   php8.4-cli php8.4-fpm   php8.4-gd php8.4-mbstring php8.4-xml php8.4-zip   php8.4-curl php8.4-intl php8.4-bcmath php8.4-pgsql
+
+sudo systemctl restart php8.4-fpm
+```
+
+Verify before deploying — this prints anything still missing:
+
+```bash
+for e in ctype curl dom fileinfo gd iconv intl mbstring pdo_pgsql          simplexml tokenizer xml xmlreader xmlwriter zip; do
+  php -m | grep -qix "$e" || echo "MISSING: $e"
+done
+```
+
+`gd` is required by `phpoffice/phpspreadsheet`, which is what writes every Excel export
+in payroll and reports. Do **not** work around a missing extension with
+`composer install --ignore-platform-req=ext-gd`: the install then succeeds and the export
+fails later, in payroll, in front of a customer.
+
+The authoritative list is the lock file itself, not this document:
+
+```bash
+php -r '$l=json_decode(file_get_contents("composer.lock"),true);
+$e=[];foreach($l["packages"] as $p){foreach(array_keys($p["require"]??[]) as $r){
+if(str_starts_with($r,"ext-"))$e[substr($r,4)]=1;}}ksort($e);echo implode(" ",array_keys($e)),"
+";'
+```
+
+---
+
 ## 1. Backups — do this first
 
 Nothing else on this page matters as much.

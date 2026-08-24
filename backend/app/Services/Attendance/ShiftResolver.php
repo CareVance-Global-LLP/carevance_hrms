@@ -77,6 +77,13 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class ShiftResolver
 {
+    /**
+     * A published roster day named this person and this date explicitly.
+     *
+     * The most specific answer there is, so it outranks everything below it.
+     */
+    public const SOURCE_ROSTER = 'roster';
+
     public const SOURCE_ASSIGNMENT = 'assignment';
     public const SOURCE_WORK_INFO_SHIFT = 'work_info_shift';
     public const SOURCE_WORK_INFO_TIME = 'work_info_time';
@@ -98,6 +105,7 @@ class ShiftResolver
     public function __construct(
         private readonly UserTimezoneResolver $timezones,
         private readonly WeeklyOffResolver $weeklyOffs,
+        private readonly RosterService $roster,
     ) {
     }
 
@@ -111,7 +119,37 @@ class ShiftResolver
 
         $resolved = null;
 
-        $assignment = $this->assignmentFor($user, $on);
+        /*
+         * A PUBLISHED roster day wins over everything.
+         *
+         * It is the most specific statement anybody has made: this person, this
+         * date, this shift. An effective-dated assignment says what somebody
+         * usually works; a roster says what they are working on Tuesday, and
+         * where the two disagree the roster is the one the employee was told.
+         *
+         * Draft days are deliberately invisible here - see RosterService. A
+         * plan must not decide what somebody is measured against.
+         *
+         * A roster day with a NULL shift is a rest day, and it is answered as
+         * such rather than falling through: falling through would hand back the
+         * standing assignment and quietly expect a full shift from somebody
+         * who was told they had the day off.
+         */
+        $rosterDay = $this->roster->publishedDayFor($user, $on);
+
+        if ($rosterDay) {
+            if ($rosterDay->isRestDay()) {
+                return null;
+            }
+
+            $shift = $this->shiftFor($user, (int) $rosterDay->shift_id);
+
+            if ($shift) {
+                $resolved = $this->instance($shift, $on, self::SOURCE_ROSTER, null);
+            }
+        }
+
+        $assignment = $resolved ? null : $this->assignmentFor($user, $on);
         if ($assignment) {
             $shift = $this->shiftFor($user, (int) $assignment->shift_id);
 

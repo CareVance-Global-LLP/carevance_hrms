@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import SurfaceCard from './SurfaceCard';
+import { LIST_MAX_BODY_HEIGHT } from '@/lib/pagination';
 
 interface Column<T> {
   key: string;
@@ -17,6 +18,19 @@ interface DataTableProps<T> {
   headerAction?: ReactNode;
   bodyClassName?: string;
   stickyHeader?: boolean;
+  /**
+   * Cap the table's height and pin its header, so the PAGE stops growing with
+   * the data and scrolling happens inside the table instead.
+   *
+   * The point is what stays put: the column headers and whatever sits below the
+   * table — normally the pager — remain on screen at any row count. Without it
+   * a long list pushes its own controls off the bottom, which is what made
+   * these screens feel like an endless scroll.
+   *
+   * Implies stickyHeader: `position: sticky` only resolves against a scrolling
+   * ancestor, so a pinned header without this container silently does nothing.
+   */
+  scrollBody?: boolean;
 }
 
 export default function DataTable<T>({
@@ -28,7 +42,9 @@ export default function DataTable<T>({
   headerAction,
   bodyClassName,
   stickyHeader = false,
+  scrollBody = false,
 }: DataTableProps<T>) {
+  const pinHeader = stickyHeader || scrollBody;
   return (
     <SurfaceCard className="overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 md:flex-row md:items-start md:justify-between">
@@ -38,9 +54,11 @@ export default function DataTable<T>({
         </div>
         {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
       </div>
-      <div className={`overflow-x-auto ${bodyClassName || ''}`.trim()}>
+      <div
+        className={`overflow-x-auto ${scrollBody ? `${LIST_MAX_BODY_HEIGHT} overflow-y-auto` : ''} ${bodyClassName || ''}`.replace(/\s+/g, ' ').trim()}
+      >
         <table className="min-w-full text-left text-xs">
-          <thead className={stickyHeader ? 'sticky top-0 z-10 bg-slate-50' : 'bg-slate-50'}>
+          <thead className={pinHeader ? 'sticky top-0 z-10 bg-slate-50' : 'bg-slate-50'}>
             <tr>
               {columns.map((column) => (
                 <th

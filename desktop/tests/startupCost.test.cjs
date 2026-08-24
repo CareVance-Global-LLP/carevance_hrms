@@ -3,7 +3,18 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const mainSource = fs.readFileSync(path.resolve(__dirname, '..', 'main.cjs'), 'utf8');
+/*
+ * Line endings normalised on read.
+ *
+ * This repository carries a mix of CRLF and LF — git converts on checkout and
+ * every tool that rewrites a file picks its own. The assertions below match
+ * multi-line source patterns, so without this they fail on the line endings
+ * rather than on the thing they are actually checking, which is a false alarm
+ * that costs more time than the bug it is guarding against.
+ */
+const mainSource = fs
+  .readFileSync(path.resolve(__dirname, '..', 'main.cjs'), 'utf8')
+  .replace(/\r\n/g, '\n');
 
 /*
  * What the app does before it puts a window on screen.
@@ -76,10 +87,37 @@ test('the renderer HTTP cache is dropped per build, not per launch', () => {
 
   // `session.clearCache()` rather than bare `clearCache()`, so the phrase in the
   // comment above the guard is not counted as a second call site.
+  /*
+   * Two calls, and they answer different questions.
+   *
+   * The build-changed guard above is the cost control: a healthy launch must
+   * not re-download the whole renderer.
+   *
+   * The second lives in the failed-load RETRY path, and is the recovery the
+   * old unconditional wipe provided by accident. Clearing on every launch meant
+   * a bad cached shell could never survive a restart; making the clear
+   * version-keyed removed that property along with the waste, and a page cached
+   * while the server was erroring was then served on every subsequent launch —
+   * the app opened blank until the next release changed the stamp.
+   *
+   * What must never come back is an UNCONDITIONAL clear on the startup path,
+   * which is what the guard assertion above pins.
+   */
   const clearCacheCalls = mainSource.match(/session\.clearCache\(\)/g) || [];
   assert.equal(
     clearCacheCalls.length,
-    1,
-    'expected exactly one session.clearCache() call, inside the build-changed guard.'
+    2,
+    'expected two session.clearCache() calls: the build-changed guard, and the failed-load retry.'
+  );
+
+  // Located by slicing rather than a regex: the block spans several lines and
+  // a multi-line pattern here is harder to read than the thing it matches.
+  const retryStart = mainSource.indexOf('if (failRetryCount < MAX_FAIL_RETRIES)');
+  assert.ok(retryStart > -1, 'expected the failed-load retry block to still exist');
+
+  const retryBlock = mainSource.slice(retryStart, retryStart + 1600);
+  assert.ok(
+    retryBlock.includes('session.clearCache()'),
+    'a retry after a failed load must drop the cache first, or a bad cached shell survives every restart.'
   );
 });

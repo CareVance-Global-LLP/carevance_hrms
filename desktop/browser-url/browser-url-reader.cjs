@@ -17,7 +17,28 @@ const { normalizeCapturedUrl } = require('./normalize-captured-url.cjs');
  * null, which is the same answer the tracker has always had there.
  */
 
-const HELPER_SCRIPT = path.join(__dirname, 'read-foreground-url.ps1');
+/*
+ * Resolved to the UNPACKED copy, because powershell.exe is a separate process.
+ *
+ * In a packaged build __dirname points inside app.asar, which is one archive
+ * file. Node's patched fs can read a virtual path inside it; PowerShell cannot
+ * — it is handed a path that does not exist on disk, the helper never starts,
+ * and read() returns null forever.
+ *
+ * Nothing surfaced that. `read()` resolving null is indistinguishable from "not
+ * on a browser", so every packaged install silently had NO url for any tab: the
+ * tracker fell back to keying sessions on the window title, which churns, so a
+ * single visit was stored as a row per title flicker and each row was named
+ * after the browser instead of the site. Both of those were reported as bugs in
+ * their own right; this was underneath them. It reproduced on every installed
+ * build and on no development machine, because `npm start` runs unpacked.
+ *
+ * Paired with asarUnpack in package.json — the rewrite below only finds a file
+ * if the packer was told to leave one there.
+ */
+const HELPER_SCRIPT = path
+  .join(__dirname, 'read-foreground-url.ps1')
+  .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
 
 /** A read is abandoned past this; the tracker polls again shortly anyway. */
 const READ_TIMEOUT_MS = 1500;

@@ -6,10 +6,13 @@ namespace App\Services\Payroll;
  * The single authority on which statutory filings this installation can
  * actually produce.
  *
- * Ten declaration-form generators reference blade views that were never
- * written. Before this class existed the dashboard advertised all nineteen
- * returns as `complianceStatus: 'ready'`, the user clicked, and the generator
- * threw — after the batch had already written PF ECR, ESI, 24Q and 12BA.
+ * Ten declaration-form generators used to reference blade views that were
+ * never written. Before this class existed the dashboard advertised all
+ * nineteen returns as `complianceStatus: 'ready'`, the user clicked, and the
+ * generator threw — after the batch had already written PF ECR, ESI, 24Q and
+ * 12BA. Those ten templates now exist and nothing is unavailable, but this
+ * class stays: it is what keeps the catalogue honest if one is ever renamed
+ * or removed, and what stops the dashboard advertising it regardless.
  *
  * Availability is resolved against the filesystem rather than a hand-kept
  * flag, so writing `resources/views/filings/form19.blade.php` is the whole act
@@ -49,8 +52,9 @@ class FilingGeneratorRegistry
         'form_16' => ['Form 16', 'filings.form16'],
         'form_16_annual' => ['Form 16 (Annual)', 'filings.form16_annual'],
 
-        // PDF generators whose templates do not exist yet. Listed rather than
-        // omitted: the product must be able to say *why* these are missing.
+        // The ten declaration forms. Their templates were written in Aug 2026;
+        // availability is still resolved per-view rather than assumed, because
+        // a renamed template must downgrade the filing rather than throw.
         'form_19' => ['Form 19', 'filings.form19'],
         'form_31' => ['Form 31', 'filings.form31'],
         'form_1' => ['Form 1', 'filings.form1'],

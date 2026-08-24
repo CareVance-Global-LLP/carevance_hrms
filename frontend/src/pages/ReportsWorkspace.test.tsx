@@ -1,4 +1,5 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ReportsWorkspace from '@/pages/ReportsWorkspace';
 import { renderWithProviders } from '@/test/renderWithProviders';
@@ -257,6 +258,35 @@ describe('ReportsWorkspace timeline navigation', () => {
     await screen.findByText('Timeline');
 
     expect(mocks.activityGetAllPagesMock).toHaveBeenCalledWith(expect.objectContaining({
+      processed: true,
+    }));
+  });
+
+  it('asks the database for one screenful of events at a time, not the whole day', async () => {
+    /*
+     * The event log is scanned newest-first, not read end to end, so a page
+     * only has to hold what fits on a screen. It used to ask for 50, which
+     * turned an ordinary day into a single page — 46 events rendered as
+     * "Page 1 of 1", and finding 2pm meant scrolling rather than paging.
+     *
+     * Fifteen is the shared LIST_PAGE_SIZE, asserted literally here so a change
+     * to that constant has to be a deliberate edit to this expectation too.
+     *
+     * Asserted on the REQUEST because that is where the saving is: the server
+     * already paginates, so a smaller page is less work per request rather than
+     * the same work split up.
+     */
+    const user = userEvent.setup();
+    renderWithProviders(<ReportsWorkspace mode="timeline" />);
+
+    await screen.findByText('Timeline');
+    await user.click(await screen.findByRole('button', { name: /event log/i }));
+
+    await waitFor(() => expect(mocks.activityGetAllMock).toHaveBeenCalled());
+
+    expect(mocks.activityGetAllMock).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      per_page: 15,
       processed: true,
     }));
   });

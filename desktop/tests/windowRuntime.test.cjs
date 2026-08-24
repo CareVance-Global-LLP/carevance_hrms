@@ -205,3 +205,36 @@ test('no packaging script can bake a loopback app URL', () => {
       + 'installer pointing at localhost: ' + unguarded.join(', ')
   );
 });
+
+test('the PowerShell helper is unpacked, not sealed inside the asar', () => {
+  /*
+   * powershell.exe is a separate process. app.asar is one archive file, so a
+   * path inside it exists only to Node's patched fs — an external process is
+   * handed a path that is not on disk, the helper never starts, and every read
+   * returns null.
+   *
+   * That failure is silent: "no url" is indistinguishable from "not on a
+   * browser". Every packaged install therefore had no URL for any tab, so the
+   * tracker keyed sessions on the churning window title — one row per title
+   * flicker, each named after the browser rather than the site. Reproduced on
+   * installed builds only; `npm start` runs unpacked and looks fine.
+   */
+  const unpack = (packageJson.build || {}).asarUnpack || [];
+
+  assert.ok(
+    unpack.some((pattern) => allowlistCovers(pattern, 'browser-url/read-foreground-url.ps1')),
+    'read-foreground-url.ps1 must be in asarUnpack: powershell.exe cannot read a path inside app.asar.'
+  );
+});
+
+test('the reader resolves the helper to the unpacked path', () => {
+  // Unpacking alone is not enough: __dirname still points inside app.asar, so
+  // the path has to be rewritten or it names a file that is not there.
+  const source = fs.readFileSync(path.join(__dirname, '..', 'browser-url', 'browser-url-reader.cjs'), 'utf8');
+
+  assert.match(
+    source,
+    /app\.asar\.unpacked/,
+    'browser-url-reader.cjs must rewrite app.asar -> app.asar.unpacked when resolving the helper.'
+  );
+});

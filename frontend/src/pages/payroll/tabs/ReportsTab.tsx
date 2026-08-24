@@ -11,6 +11,7 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Printer,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasStrictAdminAccess } from '@/lib/permissions';
@@ -23,8 +24,9 @@ import { useToast } from '@/components/ui/Toast';
 import FilingsDashboard from '@/components/payroll/FilingsDashboard';
 import BankPayoutDashboard from '@/components/payroll/BankPayoutDashboard';
 import ProofDocumentsCenter from '@/components/payroll/ProofDocumentsCenter';
+import AccountingExportPicker from '@/features/payroll/AccountingExportPicker';
 
-type PanelId = 'register' | 'filings' | 'bank-payout' | 'proof-documents';
+type PanelId = 'register' | 'filings' | 'bank-payout' | 'proof-documents' | 'accounting';
 type RegisterSubTab = 'summary' | 'pf-esi' | 'tds' | 'bank-recon';
 
 interface PanelDef {
@@ -38,6 +40,7 @@ const PANELS: PanelDef[] = [
   { id: 'filings', label: 'Filings', icon: Landmark },
   { id: 'bank-payout', label: 'Bank Payout', icon: Building2 },
   { id: 'proof-documents', label: 'Proof Documents', icon: FileText },
+  { id: 'accounting', label: 'Accounting Export', icon: BookOpen },
 ];
 
 const REGISTER_SUB_TABS: { key: RegisterSubTab; label: string }[] = [
@@ -139,6 +142,7 @@ export default function ReportsTab() {
         {active === 'bank-payout' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Bank Payout.</div>}
         {active === 'proof-documents' && isStrictAdmin && <ProofDocumentsCenter />}
         {active === 'proof-documents' && !isStrictAdmin && <div className="text-center py-16 text-slate-500 text-sm">Admin access required for Proof Documents.</div>}
+        {active === 'accounting' && <AccountingExportPicker />}
       </div>
     </div>
   );
