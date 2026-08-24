@@ -4,6 +4,7 @@ namespace Tests\Unit\Ai;
 
 use App\Services\Ai\SchemaIntrospector;
 use App\Services\Ai\SemanticLayer;
+use Illuminate\Database\Events\MigrationsEnded;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -218,5 +219,45 @@ class SemanticLayerDerivationTest extends TestCase
 
         $this->assertNotSame([], DB::getQueryLog(), 'forgetCached() did not drop the memo');
         $this->assertSame(array_keys($before), array_keys($after), 'the rebuilt layer disagrees with the dropped one');
+    }
+
+    /**
+     * The layer is cached under a STATIC key, so a migration is the only thing
+     * that can tell it the schema moved. That makes the listener in
+     * `AppServiceProvider::boot()` load-bearing: unregistered, the cache goes
+     * on describing columns that no longer exist until the day-long TTL expires.
+     * A listener nobody tests is a listener that silently stops being registered,
+     * so this fires the real event through the container rather than calling
+     * `forgetCached()` directly — calling it directly would test the method and
+     * prove nothing about the wiring.
+     *
+     * This single assertion covers BOTH caching layers, which is worth knowing
+     * before anyone weakens it: if `forgetCached()` dropped only the memo and
+     * left the cache entry, `Cache::remember()` would hit the store, return
+     * without invoking its callback, and issue no query — and this would fail
+     * exactly as it does when the listener is missing.
+     */
+    public function test_a_migration_rebuilds_the_layer(): void
+    {
+        SemanticLayer::cached();
+
+        DB::enableQueryLog();
+        SemanticLayer::metric('payroll', 'avg_net_pay');
+        $this->assertSame([], DB::getQueryLog(), 'fixture assumption: the layer is warm before the migration');
+
+        event(new MigrationsEnded('up'));
+
+        DB::flushQueryLog();
+        $metric = SemanticLayer::metric('payroll', 'avg_net_pay');
+
+        $this->assertNotSame(
+            [],
+            DB::getQueryLog(),
+            'MigrationsEnded did not invalidate the layer — is the listener still registered in AppServiceProvider::boot()?'
+        );
+
+        // And it rebuilt into something usable, rather than merely emptying.
+        $this->assertNotNull($metric, 'the rebuilt layer answered nothing');
+        $this->assertSame('curated', $metric['origin']);
     }
 }

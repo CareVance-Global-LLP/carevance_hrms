@@ -9,7 +9,6 @@ use App\Models\PayrollItem;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * What AI mode is allowed to be asked about, and what each number MEANS.
@@ -33,6 +32,14 @@ final class SemanticLayer
      * appear under its own table name — one table, one entity, or the
      * retriever offers the planner the same table twice.
      */
+    /**
+     * The cache key, STATIC by design — see `cached()` for why a computed key
+     * was the wrong shape. Bump the version suffix if the shape of an entity
+     * changes, so a deployed cache holding the old shape is abandoned rather
+     * than read back into a layer that no longer understands it.
+     */
+    private const CACHE_KEY = 'ai.semantic-layer.v1';
+
     private const CONCEPT_TABLES = [
         'employees' => 'employee_work_infos',
         'payroll' => 'payroll_items',
@@ -399,27 +406,41 @@ final class SemanticLayer
     }
 
     /**
-     * The whole layer, cached for a day and rebuilt the moment the schema
-     * changes.
+     * The whole layer, cached under a static key and rebuilt on migration.
+     *
+     * The key used to be `'ai.semantic-layer.'.schemaFingerprint()`, a hash of
+     * every table and column. A computed key is genuinely attractive because it
+     * invalidates itself — but it is self-defeating here, because computing it
+     * means READING every table's columns. A cache HIT still walked the whole
+     * schema to discover that nothing had changed. Under PHP-FPM the memo below
+     * starts empty on every request, so that walk was paid on every AI
+     * question: ~0.65s, a fifth of the spec's 3s planning budget, spent
+     * learning nothing. The spec's words are `rebuilt on migration, never
+     * computed per request`, and that describes an EVENT, not a key.
+     *
+     * So invalidation is event-based: `AppServiceProvider::boot()` listens for
+     * `MigrationsEnded` and calls `forgetCached()`. The day-long TTL stays as
+     * the backstop, and it is not decoration — this schema has drifted from its
+     * migrations before (`bank_transfer_batches`), and a change made outside a
+     * migration fires no event at all. The TTL bounds how long the layer can go
+     * on describing a column that no longer exists to at most a day.
      *
      * Schema-level, not tenant-level: the catalogue holds table and column
-     * names and no tenant data, so one cache serves every organization.
-     * Keying it on organization_id would multiply one identical catalogue by
-     * the tenant count.
+     * names and no tenant data, so one cache serves every organization. Keying
+     * it on organization_id would multiply one identical catalogue by the
+     * tenant count.
      *
-     * The in-process memo (`self::$memo`) is not merely an optimisation on top
-     * of `Cache::remember` — `schemaFingerprint()` itself has to run to know
-     * which cache key to check, and that fingerprint walks every table's
-     * columns. Without the memo, a cache HIT would still cost a full schema
-     * walk on every call. With it, only the first call in a process does any of
-     * that work, which is what makes `entity()` safe to call in a loop.
+     * The in-process memo on top of the cache store is what makes `entity()`
+     * safe to call in a loop: `PlanValidator` and `QueryPlanExecutor` make
+     * about eight lookups for one question, and only the first touches the
+     * store at all.
      *
      * @return array<string, array<string, mixed>>
      */
     public static function cached(): array
     {
         return self::$memo ??= Cache::remember(
-            'ai.semantic-layer.'.self::schemaFingerprint(),
+            self::CACHE_KEY,
             now()->addDay(),
             fn () => self::entities(),
         );
@@ -435,45 +456,30 @@ final class SemanticLayer
     private static ?array $memo = null;
 
     /**
-     * Drop the in-process memo so the next call re-reads the schema.
+     * Forget the cached layer — BOTH the in-process memo and the cache entry.
      *
-     * The memo deliberately does not re-check the fingerprint on a hit — that
-     * check IS the expensive schema walk, so validating it per call would give
-     * back everything the memo saves. The consequence is that the memo cannot
-     * notice a schema that changed underneath it, which never happens inside a
-     * request but happens constantly across a test run: a test that touches the
-     * layer before its database is migrated would memoise an empty catalogue
-     * and serve it to every later test in the same PHP process.
+     * Both, because they fail differently and independently. `Cache::flush()`
+     * cannot reach the memo, since a static outlives the container; and
+     * dropping the memo alone would just re-read the same stale entry back out
+     * of the store on the next call.
      *
-     * `Tests\TestCase::setUp()` calls this beside its existing `Cache::flush()`,
-     * for the same reason that flush is there — a cached value must not outlive
-     * the schema it was computed from. Weakening the caching to make tests safe
-     * would have meant giving up the thing this method exists to protect.
+     * Two callers, for two different reasons:
+     *
+     * - The `MigrationsEnded` listener in `AppServiceProvider::boot()`. This is
+     *   the real invalidation path — the schema has changed, so a vocabulary
+     *   derived from it is wrong until it is rebuilt.
+     * - `Tests\TestCase::setUp()`, beside its existing `Cache::flush()`. The
+     *   memo does not revalidate itself on a hit — that check IS the schema
+     *   walk this whole design exists to avoid — so a test touching the layer
+     *   before its database is migrated would memoise an empty catalogue and
+     *   serve it to every later test in the same PHP process: every plan
+     *   refused as `no such entity`, in a full run only, passing in isolation.
      */
     public static function forgetCached(): void
     {
         self::$memo = null;
-    }
 
-    /**
-     * A cheap, deterministic signature of everything derivation depends on.
-     * Table names alone are not enough — a migration that only adds a column
-     * changes what gets derived without changing which tables exist, so the
-     * column names have to be part of the key too.
-     */
-    private static function schemaFingerprint(): string
-    {
-        $signature = collect(Schema::getTables())
-            ->pluck('name')
-            ->sort()
-            ->map(function (string $table) {
-                $columns = collect(Schema::getColumns($table))->pluck('name')->sort()->implode(',');
-
-                return $table.':'.$columns;
-            })
-            ->implode('|');
-
-        return md5($signature);
+        Cache::forget(self::CACHE_KEY);
     }
 
     /**

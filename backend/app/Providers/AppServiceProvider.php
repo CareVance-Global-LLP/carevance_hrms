@@ -69,6 +69,32 @@ class AppServiceProvider extends ServiceProvider
         }
 
         /*
+         * AI mode's vocabulary is DERIVED from the schema, so a migration is
+         * the event that makes it wrong.
+         *
+         * Registered here rather than folded into the cache key, which is what
+         * this replaced. That key was a hash of every table and column, so it
+         * invalidated itself perfectly — and had to read the entire schema to
+         * decide whether anything had changed, which cost more than the cache
+         * saved and was paid on every AI question. Listening moves that cost to
+         * the handful of times a year the schema actually changes.
+         *
+         * On the migration event rather than at the call sites for the same
+         * reason as the observers above: an invalidation somebody has to
+         * remember to call is one that silently stops being called. Migrator
+         * fires MigrationsEnded for both 'up' and 'down', so migrate,
+         * migrate:fresh and migrate:rollback are all covered.
+         *
+         * The day-long TTL on the entry is the backstop for the case this
+         * cannot see — a schema changed outside a migration, which has happened
+         * in this codebase before (bank_transfer_batches).
+         */
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Database\Events\MigrationsEnded::class,
+            fn () => \App\Services\Ai\SemanticLayer::forgetCached(),
+        );
+
+        /*
          * The password policy, in one place.
          *
          * Every password-setting endpoint validated `min:8` and nothing else,
