@@ -54,6 +54,16 @@ const MyTeam = lazyWithChunkRetry(() => import('@/pages/MyTeam'));
 const MyActivity = lazyWithChunkRetry(() => import('@/pages/MyActivity'));
 const OrganizationTree = lazyWithChunkRetry(() => import('@/pages/OrganizationTree'));
 const AdminDashboard = lazyWithChunkRetry(() => import('@/pages/AdminDashboard'));
+/*
+ * The admin landing screen.
+ *
+ * AdminDashboard is not deleted - it is no longer the landing page. Its
+ * headline widgets (work vs idle, productivity leaders, the screenshot feed)
+ * all derive from the desktop tracker, which a shop-floor employee never runs,
+ * so on a mixed workforce they rank half the company at a structural zero and
+ * present it as a comparison.
+ */
+const OperationsConsole = lazyWithChunkRetry(() => import('@/features/dashboard/OperationsConsole'));
 const DesktopTimerDashboard = lazyWithChunkRetry(() => import('@/pages/DesktopTimerDashboard'));
 const Projects = lazyWithChunkRetry(() => import('@/pages/Projects'));
 const Tasks = lazyWithChunkRetry(() => import('@/pages/Tasks'));
@@ -599,7 +609,7 @@ function App() {
     : window.desktopTracker
       ? dashboardElement
       : hasAdminAccess(user)
-        ? <AdminDashboard />
+        ? <OperationsConsole />
         : <Dashboard />;
 
   return (

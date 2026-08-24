@@ -2345,6 +2345,15 @@ export const attendanceApi = {
         check_out_at?: string | null;
         late_minutes: number;
         worked_seconds: number;
+        /*
+         * Only present when scope='overall' — the org-wide roll-up the
+         * dashboard heatmap reads. Declared optional because the same endpoint
+         * serves a single user's calendar, where these are absent.
+         */
+        present_count?: number;
+        late_count?: number;
+        absent_count?: number;
+        total_employees?: number;
         holiday?: {
           id: number;
           date: string;

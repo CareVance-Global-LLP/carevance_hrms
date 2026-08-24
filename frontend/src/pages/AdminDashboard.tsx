@@ -52,7 +52,6 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend,
 import { greetUser } from '@/lib/greeting';
 import { buildAttendanceBreakdown, type PersonAttendanceFacts } from '@/lib/attendanceBreakdown';
 import { buildTaskPipeline } from '@/lib/taskPipeline';
-import OperationsConsole from '@/features/dashboard/OperationsConsole';
 type DashboardEmployee = {
   id: number;
   name: string;
@@ -2038,20 +2037,6 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/*
-        The operational console: what is waiting, who is here, how the
-        organisation is moving.
-
-        It sits directly under the header, above every tracker widget,
-        because those widgets answer a question nobody opens this page to
-        ask. Work-vs-idle, productivity leaders and the screenshot feed all
-        derive from the desktop tracker, which a shop-floor employee never
-        runs - so on a mixed workforce they rank half the company at a
-        structural zero and present it as a comparison.
-
-        None of it is deleted; it is demoted.
-      */}
-      <OperationsConsole />
 
 
       {/* Before every analytics card, because on a new workspace all of those

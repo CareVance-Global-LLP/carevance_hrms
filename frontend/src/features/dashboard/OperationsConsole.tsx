@@ -3,6 +3,11 @@ import AttentionStrip from './AttentionStrip';
 import TodayCensus from './TodayCensus';
 import HeadcountChart from './HeadcountChart';
 import ShiftCoverage from './ShiftCoverage';
+import LiveBoard from './LiveBoard';
+import AttendanceHeatmap from './AttendanceHeatmap';
+import ArrivalCurve from './ArrivalCurve';
+import PeopleMovement from './PeopleMovement';
+import PayrollDashboardStrip from '@/features/payroll/PayrollDashboardStrip';
 
 /**
  * The admin landing screen.
@@ -57,15 +62,54 @@ export default function OperationsConsole() {
         <TodayCensus />
       </section>
 
+      <section aria-labelledby="ops-now">
+        <h2 id="ops-now" className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          Right now
+        </h2>
+        <div className="grid gap-3.5 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <LiveBoard />
+          </div>
+          <ShiftCoverage />
+        </div>
+      </section>
+
+      {/*
+        Rhythm sits above the twelve-month curve deliberately.
+
+        Both bands are history, but these two are history somebody can act on
+        this week - a bad Monday, a bus that arrives five minutes late - while
+        headcount over a year is context for a quarterly conversation.
+      */}
+      <section aria-labelledby="ops-rhythm">
+        <h2 id="ops-rhythm" className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          Rhythm
+        </h2>
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <AttendanceHeatmap />
+          <ArrivalCurve />
+        </div>
+      </section>
+
+      {/*
+        Payroll follows a MONTH, not the thirty-day window above it, so it gets
+        its own band rather than a card inside Rhythm. Forcing a run onto a
+        rolling range produces a figure that belongs to no run at all.
+      */}
+      <section aria-labelledby="ops-payroll">
+        <h2 id="ops-payroll" className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          Payroll &amp; compliance
+        </h2>
+        <PayrollDashboardStrip />
+      </section>
+
       <section aria-labelledby="ops-movement">
         <h2 id="ops-movement" className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
           Movement
         </h2>
-        <div className="grid gap-3.5 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <HeadcountChart />
-          </div>
-          <ShiftCoverage />
+        <div className="grid gap-3.5">
+          <HeadcountChart />
+          <PeopleMovement />
         </div>
       </section>
     </div>
