@@ -75,7 +75,6 @@ vi.mock('@/pages/Register', () => ({ default: () => <div>Register Page</div> }))
 vi.mock('@/pages/LandingPage', () => ({ default: () => <div>Landing Page</div> }));
 vi.mock('@/pages/Dashboard', () => ({ default: () => <div>Dashboard Page</div> }));
 vi.mock('@/pages/AdminDashboard', () => ({ default: () => <div>Admin Dashboard Page</div> }));
-vi.mock('@/features/dashboard/OperationsConsole', () => ({ default: () => <div>Operations Console Page</div> }));
 vi.mock('@/pages/DesktopTimerDashboard', () => ({ default: () => <div>Desktop Timer Page</div> }));
 vi.mock('@/pages/Projects', () => ({ default: () => <div>Projects Page</div> }));
 vi.mock('@/pages/Tasks', () => ({ default: () => <div>Tasks Page</div> }));
@@ -238,16 +237,7 @@ describe('App routes', () => {
     expect(screen.queryByText('Reports Workspace reports-hub')).not.toBeInTheDocument();
   });
 
-  /*
-   * Admins land on the operations console, not the old AdminDashboard.
-   *
-   * This test previously asserted the opposite. The page was swapped rather
-   * than extended because both render a table of people, and the old page's
-   * filter governed only its own - so the two tables disagreed about who was
-   * on screen. AdminDashboard still exists and still has its own tests; it is
-   * simply no longer what /dashboard resolves to.
-   */
-  it('renders the operations console for admins on /dashboard', async () => {
+  it('renders the admin dashboard for admins on /dashboard', async () => {
     authState.value = {
       isAuthenticated: true,
       isLoading: false,
@@ -267,8 +257,8 @@ describe('App routes', () => {
           <Route path="*" element={<App />} />
         </Routes></>);
 
-    expect(await screen.findByText('Operations Console Page')).toBeInTheDocument();
-    expect(screen.queryByText('Admin Dashboard Page')).not.toBeInTheDocument();
+    expect(await screen.findByText('Admin Dashboard Page')).toBeInTheDocument();
+    expect(screen.queryByText('Dashboard Page')).not.toBeInTheDocument();
   });
 
   it('redirects desktop shell launches from / to the login page when unauthenticated', async () => {

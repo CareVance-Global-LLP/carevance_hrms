@@ -2037,8 +2037,6 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-
-
       {/* Before every analytics card, because on a new workspace all of those
           are empty and this is the only thing on the page with anything to say. */}
       <WorkspaceSetupCard />
