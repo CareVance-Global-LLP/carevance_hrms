@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { selfieApi } from '../../src/api/endpoints';
+import { useTheme } from '../../src/hooks/useTheme';
+import { useToast } from '../../src/components/Toast';
 
 export default function SelfieScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+  const toast = useToast();
   const cameraRef = React.useRef<CameraView>(null);
   const params = useLocalSearchParams<{ latitude: string; longitude: string; accuracy: string }>();
   const [permission, requestPermission] = useCameraPermissions();
@@ -17,21 +21,25 @@ export default function SelfieScreen() {
     setCapturing(true);
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.4, base64: true });
-      if (!photo?.base64) { Alert.alert('Error', 'Camera did not return image data'); return; }
+      if (!photo?.base64) { toast.error('Camera did not return image data'); return; }
       await selfieApi.upload(photo.base64, {
         latitude: parseFloat(params.latitude || '0'),
         longitude: parseFloat(params.longitude || '0'),
         accuracy: parseFloat(params.accuracy || '0'),
       });
       setDone(true);
-      Alert.alert('Success', 'Selfie uploaded', [{ text: 'OK', onPress: () => router.replace('/(tabs)/attendance') }]);
+      // Was an Alert whose OK button did the navigation. Making somebody
+      // dismiss a modal to get back to the screen they came from is a
+      // tap that carries no information.
+      toast.success('Selfie uploaded');
+      router.replace('/(tabs)/attendance');
     } catch (err: any) {
       const serverMsg = err?.response?.data?.message;
       const status = err?.response?.status;
-      if (serverMsg) Alert.alert('Upload Failed', serverMsg);
-      else if (status) Alert.alert('Upload Failed', `Server error (HTTP ${status})`);
-      else if (err?.code === 'ECONNABORTED') Alert.alert('Upload Failed', 'Request timed out. Try a smaller photo or better connection.');
-      else Alert.alert('Upload Failed', `Connection failed: ${err?.message || 'unknown error'}`);
+      if (serverMsg) toast.error(serverMsg);
+      else if (status) toast.error(`Server error (HTTP ${status})`);
+      else if (err?.code === 'ECONNABORTED') toast.error('Request timed out. Try a smaller photo or better connection.');
+      else toast.error(`Connection failed: ${err?.message || 'unknown error'}`);
     } finally { setCapturing(false); }
   };
 
@@ -40,7 +48,7 @@ export default function SelfieScreen() {
       <SafeAreaView style={{ flex: 1, backgroundColor: '#000' }}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
           <Text style={{ textAlign: 'center', fontSize: 16, color: '#fff', marginBottom: 20 }}>Camera permission is required for selfie</Text>
-          <TouchableOpacity onPress={requestPermission} style={{ backgroundColor: '#2563eb', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 10 }}>
+          <TouchableOpacity onPress={requestPermission} style={{ backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 32, borderRadius: 10 }}>
             <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>Grant Permission</Text>
           </TouchableOpacity>
         </View>

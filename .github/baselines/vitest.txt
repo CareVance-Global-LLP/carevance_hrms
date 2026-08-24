@@ -1,14 +1,7 @@
 src/components/Layout.test.tsx::Layout navigation > clears the notification badge when the desktop notification panel is viewed
-src/components/Layout.test.tsx::Layout navigation > does not highlight the generic reports link when attendance report is active
 src/components/Layout.test.tsx::Layout navigation > excludes chat messages from notification center and desktop notification polling
-src/components/Layout.test.tsx::Layout navigation > hides attendance overview but keeps edit time when only attendance monitoring is disabled
-src/components/Layout.test.tsx::Layout navigation > hides edit time navigation when employee time edits are disabled
 src/components/Layout.test.tsx::Layout navigation > hides the add user button for admins in the desktop shell
-src/components/Layout.test.tsx::Layout navigation > highlights departments without also highlighting employees
-src/components/Layout.test.tsx::Layout navigation > highlights only the selected settings subpage
-src/components/Layout.test.tsx::Layout navigation > keeps projects and tasks navigation states separate
 src/components/Layout.test.tsx::Layout navigation > shows a direct payroll navigation item in desktop shell for admins only
-src/components/Layout.test.tsx::Layout navigation > shows contextual report links in attendance and payroll sections
 src/components/Layout.test.tsx::Layout navigation > shows the unread chat badge on the chat navigation item
 src/components/Layout.test.tsx::Layout navigation > toggles the desktop notification menu from the bell button
 src/contexts/AuthContext.test.tsx::AuthProvider > does not arm auto-start on employee login in the browser and keeps the timer running on logout
@@ -23,15 +16,12 @@ src/pages/Dashboard.test.tsx::Dashboard > clears the dashboard notification badg
 src/pages/Dashboard.test.tsx::Dashboard > opens dashboard notifications in a floating panel
 src/pages/Dashboard.test.tsx::Dashboard > shows employee progress metrics without timer controls
 src/pages/Dashboard.test.tsx::Dashboard > shows universal search suggestions while typing
-src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > does not auto-start in browser mode even when auto-start is armed
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > does not restore a stopped timer snapshot after reload
-src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > keeps a restored running timer after refresh when the active timer endpoint still sees it
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > keeps overtime context after reload when summary endpoints fail
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > keeps paused shift context after reload when backend totals are not updated yet
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > keeps the timer stopped after a manual stop
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > keeps today entries and worked totals when task options request fails
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > removes the project selector and updates the running timer from the task selector only
-src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > shows a leave-specific red error when timer start is blocked by approved leave
 src/pages/DesktopTimerDashboard.test.tsx::DesktopTimerDashboard > shows the empty task state when no allowed tasks are available
 src/pages/Login.test.tsx::Login page > remembers the email address when remember me is selected
 src/pages/Login.test.tsx::Login page > shows the backend error message when login fails

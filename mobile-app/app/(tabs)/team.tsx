@@ -1,13 +1,25 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
 import type { ThemeColors } from '../../src/constants/theme';
 import { orgApi } from '../../src/api/endpoints';
 import type { OrgMember } from '../../src/types';
 
-const ROLE_COLORS: Record<string, string> = { admin: '#ef4444', manager: '#f59e0b', employee: '#2563eb' };
+/**
+ * Role chips, resolved from the theme so they invert in dark mode.
+ *
+ * Employee was stock blue, which is the one colour CareVance does not use —
+ * the brand is teal with a gold accent (src/constants/theme.ts).
+ */
+const roleColor = (role: string | undefined, c: ThemeColors): string => {
+  if (role === 'admin' || role === 'super_admin') return c.danger;
+  if (role === 'manager' || role === 'hr') return c.accent;
+  if (role === 'employee') return c.primary;
+  return c.textSecondary;
+};
 
 function memberRole(m: OrgMember): string { return m.role_name || (m.role ? m.role.charAt(0).toUpperCase() + m.role.slice(1) : 'Member'); }
 function memberDept(m: OrgMember): string { return m.department || m.employee_work_info?.department?.name || m.groups?.length ? m.groups[0].name : '—'; }
@@ -51,7 +63,11 @@ export default function TeamScreen() {
       ) : error ? (
         <View style={s.errorBox}><Text style={s.errorText}>{error}</Text></View>
       ) : members.length === 0 ? (
-        <Text style={s.empty}>No members found</Text>
+        <EmptyState
+          icon="people-outline"
+          title="No members found"
+          hint="Nobody matches this search. Try a different name or department."
+        />
       ) : (
         members.map((m) => (
           <View key={m.id} style={s.card}>
@@ -61,8 +77,8 @@ export default function TeamScreen() {
                 <Text style={s.memberName}>{m.name}</Text>
                 <Text style={s.memberEmail}>{m.email}</Text>
               </View>
-              <View style={[s.roleBadge, { backgroundColor: (ROLE_COLORS[m.role] || '#64748b') + '18' }]}>
-                <Text style={[s.roleText, { color: ROLE_COLORS[m.role] || '#64748b' }]}>{memberRole(m)}</Text>
+              <View style={[s.roleBadge, { backgroundColor: roleColor(m.role, colors) + '18' }]}>
+                <Text style={[s.roleText, { color: roleColor(m.role, colors) }]}>{memberRole(m)}</Text>
               </View>
             </View>
             <View style={s.detailRow}>
@@ -86,7 +102,7 @@ export default function TeamScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 16 },
   title: { fontSize: 24, fontWeight: '700', color: c.text, marginBottom: 4 },
   subtitle: { fontSize: 13, color: c.textSecondary, marginBottom: 20 },

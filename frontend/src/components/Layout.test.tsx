@@ -35,6 +35,7 @@ const apiMocks = vi.hoisted(() => ({
   notificationList: vi.fn().mockResolvedValue({ data: { data: [], unread_count: 0 } }),
   markAllRead: vi.fn().mockResolvedValue({}),
   markRead: vi.fn().mockResolvedValue({}),
+  reimbursementInboxCount: vi.fn().mockResolvedValue({ data: { count: 0 } }),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -59,6 +60,20 @@ vi.mock('@/services/api', async () => {
       markAllRead: apiMocks.markAllRead,
       markRead: apiMocks.markRead,
     },
+    /*
+     * Layout calls this on mount and it was the only one of its seven API calls
+     * left unmocked — so it fell through to real axios. jsdom's origin is
+     * localhost:3000, the API URL resolves to a relative /api against it, and
+     * the request died with ECONNREFUSED, failing six tests for a reason none
+     * of them were about.
+     *
+     * Spread rather than replaced: payrollApi has many other members and
+     * overwriting the whole object would break anything that reaches for one.
+     */
+    payrollApi: {
+      ...(actual as any).payrollApi,
+      reimbursementInboxCount: apiMocks.reimbursementInboxCount,
+    },
   };
 });
 
@@ -75,6 +90,7 @@ describe('Layout navigation', () => {
     apiMocks.notificationList.mockResolvedValue({ data: { data: [], unread_count: 0 } });
     apiMocks.markAllRead.mockResolvedValue({});
     apiMocks.markRead.mockResolvedValue({});
+    apiMocks.reimbursementInboxCount.mockResolvedValue({ data: { count: 0 } });
     authState.value = {
       organization: { id: 1, name: 'Test Org', plan_code: 'basic_payroll', max_seats: 50, subscription_status: 'active' },
       user: {
@@ -212,15 +228,23 @@ describe('Layout navigation', () => {
   });
 
   it('highlights only the selected settings subpage', async () => {
-    renderWithProviders(<Layout />, { route: '/settings/integrations' });
+    /*
+     * Geofence Zones, not Integrations. Integrations and Custom Fields are
+     * TABS inside the settings page, not sidebar links — this test was written
+     * against a nav that listed every settings subpage and has been failing
+     * since that stopped being true.
+     *
+     * The behaviour under test is unchanged and still worth pinning: a nested
+     * settings route must highlight its own item and not the parent, which is
+     * the /settings prefix-matching trap.
+     */
+    renderWithProviders(<Layout />, { route: '/settings/geofence' });
 
-    const integrationLinks = await screen.findAllByRole('link', { name: /^integrations$/i });
+    const geofenceLinks = await screen.findAllByRole('link', { name: /^geofence zones$/i });
     const settingsLinks = screen.getAllByRole('link', { name: /^settings$/i });
-    const customFieldLinks = screen.getAllByRole('link', { name: /^custom fields$/i });
 
-    expect(integrationLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
-    expect(settingsLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
-    expect(customFieldLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(geofenceLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+    expect(settingsLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('keeps projects and tasks navigation states separate', async () => {
@@ -229,18 +253,19 @@ describe('Layout navigation', () => {
     const projectLinks = await screen.findAllByRole('link', { name: /^projects$/i });
     const taskLinks = screen.getAllByRole('link', { name: /^tasks$/i });
 
-    expect(projectLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
-    expect(taskLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(projectLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+    expect(taskLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('highlights departments without also highlighting employees', async () => {
     renderWithProviders(<Layout />, { route: '/employees/teams' });
 
     const employeeLinks = await screen.findAllByRole('link', { name: /^employees$/i });
-    const departmentLinks = screen.getAllByRole('link', { name: /^departments$/i });
+    // Singular: the nav item is "Department".
+    const departmentLinks = screen.getAllByRole('link', { name: /^department$/i });
 
-    expect(departmentLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(true);
-    expect(employeeLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(departmentLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+    expect(employeeLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('shows contextual report links in attendance and payroll sections', async () => {
@@ -248,7 +273,9 @@ describe('Layout navigation', () => {
 
     expect(await screen.findByRole('link', { name: /^screenshots$/i })).toHaveAttribute('href', '/monitoring/screenshots');
     expect(await screen.findByRole('link', { name: /^attendance report$/i })).toHaveAttribute('href', '/reports/attendance');
-    expect(screen.getByRole('link', { name: /^payroll report$/i })).toHaveAttribute('href', '/payroll/reports');
+    // No "Payroll Report" item exists; payroll reporting lives inside /payroll.
+    // Asserting the section link is what this test can honestly check.
+    expect(screen.getByRole('link', { name: /^payroll$/i })).toHaveAttribute('href', '/payroll');
   });
 
   it('does not highlight the generic reports link when attendance report is active', async () => {
@@ -257,8 +284,8 @@ describe('Layout navigation', () => {
     const attendanceReportLink = await screen.findByRole('link', { name: /^attendance report$/i });
     const genericReportLinks = screen.getAllByRole('link', { name: /^reports$/i });
 
-    expect(attendanceReportLink.className).toContain('bg-blue-600');
-    expect(genericReportLinks.some((link) => link.className.includes('bg-blue-600'))).toBe(false);
+    expect(attendanceReportLink).toHaveAttribute('aria-current', 'page');
+    expect(genericReportLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(false);
   });
 
   it('hides admin-only navigation items for employees', async () => {
@@ -321,9 +348,18 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByRole('link', { name: /attendance/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Edit Time')).not.toBeInTheDocument();
+    /*
+     * Asserted on the DESTINATION, not the label. The item is called
+     * "Overtime" now, so queryByText('Edit Time') passed no matter what the
+     * gate did — an assertion that cannot fail is worse than none. The route
+     * is the contract: Layout hides it via
+     * `item.to === '/edit-time' && !canAccessEditTime`.
+     *
+     * The old button assertion is gone too: sidebar GROUPS are buttons, so an
+     * "Attendance" button exists whatever this setting says.
+     */
+    expect(await screen.findByRole('link', { name: /^attendance$/i })).toBeInTheDocument();
+    expect(document.querySelector('a[href="/edit-time"]')).toBeNull();
   });
 
   it('hides edit time navigation in desktop shell when employee time edits are disabled', async () => {
@@ -360,9 +396,18 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByRole('link', { name: /attendance/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Edit Time')).not.toBeInTheDocument();
+    /*
+     * Asserted on the DESTINATION, not the label. The item is called
+     * "Overtime" now, so queryByText('Edit Time') passed no matter what the
+     * gate did — an assertion that cannot fail is worse than none. The route
+     * is the contract: Layout hides it via
+     * `item.to === '/edit-time' && !canAccessEditTime`.
+     *
+     * The old button assertion is gone too: sidebar GROUPS are buttons, so an
+     * "Attendance" button exists whatever this setting says.
+     */
+    expect(await screen.findByRole('link', { name: /^attendance$/i })).toBeInTheDocument();
+    expect(document.querySelector('a[href="/edit-time"]')).toBeNull();
   });
 
   it('hides attendance overview but keeps edit time when only attendance monitoring is disabled', async () => {
@@ -388,9 +433,17 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
+    /*
+     * The pairing under test: with attendance monitoring off, the attendance
+     * PAGE goes and overtime stays.
+     *
+     * No button assertion — sidebar GROUPS render as buttons, and this setting
+     * hides one item inside the Attendance group, not the group itself, so an
+     * "Attendance" button is present either way.
+     */
     expect(await screen.findByRole('link', { name: /overtime/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
+    expect(document.querySelector('a[href="/edit-time"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/attendance"]')).toBeNull();
   });
 
   it('hides attendance overview but keeps edit time in desktop shell when only attendance monitoring is disabled', async () => {
@@ -428,9 +481,10 @@ describe('Layout navigation', () => {
 
     renderWithProviders(<Layout />, { route: '/dashboard' });
 
-    expect(await screen.findByRole('link', { name: /edit time/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /attendance/i })).not.toBeInTheDocument();
-    expect(screen.queryByText('Attendance Overview')).not.toBeInTheDocument();
+    // Routes, not labels — see the two tests above. Here the point is the
+    // opposite pairing: edit-time stays, the attendance page goes.
+    expect(document.querySelector('a[href="/edit-time"]')).not.toBeNull();
+    expect(document.querySelector('a[href="/attendance"]')).toBeNull();
   });
 
   it('keeps attendance dropdown when employee can access attendance and edit time', async () => {

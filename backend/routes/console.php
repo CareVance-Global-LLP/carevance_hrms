@@ -313,6 +313,24 @@ Artisan::command('schedule:timers-close-idle', function () {
 })->everyMinute();
 
 /*
+ * Close attendance punches nobody checked out of.
+ *
+ * Hourly, not every minute: unlike the idle sweep this is not racing an active
+ * session, and the command only acts on punches whose shift has already ended.
+ * Running it hourly means a forgotten check-out is settled within the hour
+ * rather than waiting for a nightly job, which matters because the day's total
+ * is wrong until it runs.
+ *
+ * Attendance used to be closed as a side effect of `timers:close-idle`. When
+ * checking in stopped creating a timer, that side effect disappeared with it —
+ * this is what replaces it, and unlike the old path it closes at shift end and
+ * credits the real duration.
+ */
+Artisan::command('schedule:attendance-close-open-punches', function () {
+    $this->call('attendance:close-open-punches');
+})->hourly();
+
+/*
  * Screenshot retention. Runs nightly, off-peak: the purge deletes image files
  * as well as rows, and there is no reason for that I/O to compete with a
  * working day. Before this existed nothing ever deleted a screenshot.

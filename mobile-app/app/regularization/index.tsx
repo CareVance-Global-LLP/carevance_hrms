@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
 import type { ThemeColors } from '../../src/constants/theme';
 import { timeEditApi } from '../../src/api/endpoints';
 import type { TimeEditRequest } from '../../src/types';
@@ -54,7 +55,13 @@ export default function RegularizationScreen() {
       <Text style={s.subtitle}>Time edit requests to correct attendance records</Text>
 
       {items.length === 0 ? (
-        <Text style={s.empty}>No regularization requests</Text>
+        <EmptyState
+          icon="create-outline"
+          title="No time edit requests"
+          hint="Ask for a correction when a punch is missing or recorded at the wrong time."
+          actionLabel="Request a correction"
+          onAction={() => router.push('/regularization/create')}
+        />
       ) : (
         items.map((item) => (
           <View key={item.id} style={s.card}>
@@ -76,7 +83,7 @@ export default function RegularizationScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },

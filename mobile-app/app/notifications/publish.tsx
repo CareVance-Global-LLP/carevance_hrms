@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useToast } from '../../src/components/Toast';
 import type { ThemeColors } from '../../src/constants/theme';
 import { notificationApi } from '../../src/api/endpoints';
 
@@ -11,6 +12,7 @@ export default function PublishAnnouncementScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const toast = useToast();
   const s = useMemo(() => styles(colors), [colors]);
   const [type, setType] = useState<'announcement' | 'news' | 'poll'>('announcement');
   const [title, setTitle] = useState('');
@@ -39,12 +41,12 @@ export default function PublishAnnouncementScreen() {
 
   const handleSubmit = async () => {
     if (type === 'poll') {
-      if (!pollQuestion.trim()) { Alert.alert('Error', 'Question is required for polls'); return; }
+      if (!pollQuestion.trim()) { toast.error('Question is required for polls'); return; }
       const validOptions = pollOptions.filter(opt => opt.trim() !== '');
-      if (validOptions.length < 2) { Alert.alert('Error', 'Poll must have at least 2 options'); return; }
+      if (validOptions.length < 2) { toast.error('Poll must have at least 2 options'); return; }
     } else {
-      if (!title.trim()) { Alert.alert('Error', 'Title is required'); return; }
-      if (!message.trim()) { Alert.alert('Error', 'Message is required'); return; }
+      if (!title.trim()) { toast.error('Title is required'); return; }
+      if (!message.trim()) { toast.error('Message is required'); return; }
     }
 
     setSubmitting(true);
@@ -61,9 +63,9 @@ export default function PublishAnnouncementScreen() {
       } else {
         await notificationApi.publish({ type, title: title.trim(), message: message.trim(), priority: type === 'announcement' ? priority : undefined });
       }
-      Alert.alert('Success', 'Notification published');
+      toast.success('Notification published');
       router.back();
-    } catch (err: any) { Alert.alert('Error', err?.response?.data?.message || 'Failed to publish'); }
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'Failed to publish'); }
     finally { setSubmitting(false); }
   };
 
@@ -102,8 +104,15 @@ export default function PublishAnnouncementScreen() {
                   maxLength={255}
                 />
                 {pollOptions.length > 2 && (
-                  <TouchableOpacity onPress={() => removeOption(index)} style={s.removeOptionBtn}>
-                    <Ionicons name="close-circle" size={24} color={colors.error} />
+                  <TouchableOpacity
+                    onPress={() => removeOption(index)}
+                    style={s.removeOptionBtn}
+                    accessibilityRole="button"
+                    // Icon-only, so without this a screen reader announces
+                    // nothing at all — just "button".
+                    accessibilityLabel={`Remove poll option ${index + 1}`}
+                  >
+                    <Ionicons name="close-circle" size={24} color={colors.danger} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -141,7 +150,7 @@ export default function PublishAnnouncementScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   heading: { fontSize: 22, fontWeight: '700', color: c.text, marginBottom: 20 },
   label: { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 8, marginTop: 16 },

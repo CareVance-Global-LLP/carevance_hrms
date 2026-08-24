@@ -19,6 +19,15 @@ use Illuminate\Support\Facades\Cache;
  * out, and a refresh swapped one for the other.
  *
  * Everything that needs worked time reads this. Nothing recomputes it.
+ *
+ * One caveat worth stating plainly, because it changed: every figure here comes
+ * from `time_entries`, which the DESKTOP tracker writes. A phone punch no longer
+ * starts a timer (see AttendanceTimerSeparationTest), so somebody on site all
+ * day who never opens a laptop legitimately has zero tracked seconds. That is
+ * the truth about desk time and a lie about their day, so `attendance_seconds`
+ * is published alongside — presence, from AttendanceRecord, which is what
+ * payroll actually reads. Anything rendering "hours worked" must show both, or
+ * it reports field staff as idle.
  */
 class WorkedTimeService
 {
@@ -31,8 +40,9 @@ class WorkedTimeService
 
     /**
      * @return array{
-     *   track_seconds:int, idle_seconds:int, break_seconds:int, worked_seconds:int,
-     *   shift_target_seconds:int, remaining_seconds:int, overtime_seconds:int, as_of:string
+     *   track_seconds:int, attendance_seconds:int, idle_seconds:int, break_seconds:int,
+     *   worked_seconds:int, shift_target_seconds:int, remaining_seconds:int,
+     *   overtime_seconds:int, as_of:string
      * }
      */
     public function forUserToday(User $user, ?Carbon $resolvedNow = null): array
@@ -44,8 +54,9 @@ class WorkedTimeService
 
     /**
      * @return array{
-     *   track_seconds:int, idle_seconds:int, break_seconds:int, worked_seconds:int,
-     *   shift_target_seconds:int, remaining_seconds:int, overtime_seconds:int, as_of:string
+     *   track_seconds:int, attendance_seconds:int, idle_seconds:int, break_seconds:int,
+     *   worked_seconds:int, shift_target_seconds:int, remaining_seconds:int,
+     *   overtime_seconds:int, as_of:string
      * }
      */
     public function forUserDate(User $user, Carbon $date, ?Carbon $resolvedNow = null): array
@@ -85,6 +96,10 @@ class WorkedTimeService
 
         return [
             'track_seconds' => $trackSeconds,
+            // Presence, not desk time. Additive on purpose: folding it into
+            // worked_seconds would silently move the shift countdown, billing
+            // and the productivity maths onto a different measurement.
+            'attendance_seconds' => $this->attendanceSecondsFor($user, $start),
             'idle_seconds' => $idleSeconds,
             'break_seconds' => $breakSeconds,
             'paid_break_seconds' => $paidBreakSeconds,
@@ -95,6 +110,29 @@ class WorkedTimeService
             'overtime_seconds' => max(0, $billedSeconds - $shiftTargetSeconds),
             'as_of' => $resolvedNow->toIso8601String(),
         ];
+    }
+
+    /**
+     * Seconds this person was present on the day, from attendance.
+     *
+     * Delegates to AttendanceService::calculateEffectiveWorkedSeconds — the same
+     * figure the attendance payload and DayOutcomeService use, including an
+     * open punch and any manual adjustment. Recomputing it here is exactly the
+     * five-disagreeing-sources problem this class exists to end.
+     */
+    private function attendanceSecondsFor(User $user, Carbon $date): int
+    {
+        $record = \App\Models\AttendanceRecord::where('user_id', $user->id)
+            ->whereDate('attendance_date', $date->toDateString())
+            ->with('punches')
+            ->first();
+
+        if (!$record) {
+            return 0;
+        }
+
+        return app(\App\Services\Attendance\AttendanceService::class)
+            ->calculateEffectiveWorkedSeconds($record);
     }
 
     /**

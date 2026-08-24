@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Platform, Alert } from 'react-native';
+import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { useAuth } from './useAuth';
@@ -69,7 +69,12 @@ async function registerForPushNotifications() {
     }
 
     if (finalStatus !== 'granted') {
-      Alert.alert('Notification Permission', 'Push notifications require permission. Please enable in Settings.');
+      /*
+       * Declining notifications is a choice, not a fault. This ran on every
+       * launch, so it re-asked with a modal every single time somebody opened
+       * the app — the fastest way to make a person uninstall it.
+       */
+      console.log('Push notifications not permitted; skipping device registration.');
       return;
     }
 
@@ -81,6 +86,12 @@ async function registerForPushNotifications() {
       console.log('Device registered for push:', token.substring(0, 25) + '...');
     }
   } catch (e: any) {
-    Alert.alert('Push Registration Failed', e?.message || String(e));
+    /*
+     * Diagnostics, not something the user can act on — and in Expo Go this
+     * fires for everyone, because push support was removed there in SDK 53.
+     * Showing it as a modal meant every Expo Go user was greeted by an error
+     * about a feature they had not asked for.
+     */
+    console.warn('Push registration failed:', e?.message || String(e));
   }
 }

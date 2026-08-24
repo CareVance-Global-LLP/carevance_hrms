@@ -47,14 +47,21 @@ graph TD
 
 ```bash
 # backend  (cwd: backend/)
-php artisan test                      # 762 tests, 36 known failures
+php artisan test                      # 1761 tests, all passing
 php artisan test --filter=SomeTest
 php artisan migrate
 
 # frontend (cwd: frontend/)
 npm run dev                           # :5173
-npx vitest run                        # 610 tests, 49 known failures
+npx vitest run                        # 1244 tests, 34 known failures
 npx tsc --noEmit                      # must stay at 0 errors
+```
+
+```bash
+# mobile   (cwd: mobile-app/)
+npx jest                              # 60 tests, all passing
+npx tsc --noEmit                      # must stay at 0 errors
+npx expo start --go                   # Expo Go; --clear to drop Metro's cache
 ```
 
 Backend runs on `:8000`, frontend on `:5173`. Tests use in-memory SQLite; the app uses PostgreSQL.
@@ -101,7 +108,10 @@ Excluded on purpose: `User` (the scope resolves the acting user through Auth), `
 
 ### The test suites have known failures — gate on new ones
 
-Both suites carry a tail of pre-existing failures (36 backend, 49 frontend). **Never judge a change by the failure count** — compare failing test *names* against the committed baseline:
+The frontend still carries a tail of pre-existing failures (34); **the backend
+baseline is now empty — every backend test passes.** Either way, **never judge a
+change by the failure count** — compare failing test *names* against the
+committed baseline:
 
 ```bash
 node scripts/ci/test-baseline.mjs --junit <report.xml> \

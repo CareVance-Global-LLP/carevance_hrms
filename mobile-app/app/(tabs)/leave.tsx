@@ -4,12 +4,12 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
-} from 'react-native';
+  RefreshControl, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
 import type { ThemeColors } from '../../src/constants/theme';
 import { leaveApi } from '../../src/api/endpoints';
 import type { LeaveCategory, LeaveRequest } from '../../src/types';
@@ -84,7 +84,13 @@ export default function LeaveScreen() {
 
       <Text style={s.sectionTitle}>Recent Requests</Text>
       {requests.length === 0 ? (
-        <Text style={s.empty}>No leave requests</Text>
+        <EmptyState
+          icon="calendar-outline"
+          title="No leave requests yet"
+          hint="Anything you apply for shows up here, with its approval status."
+          actionLabel="Apply for leave"
+          onAction={() => router.push('/leave/apply')}
+        />
       ) : (
         requests.slice(0, 10).map((r) => (
           <View key={r.id} style={s.reqCard}>
@@ -116,7 +122,7 @@ export default function LeaveScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   title: { fontSize: 24, fontWeight: '700', color: c.text },

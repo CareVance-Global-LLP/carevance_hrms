@@ -1,42 +1,61 @@
+/**
+ * Mobile palette, derived from the web app's brand tokens.
+ *
+ * The source of truth is frontend/src/styles/theme.css — CareVance is teal
+ * (#5D969D) with a gold accent (#E3A842), and the mark itself is gold. Mobile
+ * had been built on stock blue (#2563eb), so the two products did not look like
+ * the same company.
+ *
+ * Values are the web's own ramp entries, not approximations:
+ *   primary       brand-500/600
+ *   primaryLight  brand-100
+ *   accent        accent-400
+ *   text/borders   the `n` neutral ramp
+ * Dark values come from the [data-theme="dark"] block, which was deliberately
+ * lightened for AA contrast — do not "simplify" them back to the light values.
+ */
 export const lightColors = {
-  background: '#f8fafc',
-  surface: '#ffffff',
-  text: '#0f172a',
-  textSecondary: '#64748b',
-  textTertiary: '#94a3b8',
-  border: '#e2e8f0',
-  primary: '#2563eb',
-  primaryLight: '#dbeafe',
-  danger: '#ef4444',
-  success: '#10b981',
-  warning: '#f59e0b',
-  card: '#ffffff',
-  input: '#f1f5f9',
-  tabBar: '#ffffff',
-  tabBarBorder: '#e2e8f0',
-  headerBg: '#ffffff',
-  skeleton: '#e2e8f0',
+  background: '#F5F7F8',
+  surface: '#FFFFFF',
+  text: '#16191C',
+  textSecondary: '#4E565D',
+  textTertiary: '#6B757D',
+  border: '#E2E5E7',
+  primary: '#5D969D',
+  primaryLight: '#D9EBED',
+  /** Brand gold. Reserved for emphasis and the mark — never for body text. */
+  accent: '#E3A842',
+  danger: '#EF4444',
+  success: '#10B981',
+  warning: '#E3A842',
+  card: '#FFFFFF',
+  input: '#F1F4F6',
+  tabBar: '#FFFFFF',
+  tabBarBorder: '#E2E5E7',
+  headerBg: '#FFFFFF',
+  skeleton: '#E4E8EB',
   overlay: 'rgba(0,0,0,0.5)',
 };
 
-export const darkColors = {
-  background: '#0f172a',
-  surface: '#1e293b',
-  text: '#f1f5f9',
-  textSecondary: '#94a3b8',
-  textTertiary: '#64748b',
-  border: '#334155',
-  primary: '#3b82f6',
-  primaryLight: '#1e3a5f',
-  danger: '#f87171',
-  success: '#34d399',
-  warning: '#fbbf24',
-  card: '#1e293b',
-  input: '#334155',
-  tabBar: '#1e293b',
-  tabBarBorder: '#334155',
-  headerBg: '#1e293b',
-  skeleton: '#334155',
+export const darkColors: typeof lightColors = {
+  background: '#0E141A',
+  surface: '#161F26',
+  text: '#E6EDF0',
+  textSecondary: '#A9B8C0',
+  textTertiary: '#869298',
+  border: '#2A3841',
+  primary: '#6FA9B0',
+  primaryLight: '#16303A',
+  accent: '#EBB861',
+  danger: '#F87171',
+  success: '#34C88A',
+  warning: '#EBB861',
+  card: '#161F26',
+  input: '#212C34',
+  tabBar: '#161F26',
+  tabBarBorder: '#2A3841',
+  headerBg: '#161F26',
+  skeleton: '#212C34',
   overlay: 'rgba(0,0,0,0.7)',
 };
 

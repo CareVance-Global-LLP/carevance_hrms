@@ -154,6 +154,18 @@ export interface EmployeeDashboard {
   } | null;
   attendance_today: TodayAttendance | null;
   geofence_zone: GeofenceZone | null;
+  /*
+   * Seconds tracked by the DESKTOP tracker today, distinct from attendance.
+   *
+   * Attendance says how long somebody was present; this says how much of that
+   * was at a monitored computer. On a phone-only day it is legitimately 0 —
+   * the person was working, just not at a desk — so anything rendering it
+   * should say what it means rather than showing a bare zero.
+   *
+   * The API has always returned these; the type simply never declared them.
+   */
+  today_track_time?: number;
+  today_work_time?: number;
   monthly_total_seconds: number;
   monthly_total_hours: string;
   monthly_days: number;
