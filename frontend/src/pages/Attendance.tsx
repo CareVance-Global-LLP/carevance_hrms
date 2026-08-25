@@ -316,6 +316,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const [holidayDetails, setHolidayDetails] = useState('');
   const [selectedHolidayId, setSelectedHolidayId] = useState<number | null>(null);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  // What the server holds, which is not always what it returned. Rendering a
+  // truncated list as though it were the whole set is the failure this page
+  // already had once.
+  const [leaveTotal, setLeaveTotal] = useState(0);
   const [isLeaveLoading, setIsLeaveLoading] = useState(false);
   const [isLeaveSubmitting, setIsLeaveSubmitting] = useState(false);
   const [leaveDrawerOpen, setLeaveDrawerOpen] = useState(false);
@@ -861,8 +865,13 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
   const fetchLeaveRequests = async () => {
     setIsLeaveLoading(true);
     try {
-      const res = await leaveApi.list();
+      // An explicit limit, because the endpoint defaults to a page rather than
+      // everything. Sending none left an employee with 44 requests seeing only
+      // their 10 most recent: a request showed while it was new, then slid out
+      // of the window as others arrived and disappeared from their history.
+      const res = await leaveApi.list({ limit: 500 });
       setLeaveRequests((res.data as any).data || []);
+      setLeaveTotal(Number((res.data as any).total ?? 0));
     } catch (e) {
       console.error('Leave requests fetch failed:', e);
     } finally {
@@ -1674,6 +1683,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
         {canAccessLeave ? (
           <LeaveRequestsPanel
             requests={filteredLeaveRequests}
+            totalOnServer={leaveTotal}
             currentUserId={Number(user?.id || 0)}
             hasApprovalPowers={canManageLeave || isAdmin}
             isLoading={isLeaveLoading}

@@ -188,6 +188,65 @@ class ChecklistService
             'completed_at' => now(),
             'completed_by' => $actor->id,
             'employee_document_id' => $document->id,
+            'evidence_kind' => 'document',
+            'evidence_label' => $document->title,
+        ]);
+
+        return $item->fresh();
+    }
+
+    /**
+     * Complete an item from a document that was already on file.
+     *
+     * The difference from `completeFromDocument()` is entirely in the two
+     * stamps, and it matters. That method is called during the upload request,
+     * so `now()` and the acting user are the truth. This one is called from a
+     * sync that may run months later — on a journey opening, or on whichever
+     * unrelated person next loads the checklist — and stamping `now()` there
+     * would record "completed today by the admin who happened to open New
+     * Hires" for a scan the joiner uploaded in June.
+     *
+     * So the evidence supplies both: the upload's own time, and the person who
+     * uploaded it. The tick then says the same thing no matter when the sync
+     * that noticed it ran, and re-running the sync cannot move it.
+     */
+    public function completeFromExistingDocument(ChecklistItem $item, EmployeeDocument $document): ChecklistItem
+    {
+        $item->update([
+            'status' => ChecklistItem::STATUS_DONE,
+            'completed_at' => $document->uploaded_at ?? $document->created_at ?? now(),
+            'completed_by' => $document->uploaded_by,
+            'employee_document_id' => $document->id,
+            'evidence_kind' => 'document',
+            'evidence_label' => $document->title,
+        ]);
+
+        return $item->fresh();
+    }
+
+    /**
+     * Complete an item because the fact it was asking about is on the record.
+     *
+     * The weaker of the two evidence paths, and the one that was missing. An
+     * employee who typed their PAN in without attaching a scan had supplied the
+     * PAN — the item asking for it stayed pending anyway, for ever, while the
+     * profile panel beside it displayed the number.
+     *
+     * `completed_by` is the person whose record it is. Unlike a document there
+     * is no uploader to credit, and crediting whoever happened to trigger the
+     * sync would attribute the joiner's own declaration to an admin who only
+     * opened a page. `completed_at` is the record's own timestamp, for the same
+     * reason the document path uses the upload's: the fact was true from the
+     * moment it was entered, whenever we got round to noticing.
+     */
+    public function completeFromRecord(ChecklistItem $item, ?int $subjectUserId, string $label, ?\DateTimeInterface $at = null): ChecklistItem
+    {
+        $item->update([
+            'status' => ChecklistItem::STATUS_DONE,
+            'completed_at' => $at ?? now(),
+            'completed_by' => $subjectUserId,
+            'evidence_kind' => 'record',
+            'evidence_label' => $label,
         ]);
 
         return $item->fresh();
@@ -199,6 +258,10 @@ class ChecklistService
             'status' => ChecklistItem::STATUS_PENDING,
             'completed_at' => null,
             'completed_by' => null,
+            // Cleared with the rest. A reopened item still carrying "From PAN
+            // record" would assert that evidence closed something that is open.
+            'evidence_kind' => null,
+            'evidence_label' => null,
         ]);
 
         return $item->fresh();

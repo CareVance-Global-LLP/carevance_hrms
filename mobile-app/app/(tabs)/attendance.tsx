@@ -5,32 +5,38 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  Alert,
   ActivityIndicator,
-  AppState,
-} from 'react-native';
+  AppState, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useToast } from '../../src/components/Toast';
+import { haptics } from '../../src/lib/haptics';
+import { formatClock, formatShort, spokenDuration } from '../../src/lib/duration';
+import { usePunchSync } from '../../src/hooks/usePunchSync';
+import { formatDistance, haversineMeters, isAccuracyPoor } from '../../src/lib/geo';
 import type { ThemeColors } from '../../src/constants/theme';
-import { dashboardApi, geofenceApi, timeEntryApi, selfieApi, holidayApi } from '../../src/api/endpoints';
+import { dashboardApi, geofenceApi, selfieApi, holidayApi } from '../../src/api/endpoints';
 import type { GeoPosition, EmployeeDashboard, GeofenceZone, Holiday } from '../../src/types';
-
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 export default function AttendanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const toast = useToast();
+
+  /*
+   * Punches are written to storage before they are sent, so a dead network,
+   * a killed app or a crash cannot lose one. A rejection is the only outcome
+   * the user must be told about: it is the only case where the punch is gone
+   * and will not be retried.
+   */
+  const { pending, syncing, punch } = usePunchSync(
+    (message) => { haptics.error(); toast.error(message); },
+    () => { void fetchAll(); },
+  );
   const s = useMemo(() => styles(colors), [colors]);
   const [dashboard, setDashboard] = useState<EmployeeDashboard | null>(null);
   const [position, setPosition] = useState<GeoPosition | null>(null);
@@ -50,7 +56,15 @@ export default function AttendanceScreen() {
   });
   const appState = useRef(AppState.currentState);
 
-  const isTiming = !!dashboard?.active_timer;
+  /*
+   * Whether this person is CLOCKED IN — which is what the phone controls now.
+   *
+   * `active_timer` is deliberately not used for this. The timer belongs to the
+   * desktop tracker, and on a phone it was always either absent or about to be
+   * killed by the idle sweep. Reading it here made the screen say "Timer
+   * Stopped" to somebody who was very much at work.
+   */
+  const isCheckedIn = !!dashboard?.attendance_today?.is_checked_in;
 
   const fetchAll = useCallback(async () => {
     try {
@@ -92,8 +106,10 @@ export default function AttendanceScreen() {
         return;
       }
       const loc = await Location.getCurrentPositionAsync({
+        // No `timeout` here: expo-location has no such option, so passing one
+        // was silently dropped and the call had no bound at all despite
+        // appearing to have a 10-second one.
         accuracy: Location.Accuracy.Balanced,
-        timeout: 10000,
       });
       const pos: GeoPosition = {
         latitude: loc.coords.latitude,
@@ -135,7 +151,7 @@ export default function AttendanceScreen() {
   }, [zone]);
 
   useEffect(() => {
-    if (isTiming && dashboard?.active_timer?.start_time) {
+    if (isCheckedIn && dashboard?.attendance_today?.check_in_at) {
       const start = new Date(dashboard.active_timer.start_time).getTime();
       const elapsed = Math.floor((Date.now() - start) / 1000);
       setTimerSeconds(Math.max(0, elapsed));
@@ -144,51 +160,63 @@ export default function AttendanceScreen() {
     } else {
       setTimerSeconds(0);
     }
-  }, [isTiming, dashboard?.active_timer?.start_time]);
+  }, [isCheckedIn, dashboard?.attendance_today?.check_in_at]);
 
-  const handleStartTimer = async () => {
-    if (!position) { Alert.alert('Error', 'Location not available'); return; }
-    if (inZone !== true) { Alert.alert('Error', 'You must be within the geofence zone to start the timer'); return; }
+  /*
+   * Punching in marks ATTENDANCE, not a timer.
+   *
+   * This used to call timeEntryApi.start(), which started a work timer. A phone
+   * emits no keyboard or mouse activity, so `timers:close-idle` found the timer
+   * maximally idle and closed it after five minutes with duration 0 — taking
+   * the attendance punch with it. Somebody on site all day who never opened a
+   * laptop recorded a full day's absence.
+   *
+   * The timer belongs to the desktop tracker, which can actually observe
+   * whether work is happening. This says "I am here", which is the only thing a
+   * phone can honestly report.
+   */
+  const handleCheckIn = async () => {
+    // A refusal the user can act on buzzes differently from a failure, so the
+    // difference is felt before the message is read.
+    if (!position) { haptics.warning(); toast.error('Location not available'); return; }
+    if (inZone !== true) { haptics.warning(); toast.error('You must be within the geofence zone to check in'); return; }
     if (!selfieToday) {
+      haptics.tap();
       router.push({ pathname: '/attendance/selfie', params: { latitude: String(position.latitude), longitude: String(position.longitude), accuracy: String(position.accuracy) } });
       return;
     }
+    haptics.press();
     setActionLoading(true);
     try {
-      await timeEntryApi.start(position);
+      await punch('in', position);
+      haptics.success();
+      // Recorded either way — the punch carries its own timestamp, so a late
+      // sync still lands at the minute the person actually arrived.
+      toast.success('Checked in');
       await fetchAll();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Failed to start timer';
-      Alert.alert('Error', msg);
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleStopTimer = async () => {
-    if (!position) { Alert.alert('Error', 'Location not available'); return; }
+  const handleCheckOut = async () => {
+    if (!position) { haptics.warning(); toast.error('Location not available'); return; }
+    haptics.press();
     setActionLoading(true);
     try {
-      await timeEntryApi.stop(position);
+      await punch('out', position);
+      haptics.success();
+      toast.success('Checked out');
       await fetchAll();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Failed to stop timer';
-      Alert.alert('Error', msg);
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleSelfie = () => {
-    if (!position) { Alert.alert('Error', 'Location not available'); return; }
+    if (!position) { haptics.warning(); toast.error('Location not available'); return; }
+    haptics.tap();
     router.push({ pathname: '/attendance/selfie', params: { latitude: String(position.latitude), longitude: String(position.longitude), accuracy: String(position.accuracy) } });
-  };
-
-  const formatTimer = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
   };
 
   const canStart = inZone === true && (selfieToday || !position);
@@ -230,35 +258,67 @@ export default function AttendanceScreen() {
           )
         ) : inZone ? (
           <Text style={[s.zoneStatus, { color: colors.success, fontWeight: '700' }]}>
-            <Ionicons name="checkmark-circle" size={14} /> Within zone — you're good
+            <Ionicons name="checkmark-circle" size={14} /> You're at {zone?.name || 'your work location'}
           </Text>
         ) : (
           <>
             <Text style={[s.zoneStatus, { color: colors.danger, fontWeight: '700' }]}>
-              <Ionicons name="alert-circle" size={14} /> Outside zone
+              <Ionicons name="alert-circle" size={14} /> Too far to check in
             </Text>
             {distance !== null && zone && (
-              <Text style={s.zoneDebug}>Distance from center: {distance}m (max allowed: {zone.radius_meters}m)</Text>
+              // "Distance from center: 320m (max allowed: 100m)" described the
+              // geometry. This says how far to walk, which is the only thing
+              // the person can act on.
+              <Text style={s.zoneDebug}>
+                You're {formatDistance(distance)} away. Move within {formatDistance(zone.radius_meters)} of {zone.name} to check in.
+              </Text>
             )}
           </>
         )}
 
-        {position && (
-          <>
-            <Text style={s.coordsText}>GPS: {position.latitude.toFixed(6)}, {position.longitude.toFixed(6)}</Text>
-            <Text style={s.coordsText}>Accuracy: ±{Math.round(position.accuracy)}m</Text>
-          </>
+        {/*
+          Coordinates to six decimal places were developer output. The one
+          genuinely useful signal is a fix too vague to trust — it explains why
+          the zone check can disagree with where somebody is plainly standing.
+        */}
+        {position && isAccuracyPoor(position.accuracy) && (
+          <Text style={s.coordsText}>
+            Weak GPS signal (±{Math.round(position.accuracy)} m). Step outside or near a window for a better fix.
+          </Text>
         )}
       </View>
 
-      {zone && inZone === true && !selfieToday && !isTiming && (
+      {zone && inZone === true && !selfieToday && !isCheckedIn && (
         <View style={s.selfiePrompt}>
           <Text style={s.selfiePromptText}>
-            <Ionicons name="camera-outline" size={14} /> Daily selfie required before starting timer
+            <Ionicons name="camera-outline" size={14} /> Take your daily selfie before checking in
           </Text>
           <TouchableOpacity style={s.selfieBtn} onPress={handleSelfie}>
             <Text style={s.selfieBtnText}>Take Selfie</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {pending.length > 0 && (
+        <View
+          style={s.pendingSync}
+          accessibilityRole="alert"
+          accessibilityLabel={
+            pending.length + ' punch' + (pending.length > 1 ? 'es' : '') +
+            ' saved on this phone, waiting to reach the server'
+          }
+        >
+          {syncing
+            ? <ActivityIndicator size="small" color={colors.warning} />
+            : <Ionicons name="cloud-offline-outline" size={16} color={colors.warning} />}
+          {/*
+            Says "saved", not "failed". The punch is recorded with its real
+            time and will sync itself — telling somebody their attendance
+            failed when it did not is how you get a duplicate punch.
+          */}
+          <Text style={s.pendingSyncText}>
+            {pending.length} punch{pending.length > 1 ? 'es' : ''} saved — syncing when you're back online
+          </Text>
         </View>
       )}
 
@@ -267,30 +327,75 @@ export default function AttendanceScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         ) : (
           <>
-            <Text style={s.timerLabel}>{isTiming ? 'Timer Running' : 'Timer Stopped'}</Text>
-            <Text style={s.timerDisplay}>{formatTimer(timerSeconds)}</Text>
-            {isTiming ? (
+            <Text style={s.timerLabel}>{isCheckedIn ? 'Checked In' : 'Not Checked In'}</Text>
+            <Text
+              style={s.timerDisplay}
+              // "07:32:10" is read out as "zero seven colon three two colon one
+              // zero". The spoken form drops seconds so VoiceOver is not
+              // re-announcing the figure every tick.
+              accessibilityLabel={`${isCheckedIn ? 'Present for' : 'Today'} ${spokenDuration(timerSeconds)}`}
+            >
+              {formatClock(timerSeconds)}
+            </Text>
+            {isCheckedIn ? (
               <>
-                {dashboard?.active_timer?.start_time && (
+                {dashboard?.attendance_today?.check_in_at && (
                   <Text style={s.timerSub}>
-                    Started {new Date(dashboard.active_timer.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    Since {new Date(dashboard.attendance_today.check_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </Text>
                 )}
-                <TouchableOpacity style={[s.mainBtn, s.stopBtn]} onPress={handleStopTimer} disabled={actionLoading}>
-                  {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.mainBtnText}>Stop Timer</Text>}
+                {/*
+                  Desk time is shown separately and only when there is some. It
+                  comes from the desktop tracker, so on a phone-only day it is
+                  zero — which is correct, not a fault, and saying "0h 00m
+                  tracked" unprompted invites somebody to read it as slacking.
+                */}
+                {typeof dashboard?.today_work_time === 'number' && dashboard.today_work_time > 0 && (
+                  <Text
+                    style={s.timerSub}
+                    // Compact here: this is a supporting line, and a full
+                    // HH:MM:SS beside the headline figure reads as a second
+                    // clock competing with it.
+                    accessibilityLabel={`${spokenDuration(dashboard.today_work_time)} tracked at a desk`}
+                  >
+                    {formatShort(dashboard.today_work_time)} tracked at a desk
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={[s.mainBtn, s.stopBtn]}
+                  onPress={handleCheckOut}
+                  disabled={actionLoading}
+                  accessibilityRole="button"
+                  accessibilityLabel="Check out"
+                  accessibilityHint="Ends your attendance for today"
+                  accessibilityState={{ disabled: actionLoading, busy: actionLoading }}
+                >
+                  {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.mainBtnText}>Check Out</Text>}
                 </TouchableOpacity>
               </>
             ) : (
               <>
-                <Text style={s.timerSub}>Tap Start to begin tracking</Text>
+                <Text style={s.timerSub}>Check in to mark yourself present</Text>
                 <TouchableOpacity
                   style={[s.mainBtn, (!canStart || !zone || inZone !== true) && s.mainBtnDisabled]}
-                  onPress={handleStartTimer}
+                  accessibilityRole="button"
+                  accessibilityLabel="Check in"
+                  // The button dims when blocked but the reason is only in the
+                  // hint text below it, which a screen reader reaches last.
+                  accessibilityHint={
+                    inZone === false
+                      ? 'Unavailable. Move inside the geofence zone first'
+                      : !selfieToday
+                        ? 'Unavailable. Take your daily selfie first'
+                        : 'Marks you present for today'
+                  }
+                  accessibilityState={{ disabled: !canStart || actionLoading, busy: actionLoading }}
+                  onPress={handleCheckIn}
                   disabled={!canStart || actionLoading}
                 >
-                  {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.mainBtnText}>Start Timer</Text>}
+                  {actionLoading ? <ActivityIndicator color="#fff" /> : <Text style={s.mainBtnText}>Check In</Text>}
                 </TouchableOpacity>
-                {!selfieToday && inZone === true && <Text style={s.hintText}>Take a selfie first to enable timer</Text>}
+                {!selfieToday && inZone === true && <Text style={s.hintText}>Take a selfie first to check in</Text>}
                 {inZone === false && <Text style={s.hintText}>Move inside the geofence zone</Text>}
               </>
             )}
@@ -416,7 +521,7 @@ function renderCalendar(holidays: Holiday[], month: string, colors: ThemeColors,
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   title: { fontSize: 24, fontWeight: '700', color: c.text, marginBottom: 20 },
   zoneCard: { backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },
@@ -438,6 +543,12 @@ const styles = (c: ThemeColors) => ({
   timerSub: { fontSize: 13, color: c.textTertiary, marginBottom: 24 },
   mainBtn: { backgroundColor: c.primary, borderRadius: 12, paddingVertical: 16, paddingHorizontal: 60, alignItems: 'center', minWidth: 200 },
   mainBtnDisabled: { opacity: 0.4 },
+  pendingSync: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: c.warning + '18', borderRadius: 10,
+    paddingVertical: 10, paddingHorizontal: 12, marginBottom: 10,
+  },
+  pendingSyncText: { flex: 1, color: c.warning, fontSize: 12, fontWeight: '600' },
   stopBtn: { backgroundColor: c.danger },
   mainBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   hintText: { color: c.textTertiary, fontSize: 12, marginTop: 8 },

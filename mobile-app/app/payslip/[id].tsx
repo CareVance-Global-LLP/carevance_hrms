@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, Linking, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, Linking, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useToast } from '../../src/components/Toast';
 import type { ThemeColors } from '../../src/constants/theme';
 import { payslipApi } from '../../src/api/endpoints';
 import type { Payslip } from '../../src/types';
@@ -12,6 +13,7 @@ export default function PayslipDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const toast = useToast();
   const s = useMemo(() => styles(colors), [colors]);
   const [payslip, setPayslip] = useState<Payslip | null>(null);
   const [loading, setLoading] = useState(true);
@@ -27,8 +29,8 @@ export default function PayslipDetailScreen() {
   };
 
   const handleOpenPdf = async () => {
-    if (!payslip?.pdf_url) { Alert.alert('Unavailable', 'PDF not available'); return; }
-    try { await Linking.openURL(payslip.pdf_url); } catch { Alert.alert('Error', 'Could not open PDF'); }
+    if (!payslip?.pdf_url) { toast.show('PDF not available', 'warning'); return; }
+    try { await Linking.openURL(payslip.pdf_url); } catch { toast.error('Could not open PDF'); }
   };
 
   if (loading) return <View style={[s.center, { paddingTop: insets.top }]}><ActivityIndicator size="large" color={colors.primary} /></View>;
@@ -66,7 +68,7 @@ export default function PayslipDetailScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   notFound: { fontSize: 16, color: c.textTertiary },

@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, Modal, TextInput, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
+import { useToast } from '../../src/components/Toast';
 import { useAuth } from '../../src/hooks/useAuth';
 import { canApprove } from '../../src/hooks/usePermissions';
 import type { ThemeColors } from '../../src/constants/theme';
 import { approvalApi, reimbursementApi } from '../../src/api/endpoints';
+import { haptics } from '../../src/lib/haptics';
 import type { LeaveRequest, TimeEditRequest, Reimbursement } from '../../src/types';
 
 type TabType = 'leave' | 'time_edit' | 'expense';
@@ -20,11 +23,12 @@ const TABS: { key: TabType; label: string; icon: string }[] = [
 export default function ApprovalInboxScreen() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const toast = useToast();
   const { user } = useAuth();
   const s = useMemo(() => styles(colors), [colors]);
-  // Same shadowing bug as the two tab screens: `canApprove` shadowed the
-  // import and called itself. The `canApprove` parameters on the render
-  // helpers below are ordinary arguments and are left alone.
+  // Renamed: a local `userCanApprove` shadowed the imported helper and called it in
+  // its own initialiser, which throws a ReferenceError before this screen
+  // can render at all.
   const userCanApprove = canApprove(user);
   const [activeTab, setActiveTab] = useState<TabType>('leave');
   const [leaves, setLeaves] = useState<LeaveRequest[]>([]);
@@ -62,9 +66,10 @@ export default function ApprovalInboxScreen() {
       if (type === 'leave') { await approvalApi.approveLeave(id); }
       else if (type === 'time_edit') { await approvalApi.approveTimeEdit(id); }
       else { await approvalApi.approveReimbursement(id); }
-      Alert.alert('Approved', 'Request has been approved');
+      haptics.success();
+      toast.success('Request has been approved');
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err?.response?.data?.message || 'Failed to approve'); }
+    } catch (err: any) { haptics.error(); toast.error(err?.response?.data?.message || 'Failed to approve'); }
     finally { setActionLoading(null); }
   };
 
@@ -75,7 +80,7 @@ export default function ApprovalInboxScreen() {
 
   const confirmReject = async () => {
     if (!rejectTarget) return;
-    if (!rejectNote.trim()) { Alert.alert('Error', 'Reason is required to reject'); return; }
+    if (!rejectNote.trim()) { haptics.warning(); toast.error('Reason is required to reject'); return; }
     const { type, id } = rejectTarget;
     setActionLoading(id);
     setRejectTarget(null);
@@ -84,9 +89,10 @@ export default function ApprovalInboxScreen() {
       if (type === 'leave') { await approvalApi.rejectLeave(id, rejectNote.trim()); }
       else if (type === 'time_edit') { await approvalApi.rejectTimeEdit(id, rejectNote.trim()); }
       else { await approvalApi.rejectReimbursement(id, rejectNote.trim()); }
-      Alert.alert('Rejected', 'Request has been rejected');
+      haptics.success();
+      toast.show('Request has been rejected', 'info');
       fetchData();
-    } catch (err: any) { Alert.alert('Error', err?.response?.data?.message || 'Failed to reject'); }
+    } catch (err: any) { haptics.error(); toast.error(err?.response?.data?.message || 'Failed to reject'); }
     finally { setActionLoading(null); }
   };
 
@@ -134,8 +140,8 @@ export default function ApprovalInboxScreen() {
   );
 }
 
-function renderActions(canApprove: boolean, type: string, id: number, s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null) {
-  if (!canApprove) {
+function renderActions(userCanApprove: boolean, type: string, id: number, s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null) {
+  if (!userCanApprove) {
     return (
       <View style={[s.pendingBadge, { backgroundColor: colors.warning + '20' }]}>
         <Text style={{ color: colors.warning, fontWeight: '600', fontSize: 12 }}>Awaiting approval</Text>
@@ -144,18 +150,37 @@ function renderActions(canApprove: boolean, type: string, id: number, s: any, co
   }
   return (
     <View style={s.actionRow}>
-      <TouchableOpacity style={[s.approveBtn, actionLoading === id && { opacity: 0.5 }]} onPress={() => onApprove(type, id)} disabled={actionLoading === id}>
+      <TouchableOpacity
+        style={[s.approveBtn, actionLoading === id && { opacity: 0.5 }]}
+        onPress={() => onApprove(type, id)}
+        disabled={actionLoading === id}
+        accessibilityRole="button"
+        accessibilityLabel="Approve request"
+        // `busy` is what tells a screen reader the spinner means "working",
+        // rather than the label silently vanishing mid-action.
+        accessibilityState={{ disabled: actionLoading === id, busy: actionLoading === id }}
+      >
         {actionLoading === id ? <ActivityIndicator size="small" color="#fff" /> : <><Ionicons name="checkmark" size={16} color="#fff" /><Text style={s.actionText}>Approve</Text></>}
       </TouchableOpacity>
-      <TouchableOpacity style={[s.rejectBtn, actionLoading === id && { opacity: 0.5 }]} onPress={() => onReject(type, id)} disabled={actionLoading === id}>
+      <TouchableOpacity
+        style={[s.rejectBtn, actionLoading === id && { opacity: 0.5 }]}
+        onPress={() => onReject(type, id)}
+        disabled={actionLoading === id}
+        accessibilityRole="button"
+        accessibilityLabel="Reject request"
+        accessibilityHint="Asks for a reason before rejecting"
+        accessibilityState={{ disabled: actionLoading === id, busy: actionLoading === id }}
+      >
         <Ionicons name="close" size={16} color={colors.danger} /><Text style={[s.actionText, { color: colors.danger }]}>Reject</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-function renderList(items: LeaveRequest[], type: string, s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null, canApprove: boolean) {
-  if (items.length === 0) return <Text style={s.empty}>No pending {type.replace('_', ' ')} requests</Text>;
+function renderList(items: LeaveRequest[], type: string, s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null, userCanApprove: boolean) {
+  if (items.length === 0) {
+    return <EmptyState icon="checkmark-done-outline" title="Nothing to approve" hint="Leave requests from your team will appear here." />;
+  }
   return items.map((item) => (
     <View key={item.id} style={s.card}>
       <View style={s.cardHeaderRow}>
@@ -164,13 +189,15 @@ function renderList(items: LeaveRequest[], type: string, s: any, colors: ThemeCo
       </View>
       <Text style={s.cardDates}>{item.start_date} → {item.end_date}</Text>
       {item.reason && <Text style={s.cardReason} numberOfLines={2}>{item.reason}</Text>}
-      {renderActions(canApprove, type, item.id, s, colors, onApprove, onReject, actionLoading)}
+      {renderActions(userCanApprove, type, item.id, s, colors, onApprove, onReject, actionLoading)}
     </View>
   ));
 }
 
-function renderTimeEditList(items: TimeEditRequest[], s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null, canApprove: boolean) {
-  if (items.length === 0) return <Text style={s.empty}>No pending time edit requests</Text>;
+function renderTimeEditList(items: TimeEditRequest[], s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null, userCanApprove: boolean) {
+  if (items.length === 0) {
+    return <EmptyState icon="checkmark-done-outline" title="Nothing to approve" hint="Time edit requests from your team will appear here." />;
+  }
   return items.map((item) => (
     <View key={item.id} style={s.card}>
       <View style={s.cardHeaderRow}>
@@ -178,13 +205,15 @@ function renderTimeEditList(items: TimeEditRequest[], s: any, colors: ThemeColor
         <Text style={s.cardUser}>{Math.floor(item.extra_seconds / 3600)}h {Math.floor((item.extra_seconds % 3600) / 60)}m</Text>
       </View>
       {item.message && <Text style={s.cardReason} numberOfLines={2}>{item.message}</Text>}
-      {renderActions(canApprove, 'time_edit', item.id, s, colors, onApprove, onReject, actionLoading)}
+      {renderActions(userCanApprove, 'time_edit', item.id, s, colors, onApprove, onReject, actionLoading)}
     </View>
   ));
 }
 
-function renderExpenseList(items: Reimbursement[], s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null, canApprove: boolean) {
-  if (items.length === 0) return <Text style={s.empty}>No pending expense requests</Text>;
+function renderExpenseList(items: Reimbursement[], s: any, colors: ThemeColors, onApprove: any, onReject: any, actionLoading: number | null, userCanApprove: boolean) {
+  if (items.length === 0) {
+    return <EmptyState icon="checkmark-done-outline" title="Nothing to approve" hint="Expense claims from your team will appear here." />;
+  }
   return items.map((item) => (
     <View key={item.id} style={s.card}>
       <View style={s.cardHeaderRow}>
@@ -193,12 +222,12 @@ function renderExpenseList(items: Reimbursement[], s: any, colors: ThemeColors, 
       </View>
       <Text style={s.cardDates}>by {item.employee?.name || 'Unknown'} on {item.expense_date}</Text>
       {item.description && <Text style={s.cardReason} numberOfLines={2}>{item.description}</Text>}
-      {renderActions(canApprove, 'expense', item.id, s, colors, onApprove, onReject, actionLoading)}
+      {renderActions(userCanApprove, 'expense', item.id, s, colors, onApprove, onReject, actionLoading)}
     </View>
   ));
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },

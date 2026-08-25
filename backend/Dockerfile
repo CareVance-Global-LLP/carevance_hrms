@@ -44,7 +44,16 @@ RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 # kill long requests — filing generation and the bank file are both over it.
 # 300s/512M are the values docker-compose.production.yml declared as intent and
 # could never apply, because php:8.4-cli reads neither of those env vars.
-RUN printf 'max_execution_time=300\nmemory_limit=512M\n' \
+#
+# php.ini-production also ships upload_max_filesize=2M and post_max_size=8M,
+# both below what the API validates (10M for an ID or bank proof, 15M for a
+# document). That is worse than a clean rejection: exceeding post_max_size makes
+# PHP discard the entire request body, so $_POST and $_FILES both arrive EMPTY
+# and Laravel answers 422 "the id number field is required" for what is really
+# an oversized upload — an error that sends you hunting in the wrong place.
+# Set above the application's own limits so its validation is what refuses a
+# file that is genuinely too big, with a message that says so.
+RUN printf 'max_execution_time=300\nmemory_limit=512M\nupload_max_filesize=20M\npost_max_size=24M\n' \
         > "$PHP_INI_DIR/conf.d/zz-carevance.ini"
 
 COPY --from=vendor /app/vendor ./vendor

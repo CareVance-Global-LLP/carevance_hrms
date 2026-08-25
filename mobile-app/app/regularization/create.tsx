@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useToast } from '../../src/components/Toast';
 import type { ThemeColors } from '../../src/constants/theme';
 import { timeEditApi } from '../../src/api/endpoints';
 
@@ -16,6 +17,7 @@ export default function CreateRegularizationScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const toast = useToast();
   const s = useMemo(() => styles(colors), [colors]);
   const [attendanceDate, setAttendanceDate] = useState(new Date());
   const [extraHours, setExtraHours] = useState('');
@@ -33,8 +35,8 @@ export default function CreateRegularizationScreen() {
     const hours = parseInt(extraHours) || 0;
     const mins = parseInt(extraMinutes) || 0;
     const total = hours * 60 + mins;
-    if (total < 1) { Alert.alert('Error', 'Please enter at least 1 minute'); return; }
-    if (total > 600) { Alert.alert('Error', 'Maximum 600 minutes (10 hours) allowed'); return; }
+    if (total < 1) { toast.error('Please enter at least 1 minute'); return; }
+    if (total > 600) { toast.error('Maximum 600 minutes (10 hours) allowed'); return; }
     setSubmitting(true);
     try {
       await timeEditApi.create({
@@ -42,9 +44,9 @@ export default function CreateRegularizationScreen() {
         extra_minutes: total,
         message: message.trim() || undefined,
       });
-      Alert.alert('Success', 'Regularization request submitted');
+      toast.success('Regularization request submitted');
       router.back();
-    } catch (err: any) { Alert.alert('Error', err?.response?.data?.message || 'Failed to submit'); }
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'Failed to submit'); }
     finally { setSubmitting(false); }
   };
 
@@ -82,7 +84,7 @@ export default function CreateRegularizationScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   label: { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 8, marginTop: 16 },
   dateInput: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 10, padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

@@ -46,6 +46,19 @@ class IdleAutoStopDurationRuleTest extends TestCase
         parent::setUp();
 
         config(['time_tracking.idle_auto_stop_threshold_seconds' => self::AUTO_STOP_SECONDS]);
+
+        /*
+         * Every scenario here asserts an exact second count — 3300 billed, 300
+         * idle — while building its timestamps from separate now() calls. On an
+         * unfrozen clock a tick between two of those calls shifts the span by a
+         * second, and the test fails with "301 is identical to 300" for no
+         * reason connected to the rule it is checking. It flaked on load rather
+         * than on logic, which is the worst kind: it points at the wrong code.
+         *
+         * The arithmetic being tested does not depend on time passing, so the
+         * clock is pinned.
+         */
+        $this->freezeTime();
     }
 
     private function makeUser(string $email): User

@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
 import type { ThemeColors } from '../../src/constants/theme';
 import { compOffApi } from '../../src/api/endpoints';
 
@@ -85,13 +86,17 @@ export default function CompOffScreen() {
       )}
 
       {!loading && transactions.length === 0 && !summary?.yearly_breakdown?.length && (
-        <Text style={s.empty}>No comp off data available</Text>
+        <EmptyState
+          icon="swap-horizontal-outline"
+          title="No comp off yet"
+          hint="Compensatory off is credited when you work on a week-off or a holiday."
+        />
       )}
     </ScrollView>
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   title: { fontSize: 24, fontWeight: '700', color: c.text, marginBottom: 16 },

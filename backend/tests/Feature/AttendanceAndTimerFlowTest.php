@@ -258,10 +258,23 @@ class AttendanceAndTimerFlowTest extends TestCase
 
         $this->postJson('/api/attendance/check-in', [], $headers)->assertOk();
 
-        $this->assertDatabaseHas('time_entries', [
+        /*
+         * An open punch, not a running timer.
+         *
+         * This used to assert a time_entries row, because checking in also
+         * started a timer. That coupling was removed deliberately — see
+         * AttendanceTimerSeparationTest — since a punch from a phone cannot
+         * report whether anyone is working, and the idle sweep then closed the
+         * timer and the punch together with duration 0.
+         *
+         * The subject of this test is half-day leave: that check-in is still
+         * ALLOWED and the shift target halves. An open punch proves check-in
+         * succeeded just as well, and no longer asserts behaviour that has
+         * intentionally changed.
+         */
+        $this->assertDatabaseHas('attendance_punches', [
             'user_id' => $user->id,
-            'timer_slot' => 'primary',
-            'end_time' => null,
+            'punch_out_at' => null,
         ]);
 
         $this->getJson('/api/attendance/today', $headers)

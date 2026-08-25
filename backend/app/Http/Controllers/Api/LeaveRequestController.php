@@ -68,6 +68,7 @@ class LeaveRequestController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'limit' => 'nullable|integer|min:1|max:500',
+            'page' => 'nullable|integer|min:1',
         ]);
 
         $currentUser = $request->user();
@@ -127,20 +128,45 @@ class LeaveRequestController extends Controller
                 ->when($endDate, fn ($leaveQuery) => $leaveQuery->whereDate('start_date', '<=', $endDate->toDateString()));
         }
 
-        $limit = (int) $request->input('limit', 10);
+        /*
+         * The default was 10, and that starved every caller that did not think
+         * to override it.
+         *
+         * `total` and `truncated` were added here after an approval badge
+         * reported "10 pending" against 28 real requests. They were the right
+         * fields and nothing ever read them, so the underlying cap kept biting:
+         * the leave panel on Attendance sent no limit at all, so an employee
+         * with 44 requests could see only their 10 most recent. A request they
+         * had submitted was visible while it was new, then slid past position
+         * ten as others arrived and vanished from their history — which reads
+         * as the record being lost rather than paged away.
+         *
+         * 100 because no caller wants fewer: ApprovalInbox asks for 500, the
+         * dashboard card for 100, and the two that ask for nothing both want
+         * everything they have.
+         */
+        $limit = (int) $request->input('limit', 100);
 
-        // The default cap of 10 is fine, but returning the page with no idea of
-        // how large the set is meant an approval badge counting this array
-        // reported "10 pending" against 28 real requests — and clearing the
-        // badge left the rest invisible. `total` is the count before limiting,
-        // so callers can show a true figure and know when they are truncated.
+        /*
+         * `page` is honoured because a client already sends it.
+         *
+         * The mobile leave list calls this with `{ page }` and reads
+         * `meta.last_page` back. Neither existed, so the parameter was ignored
+         * and every page returned the same first rows while `last_page` came
+         * back undefined — paging that silently did nothing. Supporting both
+         * shapes keeps the slab callers (`limit`) working unchanged.
+         */
+        $page = max(1, (int) $request->input('page', 1));
         $total = (clone $query)->count();
+        $lastPage = max(1, (int) ceil($total / max(1, $limit)));
 
         return response()->json([
-            'data' => $query->limit($limit)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
+            'data' => $query->forPage($page, $limit)->get()->map(fn (LeaveRequest $leave) => $this->withApprovalDestination($leave)),
             'total' => $total,
             'limit' => $limit,
-            'truncated' => $total > $limit,
+            'page' => $page,
+            'meta' => ['current_page' => $page, 'last_page' => $lastPage, 'total' => $total],
+            'truncated' => $total > ($page * $limit),
         ]);
     }
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
 import type { ThemeColors } from '../../src/constants/theme';
 import { notificationApi } from '../../src/api/endpoints';
 import type { AppNotification } from '../../src/types';
@@ -85,7 +86,11 @@ export default function NotificationsScreen() {
       </View>
 
       {items.length === 0 ? (
-        <Text style={s.empty}>No notifications</Text>
+        <EmptyState
+          icon="notifications-outline"
+          title="You're all caught up"
+          hint="Announcements and updates from your organisation land here."
+        />
       ) : (
         items.map((n) => (
           <TouchableOpacity key={n.id} style={[s.card, !n.is_read && s.unreadCard]} onPress={() => !n.is_read && handleMarkRead(n.id)} activeOpacity={n.is_read ? 1 : 0.7}>
@@ -120,7 +125,7 @@ export default function NotificationsScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },

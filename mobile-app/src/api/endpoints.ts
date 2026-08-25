@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from 'axios';
 import api from './client';
 import type {
   AuthResponse,
@@ -21,8 +22,10 @@ import type {
 export const authApi = {
   login: (email: string, password: string) =>
     api.post<AuthResponse>('/auth/login', { email, password }),
-  me: () =>
-    api.get<{ user: any }>('/auth/me'),
+  // Accepts a config so a cold start can use a shorter timeout than the
+  // client default — see BOOTSTRAP_TIMEOUT_MS in hooks/useAuth.
+  me: (config?: AxiosRequestConfig) =>
+    api.get<{ user: any }>('/auth/me', config),
   logout: () =>
     api.post('/auth/logout'),
 };
@@ -49,21 +52,31 @@ export const timeEntryApi = {
     }),
 };
 
+/**
+ * Offline-sync fields, passed through verbatim.
+ *
+ * Built by punchSyncBody() in lib/punchQueue, which is what knows that
+ * check-in reads `punch_at` while check-out reads `punch_out_at`. Callers hand
+ * over a finished body rather than assembling one, because getting that key
+ * wrong fails silently: the field is ignored and the punch is recorded at sync
+ * time instead of when it happened.
+ */
+export type PunchSyncBody = Record<string, string>;
+
+const punchBody = (position?: GeoPosition, sync?: PunchSyncBody) => ({
+  latitude: position?.latitude,
+  longitude: position?.longitude,
+  accuracy: position?.accuracy,
+  ...(sync ?? {}),
+});
+
 export const attendanceApi = {
   today: () =>
     api.get<{ record: TodayAttendance | null }>('/attendance/today'),
-  checkIn: (position?: GeoPosition) =>
-    api.post('/attendance/check-in', {
-      latitude: position?.latitude,
-      longitude: position?.longitude,
-      accuracy: position?.accuracy,
-    }),
-  checkOut: (position?: GeoPosition) =>
-    api.post('/attendance/check-out', {
-      latitude: position?.latitude,
-      longitude: position?.longitude,
-      accuracy: position?.accuracy,
-    }),
+  checkIn: (position?: GeoPosition, sync?: PunchSyncBody) =>
+    api.post('/attendance/check-in', punchBody(position, sync)),
+  checkOut: (position?: GeoPosition, sync?: PunchSyncBody) =>
+    api.post('/attendance/check-out', punchBody(position, sync)),
 };
 
 export const selfieApi = {

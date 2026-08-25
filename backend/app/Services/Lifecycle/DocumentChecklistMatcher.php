@@ -87,17 +87,31 @@ class DocumentChecklistMatcher
             ->where('requires', 'document')
             ->with('checklistTemplateItem')
             ->get()
-            ->filter(fn (ChecklistItem $item) => $this->satisfies(
+            ->filter(fn (ChecklistItem $item) => $this->documentSatisfies(
                 $item->checklistTemplateItem?->document_category,
-                $category,
                 $document
             ))
             ->values();
     }
 
-    private function satisfies(?string $wanted, string $uploaded, EmployeeDocument $document): bool
+    /**
+     * Does this one document satisfy an item asking for `$wanted`?
+     *
+     * Public because the same question is asked in two directions. On upload we
+     * hold a document and look for items; on a journey sync we hold an item and
+     * look through the documents already on file. Both need this exact answer,
+     * and a second copy of the pan/identity split is a second place for it to
+     * drift.
+     */
+    public function documentSatisfies(?string $wanted, EmployeeDocument $document): bool
     {
         $wanted = trim((string) $wanted);
+        $uploaded = trim((string) $document->category);
+
+        // A document with no category answers nothing.
+        if ($uploaded === '') {
+            return false;
+        }
 
         // An item that names no category is not something an upload can answer.
         // Ticking it would mean any file completed every open document item.

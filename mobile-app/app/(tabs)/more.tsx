@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Switch, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useTheme } from '../../src/hooks/useTheme';
+import EmptyState from '../../src/components/EmptyState';
 import { isManager } from '../../src/hooks/usePermissions';
 import type { ThemeColors } from '../../src/constants/theme';
 import { payslipApi, notificationApi } from '../../src/api/endpoints';
@@ -19,10 +20,10 @@ export default function MoreScreen() {
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [switchValue, setSwitchValue] = useState(isDark);
-  // Renamed from `isManager`, which shadowed the import above and was then
-  // called in its own initialiser - a temporal dead zone violation, so this
-  // screen threw ReferenceError before it painted anything.
-  const showManagerUi = isManager(user);
+  // Renamed: a local `userIsManager` shadowed the imported helper and called it in
+  // its own initialiser, which throws a ReferenceError before this screen
+  // can render at all.
+  const userIsManager = isManager(user);
 
   useEffect(() => { setSwitchValue(isDark); }, [isDark]);
 
@@ -98,7 +99,7 @@ export default function MoreScreen() {
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
 
-      {showManagerUi && (
+      {userIsManager && (
         <TouchableOpacity style={s.menuCard} onPress={() => router.push('/approval-inbox')}>
           <View style={s.menuRow}>
             <Ionicons name="checkmark-done-outline" size={20} color={colors.warning} />
@@ -108,7 +109,7 @@ export default function MoreScreen() {
         </TouchableOpacity>
       )}
 
-      {showManagerUi && (
+      {userIsManager && (
         <TouchableOpacity style={s.menuCard} onPress={() => router.push('/notifications/publish')}>
           <View style={s.menuRow}>
             <Ionicons name="megaphone-outline" size={20} color={colors.warning} />
@@ -120,7 +121,11 @@ export default function MoreScreen() {
 
       <Text style={s.sectionTitle}>Payslips</Text>
       {payslips.length === 0 ? (
-        <Text style={s.empty}>No payslips available</Text>
+        <EmptyState
+          icon="wallet-outline"
+          title="No payslips yet"
+          hint="Payslips appear here once payroll has been released for a month you worked."
+        />
       ) : (
         payslips.map((p) => (
           <TouchableOpacity key={p.id} style={s.payslipCard} onPress={() => router.push(`/payslip/${p.id}`)}>
@@ -143,7 +148,7 @@ export default function MoreScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   title: { fontSize: 24, fontWeight: '700', color: c.text, marginBottom: 20 },
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 12, padding: 16, marginBottom: 12, gap: 14, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },

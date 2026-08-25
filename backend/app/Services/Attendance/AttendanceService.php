@@ -199,28 +199,35 @@ class AttendanceService
             return ['status' => 422, 'payload' => ['message' => 'Organization is required.']];
         }
 
-        $today = now()->toDateString();
-        if ($this->hasApprovedFullDayLeaveOnDate($user, $today)) {
+        /*
+         * Resolved before anything else, because the day this punch belongs to
+         * follows the punch, not the request that carried it.
+         *
+         * A buffered punch made at 23:50 and synced at 00:10 was filed under the
+         * sync date, producing a record whose own `check_in_at` predated it: one
+         * day split across two rows, absent from every report ranged over the
+         * day it actually happened, and judged against the wrong day's late
+         * threshold. Almost always these two dates agree — they differ exactly
+         * when it matters, and the mobile offline queue makes that reachable
+         * rather than theoretical.
+         *
+         * resolveSyncTimestamp() has already clamped a future-dated claim to
+         * now(), so a skewed device clock cannot file attendance on a day that
+         * has not happened.
+         *
+         * Deliberately NOT the shift-attribution rule. Whether a punch at 01:30
+         * belongs to the previous night's shift is
+         * ShiftResolver::attendanceDateFor()'s question, and moving record
+         * creation onto it remains the separate migration reserved in
+         * todayPayload(). This is the narrower half: file the punch on the
+         * calendar day it was made.
+         */
+        $checkInAt = $this->resolveSyncTimestamp($syncContext['punch_at'] ?? null);
+        $punchDate = $checkInAt->toDateString();
+
+        if ($this->hasApprovedFullDayLeaveOnDate($user, $punchDate)) {
             return ['status' => 422, 'payload' => ['message' => 'You are on approved leave today. Punch in is blocked.']];
         }
-
-        $checkInAt = $this->resolveSyncTimestamp($syncContext['punch_at'] ?? null);
-
-        /*
-         * The record is filed on the day the punch HAPPENED, not the day it
-         * arrived.
-         *
-         * resolveSyncTimestamp already normalises a buffered punch to the app
-         * timezone precisely so it lands on the right calendar day - but the
-         * date used here was now(), so the timestamp was yesterday's and the
-         * record was today's. A punch buffered overnight by an offline desktop
-         * or a biometric device therefore appeared on the wrong day, with a
-         * check-in time that could not have happened on it.
-         *
-         * A live punch is unaffected: $checkInAt is now() when nothing was
-         * supplied, so this resolves to exactly the same date it always did.
-         */
-        $punchDate = $checkInAt->copy()->setTimezone(config('app.timezone', 'UTC'))->toDateString();
 
         $record = AttendanceRecord::firstOrNew([
             'user_id' => $user->id,
@@ -243,8 +250,10 @@ class AttendanceService
         $lateAfterTime = $this->lateAfterTimeForUser($user);
         $officeStartTime = $this->officeStartTimeForUser($user);
 
-        // Get today's date in the employee's timezone
-        $todayInEmployeeTz = Carbon::now($employeeTimezone)->toDateString();
+        // The punch's own date in the employee's timezone. A record filed on the
+        // 24th has to be judged against the 24th's threshold; reading the clock
+        // instead measured a buffered punch against a day it does not belong to.
+        $todayInEmployeeTz = $checkInAt->copy()->setTimezone($employeeTimezone)->toDateString();
 
         // Create the late threshold datetime in employee's timezone
         $lateThresholdInEmployeeTz = Carbon::parse($todayInEmployeeTz.' '.$lateAfterTime, $employeeTimezone);
@@ -287,8 +296,27 @@ class AttendanceService
             'device_id' => $syncContext['device_id'] ?? null,
         ]);
 
+        /*
+         * A punch marks presence. It does NOT start a timer.
+         *
+         * These are different questions. Attendance answers "was this person
+         * here, from when to when" — which is what DayOutcomeService, late
+         * marking and payroll are computed from, none of which read
+         * time_entries. The timer answers "what were they doing at a computer",
+         * and only a client watching keyboard and mouse can answer that.
+         *
+         * Starting one here was a real defect, not merely untidy. A punch from a
+         * phone created a timer; `timers:close-idle` then found no keyboard
+         * activity — because a phone cannot produce any — and closed it after
+         * five minutes with duration 0, closing the attendance punch alongside
+         * it. Somebody on site all day who never opened a laptop recorded a full
+         * day's absence.
+         *
+         * The stale-timer close stays: arriving for the day should end a timer
+         * left running from before, and the desktop still starts its own on
+         * `POST /time-entries/start`, which marks attendance if nothing has yet.
+         */
         $this->closeRunningPrimaryTimers((int) $user->id, $checkInAt);
-        $this->startPrimaryTimer($user, $checkInAt, 'Auto timer started from punch in');
 
         return [
             'status' => 200,
@@ -306,6 +334,72 @@ class AttendanceService
      *        without it the punch lands at whatever time the queue happened to
      *        drain, which silently inflates the worked hours for that day.
      */
+    /**
+     * The attendance record a check-out should close.
+     *
+     * Today first, because that is almost every punch. Failing that, the most
+     * recent earlier day whose punch is still open — a night shift clocking in
+     * at 22:00 checks out at 06:00 on the *next* calendar date, and a
+     * `whereDate('attendance_date', today())` lookup could never find it. That
+     * is what told somebody visibly checked in to "Please check in first", with
+     * no way to end their own day at all.
+     *
+     * The bound matters as much as the widening. It is deliberately the same
+     * `auto_close_max_hours` that CloseOpenAttendancePunches uses, so the two
+     * cannot disagree about who owns a punch: inside the cap it is still the
+     * employee's to close, beyond it the sweeper's — which rewinds to shift end
+     * rather than crediting every hour since. Without the bound, a tap today
+     * would close a punch abandoned last week and pay out the whole gap.
+     */
+    private function recordToCheckOutOf(?User $user, ?Carbon $at = null): ?AttendanceRecord
+    {
+        if (!$user) {
+            return null;
+        }
+
+        /*
+         * Anchored on the punch, not on the clock.
+         *
+         * For a live tap these are the same instant and nothing changes. For a
+         * punch buffered by an offline tracker or a biometric terminal they are
+         * not: resolveSyncTimestamp already recovers the time the employee
+         * actually clocked out, and measuring "today" and the ownership window
+         * from now() instead threw that away. A reading uploaded the next
+         * morning looked for an open punch on the wrong day, found none, and
+         * refused a punch-out for a day that was plainly still open.
+         */
+        $anchor = $at ? $at->copy() : now();
+        $today = $anchor->toDateString();
+
+        $todayRecord = AttendanceRecord::where('user_id', $user->id)
+            ->whereDate('attendance_date', $today)
+            ->with('punches')
+            ->first();
+
+        if ($todayRecord && $todayRecord->punches->contains(fn ($punch) => !$punch->punch_out_at)) {
+            return $todayRecord;
+        }
+
+        $earliestStillOwned = $anchor->copy()->subHours(
+            max(1, (int) config('attendance.auto_close_max_hours', 16))
+        );
+
+        $carryOver = AttendanceRecord::where('user_id', $user->id)
+            ->whereDate('attendance_date', '<', $today)
+            ->whereHas('punches', function ($query) use ($earliestStillOwned) {
+                $query->whereNull('punch_out_at')
+                    ->where('punch_in_at', '>=', $earliestStillOwned);
+            })
+            ->with('punches')
+            ->orderByDesc('attendance_date')
+            ->first();
+
+        // Falling back to today's record keeps the original refusal messages
+        // intact: "No active punch-in found." for a day already closed, rather
+        // than "Please check in first" for a day that plainly exists.
+        return $carryOver ?: $todayRecord;
+    }
+
     public function checkOut(
         ?User $user,
         ?float $latitude = null,
@@ -329,8 +423,13 @@ class AttendanceService
                 ->exists();
 
             if ($alreadyApplied) {
-                $existing = AttendanceRecord::where('user_id', $user->id)
-                    ->whereDate('attendance_date', now()->toDateString())
+                // Resolved through the punch itself, not today's date: a night
+                // shift's punch-out is replayed on the day after the record it
+                // belongs to, and a date lookup would return nothing.
+                $existing = AttendanceRecord::whereHas('punches', function ($query) use ($localId, $deviceId) {
+                    $query->where('local_id', $localId)->where('device_id', $deviceId);
+                })
+                    ->where('user_id', $user->id)
                     ->with('punches')
                     ->first();
 
@@ -344,22 +443,12 @@ class AttendanceService
             }
         }
 
-        /*
-         * Close the day the punch belongs to, which is the same day check-in
-         * filed it under. Looking for today's record instead means a buffered
-         * punch-out cannot find the punch-in it belongs to, and reports "please
-         * check in first" for a day that was already open.
-         *
-         * Live punches are unaffected: with nothing supplied, $checkOutAt is
-         * now() and this is today.
-         */
+        // Resolved before the lookup, because it decides which day the lookup
+        // is for. A buffered punch-out belongs to the day it was made, not the
+        // day the queue happened to drain.
         $checkOutAt = $this->resolveSyncTimestamp($syncContext['punch_out_at'] ?? null);
-        $punchDate = $checkOutAt->copy()->setTimezone(config('app.timezone', 'UTC'))->toDateString();
 
-        $record = AttendanceRecord::where('user_id', $user->id)
-            ->whereDate('attendance_date', $punchDate)
-            ->with('punches')
-            ->first();
+        $record = $this->recordToCheckOutOf($user, $checkOutAt);
 
         if (!$record || !$record->check_in_at) {
             return ['status' => 422, 'payload' => ['message' => 'Please check in first']];
@@ -369,8 +458,6 @@ class AttendanceService
         if (!$openPunch) {
             return ['status' => 422, 'payload' => ['message' => 'No active punch-in found.']];
         }
-
-        $checkOutAt = $this->resolveSyncTimestamp($syncContext['punch_out_at'] ?? null);
 
         // A buffered punch-out cannot predate its own punch-in: clock skew on
         // the tracker machine would otherwise produce a negative session.
@@ -1185,7 +1272,15 @@ class AttendanceService
         return (bool) $leave && !$leave->isHalfDay();
     }
 
-    private function calculateClosedWorkedSeconds(AttendanceRecord $record): int
+    /**
+     * Total the closed punches on a record.
+     *
+     * Public because the auto-close sweeper needs the same sum. Duplicating it
+     * there is how the record total and the punches drift apart, which has
+     * already happened once — a cron-closed day reported no work because the
+     * punch was written and the record was not.
+     */
+    public function calculateClosedWorkedSeconds(AttendanceRecord $record): int
     {
         if (!$record->relationLoaded('punches')) {
             $record->load('punches');

@@ -26,6 +26,9 @@ class AttendancePunch extends Model
         // (local_id, device_id) unique index never had anything to match on.
         'local_id',
         'device_id',
+        // Set when a sweeper closed this punch because nobody checked out.
+        // Distinguishes "left at 18:00" from "was still open, closed at 18:00".
+        'auto_closed_reason',
     ];
 
     protected function casts(): array

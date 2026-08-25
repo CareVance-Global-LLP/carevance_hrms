@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../src/hooks/useAuth';
 import { useTheme } from '../src/hooks/useTheme';
+import { useToast } from '../src/components/Toast';
 import type { ThemeColors } from '../src/constants/theme';
 
 export default function LoginScreen() {
   const { login, isAuthenticated } = useAuth();
   const { colors } = useTheme();
+  const toast = useToast();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const s = useMemo(() => styles(colors), [colors]);
@@ -19,7 +21,7 @@ export default function LoginScreen() {
   useEffect(() => { if (isAuthenticated) router.replace('/(tabs)'); }, [isAuthenticated]);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) { Alert.alert('Error', 'Please enter email and password'); return; }
+    if (!email.trim() || !password.trim()) { toast.error('Please enter email and password'); return; }
     setLoading(true);
     try { await login(email.trim(), password); }
     catch (err: any) {
@@ -29,7 +31,7 @@ export default function LoginScreen() {
         || (data?.message === 'The given data was invalid.' ? null : data?.message)
         || err?.message
         || 'Login failed';
-      Alert.alert('Login Failed', message);
+      toast.error(message);
     }
     finally { setLoading(false); }
   };
@@ -58,7 +60,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: c.background },
   container: { flex: 1, paddingHorizontal: 24 },
   header: { alignItems: 'center', marginTop: 60, marginBottom: 48 },

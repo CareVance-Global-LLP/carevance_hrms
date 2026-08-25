@@ -19,9 +19,9 @@ class DefaultChecklistProvisioner
     /** @var array<int, array{title:string,owner_kind:string,offset_days:int,requires?:string,document_category?:string,is_blocking?:bool,description?:string}> */
     public const ONBOARDING = [
         ['title' => 'Send offer letter and welcome pack', 'owner_kind' => 'hr', 'offset_days' => -14],
-        ['title' => 'Upload PAN card', 'owner_kind' => 'employee', 'offset_days' => -7, 'requires' => 'document', 'document_category' => 'pan', 'is_blocking' => true],
-        ['title' => 'Upload bank account details', 'owner_kind' => 'employee', 'offset_days' => -7, 'requires' => 'document', 'document_category' => 'bank', 'is_blocking' => true],
-        ['title' => 'Upload proof of identity and address', 'owner_kind' => 'employee', 'offset_days' => -7, 'requires' => 'document', 'document_category' => 'identity'],
+        ['title' => 'Add PAN details', 'owner_kind' => 'employee', 'offset_days' => -7, 'requires' => 'document', 'document_category' => 'pan', 'is_blocking' => true],
+        ['title' => 'Add bank account details', 'owner_kind' => 'employee', 'offset_days' => -7, 'requires' => 'document', 'document_category' => 'bank', 'is_blocking' => true],
+        ['title' => 'Add proof of identity and address', 'owner_kind' => 'employee', 'offset_days' => -7, 'requires' => 'document', 'document_category' => 'identity'],
         ['title' => 'Upload previous employment documents', 'owner_kind' => 'employee', 'offset_days' => -5, 'requires' => 'document', 'document_category' => 'employment'],
         ['title' => 'Sign employment contract', 'owner_kind' => 'employee', 'offset_days' => -5, 'requires' => 'document', 'document_category' => 'contract', 'is_blocking' => true],
         ['title' => 'Create email account and system access', 'owner_kind' => 'it', 'offset_days' => -3, 'is_blocking' => true],

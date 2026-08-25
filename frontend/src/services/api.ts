@@ -886,6 +886,12 @@ export const employeeWorkspaceApi = {
     notes?: string;
     /** Whether the person this document is about may see it. Off unless HR says so. */
     visible_to_employee?: boolean;
+    /**
+     * Which kind of ID a government_id_proof proves. The category alone cannot
+     * tell a PAN card from an Aadhaar, and the onboarding matcher reads exactly
+     * this to decide which checklist item the upload answers.
+     */
+    id_type?: string;
     file: File;
   }) => {
     const formData = new FormData();
@@ -893,6 +899,7 @@ export const employeeWorkspaceApi = {
     formData.append('category', data.category);
     if (data.review_status) formData.append('review_status', data.review_status);
     if (data.notes) formData.append('notes', data.notes);
+    if (data.id_type) formData.append('id_type', data.id_type);
     formData.append('visible_to_employee', data.visible_to_employee ? '1' : '0');
     formData.append('file', data.file);
     return api.post<EmployeeDocumentRecord>(`/employees/${id}/documents`, formData, {
@@ -965,11 +972,12 @@ export const myEmployeeRecordApi = {
     });
   },
 
-  uploadDocument: (data: { title: string; category: string; notes?: string; file: File }) => {
+  uploadDocument: (data: { title: string; category: string; notes?: string; id_type?: string; file: File }) => {
     const formData = new FormData();
     formData.append('title', data.title);
     formData.append('category', data.category);
     if (data.notes) formData.append('notes', data.notes);
+    if (data.id_type) formData.append('id_type', data.id_type);
     formData.append('file', data.file);
     return api.post<EmployeeDocumentRecord>('/me/documents', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -1027,6 +1035,36 @@ export interface ChecklistItem {
   is_overdue: boolean;
   completed_at: string | null;
   notes: string | null;
+  employee_document_id: number | null;
+  /**
+   * The upload that satisfied this item, when one did.
+   *
+   * Present on every checklist payload the API sends — it eager-loads
+   * `checklistItems.document`. It is what separates an item completed by the
+   * evidence arriving from one somebody ticked by hand, and both panels say so.
+   */
+  document?: {
+    id: number;
+    title: string;
+    category: string;
+    file_name: string | null;
+    uploaded_at: string | null;
+  } | null;
+  /**
+   * What closed this item: a file, a recorded detail, or nobody — a null here
+   * with a `done` status means a human ticked the box. Keeping the three apart
+   * is the point; collapse them and a hand-ticked "PAN card" is
+   * indistinguishable from a PAN actually on file.
+   */
+  evidence_kind?: 'document' | 'record' | null;
+  /** Human label for that evidence: "PAN record", "Cancelled cheque". */
+  evidence_label?: string | null;
+  /**
+   * Present only where the API eager-loads it (the onboarding journey reads).
+   * `document_category` says what an upload against this item must be tagged
+   * as; it lives on the template row, not the materialised one.
+   */
+  checklist_template_item?: { id: number; document_category: string | null } | null;
   asset_assignment_id: number | null;
   sort_order: number;
 }

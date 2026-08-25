@@ -156,29 +156,25 @@ describe('EmployeeDetailsSection — the selfService prop', () => {
   });
 });
 
+/** One of EXPERIENCE_DOCUMENT_TYPES; the selected type becomes the title. */
+const EXPERIENCE_DOCUMENT_TYPE = 'Relieving Letter';
+
 describe('EmployeeDetailsSection — uploading a document', () => {
   /*
-   * The bug this pins: the mutation built a FormData and passed it to the
-   * upload client as `formData as any`. That client assembles its OWN FormData
-   * from `data.title`, `data.category` and `data.file` — every one of which is
+   * The bug this pins: a mutation built a FormData and passed it to the upload
+   * client as `formData as any`. That client assembles its OWN FormData from
+   * `data.title`, `data.category` and `data.file` — every one of which is
    * undefined on a FormData instance — so the request posted the literal string
-   * "undefined" as the file and the server rejected it. Both panels were
-   * affected, and the `as any` is what stopped TypeScript from noticing.
+   * "undefined" as the file and the server rejected it. The `as any` is what
+   * stopped TypeScript from noticing.
    *
    * Asserting the SHAPE handed to the client is the only thing that catches it;
    * a FormData and a plain object both satisfy a mock call count.
+   *
+   * Aimed at the Experience upload because the generic Documents form is gone —
+   * its categories duplicated Government IDs — but the hazard is a property of
+   * every remaining upload path, not of the form that was removed.
    */
-  const chooseAndUpload = async (user: ReturnType<typeof userEvent.setup>) => {
-    const file = new File(['x'], 'proof.pdf', { type: 'application/pdf' });
-
-    await user.type(await screen.findByPlaceholderText(/e\.g\., Experience Certificate/i), 'My proof');
-    const fileInputs = document.querySelectorAll('input[type="file"]');
-    await user.upload(fileInputs[fileInputs.length - 1] as HTMLInputElement, file);
-    await user.click(screen.getByRole('button', { name: /upload document/i }));
-
-    return file;
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getWorkspace.mockResolvedValue({ data: workspacePayload });
@@ -187,29 +183,42 @@ describe('EmployeeDetailsSection — uploading a document', () => {
     mocks.myUploadDocument.mockResolvedValue({ data: {} });
   });
 
-
-  it('hands the admin client the fields too', async () => {
+  it('hands the admin client the fields, not a FormData', async () => {
     const user = userEvent.setup();
-    renderWithProviders(<EmployeeDetailsSection userId={7} editable sections={['documents']} />);
+    renderWithProviders(<EmployeeDetailsSection userId={7} editable sections={['experience']} />);
 
-    const file = await chooseAndUpload(user);
+    const file = new File(['x'], 'relieving.pdf', { type: 'application/pdf' });
+
+    await screen.findByText(/add an experience document/i);
+
+    // SelectInput is a button-and-listbox dropdown, not a native select, so the
+    // type is chosen by opening it and clicking the option.
+    await user.click(screen.getByRole('button', { name: /select document type/i }));
+    await user.click(await screen.findByRole('option', { name: EXPERIENCE_DOCUMENT_TYPE }));
+
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    await user.upload(fileInputs[fileInputs.length - 1] as HTMLInputElement, file);
+    await user.click(screen.getByRole('button', { name: /add experience document/i }));
 
     await waitFor(() => expect(mocks.uploadDocument).toHaveBeenCalled());
     const payload = mocks.uploadDocument.mock.calls[0][1];
 
     expect(payload).not.toBeInstanceOf(FormData);
-    expect(payload.title).toBe('My proof');
+    expect(payload.title).toBe(EXPERIENCE_DOCUMENT_TYPE);
     expect(payload.file).toBe(file);
   });
-
-  it('offers the share control to an admin but not on your own panel', async () => {
-    renderWithProviders(<EmployeeDetailsSection userId={7} editable sections={['documents']} />);
-    expect(await screen.findByText(/share with this employee/i)).toBeInTheDocument();
-  });
-
 });
 
-describe('EmployeeDetailsSection — the employee cannot add to their own record', () => {
+describe('EmployeeDetailsSection — the Documents section files nothing itself', () => {
+  /*
+   * There is no upload form here for anybody now, admin included.
+   *
+   * Every category it offered ended up with a section of its own: Identity and
+   * Address Proof duplicated Government IDs, where an ID is recorded WITH its
+   * proof and the onboarding checklist can tell a PAN from an Aadhaar.
+   * Education and Experience had already gone the same way. Two places to file
+   * the same fact means an admin has to guess which one is real.
+   */
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getWorkspace.mockResolvedValue({ data: workspacePayload });
@@ -219,8 +228,6 @@ describe('EmployeeDetailsSection — the employee cannot add to their own record
   });
 
   it('offers no upload form on your own panel', async () => {
-    // Uploading is HR's. The employee still sees and can open what is on their
-    // record; they just cannot add to a personnel file.
     renderWithProviders(
       <EmployeeDetailsSection userId={7} editable selfService sections={['documents']} />
     );
@@ -228,16 +235,18 @@ describe('EmployeeDetailsSection — the employee cannot add to their own record
     await screen.findByText(/documents on your record/i);
 
     expect(screen.queryByText(/upload new document/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /upload document/i })).not.toBeInTheDocument();
-    // With no form, there is nothing to ask about sharing either.
+    expect(screen.queryByRole('button', { name: /^upload document$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/share with this employee/i)).not.toBeInTheDocument();
   });
 
-  it('still offers it to an admin looking at that person', async () => {
+  it('offers none to an admin looking at that person either', async () => {
     renderWithProviders(<EmployeeDetailsSection userId={7} editable sections={['documents']} />);
 
-    expect(await screen.findByText(/upload new document/i)).toBeInTheDocument();
-    expect(screen.getByText(/share with this employee/i)).toBeInTheDocument();
+    await screen.findByText(/documents on this record/i);
+
+    expect(screen.queryByText(/upload new document/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^upload document$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/share with this employee/i)).not.toBeInTheDocument();
   });
 });
 

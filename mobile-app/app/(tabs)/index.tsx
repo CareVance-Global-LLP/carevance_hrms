@@ -5,33 +5,30 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
-  AppState,
-} from 'react-native';
+  AppState, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../src/hooks/useAuth';
 import { useTheme } from '../../src/hooks/useTheme';
 import { isManager } from '../../src/hooks/usePermissions';
+import { formatClock, formatShort, spokenDuration } from '../../src/lib/duration';
+import { haversineMeters } from '../../src/lib/geo';
 import type { ThemeColors } from '../../src/constants/theme';
 import { dashboardApi, geofenceApi, notificationApi, orgApi, approvalApi } from '../../src/api/endpoints';
 import type { EmployeeDashboard, GeoPosition, GeofenceZone, AppNotification, OrgMember } from '../../src/types';
 import NotificationBanner from '../../src/components/NotificationBanner';
 
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
+/*
+ * `tone` is a theme key rather than a hex, so these follow the brand and invert
+ * in dark mode. The first was labelled "Timer" and pointed at the attendance
+ * tab — leftover from when punching in started a timer. It marks attendance.
+ */
 const quickActions = [
-  { route: '/(tabs)/attendance', icon: 'time-outline', label: 'Timer', color: '#2563eb' },
-  { route: '/leave/apply', icon: 'calendar-outline', label: 'Apply Leave', color: '#f59e0b' },
-  { route: '/(tabs)/more', icon: 'wallet-outline', label: 'Payslips', color: '#10b981' },
+  { route: '/(tabs)/attendance', icon: 'today-outline', label: 'Attendance', tone: 'primary' },
+  { route: '/leave/apply', icon: 'calendar-outline', label: 'Apply Leave', tone: 'accent' },
+  { route: '/(tabs)/more', icon: 'wallet-outline', label: 'Payslips', tone: 'success' },
 ] as const;
 
 export default function DashboardScreen() {
@@ -47,17 +44,19 @@ export default function DashboardScreen() {
   const [inZone, setInZone] = useState<boolean | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const appState = useRef(AppState.currentState);
-  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [presentSeconds, setPresentSeconds] = useState(0);
   const [announcements, setAnnouncements] = useState<AppNotification[]>([]);
   const [todayBirthdays, setTodayBirthdays] = useState<OrgMember[]>([]);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState<OrgMember[]>([]);
   const [pendingCount, setPendingCount] = useState<number | null>(null);
-  const [banner, setBanner] = useState<{ title: string; message?: string; route: string; key: number } | null>(null);
+  // `route` is an Href, not a string: typedRoutes is on, so router.push only
+  // accepts a route the app actually declares.
+  const [banner, setBanner] = useState<{ title: string; message?: string; route: Href; key: number } | null>(null);
   const prevAnnouncementIds = useRef<Set<number>>(new Set());
-  // Renamed from `isManager`, which shadowed the import above and was then
-  // called in its own initialiser - a temporal dead zone violation, so this
-  // screen threw ReferenceError before it painted anything.
-  const showManagerUi = isManager(user);
+  // Renamed: a local `userIsManager` shadowed the imported helper and called it in
+  // its own initialiser, which throws a ReferenceError before this screen
+  // can render at all.
+  const userIsManager = isManager(user);
 
   const s = useMemo(() => styles(colors), [colors]);
 
@@ -85,7 +84,9 @@ export default function DashboardScreen() {
       }
       if (notifRes?.data?.data) {
         const newAnnouncements = notifRes.data.data.filter((n: AppNotification) => n.type === 'announcement').slice(0, 3);
-        const newIds = new Set(newAnnouncements.map((n: AppNotification) => n.id));
+        // Typed explicitly: `newAnnouncements` is any[] after the filter, so
+        // map() yields unknown[] and the Set would not match the ref's Set<number>.
+        const newIds = new Set<number>(newAnnouncements.map((n: AppNotification) => n.id));
         if (prevAnnouncementIds.current.size > 0) {
         const added = newAnnouncements.find((n: AppNotification) => !prevAnnouncementIds.current.has(n.id));
         if (added && prevAnnouncementIds.current.size > 0) {
@@ -95,7 +96,7 @@ export default function DashboardScreen() {
         prevAnnouncementIds.current = newIds;
         setAnnouncements(newAnnouncements);
       }
-      if (showManagerUi) {
+      if (userIsManager) {
         Promise.all([
           approvalApi.pendingLeaves().catch(() => null),
           approvalApi.pendingTimeEdits().catch(() => null),
@@ -135,7 +136,7 @@ export default function DashboardScreen() {
   const getLocation = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return;
-    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, timeout: 8000 });
+    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const pos: GeoPosition = { latitude: loc.coords.latitude, longitude: loc.coords.longitude, accuracy: loc.coords.accuracy ?? 0 };
     setPosition(pos);
     if (zone) verifyPosition(pos, zone);
@@ -151,23 +152,53 @@ export default function DashboardScreen() {
     return () => { clearInterval(poll); sub.remove(); };
   }, [fetchData]);
   useEffect(() => { if (position && zone) verifyPosition(position, zone); }, [zone]);
+  /*
+   * The headline number is PRESENCE, not the timer.
+   *
+   * Attendance is what payroll, late marking and loss-of-pay are computed from
+   * — DayOutcomeService reads AttendanceRecord and never touches time_entries —
+   * so the big figure has to be the attendance span. The timer answers a
+   * different question, "how much of that was at a monitored computer", and
+   * belongs underneath, labelled as such.
+   *
+   * Leading with the timer is why a phone punch looked like nothing had
+   * happened: somebody present and working all day saw "Timer stopped
+   * 00:00:00", because a phone cannot start a desktop timer and no longer
+   * pretends to.
+   */
   useEffect(() => {
-    if (dashboard?.active_timer) {
-      const start = new Date(dashboard.active_timer.start_time).getTime();
-      setTimerSeconds(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-      const interval = setInterval(() => setTimerSeconds((s) => s + 1), 1000);
-      return () => clearInterval(interval);
-    } else setTimerSeconds(0);
-  }, [dashboard?.active_timer]);
+    const checkInAt = dashboard?.attendance_today?.check_in_at;
+    if (!checkInAt) {
+      setPresentSeconds(0);
+      return;
+    }
 
-  const formatTimer = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
+    const start = new Date(checkInAt).getTime();
+    const checkOutAt = dashboard?.attendance_today?.check_out_at;
 
-  const isTiming = !!dashboard?.active_timer;
+    // A finished day is a fixed span. Only an open one ticks.
+    if (checkOutAt) {
+      setPresentSeconds(Math.max(0, Math.floor((new Date(checkOutAt).getTime() - start) / 1000)));
+      return;
+    }
+
+    // Recomputed from the clock each tick rather than incremented, so the
+    // figure is still right after the app has been backgrounded.
+    const tick = () => setPresentSeconds(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [dashboard?.attendance_today?.check_in_at, dashboard?.attendance_today?.check_out_at]);
+
+  const attendanceToday = dashboard?.attendance_today ?? null;
+  const isCheckedIn = !!attendanceToday?.is_checked_in;
+  const hasAttendance = !!attendanceToday?.check_in_at;
+  const isTracking = !!dashboard?.active_timer;
+  // Legitimately 0 on a phone-only day — the person worked, just not at a desk.
+  const deskSeconds = dashboard?.today_work_time ?? 0;
+
+  const atTime = (iso?: string) =>
+    iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
   return (
     <ScrollView
@@ -196,17 +227,49 @@ export default function DashboardScreen() {
         />
       )}
 
-      <View style={[s.timerCard, { borderColor: isTiming ? colors.success : colors.border }]}> 
-        <Text style={s.timerLabel}>{isTiming ? 'Tracking active' : 'Timer stopped'}</Text>
-        <Text style={s.timerDisplay}>{formatTimer(timerSeconds)}</Text>
-        {isTiming && dashboard?.active_timer?.start_time && (
+      <View style={[s.timerCard, { borderColor: isCheckedIn ? colors.success : colors.border }]}>
+        <Text style={s.timerLabel}>
+          {isCheckedIn ? 'Present' : hasAttendance ? 'Checked out' : 'Not checked in'}
+        </Text>
+        <Text
+          style={s.timerDisplay}
+          accessibilityLabel={`${isCheckedIn ? 'Present for' : 'Today'} ${spokenDuration(presentSeconds)}`}
+        >
+          {formatClock(presentSeconds)}
+        </Text>
+        {hasAttendance && (
           <Text style={s.timerStarted}>
-            Started at {new Date(dashboard.active_timer.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {attendanceToday?.check_out_at
+              ? `${atTime(attendanceToday?.check_in_at)} — ${atTime(attendanceToday?.check_out_at)}`
+              : `Since ${atTime(attendanceToday?.check_in_at)}`}
           </Text>
         )}
+
+        <View style={s.deskRow}>
+          <Ionicons
+            name="desktop-outline"
+            size={14}
+            color={isTracking ? colors.success : colors.textTertiary}
+          />
+          <Text style={s.deskLabel}>Tracked at desk</Text>
+          <Text
+            style={s.deskValue}
+            accessibilityLabel={`${spokenDuration(deskSeconds)} tracked at a desk`}
+          >
+            {formatShort(deskSeconds)}
+          </Text>
+        </View>
+        {/*
+          Stated plainly on purpose. The gap between these two numbers is
+          meetings, travel and work done away from a computer — a manager
+          reading it as idleness is a grievance the wording can prevent.
+        */}
+        <Text style={s.deskHint}>
+          Desk time from the tracker. Attendance above is what payroll uses.
+        </Text>
       </View>
 
-      {showManagerUi && pendingCount !== null && pendingCount > 0 && (
+      {userIsManager && pendingCount !== null && pendingCount > 0 && (
         <TouchableOpacity style={s.pendingCard} onPress={() => router.push('/approval-inbox')}>
           <View style={s.pendingRow}>
             <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
@@ -219,8 +282,8 @@ export default function DashboardScreen() {
       <View style={s.quickAccessRow}>
         {quickActions.map((a) => (
           <TouchableOpacity key={a.label} style={s.quickAction} onPress={() => router.push(a.route)}>
-            <View style={[s.quickIconWrap, { backgroundColor: a.color + '18' }]}>
-              <Ionicons name={a.icon} size={22} color={a.color} />
+            <View style={[s.quickIconWrap, { backgroundColor: colors[a.tone] + '18' }]}>
+              <Ionicons name={a.icon} size={22} color={colors[a.tone]} />
             </View>
             <Text style={s.quickLabel}>{a.label}</Text>
           </TouchableOpacity>
@@ -346,7 +409,7 @@ export default function DashboardScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   greeting: { fontSize: 22, fontWeight: '700', color: c.text },
@@ -360,6 +423,13 @@ const styles = (c: ThemeColors) => ({
   timerLabel: { fontSize: 13, fontWeight: '600', color: c.textSecondary, marginBottom: 8 },
   timerDisplay: { fontSize: 48, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'] as const },
   timerStarted: { fontSize: 12, color: c.textTertiary, marginTop: 4 },
+  deskRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'stretch',
+    marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: c.border,
+  },
+  deskLabel: { fontSize: 13, color: c.textSecondary, flex: 1 },
+  deskValue: { fontSize: 15, fontWeight: '600', color: c.text, fontVariant: ['tabular-nums'] as const },
+  deskHint: { fontSize: 11, color: c.textTertiary, marginTop: 6, textAlign: 'center' },
   pendingCard: { backgroundColor: c.danger, borderRadius: 10, padding: 14, marginBottom: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   pendingText: { color: '#fff', fontWeight: '700', fontSize: 14 },

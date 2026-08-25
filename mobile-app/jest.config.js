@@ -16,6 +16,7 @@ module.exports = {
     '^expo/(.*)$': '<rootDir>/tests/mocks/expo.ts',
     '^expo-router$': '<rootDir>/tests/mocks/expo-router.ts',
     '^expo-notifications$': '<rootDir>/tests/mocks/expo-notifications.ts',
+    '^expo-haptics$': '<rootDir>/tests/mocks/expo-haptics.ts',
     '^expo-linking$': '<rootDir>/tests/mocks/expo-linking.ts',
     '^expo-secure-store$': '<rootDir>/tests/mocks/expo-secure-store.ts',
     '^expo-constants$': '<rootDir>/tests/mocks/expo-constants.ts',

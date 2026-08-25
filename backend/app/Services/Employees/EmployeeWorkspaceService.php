@@ -20,8 +20,7 @@ use App\Models\PayrollTaxDeclaration;
 use App\Models\Payslip;
 use App\Models\Reimbursement;
 use App\Models\User;
-use App\Services\Lifecycle\ChecklistService;
-use App\Services\Lifecycle\DocumentChecklistMatcher;
+use App\Services\Lifecycle\ChecklistEvidenceSync;
 use App\Services\Lifecycle\PayrollReadinessService;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
@@ -280,6 +279,30 @@ class EmployeeWorkspaceService
         $disk = self::EMPLOYEE_DOCUMENTS_DISK;
         $path = $file->store("employee-documents/{$employee->organization_id}/{$employee->id}", $disk);
 
+        /*
+         * A write that failed must not become a row that says it succeeded.
+         *
+         * The disk is configured `'throw' => false` so that READING a missing
+         * file degrades quietly, and the cost of that is this: a failed write —
+         * wrong bucket, an IAM role without PutObject, a directory the
+         * container cannot write to — returns `false` rather than raising. That
+         * `false` used to be written straight into `file_path`, and everything
+         * downstream reported success: 201 from the API, "saved successfully"
+         * in the panel, and the onboarding item ticking itself against a
+         * document that does not exist.
+         *
+         * A checklist asserting a PAN is on file when the storage write failed
+         * is the most expensive possible outcome, because nothing later
+         * disagrees with it until somebody goes looking for the scan. Fail
+         * loudly instead: the upload genuinely did not happen.
+         */
+        if ($path === false || $path === null || $path === '') {
+            throw new \RuntimeException(sprintf(
+                'Could not store the uploaded file on the "%s" disk. Check the disk configuration and credentials.',
+                $disk
+            ));
+        }
+
         $document = EmployeeDocument::query()->create([
             'organization_id' => $employee->organization_id,
             'user_id' => $employee->id,
@@ -301,7 +324,7 @@ class EmployeeWorkspaceService
             'visible_to_employee' => (bool) ($data['visible_to_employee'] ?? false),
         ])->fresh('uploader');
 
-        $this->tickChecklistItemsFor($employee, $actor, $document);
+        $this->tickChecklistItemsFor($employee);
 
         return $document;
     }
@@ -314,15 +337,17 @@ class EmployeeWorkspaceService
      * already on disk and the row already written by this point, so an
      * exception here would report failure for something that plainly succeeded.
      */
-    private function tickChecklistItemsFor(User $employee, User $actor, EmployeeDocument $document): void
+    private function tickChecklistItemsFor(User $employee): void
     {
         try {
-            $matcher = app(DocumentChecklistMatcher::class);
-            $checklist = app(ChecklistService::class);
-
-            foreach ($matcher->pendingItemsFor($employee, $document) as $item) {
-                $checklist->completeFromDocument($item, $actor, $document);
-            }
+            // Reconciled against every document on file, not just the one that
+            // just arrived. The new upload is in that set, so this does
+            // everything the single-document match did — and it also picks up
+            // anything an earlier request missed, which is the whole reason
+            // items used to sit pending next to a file that plainly answered
+            // them. `completed_by` and `completed_at` come off each document,
+            // so for this upload they are still this actor and now.
+            app(ChecklistEvidenceSync::class)->syncForEmployee($employee);
         } catch (\Throwable $exception) {
             report($exception);
         }

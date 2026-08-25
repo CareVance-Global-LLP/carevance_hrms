@@ -207,7 +207,16 @@ class OnboardingJourneyTest extends TestCase
         );
         $this->onboarding()->linkUser($journey, $newHire);
 
-        $ownItem = ChecklistItem::forSubject($journey)->where('owner_kind', 'employee')->firstOrFail();
+        /*
+         * Deliberately the acknowledgement item, not the first employee-owned
+         * row. The document items now refuse a manual tick outright — they
+         * complete themselves from the upload — so completing one is a 422 for
+         * everybody and would test the wrong rule here.
+         */
+        $ownItem = ChecklistItem::forSubject($journey)
+            ->where('owner_kind', 'employee')
+            ->where('requires', 'acknowledgement')
+            ->firstOrFail();
         $itItem = ChecklistItem::forSubject($journey)->where('owner_kind', 'it')->firstOrFail();
 
         $this->postJson(

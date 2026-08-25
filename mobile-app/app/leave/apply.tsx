@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useTheme } from '../../src/hooks/useTheme';
+import { useToast } from '../../src/components/Toast';
 import type { ThemeColors } from '../../src/constants/theme';
 import { leaveApi } from '../../src/api/endpoints';
 
@@ -25,6 +26,7 @@ export default function ApplyLeaveScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const toast = useToast();
   const s = useMemo(() => styles(colors), [colors]);
   const [requestType, setRequestType] = useState('paid');
   const [leaveType, setLeaveType] = useState('');
@@ -41,9 +43,9 @@ export default function ApplyLeaveScreen() {
   };
 
   const handleSubmit = async () => {
-    if (requestType === 'paid' && !leaveType) { Alert.alert('Error', 'Please select a leave type'); return; }
-    if (!reason.trim()) { Alert.alert('Error', 'Reason is required'); return; }
-    if (endDate < startDate) { Alert.alert('Error', 'End date must be after start date'); return; }
+    if (requestType === 'paid' && !leaveType) { toast.error('Please select a leave type'); return; }
+    if (!reason.trim()) { toast.error('Reason is required'); return; }
+    if (endDate < startDate) { toast.error('End date must be after start date'); return; }
     setSubmitting(true);
     try {
       const payload: any = { reason: reason.trim(), start_date: formatDate(startDate), end_date: formatDate(endDate) };
@@ -54,9 +56,9 @@ export default function ApplyLeaveScreen() {
         payload.leave_type = startDate.toDateString() === endDate.toDateString() ? 'full_day' : 'half_day';
       }
       await leaveApi.apply(payload);
-      Alert.alert('Success', `${REQUEST_TYPES.find((r) => r.key === requestType)?.label} request submitted`);
+      toast.success(`${REQUEST_TYPES.find((r) => r.key === requestType)?.label} request submitted`);
       router.back();
-    } catch (err: any) { Alert.alert('Error', err?.response?.data?.message || 'Failed to submit'); }
+    } catch (err: any) { toast.error(err?.response?.data?.message || 'Failed to submit'); }
     finally { setSubmitting(false); }
   };
 
@@ -111,7 +113,7 @@ export default function ApplyLeaveScreen() {
   );
 }
 
-const styles = (c: ThemeColors) => ({
+const styles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: c.background, paddingHorizontal: 20 },
   label: { fontSize: 14, fontWeight: '600', color: c.text, marginBottom: 8, marginTop: 16 },
   typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

@@ -21,6 +21,7 @@ class OnboardingService
     public function __construct(
         private readonly ChecklistService $checklists,
         private readonly DefaultChecklistProvisioner $templates,
+        private readonly ChecklistEvidenceSync $evidence,
     ) {
     }
 
@@ -72,6 +73,12 @@ class OnboardingService
                 Carbon::now()->startOfDay()
             );
 
+            // The documents may pre-date the journey. Both the add-user wizard
+            // and CSV import upload before this runs, so without a reconcile
+            // here a joiner's PAN card sits on file next to a pending "Upload
+            // PAN card" from the moment the checklist is created.
+            $this->evidence->sync($journey);
+
             return $journey->fresh(['checklistItems']);
         });
     }
@@ -111,9 +118,13 @@ class OnboardingService
         if ($existing !== null) {
             // Raised at invite time and waiting for the account. Bind it, which
             // also reassigns every item whose owner_kind is 'employee'.
-            return $existing->user_id === $user->id
-                ? $existing->fresh(['checklistItems'])
-                : $this->linkUser($existing, $user);
+            if ($existing->user_id !== $user->id) {
+                return $this->linkUser($existing, $user);
+            }
+
+            $this->evidence->sync($existing);
+
+            return $existing->fresh(['checklistItems']);
         }
 
         return $this->open(
@@ -134,6 +145,11 @@ class OnboardingService
     {
         $journey->update(['user_id' => $user->id]);
         $this->checklists->reassignOwners($journey, ['employee' => $user->id]);
+
+        // Now that there is an account, the documents filed against it can be
+        // read. An invitee who uploaded during acceptance would otherwise have
+        // been invisible to the upload-time hook, which had no journey to find.
+        $this->evidence->sync($journey);
 
         return $journey->fresh(['checklistItems']);
     }

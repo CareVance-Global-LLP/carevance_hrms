@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ChecklistItem;
 use App\Models\OnboardingJourney;
 use App\Models\User;
+use App\Services\Lifecycle\ChecklistEvidenceSync;
 use App\Services\Lifecycle\ChecklistService;
 use App\Services\Lifecycle\OnboardingService;
 use Carbon\Carbon;
@@ -18,6 +19,7 @@ class OnboardingJourneyController extends Controller
     public function __construct(
         private readonly OnboardingService $onboarding,
         private readonly ChecklistService $checklists,
+        private readonly ChecklistEvidenceSync $evidence,
     ) {
     }
 
@@ -52,8 +54,18 @@ class OnboardingJourneyController extends Controller
             $query->open();
         }
 
+        $journeys = $query->orderBy('joining_date')->get();
+
+        // The list shows a readiness ring per hire, so it has to agree with the
+        // slide-over that opens from it. Reconciling here rather than only in
+        // `show()` is what stops a row reading "3 outstanding" while the panel
+        // behind it reads two — one query for a page with nothing pending.
+        if ($this->evidence->syncMany($journeys) > 0) {
+            $journeys = $query->orderBy('joining_date')->get();
+        }
+
         return response()->json([
-            'data' => $query->orderBy('joining_date')->get(),
+            'data' => $journeys,
         ]);
     }
 
@@ -69,13 +81,7 @@ class OnboardingJourneyController extends Controller
     {
         $user = Auth::user();
 
-        $journey = OnboardingJourney::with([
-            'checklistItems.owner:id,name',
-            'checklistItems.document',
-            'manager:id,name',
-            'buddy:id,name',
-            'group:id,name',
-        ])
+        $journey = OnboardingJourney::query()
             ->where('organization_id', $user->organization_id)
             ->where('user_id', $user->id)
             ->latest('id')
@@ -84,6 +90,24 @@ class OnboardingJourneyController extends Controller
         if (! $journey) {
             return response()->json(['data' => null]);
         }
+
+        // Reconcile before reading, never after. An item satisfied by a
+        // document already on file has to be done by the time this response is
+        // built, or the joiner sees a pending circle next to a file they
+        // uploaded and concludes the upload did not work.
+        $this->evidence->sync($journey);
+
+        $journey->load([
+            'checklistItems.owner:id,name',
+            'checklistItems.document',
+            // Carries document_category, which the panel needs to know what an
+            // upload against this item should be tagged as. It lives on the
+            // template row, not the materialised one.
+            'checklistItems.checklistTemplateItem:id,document_category',
+            'manager:id,name',
+            'buddy:id,name',
+            'group:id,name',
+        ]);
 
         // Only what this person is responsible for. Seeing that IT has not
         // ordered their laptop is noise to them and pressure on nobody.
@@ -125,9 +149,26 @@ class OnboardingJourneyController extends Controller
     {
         $user = Auth::user();
 
-        $journey = OnboardingJourney::with([
+        $journey = OnboardingJourney::query()
+            ->where('organization_id', $user->organization_id)
+            ->findOrFail($id);
+
+        // A joiner may read their own journey; everyone else needs to be staff.
+        if ($journey->user_id !== $user->id && $user->getHierarchyLevel() >= 100) {
+            return response()->json(['message' => 'You cannot view this onboarding journey.'], 403);
+        }
+
+        // Checked after the authorisation gate: somebody who may not read this
+        // journey should not be able to change it either, even by side effect.
+        $this->evidence->sync($journey);
+
+        $journey->load([
             'checklistItems.owner:id,name',
             'checklistItems.document',
+            // Carries document_category, which the panel needs to know what an
+            // upload against this item should be tagged as. It lives on the
+            // template row, not the materialised one.
+            'checklistItems.checklistTemplateItem:id,document_category',
             // Loaded so the journey can show what the profile is still missing
             // rather than only what somebody has ticked off a list.
             'user:id,name,email',
@@ -138,14 +179,7 @@ class OnboardingJourneyController extends Controller
             'manager:id,name',
             'buddy:id,name',
             'group:id,name',
-        ])
-            ->where('organization_id', $user->organization_id)
-            ->findOrFail($id);
-
-        // A joiner may read their own journey; everyone else needs to be staff.
-        if ($journey->user_id !== $user->id && $user->getHierarchyLevel() >= 100) {
-            return response()->json(['message' => 'You cannot view this onboarding journey.'], 403);
-        }
+        ]);
 
         return response()->json(['data' => $journey]);
     }
@@ -220,7 +254,27 @@ class OnboardingJourneyController extends Controller
         $user = Auth::user();
 
         $journey = OnboardingJourney::where('organization_id', $user->organization_id)->findOrFail($id);
-        $item = ChecklistItem::forSubject($journey)->findOrFail($itemId);
+        $item = ChecklistItem::forSubject($journey)->with('checklistTemplateItem')->findOrFail($itemId);
+
+        /*
+         * An item evidence can satisfy is not hand-tickable, by anybody.
+         *
+         * Enforced here rather than only by hiding the checkbox, because a
+         * control the API still honours is a suggestion, not a rule — and the
+         * rule is the point. A hand-ticked "Add PAN details" asserts a PAN is
+         * on file; four such ticks existed on the live database against people
+         * who had no PAN, no bank account and no document at all. The tick was
+         * the only thing saying otherwise, and payroll would have found out.
+         *
+         * Items with no evidence path — the signed contract, the policy
+         * acknowledgement — are untouched. A human attesting is the only
+         * mechanism they have.
+         */
+        if (ChecklistEvidenceSync::isEvidenceBacked($item)) {
+            return response()->json([
+                'message' => 'This item completes itself when the document is uploaded or the detail is recorded. Upload it against this person instead of ticking it.',
+            ], 422);
+        }
 
         // A joiner can tick their own items — that is the whole point of
         // preboarding — but not anybody else's.

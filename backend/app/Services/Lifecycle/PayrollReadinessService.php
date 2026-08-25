@@ -4,6 +4,7 @@ namespace App\Services\Lifecycle;
 
 use App\Models\EmployeeSalaryAssignment;
 use App\Models\User;
+use App\Services\Employees\SalaryAccountResolver;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -135,23 +136,23 @@ class PayrollReadinessService
      */
     private function checkBankAccount(User $user): array
     {
-        $account = $this->defaultBankAccount($user);
+        $accounts = app(SalaryAccountResolver::class);
+        $account = $accounts->defaultFor($user);
 
         if ($account === null) {
             return $this->fail('bank', 'Bank account for salary', self::SEVERITY_BLOCKER, 'No bank account on file — they cannot be included in a bank transfer batch.');
         }
 
-        // The column is ifsc_swift — it holds an IFSC for domestic accounts and
-        // a SWIFT code for foreign ones.
-        $ifsc = strtoupper(trim((string) ($account->ifsc_swift ?? '')));
-        $number = preg_replace('/\s+/', '', (string) ($account->account_number ?? ''));
+        $ifsc = $accounts->ifsc($account);
+        $number = $accounts->accountNumber($account);
 
         if (blank($number)) {
             return $this->fail('bank', 'Bank account for salary', self::SEVERITY_BLOCKER, 'Account number is missing.');
         }
 
-        // RBI IFSC: four letters, a literal 0, then six alphanumerics.
-        if (! preg_match('/^[A-Z]{4}0[A-Z0-9]{6}$/', $ifsc)) {
+        // Delegated so the onboarding checklist and payroll cannot disagree
+        // about whether these details are usable — see SalaryAccountResolver.
+        if (! $accounts->isPayable($account)) {
             return $this->fail(
                 'bank',
                 'Bank account for salary',
@@ -227,14 +228,6 @@ class PayrollReadinessService
             );
     }
 
-    private function defaultBankAccount(User $user): ?object
-    {
-        $accounts = $user->employeeBankAccounts()->get();
-
-        // Salary goes to the default account; fall back to the only one on file
-        // so a single unflagged account is not reported as missing.
-        return $accounts->firstWhere('is_default', true) ?? $accounts->first();
-    }
 
     private function pass(string $key, string $label, string $detail): array
     {
