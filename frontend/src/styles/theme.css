@@ -865,3 +865,48 @@ body {
   :root.theme-ready [class*="bg-white"],
   :root.theme-ready [class*="border-slate"] { transition: none; }
 }
+
+/*
+ * The thinking indicator. Same rotating conic sweep as `.ai-glow`, at a
+ * smaller radius, so the wait belongs visibly to AI mode rather than being a
+ * second animation language for "busy".
+ */
+.ai-thinking-orb {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: rgb(var(--surface));
+}
+
+.ai-thinking-orb::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  padding: 3px;
+  background: conic-gradient(
+    from var(--ai-glow-angle),
+    rgb(var(--ai-glow-1)),
+    rgb(var(--ai-glow-2)),
+    rgb(var(--ai-glow-3)),
+    rgb(var(--ai-glow-4)),
+    rgb(var(--ai-glow-5)),
+    rgb(var(--ai-glow-1))
+  );
+  -webkit-mask:
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ai-glow-spin 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-thinking-orb::before {
+    animation: none;
+  }
+}

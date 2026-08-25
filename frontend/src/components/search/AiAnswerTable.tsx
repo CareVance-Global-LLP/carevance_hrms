@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Copy, ExternalLink } from 'lucide-react';
 import { reportSilentError } from '@/lib/reportSilentError';
+import AiThinking from './AiThinking';
 import type { AskColumn, AskColumnType, AskPlan, AskRow } from '@/services/api';
 
 /** Where each entity's own screen lives, for "Open full view". */
@@ -200,13 +201,7 @@ export default function AiAnswerTable({
   ) : null;
 
   if (loading) {
-    return (
-      <div className="space-y-2 p-4" role="status" aria-label="Working out the answer">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-8 animate-pulse rounded bg-slate-100" />
-        ))}
-      </div>
-    );
+    return <AiThinking />;
   }
 
   /*

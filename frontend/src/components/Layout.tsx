@@ -71,6 +71,17 @@ export default function Layout() {
   const [reimbursementInboxCount, setReimbursementInboxCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  /*
+   * Set when the palette is opened by the header's AI chip rather than by the
+   * search field. Reaching AI mode used to take two deliberate actions — open,
+   * then find the toggle — which is two too many for the thing somebody came
+   * to the search bar to do.
+   *
+   * A counter rather than a boolean: opening in AI mode twice in a row has to
+   * be two distinct events, and a boolean that is already `true` produces no
+   * change for the palette to react to.
+   */
+  const [aiRequestedAt, setAiRequestedAt] = useState(0);
   const [navDrawerOpen, setNavDrawerOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -453,7 +464,13 @@ export default function Layout() {
       ) : null}
 
       <div className="relative z-[70] min-w-0 w-full lg:mx-auto lg:w-[32rem] lg:max-w-[32rem] xl:w-[36rem] xl:max-w-[36rem]">
-        <CommandBarTrigger onOpen={() => setCommandBarOpen(true)} />
+        <CommandBarTrigger
+          onOpen={() => setCommandBarOpen(true)}
+          onOpenAi={() => {
+            setAiRequestedAt(Date.now());
+            setCommandBarOpen(true);
+          }}
+        />
       </div>
     </div>
   );
@@ -463,6 +480,7 @@ export default function Layout() {
   const commandBar = (
     <GlobalCommandBar
       open={commandBarOpen}
+      aiRequestedAt={aiRequestedAt}
       onOpen={() => {
         setCommandBarOpen(true);
         setNotificationsOpen(false);
@@ -981,7 +999,13 @@ export default function Layout() {
             </div>
 
             <div className="relative flex-1 min-w-0 max-w-[36rem]">
-              <CommandBarTrigger onOpen={() => setCommandBarOpen(true)} />
+              <CommandBarTrigger
+          onOpen={() => setCommandBarOpen(true)}
+          onOpenAi={() => {
+            setAiRequestedAt(Date.now());
+            setCommandBarOpen(true);
+          }}
+        />
             </div>
 
             <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
