@@ -366,3 +366,54 @@ test('a held click is flushed once the renderer is listening', () => {
     'the held click must be cleared when delivered, so it fires once and not on every load.'
   );
 });
+
+/*
+ * The shell owns auxiliary windows — the quick-reply box and the idle popup —
+ * and they outlive the main window. Reaching for "some window" therefore
+ * reaches for one of THOSE once the tracker is closed, which is how reopening
+ * the app surfaced the reply box and never built the tracker.
+ */
+test('revealing the app targets the main window and nothing else', () => {
+  const start = mainSource.indexOf('const revealMainWindow = () => {');
+  assert.ok(start > -1, 'revealMainWindow must exist');
+  // A fixed window rather than scanning for a closing brace: the function is
+  // well under this, and a newline-bearing search string is more fragile than
+  // the thing it is checking.
+  const body = mainSource.slice(start, start + 1600);
+
+  // The assignment itself, not the prose around it — the comment above it
+  // names getAllWindows() precisely because that is what went wrong.
+  const assignment = body.match(/const targetWindow = .*/);
+  assert.ok(assignment, 'revealMainWindow must resolve a target window');
+
+  assert.doesNotMatch(
+    assignment[0],
+    /getAllWindows\(\)/,
+    'a hidden reply popup would be picked up as "the app" and shown instead of the tracker.'
+  );
+  assert.match(
+    assignment[0],
+    /mainWindow && !mainWindow\.isDestroyed\(\)/,
+    'it must check the main window specifically.'
+  );
+  assert.match(
+    body,
+    /return false;/,
+    'with no main window it must report failure, which is what makes the caller build one.'
+  );
+});
+
+test('reopening never decides the app is running by counting windows', () => {
+  // `getAllWindows().length === 0` has the same flaw: a hidden popup makes the
+  // count non-zero while the tracker itself is gone.
+  assert.doesNotMatch(
+    mainSource,
+    /getAllWindows\(\)\.length === 0\)\s*createWindow\(\)/,
+    'window-count checks must not stand in for "is the tracker open".'
+  );
+  assert.match(
+    mainSource,
+    /app\.on\('activate',[\s\S]{0,600}?openOrRevealMainWindow\(\)/,
+    'activate must route through the helper that knows what the main window is.'
+  );
+});

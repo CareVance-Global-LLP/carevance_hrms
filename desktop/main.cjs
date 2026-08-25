@@ -1630,9 +1630,25 @@ const createWindow = async () => {
 };
 
 const revealMainWindow = () => {
-  const targetWindow = mainWindow && !mainWindow.isDestroyed()
-    ? mainWindow
-    : BrowserWindow.getAllWindows()[0];
+  /*
+   * THE MAIN WINDOW, OR NOTHING.
+   *
+   * This used to fall back to `BrowserWindow.getAllWindows()[0]`, which is not
+   * a synonym for "the app". The shell owns auxiliary windows — the quick-reply
+   * box and the idle popup — and they outlive the main window: closing it on
+   * Windows destroys it while the app stays in the tray, and a reply popup
+   * created by an earlier chat notification is still there, hidden.
+   *
+   * So reopening the app picked up the REPLY BOX, showed and focused it, and
+   * returned true — which told openOrRevealMainWindow the job was done, so the
+   * tracker was never built. The reply box opened and the app appeared not to
+   * start. Reported twice: from a notification click, and from a plain relaunch
+   * after quitting from the tray.
+   *
+   * Returning false when the main window is gone is the correct answer, and it
+   * is what makes the caller create one.
+   */
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
 
   if (!targetWindow) {
     return false;
@@ -2791,7 +2807,13 @@ app.whenReady().then(async () => {
   initializeAutoUpdater();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    /*
+     * Counting windows is the same mistake revealMainWindow made: a hidden
+     * quick-reply box or idle popup makes the count non-zero while the tracker
+     * itself is gone, so the dock icon would do nothing. Ask for the main
+     * window specifically.
+     */
+    openOrRevealMainWindow();
   });
 
   // Spawns schtasks.exe and reg.exe synchronously to register the login item.
