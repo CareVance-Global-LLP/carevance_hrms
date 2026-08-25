@@ -417,3 +417,63 @@ test('reopening never decides the app is running by counting windows', () => {
     'activate must route through the helper that knows what the main window is.'
   );
 });
+
+/*
+ * Quitting used to send `desktop:prepare-close` and quit in the same breath.
+ * The renderer's handler is async — it flushes activity, then awaits
+ * timeEntryApi.stop() — so the process was gone before either finished and the
+ * running timer was never stopped. It kept running server-side with no activity
+ * arriving, and the idle sweep closed it as abandoned: the person quit from the
+ * tray and was later told they had been idle.
+ *
+ * Closing the window already waited properly. Quitting means the same thing and
+ * must wait the same way.
+ */
+test('quitting waits for the renderer to stop the timer', () => {
+  const start = mainSource.lastIndexOf("app.on('before-quit'");
+  assert.ok(start > -1, 'a before-quit handler must exist');
+  const body = mainSource.slice(start, start + 2600);
+
+  assert.match(
+    body,
+    /event\.preventDefault\(\)/,
+    'quit must be deferred until the timer has actually been stopped.'
+  );
+  assert.match(
+    body,
+    /desktop:prepare-close/,
+    'the renderer still has to be asked to flush and stop.'
+  );
+  assert.match(
+    body,
+    /setTimeout\(/,
+    'a hung or offline renderer must not hold the app open forever.'
+  );
+});
+
+test('the quit handler actually receives the event it defers', () => {
+  // `app.on('before-quit', () => {...})` with a preventDefault inside is a
+  // ReferenceError at quit time — the one moment nobody is watching the console.
+  const start = mainSource.lastIndexOf("app.on('before-quit'");
+  const signature = mainSource.slice(start, start + 40);
+
+  assert.match(
+    signature,
+    /before-quit',\s*\(event\)/,
+    'the handler must declare the event parameter it calls preventDefault on.'
+  );
+});
+
+test('close and quit are told apart when the renderer confirms', () => {
+  // Both paths answer on the same channel. Quitting must finish the quit, not
+  // merely close the window and leave the app alive in the tray.
+  const start = mainSource.indexOf("desktop:confirm-close-ready");
+  assert.ok(start > -1, 'the confirmation channel must exist');
+  const body = mainSource.slice(start, start + 900);
+
+  assert.match(
+    body,
+    /quitConfirmHandler/,
+    'the confirmation must know whether a quit or a window close is waiting on it.'
+  );
+});

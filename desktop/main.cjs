@@ -825,6 +825,17 @@ const setUpdateState = (patch) => {
   broadcastUpdateState();
 };
 
+/*
+ * The quit handshake, mirroring closePreparationInProgress for the window.
+ *
+ * `quitConfirmHandler` is set only while a quit is waiting on the renderer, so
+ * `confirm-close-ready` can tell the two cases apart: closing a window should
+ * close the window, quitting should finish the quit.
+ */
+let quitPreparationDone = false;
+let quitPreparationTimeout = null;
+let quitConfirmHandler = null;
+
 const proceedToCloseWindow = () => {
   if (closePreparationTimeout) {
     clearTimeout(closePreparationTimeout);
@@ -2346,6 +2357,18 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('desktop:confirm-close-ready', async () => {
+  /*
+   * The renderer has finished flushing and stopping the timer. Which act it was
+   * preparing for decides what happens now — quitting must not merely close the
+   * window and leave the app running in the tray.
+   */
+  if (quitConfirmHandler) {
+    const finish = quitConfirmHandler;
+    quitConfirmHandler = null;
+    finish();
+    return true;
+  }
+
   return proceedToCloseWindow();
 });
 
@@ -2943,7 +2966,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   // Electron releases these on exit anyway, but an explicit unregister keeps
   // the combination free if the app is restarted before the OS has caught up.
   globalShortcut.unregisterAll();
@@ -2970,12 +2993,53 @@ app.on('before-quit', () => {
     osConnectivityWatchTimer = null;
   }
 
-  if (mainWindow && !mainWindow.isDestroyed() && !allowWindowClose) {
-    try {
-      mainWindow.webContents.send('desktop:prepare-close');
-    } catch {
-      // Renderer may not be ready
+  /*
+   * QUITTING HAS TO WAIT FOR THE TIMER TO ACTUALLY STOP.
+   *
+   * This used to send `prepare-close` and quit in the same breath. The
+   * renderer's handler is async — it flushes pending activity, then awaits
+   * `timeEntryApi.stop()` — so the process was gone before either finished and
+   * the running timer was never stopped.
+   *
+   * What the person saw: quit from the tray, and later a "you were idle"
+   * notification. The timer had kept running server-side with no activity
+   * arriving, and the idle sweep closed it as abandoned. Their work was billed
+   * to the last activity, so no time was stolen — but the stop was recorded as
+   * idle rather than as the deliberate quit it was, and they were told they had
+   * been away when they had not.
+   *
+   * Closing the WINDOW already did this correctly: preventDefault, wait for the
+   * renderer to confirm, fall through on a timeout. Quitting had none of it.
+   * The two paths now behave the same way, because they mean the same thing.
+   *
+   * The timeout is what stops a hung or offline renderer holding the app open
+   * forever. Six seconds: long enough for a slow stop request on a poor
+   * connection, short enough that quit still feels like quit.
+   */
+  if (quitPreparationDone || !mainWindow || mainWindow.isDestroyed() || allowWindowClose) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const finishQuit = () => {
+    if (quitPreparationDone) return;
+    quitPreparationDone = true;
+    if (quitPreparationTimeout) {
+      clearTimeout(quitPreparationTimeout);
+      quitPreparationTimeout = null;
     }
+    app.quit();
+  };
+
+  quitConfirmHandler = finishQuit;
+  quitPreparationTimeout = setTimeout(finishQuit, 6000);
+
+  try {
+    mainWindow.webContents.send('desktop:prepare-close');
+  } catch {
+    // Renderer never got the message, so nothing is coming. Do not wait for it.
+    finishQuit();
   }
 
   // A live always-on-top window counts as an open window, so leaving it would
