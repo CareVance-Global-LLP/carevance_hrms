@@ -514,7 +514,7 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class, 'role_id');
     }
 
-    private const PERMISSIONS_ADMIN = [
+    public const PERMISSIONS_ADMIN = [
         'dashboard.view', 'attendance.view', 'selfies.view',
         'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
         'reports.view', 'monitoring.view', 'screenshots.view',
@@ -526,7 +526,7 @@ class User extends Authenticatable
         'assets.view', 'assets.manage',
     ];
 
-    private const PERMISSIONS_MANAGER = [
+    public const PERMISSIONS_MANAGER = [
         'dashboard.view', 'attendance.view', 'selfies.view',
         'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
         'reports.view', 'monitoring.view', 'screenshots.view',
@@ -537,7 +537,7 @@ class User extends Authenticatable
         'assets.view', 'assets.manage',
     ];
 
-    private const PERMISSIONS_EMPLOYEE = [
+    public const PERMISSIONS_EMPLOYEE = [
         'dashboard.view', 'timer.use', 'chat.use',
     ];
 

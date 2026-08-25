@@ -22,20 +22,32 @@ class Organization extends Model
         'employee' => 100,
     ];
 
-    public const SYSTEM_ROLE_PERMISSION_DEFAULTS = [
-        'manager' => [
-            'dashboard.view', 'attendance.view', 'selfies.view',
-            'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
-            'reports.view', 'monitoring.view', 'screenshots.view',
-            'payroll.view', 'invoices.view', 'leave.view', 'leave.manage',
-            'overtime.view', 'overtime.approve', 'tasks.view', 'tasks.manage',
-            'projects.view', 'settings.view', 'notifications.publish',
-            'audit.view',
-        ],
-        'employee' => [
-            'dashboard.view', 'timer.use', 'chat.use',
-        ],
-    ];
+    /**
+     * What each system role is seeded with.
+     *
+     * DERIVED from User's constants, never a second copy. There used to be a
+     * hand-written list here and it had already drifted: `manager` was missing
+     * chat.use, assets.view and assets.manage, which User::PERMISSIONS_MANAGER
+     * has granted all along. A manager with no custom role could chat; the same
+     * manager with the seeded "Manager" role could not, and nothing said why.
+     *
+     * `admin` was worse — it had no entry at all, so the seeder fell through to
+     * `Permission::pluck('key')` and gave each new organisation EVERY PERMISSION
+     * ROW THAT HAPPENED TO EXIST THAT DAY. Rows added later never reached roles
+     * already created, which is why seven organisations' admins could not open
+     * Assets while an admin with no custom role could.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function systemRolePermissionDefaults(): array
+    {
+        return [
+            'admin' => \App\Models\User::PERMISSIONS_ADMIN,
+            'manager' => \App\Models\User::PERMISSIONS_MANAGER,
+            'employee' => \App\Models\User::PERMISSIONS_EMPLOYEE,
+        ];
+    }
+
     protected $fillable = [
         'name',
         'slug',
@@ -115,7 +127,7 @@ class Organization extends Model
                     'is_active' => true,
                 ]);
 
-                $permKeys = self::SYSTEM_ROLE_PERMISSION_DEFAULTS[$slug] ?? \App\Models\Permission::pluck('key')->all();
+                $permKeys = self::systemRolePermissionDefaults()[$slug] ?? [];
                 $permIds = \App\Models\Permission::whereIn('key', $permKeys)->pluck('id');
                 $role->permissions()->attach($permIds);
             }
