@@ -1,9 +1,8 @@
 {
   "appUrl": "https://carevancetracker.duckdns.org",
   "update": {
-    "provider": "github",
-    "owner": "Igrisssssss",
-    "repo": "carevance_hrms"
+    "provider": "generic",
+    "url": "https://carevancetracker.duckdns.org/updates/"
   },
   "browserTracking": {
     "chromeStoreUrl": null,
