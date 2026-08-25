@@ -1,3 +1,16 @@
+# ⚠️  NOT WHAT PRODUCTION RUNS.
+#
+# Lightsail is a NATIVE deploy — nginx + PHP-FPM + PostgreSQL on the host, with
+# four systemd units. Nothing here is running. See:
+#   deploy/lightsail/SYSTEMD-NATIVE.md   the services, ports and cron
+#   deploy/lightsail/nginx-native.conf   the nginx blocks that actually serve
+#
+# Kept as reference for a future containerised deployment, and because the
+# instance is 2 GB: eight containers do not fit where four PHP daemons cost
+# 42 MB. Do not edit this expecting production to change — that mistake cost a
+# day, twice, when a Reverb service and an /updates/ rule were added here and
+# silently did nothing.
+
 # Edge for the deployed stack: the only thing on this box facing the internet.
 #
 # Caddy obtains and renews the Let's Encrypt certificate for $APP_DOMAIN itself,
@@ -31,6 +44,26 @@
 			transport http {
 				read_timeout 300s
 				write_timeout 300s
+			}
+		}
+	}
+
+	# The WebSocket endpoint for real-time notifications.
+	#
+	# /app/* is the Pusher protocol's client-facing path, not a name we chose,
+	# which is why it sits at the root rather than under /api. Caddy upgrades
+	# and proxies WebSockets transparently, so this needs no special directive
+	# — and because Caddy already terminates TLS for this domain, clients get
+	# wss:// with no certificate work of its own.
+	#
+	# The read timeout must stay long. A notification socket is idle by nature
+	# — that is the point of it — and a short timeout would cut healthy
+	# connections and produce a reconnect loop that looks like a client bug.
+	handle /app/* {
+		reverse_proxy reverb:8080 {
+			transport http {
+				read_timeout 3600s
+				write_timeout 3600s
 			}
 		}
 	}

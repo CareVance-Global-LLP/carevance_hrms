@@ -169,7 +169,7 @@ export default function ImportOverridesModal({ isOpen, month, onClose, onCommitt
             </div>
 
             <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center transition-colors hover:border-blue-400 hover:bg-blue-50/40">
-              <FileUp className="h-6 w-6 text-slate-400" />
+              <FileUp className="h-6 w-6 text-slate-500" />
               <span className="text-sm font-medium text-slate-700">
                 {file ? file.name : 'Choose a .csv file'}
               </span>

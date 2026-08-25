@@ -392,7 +392,7 @@ export default function AdminChatBubble() {
                 <Send className="h-4 w-4" />
               </button>
             </div>
-            <p className="mt-2 text-center text-[10px] text-slate-400">{CHAT_DISCLAIMER}</p>
+            <p className="mt-2 text-center text-[10px] text-slate-500">{CHAT_DISCLAIMER}</p>
           </div>
         </div>
       )}

@@ -110,7 +110,7 @@ function EmployeeCard({
           {isSelected ? (
             <CheckSquare className="h-5 w-5 text-blue-600" />
           ) : (
-            <Square className="h-5 w-5 text-slate-300 hover:text-slate-400" />
+            <Square className="h-5 w-5 text-slate-300 hover:text-slate-500" />
           )}
         </button>
 
@@ -142,7 +142,7 @@ function EmployeeCard({
                 {employee.designation || employee.email}
               </p>
               {employee.employee_code && (
-                <p className="text-xs text-slate-400 mt-0.5">{employee.employee_code}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{employee.employee_code}</p>
               )}
             </div>
             <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${config.bgColor} ${config.textColor}`}>
@@ -157,8 +157,8 @@ function EmployeeCard({
             <div>
               {hasCTC ? (
                 <div>
-                  <p className="text-xs text-slate-400">CTC</p>
-                  <p className="font-semibold text-slate-900">{formatCurrency(employee.annual_ctc!)}<span className="text-slate-400 font-normal">/yr</span></p>
+                  <p className="text-xs text-slate-500">CTC</p>
+                  <p className="font-semibold text-slate-900">{formatCurrency(employee.annual_ctc!)}<span className="text-slate-500 font-normal">/yr</span></p>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-amber-600">
@@ -171,16 +171,16 @@ function EmployeeCard({
             {/* Net Pay Display */}
             {employee.payroll_status.is_processed ? (
               <div className="text-right">
-                <p className="text-xs text-slate-400">Net Pay</p>
+                <p className="text-xs text-slate-500">Net Pay</p>
                 <p className="font-semibold text-emerald-600">
                   {formatCurrency(employee.payroll_status.net_pay)}
                 </p>
               </div>
             ) : hasCTC ? (
               <div className="text-right">
-                <p className="text-xs text-slate-400">Est. Monthly</p>
+                <p className="text-xs text-slate-500">Est. Monthly</p>
                 <p className="font-semibold text-slate-700">
-                  ~{formatCurrency(monthlyCTC * 0.75)}<span className="text-slate-400 font-normal">/mo</span>
+                  ~{formatCurrency(monthlyCTC * 0.75)}<span className="text-slate-500 font-normal">/mo</span>
                 </p>
               </div>
             ) : null}
@@ -501,7 +501,7 @@ export default function DepartmentEmployees({
             {selectedEmployees.size === filteredEmployees.length && filteredEmployees.length > 0 ? (
               <CheckSquare className="h-4 w-4 text-blue-600" />
             ) : (
-              <Square className="h-4 w-4 text-slate-400" />
+              <Square className="h-4 w-4 text-slate-500" />
             )}
             Select All
           </button>
@@ -519,7 +519,7 @@ export default function DepartmentEmployees({
         <div className="flex-1" />
 
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <TextInput
             placeholder="Search by name or email..."
             value={searchQuery}
@@ -568,7 +568,7 @@ export default function DepartmentEmployees({
           <div className="text-center py-12">
             <Users className="h-12 w-12 mx-auto mb-3 text-slate-300" />
             <p className="text-slate-500 font-medium">No employees found</p>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500">
               {searchQuery ? 'Try adjusting your search' : 'This department has no employees'}
             </p>
           </div>

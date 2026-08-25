@@ -273,12 +273,38 @@ export const emitIdleStopWarning = (detail: DesktopTimerIdleWarningDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerIdleWarningDetail>(DESKTOP_TIMER_IDLE_WARNING_EVENT, { detail }));
 };
 
+/*
+ * Tell the tray as well as the window.
+ *
+ * The system tray is what somebody watching this all day glances at INSTEAD of
+ * restoring the window, and it used to say the literal string 'CareVance
+ * Tracker' forever - so the one question it exists to answer could only be
+ * answered by opening the app. These two emitters are where the timer's state
+ * is already known, so they are where the tray gets told.
+ *
+ * Optional-chained throughout: on the web there is no desktopTracker, and an
+ * older desktop build will not have setTimerState.
+ */
+const reportTimerToTray = (running: boolean, detail?: DesktopTimerSessionDetail) => {
+  try {
+    window.desktopTracker?.setTimerState?.({
+      running,
+      startedAt: running ? (detail as any)?.startTime ?? null : null,
+      label: (detail as any)?.taskTitle ?? (detail as any)?.projectName ?? null,
+    });
+  } catch {
+    // The tray is a convenience. Never let it interrupt a timer transition.
+  }
+};
+
 export const emitDesktopTimerStarted = (detail: DesktopTimerSessionDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerSessionDetail>(DESKTOP_TIMER_STARTED_EVENT, { detail }));
+  reportTimerToTray(true, detail);
 };
 
 export const emitDesktopTimerStopped = (detail: DesktopTimerSessionDetail) => {
   window.dispatchEvent(new CustomEvent<DesktopTimerSessionDetail>(DESKTOP_TIMER_STOPPED_EVENT, { detail }));
+  reportTimerToTray(false, detail);
 };
 
 /**

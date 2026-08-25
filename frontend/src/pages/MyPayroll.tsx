@@ -297,17 +297,17 @@ export default function MyPayrollPage() {
               </div>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">Gross Pay</div>
+                  <div className="text-xs text-slate-500 mb-1">Gross Pay</div>
                   <div className="text-xl font-bold text-slate-900">{formatCurrency(latestPayslip.gross_salary)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">Deductions</div>
+                  <div className="text-xs text-slate-500 mb-1">Deductions</div>
                   <div className="text-xl font-bold text-rose-600">\u2212{formatCurrency(latestPayslip.total_deductions)}</div>
                 </div>
               </div>
               <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
                 <div>
-                  <div className="text-xs text-slate-400 mb-1">Net Pay</div>
+                  <div className="text-xs text-slate-500 mb-1">Net Pay</div>
                   <div className="text-2xl font-extrabold text-emerald-700">{formatCurrency(latestPayslip.net_pay)}</div>
                 </div>
                 <button
@@ -327,7 +327,7 @@ export default function MyPayrollPage() {
               <BarChart3 className="h-4 w-4 text-blue-600" />
               6-Month Net Pay Trend
             </h3>
-            <p className="text-sm text-slate-400">Trend chart is unavailable.</p>
+            <p className="text-sm text-slate-500">Trend chart is unavailable.</p>
           </SurfaceCard>
         </div>
 
@@ -346,7 +346,7 @@ export default function MyPayrollPage() {
                 className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[180px]"
               />
               {isFetching && !isLoading && (
-                <Loader2 className="h-4 w-4 animate-spin text-slate-400" aria-label="Refreshing" />
+                <Loader2 className="h-4 w-4 animate-spin text-slate-500" aria-label="Refreshing" />
               )}
             </div>
           </div>
@@ -425,7 +425,7 @@ export default function MyPayrollPage() {
                       <tr key={ps.id || ps.month_year} className="hover:bg-slate-50">
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-slate-400" />
+                            <Calendar className="h-4 w-4 text-slate-500" />
                             <span className="font-medium text-slate-900">{ps.month_year}</span>
                           </div>
                         </td>
@@ -482,7 +482,7 @@ export default function MyPayrollPage() {
             </div>
             {/* JSX text is not a JS string literal, so a \u escape here renders
                 as the literal characters rather than the separator. */}
-            <p className="text-xs text-slate-400 mb-3">{'HRA · 80C · 80D · NPS · LTA'}</p>
+            <p className="text-xs text-slate-500 mb-3">{'HRA · 80C · 80D · NPS · LTA'}</p>
             <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
               <div
                 className="h-full bg-blue-600 rounded-full transition-all"

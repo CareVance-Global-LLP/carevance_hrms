@@ -46,7 +46,7 @@ export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: 
           </svg>
         </div>
         <p className="text-sm font-medium text-slate-700">Creating account...</p>
-        <p className="text-xs text-slate-400">Setting up the employee profile for {form.email}</p>
+        <p className="text-xs text-slate-500">Setting up the employee profile for {form.email}</p>
       </div>
     );
   }
@@ -111,7 +111,7 @@ export function Step3Profile({ form, isCreatingUser, creationError, onGoBack }: 
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <IndianRupee className="h-4 w-4 text-slate-400" />
+                <IndianRupee className="h-4 w-4 text-slate-500" />
                 <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
                   Salary breakdown
                 </h3>

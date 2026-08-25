@@ -52,14 +52,14 @@ export default function PayGroupCard({
                 e.stopPropagation();
                 onSettingsClick();
               }}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-600 hover:bg-slate-100 transition-colors"
               title="Settings"
               aria-label={`Settings for ${payGroup.name}`}
             >
               <Settings className="h-4 w-4" />
             </button>
           )}
-          <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
+          <ChevronRight className="h-5 w-5 text-slate-500 group-hover:text-emerald-500 transition-colors" />
         </div>
       </div>
 
@@ -85,11 +85,11 @@ export default function PayGroupCard({
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
         <div>
-          <p className="text-xs text-slate-400 mb-1">Total Net Pay</p>
+          <p className="text-xs text-slate-500 mb-1">Total Net Pay</p>
           <p className="font-semibold text-slate-900">{formatCurrency(payGroup.total_net_pay)}</p>
         </div>
         <div>
-          <p className="text-xs text-slate-400 mb-1">Paid</p>
+          <p className="text-xs text-slate-500 mb-1">Paid</p>
           <p className="font-semibold text-emerald-600">
             {payGroup.paid_count} {payGroup.paid_count === 1 ? 'employee' : 'employees'}
           </p>

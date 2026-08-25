@@ -20,6 +20,32 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    /*
+     * Channel authorization, and the two things the stock registration gets
+     * wrong for this application.
+     *
+     * WRONG GUARD. Broadcast::routes() defaults to the 'web' guard. There is
+     * no Sanctum here and config/auth.php defines only a session guard that no
+     * API caller ever populates — the API authenticates through the custom
+     * AuthenticateApiToken middleware, which resolves a bearer token against
+     * personal_access_tokens and additionally refuses deactivated accounts,
+     * ended break-glass sessions and lapsed subscriptions. Authorizing a
+     * socket must apply all of that, not a session that does not exist.
+     *
+     * WRONG PATH. Caddy proxies only /api/* to the backend; everything else is
+     * the React app's nginx. The default /broadcasting/auth would never reach
+     * PHP in production — it would 404 against a static file server, and the
+     * only symptom would be that private channels silently fail to subscribe.
+     *
+     * The 'api' prefix and the same middleware the rest of the authenticated
+     * API carries fix both. mfa.enrolled is included deliberately: somebody
+     * who cannot call a single API endpoint should not be handed a live
+     * notification stream either.
+     */
+    ->withBroadcasting(
+        __DIR__.'/../routes/channels.php',
+        attributes: ['prefix' => 'api', 'middleware' => ['api.token', 'mfa.enrolled']],
+    )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'api.token' => \App\Http\Middleware\AuthenticateApiToken::class,

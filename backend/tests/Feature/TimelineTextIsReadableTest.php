@@ -6,6 +6,7 @@ use App\Models\Activity;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -79,6 +80,10 @@ class TimelineTextIsReadableTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id the same way BelongsToOrganization would
+        // from a real authenticated request.
+        Auth::setUser($user);
 
         Activity::create([
             'user_id' => $user->id,

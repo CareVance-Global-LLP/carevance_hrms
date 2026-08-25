@@ -160,7 +160,7 @@ export default function SetupStatutory() {
             {validationErrors.tan ? (
               <p className="text-xs text-rose-600 mt-1">{validationErrors.tan}</p>
             ) : (
-              <p className="text-xs text-slate-400 mt-1">Required for TDS filings (Form 24Q, 26Q)</p>
+              <p className="text-xs text-slate-500 mt-1">Required for TDS filings (Form 24Q, 26Q)</p>
             )}
           </div>
           <div>
@@ -183,7 +183,7 @@ export default function SetupStatutory() {
             {validationErrors.pan ? (
               <p className="text-xs text-rose-600 mt-1">{validationErrors.pan}</p>
             ) : (
-              <p className="text-xs text-slate-400 mt-1">Used on payslips and filings</p>
+              <p className="text-xs text-slate-500 mt-1">Used on payslips and filings</p>
             )}
           </div>
           <div>
@@ -196,7 +196,7 @@ export default function SetupStatutory() {
               onChange={(e) => setEstablishmentCode(e.target.value.toUpperCase())}
               placeholder="e.g. ABCDE1234567000"
             />
-            <p className="text-xs text-slate-400 mt-1">Provided by EPFO</p>
+            <p className="text-xs text-slate-500 mt-1">Provided by EPFO</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -219,7 +219,7 @@ export default function SetupStatutory() {
             {validationErrors.esi ? (
               <p className="text-xs text-rose-600 mt-1">{validationErrors.esi}</p>
             ) : (
-              <p className="text-xs text-slate-400 mt-1">17-digit code from ESIC</p>
+              <p className="text-xs text-slate-500 mt-1">17-digit code from ESIC</p>
             )}
           </div>
           <div>
@@ -232,7 +232,7 @@ export default function SetupStatutory() {
               onChange={(e) => setPtRegNumber(e.target.value)}
               placeholder="e.g. PT/MH/12345"
             />
-            <p className="text-xs text-slate-400 mt-1">Issued by your state\'s commercial tax dept</p>
+            <p className="text-xs text-slate-500 mt-1">Issued by your state\'s commercial tax dept</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -244,7 +244,7 @@ export default function SetupStatutory() {
               onChange={(e) => setLwfRegNumber(e.target.value)}
               placeholder="e.g. LWF/MH/12345"
             />
-            <p className="text-xs text-slate-400 mt-1">Issued by state labour welfare board</p>
+            <p className="text-xs text-slate-500 mt-1">Issued by state labour welfare board</p>
           </div>
         </div>
       </SurfaceCard>

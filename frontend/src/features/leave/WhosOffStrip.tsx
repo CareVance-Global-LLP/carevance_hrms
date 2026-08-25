@@ -64,7 +64,7 @@ export default function WhosOffStrip({ requests, holidays, colorOf, days = 14 }:
             >
               <p
                 className={`mb-1.5 text-center font-mono text-[9px] ${
-                  cell.today ? 'font-bold text-blue-700' : 'text-slate-400'
+                  cell.today ? 'font-bold text-blue-700' : 'text-slate-500'
                 }`}
               >
                 {cell.label}
@@ -98,7 +98,7 @@ export default function WhosOffStrip({ requests, holidays, colorOf, days = 14 }:
 
               {cell.off.length > MAX_CHIPS_PER_DAY ? (
                 <p
-                  className="text-center font-mono text-[9px] font-bold text-slate-400"
+                  className="text-center font-mono text-[9px] font-bold text-slate-500"
                   title={cell.off
                     .slice(MAX_CHIPS_PER_DAY)
                     .map((item) => String(item.user?.name || 'Unknown'))
@@ -112,7 +112,7 @@ export default function WhosOffStrip({ requests, holidays, colorOf, days = 14 }:
         </div>
 
         {!anyoneOff ? (
-          <p className="border-t border-slate-100 px-4 py-2 text-center text-[11px] text-slate-400">
+          <p className="border-t border-slate-100 px-4 py-2 text-center text-[11px] text-slate-500">
             Nobody is off in the next two weeks.
           </p>
         ) : null}

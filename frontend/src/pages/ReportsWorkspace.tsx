@@ -75,7 +75,14 @@ const formatPreviewList = (items: string[] | null | undefined, fallback: string)
   return items.length <= 3 ? items.join(', ') : `${items.slice(0, 3).join(', ')} +${items.length - 3}`;
 };
 
-const formatTimelineToolLabel = (row: any): string => row?.window_title || row?.name || row?.tool_type || row?.software_name || 'Unknown';
+/*
+ * Precedence shared with TimelineSwimlanes, whose comment already claimed the
+ * two agreed - they did not. The event log left normalized_label out entirely,
+ * so a row the swimlane labelled from the backend's canonical field fell
+ * through to tool_type in the table beside it. Same row, two names, one screen.
+ */
+const formatTimelineToolLabel = (row: any): string =>
+  row?.window_title || row?.name || row?.normalized_label || row?.software_name || row?.tool_type || 'Unknown';
 
 const timelineProductivityTone = (classification?: string): string => {
   switch (classification) {

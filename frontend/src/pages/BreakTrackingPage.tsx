@@ -233,7 +233,7 @@ export default function BreakTrackingPage() {
                 <p className="text-sm font-medium text-slate-700">Choose a break type</p>
                 <button
                   onClick={() => { setShowTypePicker(false); setSelectedTypeId(null); }}
-                  className="text-slate-400 hover:text-slate-600"
+                  className="text-slate-500 hover:text-slate-600"
                   aria-label="Cancel"
                 >
                   <X className="h-4 w-4" />
@@ -241,7 +241,7 @@ export default function BreakTrackingPage() {
               </div>
 
               {breakTypes.length === 0 ? (
-                <p className="py-4 text-center text-sm text-slate-400">
+                <p className="py-4 text-center text-sm text-slate-500">
                   No break types configured. Ask an admin to add one in Settings.
                 </p>
               ) : (
@@ -273,15 +273,15 @@ export default function BreakTrackingPage() {
         <SurfaceCard className="p-6">
           <h3 className="font-semibold text-slate-950 mb-4">Today's Breaks</h3>
           {isLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
           ) : breaks.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-8">No breaks recorded today.</p>
+            <p className="text-sm text-slate-500 text-center py-8">No breaks recorded today.</p>
           ) : (
             <div className="space-y-2">
               {breaks.map((b: BreakTime) => (
                 <div key={b.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50">
                   <div className="flex items-center gap-3 min-w-0">
-                    <Coffee className="h-4 w-4 shrink-0 text-slate-400" />
+                    <Coffee className="h-4 w-4 shrink-0 text-slate-500" />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm text-slate-700">
@@ -294,7 +294,7 @@ export default function BreakTrackingPage() {
                             <PaidBadge isPaid={b.break_type.is_paid} />
                           </>
                         ) : (
-                          b.reason && <span className="text-xs text-slate-400">· {b.reason}</span>
+                          b.reason && <span className="text-xs text-slate-500">· {b.reason}</span>
                         )}
                       </div>
                     </div>
@@ -319,15 +319,15 @@ export default function BreakTrackingPage() {
             <TextInput type="date" value={historyDate} onChange={(e) => setHistoryDate(e.target.value)} className="w-40" />
           </div>
           {!historyData ? (
-            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-500" /></div>
           ) : historyData.breaks.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-8">No breaks on this date.</p>
+            <p className="text-sm text-slate-500 text-center py-8">No breaks on this date.</p>
           ) : (
             <div className="space-y-2">
               {historyData.breaks.map((b: any) => (
                 <div key={b.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50">
                   <div className="flex items-center gap-3 min-w-0">
-                    <Coffee className="h-4 w-4 shrink-0 text-slate-400" />
+                    <Coffee className="h-4 w-4 shrink-0 text-slate-500" />
                     <span className="text-sm text-slate-700">
                       {new Date(b.start_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       {b.end_at ? ` - ${new Date(b.end_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}

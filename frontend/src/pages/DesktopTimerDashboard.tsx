@@ -2430,7 +2430,7 @@ export default function DesktopTimerDashboard() {
                           Break
                         </p>
                         <p className="mt-1 text-sm text-slate-500">Auto-logged break</p>
-                        {b.reason ? <p className="mt-1 text-xs text-slate-400">{b.reason}</p> : null}
+                        {b.reason ? <p className="mt-1 text-xs text-slate-500">{b.reason}</p> : null}
                       </td>
                       <td className="px-4 py-4 text-slate-700">
                         {b.start_at

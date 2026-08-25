@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Attendance\AttendanceService;
 use App\Services\Attendance\UserTimezoneResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 /**
@@ -58,7 +59,7 @@ class PerUserTimezoneTest extends TestCase
 
     private function makeUser(Organization $organization, string $email, string $role = 'employee', array $settings = []): User
     {
-        return User::create([
+        $user = User::create([
             'name' => 'User '.$email,
             'email' => $email,
             'password' => 'password123',
@@ -66,6 +67,15 @@ class PerUserTimezoneTest extends TestCase
             'organization_id' => $organization->id,
             'settings' => $settings,
         ]);
+
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call, the same way BelongsToOrganization would from a real
+        // authenticated request. Whichever user was created last stays the
+        // ambient actor, which is correct as long as later fixtures in the
+        // same test belong to this same organization.
+        Auth::setUser($user);
+
+        return $user;
     }
 
     public function test_resolver_prefers_employee_work_info_timezone(): void

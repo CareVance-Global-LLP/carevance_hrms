@@ -234,13 +234,30 @@ deduplication by notification id, not by timing:
 `usePushNotifications.tsx` already owns `setNotificationHandler`, which
 suppresses the banner for any `notification_id` the socket has already rendered.
 
-This requires `notification_id` to be present in the Expo push `data` payload.
-It is not today — `AppNotificationService` passes the resolved meta as push data
-and the rows are inserted via `AppNotification::insert()`, which returns no ids.
-**This is a real change, not a detail:** the insert path must change to capture
-per-recipient ids so the push and the broadcast can agree on one. Recorded
-explicitly because it is the one place this sub-project touches an existing
-write path in a way that could regress notification delivery.
+**AS BUILT — the dedupe key is `broadcast_id`, not `notification_id`.**
+
+This section originally called for per-recipient `notification_id` in the Expo
+push payload, which would have required changing `AppNotification::insert()` to
+capture generated ids. Implementation found a better key already in the schema.
+
+The row id differs per recipient; the content does not. Putting a
+`user_id => notification_id` map in the broadcast payload would hand every
+recipient the other recipients' ids over their own private channel — a small
+leak with no upside in an HR product. It would also make the payload
+recipient-specific, forcing one publish per person instead of one publish per
+100 channels.
+
+`broadcast_id` is identical across every recipient of a single publish, so it
+solves both: one batched publish, no cross-recipient identifiers, and a stable
+key the Expo push and the socket event can both carry. `sendToUsers()` now
+mints one whenever the caller supplies none — previously only
+`/notifications/publish` set it, leaving chat and every service-originated
+notification with null.
+
+The event therefore carries `{ broadcast_id, type }` and nothing else. It is a
+signal that something arrived; the client fetches the rows through the API it
+already uses, which keeps one rendering path rather than two that must be kept
+in step, and means mark-read works because real ids are present.
 
 ### Mobile has no chat, and this has two consequences
 

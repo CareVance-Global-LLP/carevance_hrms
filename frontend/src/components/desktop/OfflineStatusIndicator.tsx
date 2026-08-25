@@ -103,7 +103,7 @@ export function OfflineStatusIndicator() {
       )}
 
       {status === 'online' && (
-        <span className="text-slate-400" title={lastSyncAt ? new Date(lastSyncAt).toLocaleString() : 'No offline queue'}>
+        <span className="text-slate-500" title={lastSyncAt ? new Date(lastSyncAt).toLocaleString() : 'No offline queue'}>
           Last sync: {lastSyncLabel}
         </span>
       )}

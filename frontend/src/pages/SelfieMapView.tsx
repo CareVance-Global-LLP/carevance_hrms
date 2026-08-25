@@ -240,8 +240,8 @@ export default function SelfieMapView() {
       return (
         <li key={`missing-${row.userId}`} className="flex items-center gap-3 border-b border-slate-100 py-2.5 last:border-b-0">
           <span className="h-9 w-9 flex-none rounded-xl border-2 border-dashed border-slate-300 bg-slate-50" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-sm text-slate-400">{row.userName} — no selfie yet</span>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-400">—</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-slate-500">{row.userName} — no selfie yet</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-500">—</span>
         </li>
       );
     }
@@ -266,7 +266,7 @@ export default function SelfieMapView() {
           />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-slate-800">{row.userName}</span>
-            <span className="block text-[11px] text-slate-400">
+            <span className="block text-[11px] text-slate-500">
               {punchTimeLabel(selfie)}{!isSingleDay ? ` · ${selfie.attendance_date}` : ''}
             </span>
           </span>
@@ -327,7 +327,7 @@ export default function SelfieMapView() {
           >
             Export CSV
           </button>
-          <span className="ml-auto text-xs text-slate-400">
+          <span className="ml-auto text-xs text-slate-500">
             {selfies.length} selfie{selfies.length !== 1 ? 's' : ''}
             {noGpsCount > 0 ? ` · ${noGpsCount} without GPS` : ''}
           </span>
@@ -337,7 +337,7 @@ export default function SelfieMapView() {
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(320px,0.9fr)_1.1fr]">
         <div className="space-y-4">
           {loading ? (
-            <SurfaceCard><p className="p-6 text-sm text-slate-400">Loading selfies…</p></SurfaceCard>
+            <SurfaceCard><p className="p-6 text-sm text-slate-500">Loading selfies…</p></SurfaceCard>
           ) : rosterDays.length === 0 ? (
             <SurfaceCard>
               <div className="p-8 text-center">
@@ -366,7 +366,7 @@ export default function SelfieMapView() {
 
         <SurfaceCard className="xl:sticky xl:top-4">
           <div ref={mapRef} className="z-0 h-[540px] w-full rounded-lg border border-slate-200" />
-          <p className="px-4 py-2.5 text-xs text-slate-400">
+          <p className="px-4 py-2.5 text-xs text-slate-500">
             Photo markers group same-spot punches into one badge — click a badge to see everyone who checked in there. Click a roster row to fly to its pin.
           </p>
         </SurfaceCard>

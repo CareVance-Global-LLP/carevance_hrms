@@ -3,13 +3,17 @@
 namespace App\Models;
 
 use App\Services\Monitoring\ProductivityClassifier;
+use App\Traits\BelongsToOrganization;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Log;
 
 class Activity extends Model
 {
+    use BelongsToOrganization;
+
     protected $fillable = [
+        'organization_id',
         'user_id',
         'time_entry_id',
         'session_key',

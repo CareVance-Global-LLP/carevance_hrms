@@ -4,6 +4,7 @@ import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { samlConnectionApi } from '@/services/api';
 import type { SamlConnection } from '@/types';
 import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { FieldLabel, SelectInput, TextInput, TextareaInput } from '@/components/ui/FormField';
 import { PageLoadingState } from '@/components/ui/PageState';
 import ScimTokensSection from './ScimTokensSection';
@@ -29,6 +30,11 @@ export default function SingleSignOnPane() {
   // field and announces "edit text, blank".
   const fieldId = useId();
   const [draft, setDraft] = useState<Partial<SamlConnection> | null>(null);
+  /*
+   * Not window.confirm: an unstyled OS dialog on the most destructive control
+   * in Settings, which is also the one somebody demoing is most likely to press.
+   */
+  const [removing, setRemoving] = useState<any | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
 
@@ -103,7 +109,7 @@ export default function SingleSignOnPane() {
               <div key={label}>
                 <p className="text-[11px] font-medium text-slate-600">{label}</p>
                 <div className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 break-all rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900">
+                  <code className="min-w-0 flex-1 break-all rounded border border-slate-200 bg-surface-card px-2 py-1 text-xs text-slate-900">
                     {value}
                   </code>
                   <Button variant="ghost" size="sm" onClick={() => copy(label, value)}>
@@ -131,7 +137,7 @@ export default function SingleSignOnPane() {
 
       <div className="space-y-2">
         {connections.map((connection) => (
-          <div key={connection.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div key={connection.id} className="rounded-lg border border-slate-200 bg-surface-card p-3">
             <div className="flex flex-wrap items-center gap-2">
               <KeyRound className="h-4 w-4 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-950">{connection.name || 'Identity provider'}</span>
@@ -179,11 +185,7 @@ export default function SingleSignOnPane() {
                 variant="ghost"
                 size="sm"
                 iconLeft={<Trash2 className="h-3.5 w-3.5" />}
-                onClick={() => {
-                  if (window.confirm('Remove this connection? Anyone who signs in through it will have to use a password instead.')) {
-                    remove.mutate(connection.id);
-                  }
-                }}
+                onClick={() => setRemoving(connection)}
               >
                 Remove
               </Button>
@@ -191,6 +193,24 @@ export default function SingleSignOnPane() {
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        isOpen={removing !== null}
+        title="Remove this connection?"
+        message={
+          removing
+            ? `Anyone who signs in through ${removing.name || 'this provider'} will have to use a password instead. Existing sessions keep working until they expire — this stops new sign-ins through the provider, it does not sign anybody out.`
+            : ''
+        }
+        confirmLabel="Remove connection"
+        tone="danger"
+        isLoading={remove.isPending}
+        onConfirm={() => {
+          if (removing) remove.mutate(removing.id);
+          setRemoving(null);
+        }}
+        onClose={() => setRemoving(null)}
+      />
 
       {draft ? (
         <form
@@ -306,7 +326,7 @@ export default function SingleSignOnPane() {
             ) : null}
           </div>
 
-          <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-2 text-sm text-slate-700">
+          <label className="flex items-start gap-2 rounded border border-slate-200 bg-surface-card p-2 text-sm text-slate-700">
             <input
               type="checkbox"
               className="mt-0.5"

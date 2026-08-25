@@ -201,7 +201,7 @@ export default function TaskListView({
                           type="button"
                           aria-label={`Delete ${task.title}`}
                           onClick={() => onDeleteTask(task)}
-                          className="rounded p-1 text-slate-400 opacity-0 transition hover:bg-rose-50 hover:text-rose-700 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 group-hover:opacity-100"
+                          className="rounded p-1 text-slate-500 opacity-0 transition hover:bg-rose-50 hover:text-rose-700 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 group-hover:opacity-100"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

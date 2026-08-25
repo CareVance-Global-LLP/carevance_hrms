@@ -105,7 +105,7 @@ export default function CompensationBandsPage() {
             </div>
             {dailyWageLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               </div>
             ) : dailyWageStructures.length === 0 ? (
               <div className="text-center py-12">
@@ -159,7 +159,7 @@ export default function CompensationBandsPage() {
             </div>
             {ctcBandsLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               </div>
             ) : ctcBands.length === 0 ? (
               <div className="text-center py-12">

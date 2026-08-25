@@ -46,7 +46,7 @@ const STATUS_BADGE: Record<PayrollOverrideStatus, string> = {
 };
 
 const inputClass =
-  'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
 
 function rupees(value: number): string {
   return `₹${Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -228,7 +228,7 @@ export default function OperationsTab() {
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                       {row.computed_value === null ? (
-                        <span title="known after next payroll process" className="text-slate-400">
+                        <span title="known after next payroll process" className="text-slate-500">
                           —
                         </span>
                       ) : (
@@ -237,7 +237,7 @@ export default function OperationsTab() {
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                       {row.delta === null ? (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-slate-500">—</span>
                       ) : (
                         rupees(row.delta)
                       )}

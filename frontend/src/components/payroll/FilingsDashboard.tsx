@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, CalendarClock, HelpCircle, Check } from 'lucide-react';
+import { FileText, Download, Plus, History, Loader2, ArrowLeft, AlertCircle, CheckCircle2, Upload, Send, CalendarClock, HelpCircle, Check, Paperclip, BadgeCheck } from 'lucide-react';
 import { payrollApi } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import Button from '@/components/ui/Button';
@@ -42,168 +42,228 @@ const DUE_DATE_KEYS: Record<string, string> = {
   bonus_form_d: 'bonus',
 };
 
-type FilingDisplayStatus = 'generated' | 'filed' | 'pending' | 'not_due';
+/*
+ * Where a filing has actually got to.
+ *
+ * Derived per card from the real filing row and the server's compliance
+ * calendar - never declared. The previous version was a literal on each card,
+ * so "ESI - Filed" rendered on tenants that had never filed anything, next to
+ * a Filing History table that correctly showed nothing.
+ */
+type FilingDisplayStatus =
+  | 'not_generated'
+  | 'generated'
+  | 'in_review'
+  | 'approved'
+  | 'filed'
+  | 'filed_with_receipt'
+  | 'acknowledged'
+  | 'overdue';
 
 const FILING_DISPLAY: Record<FilingDisplayStatus, { label: string; className: string }> = {
-  generated: { label: 'Generated', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
+  not_generated: { label: 'Not generated', className: 'bg-slate-100 text-slate-600 border border-slate-200' },
+  generated: { label: 'Generated · not filed', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
+  in_review: { label: 'In review', className: 'bg-blue-50 text-blue-700 border border-blue-200' },
+  approved: { label: 'Approved · ready to upload', className: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
   filed: { label: 'Filed', className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
-  pending: { label: 'Pending', className: 'bg-amber-50 text-amber-700 border border-amber-200' },
-  not_due: { label: 'Not Due', className: 'bg-slate-100 text-slate-500 border border-slate-200' },
+  filed_with_receipt: { label: 'Filed · receipt on file', className: 'bg-emerald-50 text-emerald-800 border border-emerald-300' },
+  acknowledged: { label: 'Acknowledged', className: 'bg-emerald-600 text-white border border-emerald-700' },
+  overdue: { label: 'Overdue', className: 'bg-rose-50 text-rose-700 border border-rose-300' },
 };
+
+/** The workforce filter. Blue-collar leads; the rest is one click away. */
+type RelevanceFilter = 'blue_collar' | 'all';
 
 const FILING_CARDS: Array<{
   key: string;
   label: string;
-  displayStatus: FilingDisplayStatus;
-  periodInfo: string;
+  /*
+   * No displayStatus and no periodInfo.
+   *
+   * Both used to be literals in this array: "ESI - Filed - Paid: 12 Nov" on
+   * every tenant, forever, including tenants that had never filed anything -
+   * while the real filing rows sat in `filingsList` 400 lines below, used only
+   * to decide whether to show a Download button. Status is now DERIVED from
+   * those rows and from the server's compliance calendar, so an empty tenant
+   * correctly shows nothing rather than inventing progress.
+   */
+
+  /*
+   * Which workforce the form belongs to.
+   *
+   *  blue_collar  - the returns a factory or contract-labour employer files
+   *  staff        - establishment-wide TDS, owed whatever the workforce
+   *  registration - a one-time registration or a preparation sheet, NOT a
+   *                 periodic return, and misleading beside one
+   */
+  relevance: 'blue_collar' | 'staff' | 'registration';
   needsRun?: boolean;
   needsState?: boolean;
   needsBonusPercent?: boolean;
   complianceStatus: ComplianceStatus;
   tooltip: string;
-  pattern: 'A' | 'B' | 'C';
   nextAction: string;
   deadlineRule: string;
 }> = [
   {
-    key: 'pf_ecr', label: 'PF — ECR', displayStatus: 'generated', periodInfo: 'Oct 2025 · Due: 15 Nov', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'pf_ecr', relevance: 'blue_collar', label: 'PF — ECR', needsRun: true,
+    complianceStatus: 'ready',
     nextAction: 'Download → Upload to EPFO portal → Mark Filed',
     deadlineRule: '15th of the next month',
     tooltip: 'Electronic Challan cum Return — monthly PF contribution filing with EPFO. Generated in EPFO\'s actual ECR text format (UAN, wages, PF/EPS splits, 11-column ||-delimited). Upload-ready. Due by the 15th of the next month.',
   },
   {
-    key: 'esi_challan', label: 'ESI — Challan', displayStatus: 'filed', periodInfo: 'Oct 2025 · Paid: 12 Nov', needsRun: true,
-    complianceStatus: 'reference_only', pattern: 'A',
+    key: 'esi_challan', relevance: 'blue_collar', label: 'ESI — Challan', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to ESIC portal → Mark Filed',
     deadlineRule: '15th of the next month',
     tooltip: 'An Excel (.xls) template matching the ESIC portal upload format with columns: IP Number, IP Name, No of Days, Total Monthly Wages, Reason Code, Last Working Day. Employer Code is entered separately on the portal.',
   },
   {
-    key: 'form_24q', label: 'TDS — 24Q', displayStatus: 'pending', periodInfo: 'Q2 · Due: 7 Nov', needsRun: true,
-    complianceStatus: 'reference_only', pattern: 'B',
+    key: 'form_24q', relevance: 'staff', label: 'TDS — 24Q', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload via NSDL RPU → Mark Filed',
     deadlineRule: '15 days after quarter end',
     tooltip: 'Generated in NSDL FVU format — a ^-delimited ASCII .txt file with \\r\\n line endings, containing FH/BH/CD/DD/SD record types. Ready for upload to TDS-CPC after validation.',
   },
   {
-    key: 'form_16', label: 'Form 16', displayStatus: 'not_due', periodInfo: 'FY-end only · Jun 2026', needsRun: false,
-    complianceStatus: 'needs_external_input', pattern: 'C',
+    key: 'form_16', relevance: 'staff', label: 'Form 16', needsRun: false,
+    complianceStatus: 'needs_external_input',
     nextAction: 'Generate Part B → Download TRACES Part A → Attach',
     deadlineRule: '15 June (annual)',
     tooltip: 'Form 16 Part B (Salary Statement) — generated as a real PDF from the employee\'s aggregated FY payroll. Part A (with the TRACES certificate number) must be downloaded from TRACES after quarterly TDS filing and attached separately; this system cannot mint that number.',
   },
   {
-    key: 'pt_return', label: 'PT', displayStatus: 'filed', periodInfo: 'Oct 2025 · Gujarat', needsRun: true, needsState: true,
-    complianceStatus: 'reference_only', pattern: 'A',
+    key: 'pt_return', relevance: 'blue_collar', label: 'PT', needsRun: true, needsState: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to state tax portal → Mark Filed',
     deadlineRule: 'Varies by state',
     tooltip: 'State-level Professional Tax contribution summary for manual entry / reference. The actual PT payment/return is made on the state commercial tax department portal. Due dates vary by state.',
   },
   {
-    key: 'lwf_return', label: 'LWF', displayStatus: 'not_due', periodInfo: 'Dec 2025 · Gujarat', needsRun: true, needsState: true,
-    complianceStatus: 'not_configured', pattern: 'A',
+    key: 'lwf_return', relevance: 'blue_collar', label: 'LWF', needsRun: true, needsState: true,
+    complianceStatus: 'not_configured',
     nextAction: 'Select state → Download → Upload to state portal → Mark Filed',
     deadlineRule: 'State-dependent',
     tooltip: 'Labour Welfare Fund is a state subject with no universal formula. Pick your state to generate; if your state\'s rate is not configured, you\'ll see a clear "Not configured" message instead of a wrong number. Periodicity varies (monthly / bi-annual) by state.',
   },
   {
-    key: 'bonus_form_c', label: 'Bonus — Form C', displayStatus: 'not_due', periodInfo: 'Annual · FY-end', needsRun: true, needsBonusPercent: true,
-    complianceStatus: 'not_configured', pattern: 'B',
+    key: 'bonus_form_c', relevance: 'blue_collar', label: 'Bonus — Form C', needsRun: true, needsBonusPercent: true,
+    complianceStatus: 'not_configured',
     nextAction: 'Download → Upload to portal → Mark Filed',
     deadlineRule: 'By 15 June (annual)',
     tooltip: 'Annual Return under the Payment of Bonus Act — Form C. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. Generated as a text summary of annual wages and bonus amounts.',
   },
   {
-    key: 'bonus_form_d', label: 'Bonus — Form D', displayStatus: 'not_due', periodInfo: 'Annual · FY-end', needsRun: true, needsBonusPercent: true,
-    complianceStatus: 'not_configured', pattern: 'B',
+    key: 'bonus_form_d', relevance: 'blue_collar', label: 'Bonus — Form D', needsRun: true, needsBonusPercent: true,
+    complianceStatus: 'not_configured',
     nextAction: 'Download → Maintain as employer record',
     deadlineRule: 'By 15 June (annual)',
     tooltip: 'Register of Bonus Paid/Claimable under the Payment of Bonus Act — Form D. Requires a bonus percentage (8.33%–20%) configured in Payroll Settings. A statutory record maintained by the employer.',
   },
   {
-    key: 'form_19', label: 'Form 19', displayStatus: 'not_due', periodInfo: 'On termination', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'form_19', relevance: 'blue_collar', label: 'Form 19', needsRun: true,
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'On termination',
     tooltip: 'Final Settlement statement for employees who have left the organization. Includes settlement amount, gratuity, and exit details.',
   },
   {
-    key: 'form_31', label: 'Form 31', displayStatus: 'not_due', periodInfo: 'On transfer', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'form_31', relevance: 'staff', label: 'Form 31', needsRun: true,
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'On transfer',
     tooltip: 'Transfer Application form for employees changing departments or locations. Includes transfer details and salary information.',
   },
   {
-    key: 'form_1', label: 'Form 1', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'form_1', relevance: 'registration', label: 'Form 1', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'On joining',
     tooltip: 'Employer Registration form containing organization details, PAN, TAN, and statutory registration numbers.',
   },
   {
-    key: 'form_2', label: 'Form 2', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'form_2', relevance: 'blue_collar', label: 'Form 2', needsRun: true,
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Monthly',
     tooltip: 'Employee Registration form listing all active employees with their statutory details (PAN, UAN, ESI, joining date).',
   },
   {
-    key: 'form_6', label: 'Form 6', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'form_6', relevance: 'blue_collar', label: 'Form 6', needsRun: true,
+    complianceStatus: 'ready',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Monthly',
     tooltip: 'Monthly Return summarizing employee contributions (PF, ESI, TDS) for the payroll period.',
   },
   {
-    key: 'eshram_registration', label: 'e-SHRAM', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'eshram_registration', relevance: 'registration', label: 'e-SHRAM', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to e-SHRAM portal',
     deadlineRule: 'On joining',
     tooltip: 'e-SHRAM registration details for the organization and its employees, submitted to the ESIC portal.',
   },
   {
-    key: 'uan_activation', label: 'UAN Activation', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'uan_activation', relevance: 'blue_collar', label: 'UAN Activation', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to UAN portal',
     deadlineRule: 'On joining',
     tooltip: 'UAN activation status for employees — tracks which employees have activated their Universal Account Numbers.',
   },
   {
-    key: 'se_registration', label: 'S&E Registration', displayStatus: 'not_due', periodInfo: 'Annual', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'se_registration', relevance: 'registration', label: 'S&E Registration', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Annual',
     tooltip: 'State & Employer registration details for statutory compliance reporting.',
   },
   {
-    key: 'shram_card_registration', label: 'Shram Card', displayStatus: 'not_due', periodInfo: 'On joining', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'shram_card_registration', relevance: 'registration', label: 'Shram Card', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to labour portal',
     deadlineRule: 'On joining',
     tooltip: 'Shram Card registration details for employees, submitted to the labour department portal.',
   },
   {
-    key: 'form_124', label: 'Form 124', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'form_124', relevance: 'staff', label: 'Form 124', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → File with employer records',
     deadlineRule: 'Monthly',
     tooltip: 'Form 124 — monthly statutory return with employee salary and TDS details.',
   },
   {
-    key: 'full_ecr', label: 'Full ECR', displayStatus: 'not_due', periodInfo: 'Monthly', needsRun: true,
-    complianceStatus: 'ready', pattern: 'A',
+    key: 'full_ecr', relevance: 'staff', label: 'Full ECR', needsRun: true,
+    complianceStatus: 'reference_only',
     nextAction: 'Download → Upload to EPFO portal → Mark Filed',
     deadlineRule: '15th of the next month',
     tooltip: 'Full Electronic Challan cum Return with extended employee details (UAN, bank account, designation). Generated in EPFO\'s ||-delimited text format.',
   },
 ];
 
-const PATTERN_BADGE: Record<'A' | 'B' | 'C', { label: string; className: string; borderColor: string }> = {
-  A: { label: 'Pattern A: Upload-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', borderColor: 'border-emerald-500' },
-  B: { label: 'Pattern B: Reference', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
-  C: { label: 'Pattern C: External input', className: 'bg-orange-50 text-orange-700 border-orange-200', borderColor: 'border-orange-500' },
+/*
+ * ONE classification, not two.
+ *
+ * Each card used to carry a hand-written `pattern` A/B/C *and* a
+ * `complianceStatus`, both answering "can I upload this straight to the
+ * portal?". Five of nineteen disagreed with themselves - ESI read
+ * "Pattern A: Upload-ready" beside "Reference only - manual portal entry
+ * required", on the same card, at the same time.
+ *
+ * The badge is now derived from complianceStatus, so the two cannot drift
+ * apart again. complianceStatus itself mirrors what the generator stores on
+ * the filing row; if you change one, change the other.
+ */
+const PATTERN_BADGE: Record<ComplianceStatus, { label: string; className: string; borderColor: string }> = {
+  ready: { label: 'Upload-ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200', borderColor: 'border-emerald-500' },
+  reference_only: { label: 'Reference only', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
+  needs_external_input: { label: 'Needs external input', className: 'bg-orange-50 text-orange-700 border-orange-200', borderColor: 'border-orange-500' },
+  not_configured: { label: 'Not configured', className: 'bg-slate-100 text-slate-600 border-slate-200', borderColor: 'border-slate-400' },
+  // A generator whose statutory template has not been written. It cannot be
+  // produced at all, so "upload-ready" is not a question that applies.
+  unavailable: { label: 'Not available yet', className: 'bg-slate-100 text-slate-600 border-slate-200', borderColor: 'border-slate-300' },
+  // Correct figures for an employer's own records, drawn from payroll data,
+  // but not a prescribed return.
+  source_data_only: { label: 'Source data only', className: 'bg-amber-50 text-amber-700 border-amber-200', borderColor: 'border-amber-500' },
 };
 
 type FilingGuidance = {
@@ -461,6 +521,15 @@ export default function FilingsDashboard() {
   const [activeTab, setActiveTab] = useState<'generate' | 'history' | 'form16' | 'upload-form16' | 'review'>('generate');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [markFiledFor, setMarkFiledFor] = useState<number | null>(null);
+  // Blue-collar leads. The rest is one click away, not gone.
+  const [relevanceFilter, setRelevanceFilter] = useState<RelevanceFilter>('blue_collar');
+  /*
+   * Filed ON, not filed NOW. People record a filing after the fact, and the
+   * difference between those two dates is the difference between "filed on
+   * time" and "filed late" on every report that reads this row afterwards.
+   */
+  const [filedOnInput, setFiledOnInput] = useState('');
+  const [filedReceipt, setFiledReceipt] = useState<File | null>(null);
   const markFiledInputRef = useRef<HTMLInputElement>(null);
   const [ackInput, setAckInput] = useState<string>('');
   const [useActualState, _setUseActualState] = useState(false);
@@ -498,6 +567,56 @@ export default function FilingsDashboard() {
     enabled: !!selectedRun,
   });
   const runValidation = (runValidationRaw as any)?.data ?? runValidationRaw;
+
+  /*
+   * The acknowledgement the portal hands back.
+   *
+   * A filing nobody can evidence is the thing this table exists to prevent, so
+   * attaching the challan is a first-class action rather than a note field.
+   * Kept per-card in a ref map because each card owns its own hidden input.
+   */
+  const receiptInputRef = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const receiptUploadMutation = useMutation({
+    mutationFn: ({ id, file }: { id: number; file: File }) => payrollApi.uploadFilingReceipt(id, file),
+    onSuccess: () => {
+      show({ kind: 'success', message: 'Acknowledgement attached.' });
+      queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
+      queryClient.invalidateQueries({ queryKey: ['filing-calendar'] });
+    },
+    onError: (e: any) => {
+      show({ kind: 'error', message: e?.response?.data?.message || 'Could not attach that file.' });
+    },
+  });
+
+  const receiptDownloadMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await payrollApi.downloadFilingReceipt(id);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'acknowledgement.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    },
+    onError: (e: any) => {
+      show({ kind: 'error', message: e?.response?.data?.message || 'No acknowledgement on file.' });
+    },
+  });
+
+  const acknowledgeMutation = useMutation({
+    mutationFn: ({ id }: { id: number }) => payrollApi.acknowledgeFiling(id, {}),
+    onSuccess: () => {
+      show({ kind: 'success', message: 'Filing acknowledged.' });
+      queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
+      queryClient.invalidateQueries({ queryKey: ['filing-calendar'] });
+    },
+    onError: (e: any) => {
+      show({ kind: 'error', message: e?.response?.data?.message || 'Could not acknowledge that filing.' });
+    },
+  });
 
   const downloadMutation = useMutation({
     mutationFn: async (filing: { id: number; original_filename: string; type: string }) => {
@@ -593,11 +712,20 @@ export default function FilingsDashboard() {
 
   // Mark filed (record ack number)
   const markFiledMutation = useMutation({
-    mutationFn: ({ id, ack }: { id: number; ack: string }) => payrollApi.markFilingFiled(id, ack, 'paid'),
+    mutationFn: ({ id, ack, filedOn, receipt }: { id: number; ack: string; filedOn?: string; receipt?: File | null }) =>
+      payrollApi.markFilingFiledWithReceipt(id, {
+        acknowledgment_number: ack,
+        filed_on: filedOn,
+        portal_status: 'paid',
+        receipt,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payroll-filings'] });
+      queryClient.invalidateQueries({ queryKey: ['filing-calendar'] });
       setMarkFiledFor(null);
       setAckInput('');
+      setFiledOnInput('');
+      setFiledReceipt(null);
       show({ kind: 'success', message: 'Recorded as filed.', durationMs: 4000 });
     },
     onError: (e: any) => show({ kind: 'error', message: e?.response?.data?.message || 'Failed to mark filed', durationMs: 4000 }),
@@ -631,12 +759,28 @@ export default function FilingsDashboard() {
 
   const payGroups = (payGroupSettingsData as any)?.pay_groups ?? [];
 
-  const filingStats = {
-    generated: filingsList.length,
-    filed: filingsList.filter((f: any) => f.status === 'filed' || f.status === 'acknowledged').length,
-    pending: filingsList.filter((f: any) => f.status === 'generated' || f.status === 'pending').length,
-    failed: filingsList.filter((f: any) => f.status === 'failed').length,
-  };
+  /*
+   * Counted by the server over every filing, not by us over one page.
+   *
+   * These four used to be computed from `filingsList`, which is a page of
+   * twenty - so an organisation with 141 filings read "Generated 20 · Awaiting
+   * filing 20" and would have read exactly that for ever. The fallback keeps
+   * the old page-local arithmetic only for a server that predates `counts`.
+   */
+  const serverCounts = (filingsData as any)?.counts;
+  const filingStats = serverCounts
+    ? {
+        generated: serverCounts.all ?? 0,
+        filed: (serverCounts.filed ?? 0) + (serverCounts.acknowledged ?? 0),
+        pending: serverCounts.awaiting_filing ?? 0,
+        failed: serverCounts.failed ?? 0,
+      }
+    : {
+        generated: filingsList.length,
+        filed: filingsList.filter((f: any) => f.status === 'filed' || f.status === 'acknowledged').length,
+        pending: filingsList.filter((f: any) => f.status === 'generated' || f.status === 'pending').length,
+        failed: filingsList.filter((f: any) => f.status === 'failed').length,
+      };
 
   // When a run is selected, find its pay group and populate state defaults from filing_details
   const selectedRunData = runsList.find((r: any) => r.id === selectedRun);
@@ -668,7 +812,119 @@ export default function FilingsDashboard() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const filingCards = mergeCatalogueAvailability(FILING_CARDS, filingCatalogue ?? {});
+  /*
+   * The compliance calendar: what is due, when, and under which provision.
+   * Keyed off the selected run's period so the deadlines match the filings.
+   */
+  const { data: filingCalendar } = useQuery({
+    queryKey: ['filing-calendar', selectedRunData?.month_year ?? null],
+    queryFn: () => payrollApi.getFilingCalendar(selectedRunData?.month_year),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const calendarByType = useMemo(() => {
+    const map: Record<string, any> = {};
+    (filingCalendar?.data ?? []).forEach((row) => { map[row.type] = row; });
+    return map;
+  }, [filingCalendar]);
+
+  /*
+   * The latest real filing row per type, for the period on screen.
+   *
+   * `filingsList` was already fetched and used only to decide whether to render
+   * a Download button, while the card's status came from a literal. This is the
+   * row that now drives everything the card says.
+   */
+  const filingByType = useMemo(() => {
+    const map: Record<string, any> = {};
+
+    (filingsList as any[]).forEach((f) => {
+      const current = map[f.type];
+      if (!current || new Date(f.generated_at ?? 0) > new Date(current.generated_at ?? 0)) {
+        map[f.type] = f;
+      }
+    });
+
+    return map;
+  }, [filingsList]);
+
+  /**
+   * What the card says, derived rather than declared.
+   *
+   * Order matters: a filed return can never be overdue, however long ago the
+   * deadline passed, so `filed_at` is checked before the calendar's urgency.
+   * A screen that keeps reddening a filed return is one people stop reading.
+   */
+  const deriveState = (type: string): FilingDisplayStatus => {
+    const row = filingByType[type];
+    const cal = calendarByType[type];
+
+    if (!row) {
+      return cal?.urgency === 'overdue' ? 'overdue' : 'not_generated';
+    }
+
+    if (row.status === 'acknowledged') return 'acknowledged';
+    if (row.status === 'filed') return row.receipt_path ? 'filed_with_receipt' : 'filed';
+    if (row.status === 'approved') return 'approved';
+    if (row.status === 'submitted') return 'in_review';
+
+    return cal?.urgency === 'overdue' ? 'overdue' : 'generated';
+  };
+
+  /**
+   * The line under the chip. Says what happened and when, or what is due.
+   *
+   * Never a hardcoded period: this used to read "Oct 2025 · Paid: 12 Nov" on
+   * every tenant regardless of what had actually been filed.
+   */
+  const deriveSubline = (type: string): string => {
+    const row = filingByType[type];
+    const cal = calendarByType[type];
+    const fmt = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '');
+
+    if (row?.status === 'acknowledged') return `Acknowledged ${fmt(row.acknowledged_at)}`;
+
+    if (row?.filed_at) {
+      const ack = row.acknowledgment_number ? ` · ACK ${row.acknowledgment_number}` : '';
+      return `Filed ${fmt(row.filed_at)}${ack}`;
+    }
+
+    if (row) {
+      const by = row.generated_by?.name ? ` by ${row.generated_by.name}` : '';
+      return `Generated ${fmt(row.generated_at)}${by}`;
+    }
+
+    if (cal?.urgency === 'overdue' && cal.days_remaining != null) {
+      return `Was due ${fmt(cal.due_date)} — ${Math.abs(cal.days_remaining)} days late`;
+    }
+
+    if (cal?.due_date) {
+      return cal.days_remaining != null && cal.days_remaining >= 0
+        ? `Due ${fmt(cal.due_date)} — ${cal.days_remaining} days left`
+        : `Due ${fmt(cal.due_date)}`;
+    }
+
+    return 'No deadline recorded';
+  };
+
+  const catalogueMerged = mergeCatalogueAvailability(FILING_CARDS, filingCatalogue ?? {});
+
+  /*
+   * Blue-collar by default.
+   *
+   * Nineteen cards, most of which a factory payroll never files, buried the six
+   * that it files every month. `registration` items are hidden hardest: e-SHRAM
+   * explicitly EXCLUDES EPFO members, so showing it beside a PF ECR contradicts
+   * itself on the same screen.
+   */
+  const filingCards = useMemo(
+    () => (relevanceFilter === 'all'
+      ? catalogueMerged
+      : catalogueMerged.filter((c: any) => c.relevance === 'blue_collar')),
+    [catalogueMerged, relevanceFilter]
+  );
+
+  const hiddenCardCount = catalogueMerged.length - filingCards.length;
 
   const calendarItems = FILING_CARDS
     .map((ft) => {
@@ -686,14 +942,14 @@ export default function FilingsDashboard() {
 
   const getDeadlineColor = (periodInfo: string): string => {
     const match = periodInfo.match(/Due:\s*(.+)/);
-    if (!match) return 'text-slate-400';
+    if (!match) return 'text-slate-500';
     const dateStr = match[1].trim();
     const currentYear = new Date().getFullYear();
     let deadline = new Date(dateStr + ' ' + currentYear);
-    if (isNaN(deadline.getTime())) return 'text-slate-400';
+    if (isNaN(deadline.getTime())) return 'text-slate-500';
     if (deadline < today) {
       deadline = new Date(dateStr + ' ' + (currentYear + 1));
-      if (isNaN(deadline.getTime())) return 'text-slate-400';
+      if (isNaN(deadline.getTime())) return 'text-slate-500';
     }
     const diffDays = Math.ceil((deadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays < 0) return 'text-rose-600';
@@ -885,7 +1141,10 @@ export default function FilingsDashboard() {
                   <option value="">Choose a payroll run...</option>
                   {runsList.map((run: any) => (
                     <option key={run.id} value={run.id}>
-                      {run.month_year} — {run.status} ({run.total_employees || run.employee_count || 0} employees)
+                      {run.month_year} — {run.status} ({(() => {
+                        const n = run.total_employees || run.employee_count || 0;
+                        return `${n} ${n === 1 ? 'employee' : 'employees'}`;
+                      })()})
                     </option>
                   ))}
                 </SelectInput>
@@ -911,20 +1170,73 @@ export default function FilingsDashboard() {
 
           {selectedRun && (
             <>
+            {/*
+              Which workforce, and what is overdue.
+              
+              Nineteen cards buried the six a factory payroll files every month,
+              so blue-collar leads and the rest is one click away. Registration
+              sheets sit in "All forms" rather than beside the returns: e-SHRAM
+              explicitly EXCLUDES EPFO members, so showing it next to a PF ECR
+              contradicts itself on the same screen.
+            */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="Which forms to show">
+                {([
+                  { id: 'blue_collar' as const, label: 'Blue-collar payroll' },
+                  { id: 'all' as const, label: 'All forms' },
+                ]).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setRelevanceFilter(option.id)}
+                    aria-pressed={relevanceFilter === option.id}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                      relevanceFilter === option.id
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {option.label}
+                    {option.id === 'blue_collar' && relevanceFilter === 'all' && hiddenCardCount > 0 ? null : null}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3 text-xs">
+                {relevanceFilter === 'blue_collar' && hiddenCardCount > 0 && (
+                  <span className="text-slate-500">
+                    {hiddenCardCount} staff and registration {hiddenCardCount === 1 ? 'form' : 'forms'} hidden
+                  </span>
+                )}
+                {(filingCalendar?.overdue_count ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-1 font-medium text-rose-700">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {filingCalendar?.overdue_count} overdue
+                  </span>
+                )}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filingCards.map((card) => {
                 // "Not Due" is the wrong word for a form whose template was
                 // never written — it implies it will become due. Say what is
                 // actually true instead.
+                // Derived from the real filing row and the server's calendar.
+                const state = deriveState(card.key);
+                const subline = deriveSubline(card.key);
+                const cal = calendarByType[card.key];
+                const existingFiling = filingByType[card.key];
+
                 const badge = card.available
-                  ? FILING_DISPLAY[card.displayStatus]
+                  ? FILING_DISPLAY[state]
                   : COMPLIANCE_BADGE.unavailable;
-                const patternBadge = PATTERN_BADGE[card.pattern];
+                const patternBadge = PATTERN_BADGE[card.complianceStatus] ?? PATTERN_BADGE.reference_only;
                 const runReady = runValidation?.ready === true || (selectedRunData?.status && ['locked', 'approved', 'processed'].includes(selectedRunData.status));
                 const runBlocked = !!selectedRun && !runReady;
-                const disabled = generateSingleMutation.isPending || !!runBlocked || card.displayStatus === 'not_due';
-                const canDownload = card.displayStatus === 'generated' || card.displayStatus === 'filed';
-                const existingFiling = filingsList.find((f: any) => f.type === card.key && (f.status === 'generated' || f.status === 'filed' || f.status === 'approved'));
+                const disabled = generateSingleMutation.isPending || !!runBlocked;
+                const canDownload = !!existingFiling?.file_path;
+                const isFiled = state === 'filed' || state === 'filed_with_receipt' || state === 'acknowledged';
                 const prereqs = getPrerequisites(card);
                 const allPrereqsMet = prereqs.every(p => p.met);
                 // An unavailable filing can never be generated, whatever the
@@ -947,15 +1259,43 @@ export default function FilingsDashboard() {
                         </span>
                       </div>
                     </div>
-                    <p className={`text-xs mb-1 flex items-center gap-1 ${getDeadlineColor(card.periodInfo)}`}>
-                      <CalendarClock className="h-3 w-3" />
-                      {card.periodInfo}
+                    {/* What happened and when, or what is due. Never a literal. */}
+                    <p className={`text-xs mb-1 flex items-center gap-1 ${
+                      state === 'overdue' ? 'text-rose-600'
+                        : cal?.urgency === 'critical' ? 'text-amber-700'
+                        : 'text-slate-500'
+                    }`}>
+                      <CalendarClock className="h-3 w-3 shrink-0" />
+                      <span title={cal?.authority ?? undefined}>{subline}</span>
                     </p>
-                    {card.available ? (
-                      <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
-                        <HelpCircle className="h-3 w-3" />
-                        {card.nextAction}
+
+                    {/*
+                      The server's own honesty rating, which this screen has
+                      always declared and never rendered. A PF ECR the backend
+                      already knows EPFO will reject must not read "upload-ready".
+                    */}
+                    {card.available && card.complianceStatus !== 'ready' && (
+                      <p className="text-[11px] mb-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        {COMPLIANCE_BADGE[card.complianceStatus]?.label ?? 'Reference only'}
                       </p>
+                    )}
+                    {card.available ? (
+                      /*
+                       * Only while there is still something to do.
+                       *
+                       * This is a fixed "Download → Upload to the portal → Mark
+                       * Filed" line, so an ACKNOWLEDGED return went on
+                       * instructing somebody to file it. A card that tells you
+                       * to do what you have already done is worse than a card
+                       * that says nothing: it makes the reader doubt the status
+                       * chip sitting directly above it.
+                       */
+                      isFiled ? null : (
+                        <p className="text-xs text-slate-500 mb-2 flex items-center gap-1">
+                          <HelpCircle className="h-3 w-3" />
+                          {card.nextAction}
+                        </p>
+                      )
                     ) : (
                       <p className="text-xs text-slate-600 mb-2 flex items-start gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
                         <AlertCircle className="h-3 w-3 mt-0.5 shrink-0" />
@@ -971,29 +1311,82 @@ export default function FilingsDashboard() {
                           onClick={() => downloadMutation.mutate(existingFiling)}
                           disabled={downloadMutation.isPending}
                         >
-                          {card.displayStatus === 'filed' ? 'Challan' : 'Download'}
+                          Download
                         </Button>
                       )}
-                      {card.displayStatus === 'pending' && (
+
+                      {/*
+                        Every available card can be generated.
+                        
+                        Generate used to render only when the card's hardcoded
+                        status happened to read 'pending' - one of nineteen - so
+                        fifteen cards showed a permanently disabled button for
+                        generators that worked perfectly well. Availability is
+                        the real constraint, and the catalogue already answers it.
+                      */}
+                      {card.available && (
                         <Button
-                          variant="primary"
+                          variant={existingFiling ? 'secondary' : 'primary'}
                           size="sm"
                           onClick={() => generateSingleMutation.mutate({ type: card.key, runId: selectedRun })}
                           disabled={generateDisabled}
                           iconLeft={generateSingleMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : undefined}
                         >
-                          Generate →
+                          {existingFiling ? 'Regenerate' : 'Generate →'}
                         </Button>
                       )}
-                      {card.displayStatus === 'not_due' && (
+
+                      {/* The acknowledgement half: attach it, or read it back. */}
+                      {isFiled && !existingFiling?.receipt_path && (
                         <Button
-                          variant="secondary"
+                          variant="ghost"
                           size="sm"
-                          disabled
+                          className="text-blue-600"
+                          iconLeft={<Paperclip className="h-3.5 w-3.5" />}
+                          onClick={() => receiptInputRef.current?.[card.key]?.click()}
                         >
-                          Generate
+                          Attach receipt
                         </Button>
                       )}
+                      {existingFiling?.receipt_path && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-emerald-700"
+                          iconLeft={<Paperclip className="h-3.5 w-3.5" />}
+                          onClick={() => receiptDownloadMutation.mutate(existingFiling.id)}
+                          disabled={receiptDownloadMutation.isPending}
+                        >
+                          Receipt
+                        </Button>
+                      )}
+                      {existingFiling?.status === 'filed' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-emerald-700"
+                          iconLeft={<BadgeCheck className="h-3.5 w-3.5" />}
+                          onClick={() => acknowledgeMutation.mutate({ id: existingFiling.id })}
+                          disabled={acknowledgeMutation.isPending}
+                          title="The authority has confirmed receipt"
+                        >
+                          Acknowledge
+                        </Button>
+                      )}
+                      <input
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg"
+                        className="hidden"
+                        ref={(el) => { if (receiptInputRef.current) receiptInputRef.current[card.key] = el; }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file && existingFiling) {
+                            receiptUploadMutation.mutate({ id: existingFiling.id, file });
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+
                       {canDownload && existingFiling && existingFiling.status !== 'filed' && existingFiling.status !== 'acknowledged' && (
                         <Button
                           variant="ghost"
@@ -1007,7 +1400,7 @@ export default function FilingsDashboard() {
                           Upload to portal
                         </Button>
                       )}
-                      {canDownload && existingFiling && existingFiling.status === 'generated' && (
+                      {existingFiling && !isFiled && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1320,21 +1713,60 @@ export default function FilingsDashboard() {
             <p className="text-sm text-slate-500 mb-4">
               After you (the human) log in and pay on the government portal, paste the acknowledgement / challan number below. It is recorded in the filing history.
             </p>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Acknowledgement / Challan Number</label>
+            <label htmlFor="filing-ack-number" className="block text-sm font-medium text-slate-700 mb-1">
+              Acknowledgement / challan number
+            </label>
             <input
+              id="filing-ack-number"
               ref={markFiledInputRef}
               value={ackInput}
               onChange={(e) => setAckInput(e.target.value)}
               placeholder="e.g. ACK1234567890"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+
+            <label htmlFor="filing-filed-on" className="mt-4 block text-sm font-medium text-slate-700 mb-1">
+              Filed on
+            </label>
+            <input
+              id="filing-filed-on"
+              type="date"
+              value={filedOnInput}
+              onChange={(e) => setFiledOnInput(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Leave blank for today. Back-date it if you are recording a filing made earlier — that is
+              what decides whether it counts as on time.
+            </p>
+
+            <label htmlFor="filing-receipt" className="mt-4 block text-sm font-medium text-slate-700 mb-1">
+              Portal receipt <span className="font-normal text-slate-500">(optional, but attach it now if you have it)</span>
+            </label>
+            <input
+              id="filing-receipt"
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              onChange={(e) => setFiledReceipt(e.target.files?.[0] ?? null)}
+              className="w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              The stamped challan or acknowledgement PDF. Without it, "we filed this" is an assertion
+              nobody can check when an inspector asks six months from now.
+            </p>
             <div className="flex justify-end gap-2 mt-5">
               <Button variant="secondary" size="sm" onClick={() => setMarkFiledFor(null)}>Cancel</Button>
               <Button
                 variant="primary"
                 size="sm"
                 disabled={!ackInput.trim() || markFiledMutation.isPending}
-                onClick={() => markFiledMutation.mutate({ id: markFiledFor, ack: ackInput.trim() })}
+                onClick={() => markFiledMutation.mutate({
+                  id: markFiledFor,
+                  ack: ackInput.trim(),
+                  filedOn: filedOnInput || undefined,
+                  receipt: filedReceipt,
+                })}
               >
                 {markFiledMutation.isPending ? 'Saving...' : 'Save'}
               </Button>

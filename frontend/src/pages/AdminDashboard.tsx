@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import PayrollDashboardStrip from '@/features/payroll/PayrollDashboardStrip';
 import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
@@ -694,7 +695,7 @@ const AttendanceTrendChart = ({
               <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: item.color }} />
               <span className="text-slate-600">{item.label}</span>
               <span className="font-semibold text-slate-900">{item.value}</span>
-              <span className="text-slate-400">({pct}%)</span>
+              <span className="text-slate-500">({pct}%)</span>
             </div>
           );
         })}
@@ -1886,7 +1887,10 @@ export default function AdminDashboard() {
     { id: 'dashboard-scope', label: 'Dashboard Scope', description: 'Switch between overall, department, and specific employee views', category: 'Section', sectionId: 'dashboard-scope', keywords: ['scope', 'overall', 'specific employee', 'department'] },
     { id: 'kpis', label: 'Dashboard Statistics', description: 'Total employees, present, leave, late, hires, and resignations', category: 'Section', sectionId: 'dashboard-kpis', keywords: ['statistics', 'stats', 'cards', 'employees', 'present', 'late', 'leave'] },
     { id: 'attendance-overview', label: 'Attendance Overview', description: 'Present, late, leave, absent chart for the selected scope', category: 'Section', sectionId: 'attendance-overview', keywords: ['attendance', 'present', 'late', 'absent', 'overview', 'chart'] },
-    { id: 'department-distribution', label: 'Department Distribution', description: 'People count by department', category: 'Section', sectionId: 'department-distribution', keywords: ['department', 'distribution', 'team'] },
+    // The section this pointed at was replaced by the work-vs-idle chart and
+    // renamed with it; the entry was not, so the palette offered a jump to an
+    // element id that no longer existed and simply did nothing when chosen.
+    { id: 'department-work-idle-chart', label: 'Department Work vs Idle Time', description: 'Worked against idle time by department', category: 'Section', sectionId: 'department-work-idle-chart', keywords: ['department', 'distribution', 'team', 'idle', 'work'] },
     { id: 'scope-summary', label: 'Scope Summary', description: 'Overall or selected employee detail area', category: 'Section', sectionId: 'scope-summary', keywords: ['scope', 'employee detail', 'summary', 'screenshots', 'productivity'] },
     { id: 'work-status', label: 'Current Work Status', description: 'Working, not working, and leave status table', category: 'Section', sectionId: 'current-work-status', keywords: ['working', 'status', 'not working', 'current'] },
     { id: 'time-tracker', label: 'Time Tracker', description: 'Current timer, project, task, and selected range totals', category: 'Section', sectionId: 'time-tracker-card', keywords: ['timer', 'time tracker', 'task', 'project'] },
@@ -1955,11 +1959,72 @@ export default function AdminDashboard() {
           <p className="mt-3 text-sm font-medium text-slate-900">{greetUser(user?.name)}!</p>
           <p className="mt-1 text-xs text-slate-500">Here&apos;s what&apos;s happening in your organization for the selected date range.</p>
         </div>
+        {/*
+          One date control, where the date was already being shown.
+
+          There used to be a full-width "Date Filter" card carrying seven
+          preset buttons AND the resolved range as text, directly below a
+          header pill that displayed the same range again - the range rendered
+          twice, the control nowhere near it. Narrowing that card to sit beside
+          Dashboard Scope then wrapped the seven buttons onto two rows and
+          truncated its own label to "Last 2 days: Aug 23, 202…".
+
+          A range is picked rarely and read constantly, so it belongs in the
+          header as one compact control, not as a row of buttons occupying the
+          top of the page.
+        */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700">
-            <Calendar className="h-4 w-4 text-blue-600" />
-            {dateLabel}
+          <div className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-surface-card px-3 text-xs font-medium text-slate-700">
+            <Calendar className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+            <span className="tabular-nums">{dateLabel}</span>
           </div>
+
+          <div className="w-[11.5rem]">
+            <SelectInput
+              aria-label="Date range"
+              value={datePreset}
+              onChange={(event) => setDatePreset(event.target.value as DatePreset)}
+              className="h-10"
+            >
+              {datePresetOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </SelectInput>
+          </div>
+
+          {datePreset === 'custom' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="sr-only" htmlFor="dash-range-start">Start date</label>
+              <input
+                id="dash-range-start"
+                type="date"
+                value={customRange.startDate}
+                max={todayIso()}
+                onChange={(event) => setCustomRange((current) => {
+                  const nextStart = clampIsoDateToToday(event.target.value);
+                  const nextEnd = current.endDate < nextStart ? nextStart : clampIsoDateToToday(current.endDate);
+                  return { startDate: nextStart, endDate: nextEnd };
+                })}
+                className="h-10 rounded-lg border border-slate-200 bg-surface-card px-3 text-xs text-slate-700 outline-none focus:border-blue-400"
+              />
+              <span className="text-xs text-slate-500">to</span>
+              <label className="sr-only" htmlFor="dash-range-end">End date</label>
+              <input
+                id="dash-range-end"
+                type="date"
+                value={customRange.endDate}
+                max={todayIso()}
+                onChange={(event) => setCustomRange((current) => {
+                  const nextEnd = clampIsoDateToToday(event.target.value);
+                  return {
+                    startDate: current.startDate > nextEnd ? nextEnd : current.startDate,
+                    endDate: nextEnd,
+                  };
+                })}
+                className="h-10 rounded-lg border border-slate-200 bg-surface-card px-3 text-xs text-slate-700 outline-none focus:border-blue-400"
+              />
+            </div>
+          ) : null}
 
           <Link
             aria-label="Settings"
@@ -1976,64 +2041,14 @@ export default function AdminDashboard() {
           are empty and this is the only thing on the page with anything to say. */}
       <WorkspaceSetupCard />
 
-      <Card id="date-filter" className="scroll-mt-24 p-3">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Date Filter</p>
-            <p className="mt-1 truncate text-sm font-medium text-slate-900">{selectedRangePresetLabel}: {selectedRangeLabel}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {datePresetOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setDatePreset(option.value)}
-                className={`h-9 rounded-lg border px-3 text-xs font-medium transition ${datePreset === option.value ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {datePreset === 'custom' ? (
-          <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,180px)_minmax(0,180px)_1fr] sm:items-end">
-            <label className="text-xs font-medium text-slate-600">
-              Start date
-              <input
-                type="date"
-                value={customRange.startDate}
-                max={todayIso()}
-                onChange={(event) => setCustomRange((current) => {
-                  const nextStart = clampIsoDateToToday(event.target.value);
-                  const nextEnd = current.endDate < nextStart ? nextStart : clampIsoDateToToday(current.endDate);
-                  return { startDate: nextStart, endDate: nextEnd };
-                })}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
-              />
-            </label>
-            <label className="text-xs font-medium text-slate-600">
-              End date
-              <input
-                type="date"
-                value={customRange.endDate}
-                max={todayIso()}
-                onChange={(event) => setCustomRange((current) => {
-                  const nextEnd = clampIsoDateToToday(event.target.value);
-                  return {
-                    startDate: current.startDate > nextEnd ? nextEnd : current.startDate,
-                    endDate: nextEnd,
-                  };
-                })}
-                className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
-              />
-            </label>
-            <p className="text-xs leading-5 text-slate-500">
-              Custom ranges automatically apply after you choose dates. If the dates are reversed, the dashboard reads them in the correct order.
-            </p>
-          </div>
-        ) : null}
-      </Card>
+      {/*
+        Date range and scope, side by side.
 
+        These were two full-width cards stacked on top of each other, spending
+        roughly 220px of the first screen on controls before a single figure
+        appeared. They are the same kind of thing - what am I looking at, and
+        over what period - so they read as one band and take half the height.
+      */}
       <Card id="dashboard-scope" className="scroll-mt-24 p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
@@ -2071,7 +2086,7 @@ export default function AdminDashboard() {
         </div>
         {dashboardScope === 'employee' ? (
           <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 xl:grid-cols-[minmax(0,1fr)_minmax(220px,320px)] xl:items-start">
-            <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+            <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-500">
               <Search className="h-4 w-4 shrink-0" />
               <input
                 aria-label="Search scoped employee"
@@ -2080,7 +2095,7 @@ export default function AdminDashboard() {
                   setScopeSearch(event.target.value);
                   setSelectedEmployeeId(null);
                 }}
-                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
+                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-500"
                 placeholder="Search employee name, email, role, department..."
               />
             </label>
@@ -2097,6 +2112,17 @@ export default function AdminDashboard() {
           </div>
         ) : null}
       </Card>
+
+      {/*
+        Payroll leads.
+
+        This file is 3,263 lines in which the word "payroll" did not appear
+        once — an administrator opening a payroll product landed on attendance
+        and screenshot-tracker widgets. Money, statutory deadlines and the
+        defects blocking this month's run go above them. No new backend: both
+        endpoints were already routed and already returned these fields.
+      */}
+      <PayrollDashboardStrip />
 
       <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
         <KpiCard loading={isDashboardInitialLoading} to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600"
@@ -2246,10 +2272,10 @@ export default function AdminDashboard() {
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-500">{selectedEmployee.email}</p>
                     <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
-                      <div><p className="text-slate-400">Department</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.department}</p></div>
-                      <div><p className="text-slate-400">Role</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.position}</p></div>
-                      <div><p className="text-slate-400">Last check in</p><p className="mt-1 font-semibold text-slate-800">{formatDateTime(selectedWorkStatus?.checkInAt || employeeProfile?.status?.latest_attendance?.check_in_at)}</p></div>
-                      <div><p className="text-slate-400">Last check out</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployeeIsWorking ? 'Still checked in' : formatDateTime(selectedWorkStatus?.checkOutAt || employeeProfile?.status?.latest_attendance?.check_out_at)}</p></div>
+                      <div><p className="text-slate-500">Department</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.department}</p></div>
+                      <div><p className="text-slate-500">Role</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployee.position}</p></div>
+                      <div><p className="text-slate-500">Last check in</p><p className="mt-1 font-semibold text-slate-800">{formatDateTime(selectedWorkStatus?.checkInAt || employeeProfile?.status?.latest_attendance?.check_in_at)}</p></div>
+                      <div><p className="text-slate-500">Last check out</p><p className="mt-1 font-semibold text-slate-800">{selectedEmployeeIsWorking ? 'Still checked in' : formatDateTime(selectedWorkStatus?.checkOutAt || employeeProfile?.status?.latest_attendance?.check_out_at)}</p></div>
                     </div>
                   </div>
                 </div>
@@ -2259,7 +2285,7 @@ export default function AdminDashboard() {
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Track Time</p><p className="mt-2 text-lg font-semibold">{formatDuration(selectedEmployeeTrackedSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Work Time</p><p className="mt-2 text-lg font-semibold text-emerald-700">{formatDuration(Math.max(0, selectedEmployeeTrackedSeconds - selectedEmployeeIdleSeconds))}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Attendance</p><p className="mt-2 text-lg font-semibold">{employeePresentDays} present</p></div>
-                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p><p className="mt-1 text-[10px] text-slate-400">{IDLE_SOURCE_LABELS[selectedEmployeeIdleSource]}</p></div>
+                <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Idle Time</p><p className="mt-2 text-lg font-semibold text-amber-700">{formatDuration(selectedEmployeeIdleSeconds)}</p><p className="mt-1 text-[10px] text-slate-500">{IDLE_SOURCE_LABELS[selectedEmployeeIdleSource]}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Break Time</p><p className="mt-2 text-lg font-semibold text-slate-700">{formatDuration(selectedEmployeeBreakSeconds)}</p></div>
                 <div className="rounded-lg border border-slate-100 p-3"><p className="text-[11px] text-slate-500">Screenshots</p><p className="mt-2 text-lg font-semibold text-blue-700">{employeeScreenshotCount}</p></div>
               </div>
@@ -2274,7 +2300,7 @@ export default function AdminDashboard() {
                     {employeeScreenshotRows.map((shot: any) => (
                       <div key={shot.id} className="rounded-lg border border-slate-100 bg-slate-50 p-2 text-xs">
                         <p className="truncate font-medium text-slate-700">{shot.filename || `Screenshot ${shot.id}`}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">{formatDateTime(shot.recorded_at || shot.created_at)}</p>
                       </div>
                     ))}
                   </div>
@@ -2340,7 +2366,7 @@ export default function AdminDashboard() {
                       <div key={`${tool.label}-${index}`} className="flex items-center justify-between gap-3 text-xs">
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-700">{tool.label || 'Unknown tool'}</p>
-                          <p className="text-[11px] capitalize text-slate-400">{String(tool.classification || 'neutral').replace('_', ' ')}</p>
+                          <p className="text-[11px] capitalize text-slate-500">{String(tool.classification || 'neutral').replace('_', ' ')}</p>
                         </div>
                         <span className="shrink-0 text-slate-500">{formatDuration(Number(tool.total_duration || 0))}</span>
                       </div>
@@ -2359,7 +2385,7 @@ export default function AdminDashboard() {
                       <div key={entry.id} className="flex items-center justify-between gap-3 text-xs">
                         <div className="min-w-0">
                           <p className="truncate font-medium text-slate-700">{entry.project?.name || entry.task?.project?.name || 'Unassigned'}</p>
-                          <p className="truncate text-[11px] text-slate-400">{entry.task?.title || entry.description || formatDateTime(entry.start_time)}</p>
+                          <p className="truncate text-[11px] text-slate-500">{entry.task?.title || entry.description || formatDateTime(entry.start_time)}</p>
                         </div>
                         <span className="shrink-0 text-slate-500">{formatDuration(Number(entry.effective_duration || entry.duration || 0))}</span>
                       </div>
@@ -2379,7 +2405,7 @@ export default function AdminDashboard() {
                       <div key={record.id || record.attendance_date} className="flex items-center justify-between gap-3 text-xs">
                         <div>
                           <p className="font-medium text-slate-700">{formatDate(record.attendance_date)}</p>
-                          <p className="text-[11px] text-slate-400">{record.late_minutes
+                          <p className="text-[11px] text-slate-500">{record.late_minutes
                             ? (() => {
                                 const hrs = Math.floor(record.late_minutes / 60);
                                 const mins = record.late_minutes % 60;
@@ -2421,7 +2447,7 @@ export default function AdminDashboard() {
             <div className="rounded-lg border border-slate-100 p-4">
               <div className="mb-3 flex items-center justify-between text-xs">
                 <span className="font-semibold text-slate-700">Department scope</span>
-                <span className="text-slate-400">{scopeDepartmentFilter === 'All' ? 'All departments' : scopeDepartmentFilter}</span>
+                <span className="text-slate-500">{scopeDepartmentFilter === 'All' ? 'All departments' : scopeDepartmentFilter}</span>
               </div>
               {departmentCounts.length ? (
                 (() => {
@@ -2478,13 +2504,13 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_170px_auto]">
-            <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-400">
+            <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-500">
               <Search className="h-4 w-4 shrink-0" />
               <input
                 aria-label="Search work status"
                 value={workSearch}
                 onChange={(event) => setWorkSearch(event.target.value)}
-                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-400"
+                className="w-full min-w-0 bg-transparent outline-none placeholder:text-slate-500"
                 placeholder="Search employee, role, email..."
               />
             </label>
@@ -2556,7 +2582,7 @@ export default function AdminDashboard() {
                           : row.presentDays > 0
                             ? 'Seen in range'
                             : 'No punch in range'}
-                      {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
+                      {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-500">({resolveEmployeeTimezone(row.employee)})</span> : null}
                     </td>
                   </tr>
                 ))}
@@ -2564,7 +2590,7 @@ export default function AdminDashboard() {
             </table>
             {filteredWorkStatusRows.length === 0 ? <div className="border-t border-slate-100 p-4"><EmptyInline>No employees found</EmptyInline></div> : null}
           </div>
-          <div className="mt-3 text-[11px] text-slate-400">Showing {Math.min(filteredWorkStatusRows.length, 8)} of {filteredWorkStatusRows.length} matching employees</div>
+          <div className="mt-3 text-[11px] text-slate-500">Showing {Math.min(filteredWorkStatusRows.length, 8)} of {filteredWorkStatusRows.length} matching employees</div>
           {shouldShowRangeStatusDetail ? (
             <div className="mt-4 rounded-lg border border-slate-100">
               <div className="border-b border-slate-100 px-4 py-3">
@@ -2760,7 +2786,7 @@ export default function AdminDashboard() {
         </Card>
 
         <Card id="time-tracker-card" className="scroll-mt-24 p-4">
-          <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-400" />} />
+          <SectionTitle title="Time Tracker" action={<Settings className="h-4 w-4 text-slate-500" />} />
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
             <p className="text-xs text-slate-500">
               {selectedEmployeeTimer ? `${selectedEmployee?.name || 'Selected employee'} active timer` : 'No active timer'}
@@ -2783,7 +2809,7 @@ export default function AdminDashboard() {
             * "No active timer" over 6,649 hours — the whole organisation's July,
             * which is 214 hours a day for one person.
             */}
-          <p className="mt-4 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <p className="mt-4 text-[11px] font-medium uppercase tracking-wider text-slate-500">
             {dashboardScope === 'employee'
               ? `${selectedEmployee?.name || 'Selected employee'}, selected range`
               : 'Whole organisation, selected range'}
@@ -2833,11 +2859,11 @@ export default function AdminDashboard() {
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {formatDateTimeForEmployee(row.checkInAt, row.employee)}
-                      {!viewInMyTimezone && row.checkInAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
+                      {!viewInMyTimezone && row.checkInAt ? <span className="ml-1 text-[10px] text-slate-500">({resolveEmployeeTimezone(row.employee)})</span> : null}
                     </td>
                     <td className="px-4 py-3 text-slate-600">
                       {row.status === 'Working' ? 'Still checked in' : formatDateTimeForEmployee(row.checkOutAt, row.employee)}
-                      {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-400">({resolveEmployeeTimezone(row.employee)})</span> : null}
+                      {!viewInMyTimezone && row.checkOutAt ? <span className="ml-1 text-[10px] text-slate-500">({resolveEmployeeTimezone(row.employee)})</span> : null}
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-900">{row.status === 'Working' ? 'Working now' : row.status === 'On Break' ? 'On a break' : row.sessionSeconds > 0 ? formatDuration(row.sessionSeconds) : '—'}</td>
                     <td className="px-4 py-3">
@@ -2964,7 +2990,7 @@ export default function AdminDashboard() {
                       <span className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full ${activity.tone === 'green' ? 'bg-emerald-50 text-emerald-600' : activity.tone === 'blue' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
                         <CheckCircle2 className="h-3.5 w-3.5" />
                       </span>
-                      <span className="min-w-0"><span className="block truncate text-slate-700">{activity.title}</span><span className="text-[11px] text-slate-400">{activity.meta}</span></span>
+                      <span className="min-w-0"><span className="block truncate text-slate-700">{activity.title}</span><span className="text-[11px] text-slate-500">{activity.meta}</span></span>
                     </div>
                   ))}
                 </div>
@@ -2979,7 +3005,7 @@ export default function AdminDashboard() {
                       <Megaphone className={`mt-0.5 h-4 w-4 shrink-0 ${index === 0 ? 'text-amber-500' : 'text-blue-500'}`} />
                       <div className="min-w-0">
                         <p className="truncate text-slate-700">{item.title}</p>
-                        <p className="mt-1 text-[11px] text-slate-400">{item.date}</p>
+                        <p className="mt-1 text-[11px] text-slate-500">{item.date}</p>
                       </div>
                     </div>
                   ))}
@@ -3018,7 +3044,7 @@ export default function AdminDashboard() {
           <div className="mt-4 rounded-lg border border-slate-100 p-3">
             <div className="mb-3 flex items-center justify-between text-xs">
               <span className="font-semibold text-slate-700">Largest Departments</span>
-              <span className="text-slate-400">{totalEmployees} people</span>
+              <span className="text-slate-500">{totalEmployees} people</span>
             </div>
             {departmentCounts.length ? (
               (() => {

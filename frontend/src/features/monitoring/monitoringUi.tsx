@@ -187,7 +187,7 @@ export function PresenceBar({ counts, selected, onSelect }: {
           );
         })}
       </div>
-      <p className="mt-1.5 text-xs text-slate-400">
+      <p className="mt-1.5 text-xs text-slate-500">
         Live right now · each segment filters the people list{selected !== 'all' ? ' · click again to clear' : ''}
       </p>
     </div>

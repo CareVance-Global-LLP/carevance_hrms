@@ -183,7 +183,7 @@ function GoalCard({
               <StatusBadge tone={goal.scope === 'company' ? 'info' : 'neutral'}>{SCOPE_LABELS[goal.scope]}</StatusBadge>
             ) : null}
             <StatusBadge tone="neutral">{CATEGORY_LABELS[goal.category] ?? goal.category}</StatusBadge>
-            <span className="text-[11px] font-medium text-slate-400">Weight {goal.weight}%</span>
+            <span className="text-[11px] font-medium text-slate-500">Weight {goal.weight}%</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
             {goalOwnerLabel(goal)} · {formatDate(goal.start_date)} – {formatDate(goal.end_date)}
@@ -201,7 +201,7 @@ function GoalCard({
               <button
                 type="button"
                 onClick={() => onEdit(goal)}
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-blue-500/[0.08] hover:text-blue-700"
+                className="rounded-lg p-1.5 text-slate-500 transition hover:bg-blue-500/[0.08] hover:text-blue-700"
                 aria-label="Edit goal"
               >
                 <Pencil className="h-4 w-4" />
@@ -209,7 +209,7 @@ function GoalCard({
               <button
                 type="button"
                 onClick={() => onDelete(goal)}
-                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+                className="rounded-lg p-1.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-500"
                 aria-label="Delete goal"
               >
                 <Trash2 className="h-4 w-4" />
@@ -306,7 +306,7 @@ function GoalCard({
                   key={milestone.id}
                   className={cn(
                     'flex items-center gap-2.5 text-sm',
-                    milestone.done ? 'text-slate-400 line-through' : 'text-slate-700',
+                    milestone.done ? 'text-slate-500 line-through' : 'text-slate-700',
                     canManage ? 'cursor-pointer' : 'cursor-default'
                   )}
                 >
@@ -321,7 +321,7 @@ function GoalCard({
                 </label>
               ))}
               {!canManage ? (
-                <p className="text-[11px] text-slate-400">Milestones are updated by your manager — use "Update progress" for your own updates.</p>
+                <p className="text-[11px] text-slate-500">Milestones are updated by your manager — use "Update progress" for your own updates.</p>
               ) : null}
             </div>
           ) : null}
@@ -338,7 +338,7 @@ function GoalCard({
 
           {checkIns.length > 0 ? (
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Check-in history</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Check-in history</p>
               <div className="mt-1.5">
                 {checkIns.map((checkIn: GoalCheckIn, index) => (
                   <div key={checkIn.id} className="grid grid-cols-[14px_1fr] gap-x-3">
@@ -351,7 +351,7 @@ function GoalCard({
                         {checkIn.note || 'Progress updated'}{' '}
                         <span className="font-semibold text-blue-700">▸ {checkIn.progress_percentage}%</span>
                       </p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[11px] text-slate-500">
                         {checkIn.user?.name ?? 'Unknown'} · {formatDate(checkIn.created_at)}
                       </p>
                     </div>
@@ -361,7 +361,7 @@ function GoalCard({
             </div>
           ) : null}
 
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             Manager: {goal.manager?.name || 'Not assigned'} · Created {formatDate(goal.created_at)}
           </p>
         </div>
@@ -1007,7 +1007,7 @@ export default function PerformanceGoalsPage() {
                   <button
                     type="button"
                     onClick={() => setForm((prev) => ({ ...prev, milestones: prev.milestones.filter((_, i) => i !== index) }))}
-                    className="rounded-lg p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+                    className="rounded-lg p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-500"
                     aria-label={`Remove milestone ${index + 1}`}
                   >
                     <Trash2 className="h-4 w-4" />

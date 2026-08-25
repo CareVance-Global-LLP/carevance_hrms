@@ -130,8 +130,14 @@ describe('AuthProvider', () => {
       expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
     });
     expect(isAutoStartArmed(7)).toBe(false);
+    /*
+     * sessionStorage ONLY. The token used to be mirrored into localStorage,
+     * where it outlives the browser session and sits on a shared machine until
+     * somebody clears it by hand. Asserting its ABSENCE is the point: dropping
+     * the mirror is easy to undo by accident, and nothing else would notice.
+     */
     expect(sessionStorage.getItem('token')).toBe('employee-token');
-    expect(localStorage.getItem('token')).toBe('employee-token');
+    expect(localStorage.getItem('token')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /logout/i }));
 

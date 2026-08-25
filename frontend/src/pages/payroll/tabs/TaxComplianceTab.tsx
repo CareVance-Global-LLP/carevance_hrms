@@ -35,13 +35,21 @@ interface PanelDef {
   strictAdminOnly?: boolean;
 }
 
+/*
+ * Statutory Filings leads.
+ *
+ * It was the sixth chip on a tab that opened on Tax Declarations, so the
+ * monthly statutory obligation - the thing an administrator is actually here
+ * for, and the thing with a deadline attached - was three clicks and a scroll
+ * away, behind five screens that matter once a year.
+ */
 const PANELS: PanelDef[] = [
+  { id: 'filings', label: 'Statutory Filings', icon: Landmark, strictAdminOnly: true },
   { id: 'declarations', label: 'Tax Declarations', icon: FileText },
   { id: 'simulator', label: 'Tax Simulator', icon: Calculator },
   { id: 'proofs', label: 'Proofs Review', icon: ClipboardCheck, strictAdminOnly: true },
   { id: 'leave-encashment', label: 'Leave Encashment', icon: IndianRupee, strictAdminOnly: true },
   { id: 'fnf', label: 'F&F Settlements', icon: UserMinus, strictAdminOnly: true },
-  { id: 'filings', label: 'Statutory Filings', icon: Landmark, strictAdminOnly: true },
 ];
 
 
@@ -51,8 +59,16 @@ export default function TaxComplianceTab() {
   const isStrictAdmin = hasStrictAdminAccess(user);
 
   const requested = searchParams.get('panel') as PanelId | null;
+  /*
+   * An admin lands on Filings; anyone else lands on their own declarations,
+   * since Filings is strictAdminOnly and would render an access notice.
+   */
   const active: PanelId =
-    requested && PANELS.some((p) => p.id === requested) ? requested : 'declarations';
+    requested && PANELS.some((p) => p.id === requested)
+      ? requested
+      : isStrictAdmin
+        ? 'filings'
+        : 'declarations';
 
   const { data: proofsSummary } = useQuery({
     queryKey: ['tax-proofs-summary'],

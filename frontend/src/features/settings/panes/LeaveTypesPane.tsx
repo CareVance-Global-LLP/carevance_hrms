@@ -83,7 +83,7 @@ export default function LeaveTypesPane() {
 
       <div className="space-y-2">
         {types.map((type) => (
-          <div key={type.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div key={type.id} className="rounded-lg border border-slate-200 bg-surface-card p-3">
             <div className="flex flex-wrap items-center gap-2">
               <CalendarRange className="h-4 w-4 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-950">{type.name}</span>

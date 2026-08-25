@@ -2248,6 +2248,73 @@ export const dashboardApi = {
   summary: () => api.get('/dashboard'),
 };
 
+/**
+ * The admin dashboard's own feed.
+ *
+ * Three calls that between them replace roughly a dozen. Each one exists
+ * because the dashboard was previously either doing the aggregation in the
+ * browser or paying one query per employee to get a scalar.
+ */
+export const opsDashboardApi = {
+  /**
+   * The whole organisation, today, as scalars.
+   *
+   * Replaces six of the seven calls the census strip used to make.
+   * `attendanceApi.summary` builds a row per employee and runs an
+   * AttendanceRecord query with a punches eager-load inside the map - a
+   * roster table's cost paid to render six numbers.
+   *
+   * `roster.published` is load-bearing: false means the absence figure is
+   * UNKNOWABLE, not zero. A green "0 absent" on a tenant that never published
+   * a roster is the exact thing this flag prevents.
+   */
+  todaySummary: (params?: { date?: string }) =>
+    api.get<{
+      success: boolean;
+      data: {
+        date: string;
+        headcount: number;
+        present_on_time: { count: number; user_ids: number[] };
+        late: { count: number; user_ids: number[]; total_minutes: number };
+        on_leave: { count: number; user_ids: number[]; half_day: number };
+        rostered_absent: { count: number; user_ids: number[] };
+        working_now: { count: number; user_ids: number[] };
+        roster: { published: boolean; rostered: number; rest_day: number; not_rostered: number };
+      };
+    }>('/attendance/today-summary', { params }),
+
+  /** Joiners, leavers and a running headcount by month. Two grouped queries. */
+  headcountSeries: (params?: { from?: string; to?: string }) =>
+    api.get<{
+      success: boolean;
+      data: {
+        from: string;
+        to: string;
+        current_headcount: number;
+        months: Array<{ month: string; joined: number; left: number; headcount: number }>;
+      };
+    }>('/reports/headcount-series', { params }),
+
+  /**
+   * Every approval queue as one number each.
+   *
+   * A null means "not counted" - the table is absent on this tenant - and must
+   * never be rendered as a zero, which reads as "nothing is waiting on you".
+   */
+  pendingCounts: () =>
+    api.get<{
+      success: boolean;
+      data: {
+        leave: number | null;
+        time_edits: number | null;
+        resignations: number | null;
+        reimbursements: number | null;
+        filings_overdue: number | null;
+        total: number;
+      };
+    }>('/approvals/pending-counts'),
+};
+
 export const attendanceApi = {
   /**
    * The presence board an ordinary employee sees of their own department.
@@ -2316,6 +2383,15 @@ export const attendanceApi = {
         check_out_at?: string | null;
         late_minutes: number;
         worked_seconds: number;
+        /*
+         * Only present when scope='overall' — the org-wide roll-up the
+         * dashboard heatmap reads. Declared optional because the same endpoint
+         * serves a single user's calendar, where these are absent.
+         */
+        present_count?: number;
+        late_count?: number;
+        absent_count?: number;
+        total_employees?: number;
         holiday?: {
           id: number;
           date: string;
@@ -2564,6 +2640,72 @@ export const attendanceTimeEditApi = {
     api.get<{ data: DepartmentTeamForwardTarget[] }>(`/attendance-time-edit-requests/${id}/forward-targets`),
 };
 
+/**
+ * Resumable uploads for files a single request cannot carry.
+ *
+ * The chunk size comes FROM the server rather than being chosen here. It is a
+ * property of that machine's php.ini and differs between environments — 2 MB
+ * on a dev box, 10 MB deployed — so a client that picked its own number would
+ * work against one and fail against the other, which is the bug this replaces.
+ */
+export const uploadApi = {
+  limits: () =>
+    api.get<{ chunk_size: number; max_upload_bytes: number; allowed_mimes: string[] }>('/uploads/limits'),
+
+  begin: (data: { name: string; size: number; mime?: string }) =>
+    api.post<{
+      upload_key: string;
+      chunk_size: number;
+      total_chunks: number;
+      missing_chunks: number[];
+      expires_at: string | null;
+    }>('/uploads', data),
+
+  /** What is still outstanding — the resume point after a dropped connection. */
+  status: (uploadKey: string) =>
+    api.get<{
+      upload_key: string;
+      status: string;
+      chunk_size: number;
+      total_chunks: number;
+      missing_chunks: number[];
+      progress_percent: number;
+    }>(`/uploads/${uploadKey}`),
+
+  sendChunk: (
+    uploadKey: string,
+    index: number,
+    chunk: Blob,
+    options?: { signal?: AbortSignal; onProgress?: (loadedBytes: number) => void }
+  ) => {
+    const formData = new FormData();
+    formData.append('chunk', chunk, `${index}.part`);
+
+    return api.post<{
+      received: number;
+      total_chunks: number;
+      progress_percent: number;
+      is_complete: boolean;
+    }>(`/uploads/${uploadKey}/chunks/${index}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal: options?.signal,
+      // Per-chunk byte progress. Without it the bar would only move once per
+      // chunk, which on a slow link looks frozen for a minute at a time.
+      onUploadProgress: (event) => options?.onProgress?.(event.loaded),
+      // A single chunk can legitimately take a while on a poor connection, and
+      // the default 30s would abort it and look like a server fault.
+      timeout: 120000,
+    });
+  },
+
+  complete: (uploadKey: string) =>
+    api.post<{ upload_key: string; name: string; mime: string; size: number }>(
+      `/uploads/${uploadKey}/complete`
+    ),
+
+  abort: (uploadKey: string) => api.delete(`/uploads/${uploadKey}`),
+};
+
 export const chatApi = {
   getConversations: () => api.get<ChatConversation[]>('/chat/conversations'),
   getGroups: () => api.get<ChatGroup[]>('/chat/groups'),
@@ -2578,7 +2720,17 @@ export const chatApi = {
   /** Message-body search across every thread the caller belongs to. */
   searchMessages: (q: string) =>
     api.get<{ data: ChatMessageSearchHit[] }>('/chat/search', { params: { q } }),
-  sendMessage: (conversationId: number, data: { body?: string; attachment?: File | null }) => {
+  sendMessage: (conversationId: number, data: { body?: string; attachment?: File | null; uploadKey?: string }) => {
+    // A file already uploaded in pieces is claimed by key. Checked first: if a
+    // caller somehow supplies both, the deliberately-prepared upload is the one
+    // it meant, and re-sending the raw file would defeat the point of chunking.
+    if (data.uploadKey) {
+      return api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, {
+        body: data.body || '',
+        upload_key: data.uploadKey,
+      });
+    }
+
     if (data.attachment) {
       const formData = new FormData();
       if (data.body?.trim()) {
@@ -2592,7 +2744,14 @@ export const chatApi = {
 
     return api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, { body: data.body || '' });
   },
-  sendGroupMessage: (groupId: number, data: { body?: string; attachment?: File | null }) => {
+  sendGroupMessage: (groupId: number, data: { body?: string; attachment?: File | null; uploadKey?: string }) => {
+    if (data.uploadKey) {
+      return api.post<ChatGroupMessage>(`/chat/groups/${groupId}/messages`, {
+        body: data.body || '',
+        upload_key: data.uploadKey,
+      });
+    }
+
     if (data.attachment) {
       const formData = new FormData();
       if (data.body?.trim()) {
@@ -2630,6 +2789,21 @@ export const chatApi = {
     api.get<ChatTypingUser[]>(`/chat/conversations/${conversationId}/typing`),
   getGroupTyping: (groupId: number) =>
     api.get<ChatTypingUser[]>(`/chat/groups/${groupId}/typing`),
+  /**
+   * A small square preview of an image attachment.
+   *
+   * Separate from getAttachment because a notification must not download a
+   * 40 MB original to show a thumbnail on a toast. 404 is the ordinary answer
+   * for anything that is not an image — callers fall back to an icon.
+   */
+  getThumbnail: (messageId: number) =>
+    api.get<Blob>(`/chat/messages/${messageId}/thumbnail`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
+  getGroupThumbnail: (messageId: number) =>
+    api.get<Blob>(`/chat/groups/messages/${messageId}/thumbnail`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
   getAttachment: (messageId: number) =>
     api.get<Blob>(`/chat/messages/${messageId}/attachment`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
@@ -2648,11 +2822,142 @@ export const aiChatApi = {
     api.post<{ reply: string; sources: Array<{ label: string; route: string }> }>('/ai/chat', data),
 };
 
+/**
+ * AI mode's answer shape — the v2 query grammar, section 7.
+ * @see docs/superpowers/specs/2026-08-24-ai-mode-grammar-v2.md
+ */
+
+/**
+ * `date` is its own type, not text: a calendar date has to render as
+ * "24 Aug 2026" and still copy to CSV as `2026-08-24`, and only the column
+ * can say which of those a string is.
+ */
+export type AskColumnType = 'text' | 'money' | 'number' | 'date';
+
+export type AskColumn = {
+  key: string;
+  label: string;
+  type: AskColumnType;
+  /**
+   * Section 12: where this column's DEFINITION came from. `derived` is naive by
+   * construction — a plain AVG over the column, no exclusions — and the reader
+   * has to be able to tell it from a hand-checked `curated` one. Absent on
+   * dimensions and list columns, which are values rather than definitions.
+   */
+  origin?: 'curated' | 'derived';
+};
+
+/** Section 2. `is_null` / `is_not_null` carry no value at all. */
+export type AskFilterOperator =
+  | 'eq' | 'neq'
+  | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'between'
+  | 'contains'
+  | 'in' | 'not_in'
+  | 'is_null' | 'is_not_null'
+  | 'period';
+
+export type AskFilterValue = string | number | Array<string | number> | null;
+
+export type AskFilter = {
+  field: string;
+  op: AskFilterOperator;
+  value?: AskFilterValue;
+};
+
+/** A threshold on an AGGREGATE — what makes "more than 3 days" expressible. */
+export type AskHaving = {
+  metric: string;
+  op: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte';
+  value: number;
+};
+
+export type AskSort = { by: string; dir: 'asc' | 'desc' };
+
+export type AskPlan = {
+  entity: string;
+  /** `aggregate` groups and measures; `list` returns rows. */
+  mode: 'aggregate' | 'list';
+  /** aggregate mode — 1..4 named metrics, one column each. */
+  metrics: string[];
+  /** list mode — 1..8 columns from the entity's allow-list. Never SELECT *. */
+  columns: string[];
+  /** 0..2 dimensions, aggregate mode only. */
+  group_by: string[];
+  filters: AskFilter[];
+  having: AskHaving[];
+  sort: AskSort | null;
+  limit: number;
+};
+
+export type AskRow = Record<string, string | number | null>;
+
+/** Where an answer came from. Switch on this, never on `rows.length`. */
+export type AskKind = 'table' | 'prose';
+
+export type AskSource = { label: string; route: string };
+
+export type AskResponse = {
+  /**
+   * One assistant, two answer shapes. A data question yields a table; anything
+   * else falls through to the prose assistant rather than being refused, so
+   * "how do I run payroll?" gets an answer instead of "I can't answer that
+   * from your HR data".
+   *
+   * Optional because a cached response from before the merge has no `kind`;
+   * `resolveAskKind()` treats its absence as a table, which is what those
+   * responses were.
+   */
+  kind?: AskKind;
+  /** Prose only: the answer itself. */
+  reply?: string;
+  /** Prose only: pages that back the answer up, so a figure can be checked. */
+  sources?: AskSource[];
+  /**
+   * Why the data path declined, kept on prose answers too. A prose reply to
+   * something that SHOULD have been a table is a coverage gap, and dropping
+   * the reason hides the gap.
+   */
+  detail?: string;
+  plan: AskPlan | null;
+  columns: AskColumn[];
+  rows: AskRow[];
+  /**
+   * Footnotes, and there are usually several: the caveat a curated metric
+   * carries, the period a token actually resolved to, and the warning that a
+   * derived definition applied no exclusions.
+   */
+  notes: string[];
+  /** Always null here; filled by the separate summary call. */
+  summary: string | null;
+  truncated: boolean;
+};
+
+export const searchAskApi = {
+  // Returns the derived plan alongside the rows on purpose: a payroll figure
+  // nobody can check is worse than no figure.
+  ask: (question: string) => api.post<AskResponse>('/search/ask', { question }),
+
+  // Split from ask() so the table renders at ~3.5s instead of waiting ~9s for
+  // a sentence that is an enrichment, not the answer.
+  summary: (data: { question: string; columns: AskColumn[]; rows: AskRow[] }) =>
+    api.post<{ summary: string | null }>('/search/ask/summary', data),
+};
+
 export const notificationApi = {
-  list: (params?: { limit?: number; type?: string; types?: string[]; exclude_types?: string[]; q?: string; unread_only?: boolean }) =>
+  /**
+   * `since_id` switches the endpoint into catch-up mode: rows ABOVE the
+   * watermark, oldest first, with `has_more` and `latest_id` so a client
+   * returning from a long disconnect can drain a gap bigger than one page
+   * instead of silently losing the remainder. Without it the response is the
+   * ordinary newest-first list and neither extra field is present.
+   */
+  list: (params?: { limit?: number; type?: string; types?: string[]; exclude_types?: string[]; q?: string; unread_only?: boolean; since_id?: number }) =>
     api.get<{
       data: AppNotificationItem[];
       unread_count: number;
+      has_more?: boolean;
+      latest_id?: number;
     }>('/notifications', { params }),
 
   publish: (data: {
@@ -3574,13 +3879,19 @@ export const payrollApi = {
     }>('/payroll/review-data', { params });
   },
 
+  /*
+   * monthYear is what makes runId 0 work. The review screen reads with
+   * getRunReviewData(0, ...), which resolves from pay group and month, so the
+   * submit has to resolve the same way - otherwise the whole screen is
+   * reachable and only its primary button 404s.
+   */
   submitRunReviewDecisions: (runId: number, decisions: Array<{
     user_id: number; action: 'process' | 'hold_processing' | 'hold_payout' | 'void'; comment?: string;
-  }>) =>
+  }>, monthYear?: string) =>
     api.post<{
       success: boolean; message: string;
       counts: { processed: number; hold_processing: number; hold_payout: number; void: number };
-    }>(`/payroll/runs/${runId}/review`, { decisions }),
+    }>(`/payroll/runs/${runId}/review`, { decisions, month_year: monthYear }),
 
   processRunPayment: (runId: number, paymentMethod?: string, payDate?: string) =>
     api.post<{ success: boolean; message: string; run: any }>(`/payroll/runs/${runId}/process-payment`, { payment_method: paymentMethod, pay_date: payDate }),
@@ -3722,6 +4033,76 @@ export const payrollApi = {
     * merges this over its own card list so the screen cannot advertise a
     * return whose statutory template has not been written.
     */
+  /**
+   * What is due this period, and whether it has been dealt with.
+   *
+   * Deadlines come from FilingDueDates on the server, which carries the
+   * statutory provision each date is drawn from — so a due date on this screen
+   * can be traced to a rule rather than to a literal somebody typed into a
+   * component. Status is joined against the real filing rows, which is why an
+   * empty tenant correctly reports nothing rather than showing progress.
+   */
+  getFilingCalendar: async (monthYear?: string): Promise<{
+    month_year: string;
+    overdue_count: number;
+    data: Array<{
+      type: string;
+      label: string;
+      available: boolean;
+      due_date: string | null;
+      days_remaining: number | null;
+      urgency: 'overdue' | 'critical' | 'due_soon' | 'scheduled' | 'unscheduled' | 'filed_on_time' | 'filed_late';
+      authority: string | null;
+      status: string;
+      filing_id: number | null;
+      acknowledgment_number: string | null;
+      has_receipt: boolean;
+      state: string | null;
+    }>;
+  }> => {
+    const response = await api.get('/payroll/filings/calendar', {
+      params: monthYear ? { month_year: monthYear } : undefined,
+    });
+
+    return response.data ?? { month_year: '', overdue_count: 0, data: [] };
+  },
+
+  /** Attach the acknowledgement the portal handed back. */
+  uploadFilingReceipt: (filingId: number, receipt: File) => {
+    const body = new FormData();
+    body.append('receipt', receipt);
+
+    return api.post(`/payroll/filings/${filingId}/receipt`, body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  downloadFilingReceipt: (filingId: number) =>
+    api.get(`/payroll/filings/${filingId}/receipt`, { responseType: 'blob' }),
+
+  /** The authority has confirmed receipt — the last state. */
+  acknowledgeFiling: (filingId: number, payload: { acknowledgment_number?: string; acknowledged_on?: string; notes?: string }) =>
+    api.post(`/payroll/filings/${filingId}/acknowledge`, payload),
+
+  /**
+   * Record a return prepared outside this system.
+   *
+   * Stored as `reference_only` whatever it is: we did not produce the file and
+   * cannot vouch for its format.
+   */
+  uploadPreparedFiling: (payload: { type: string; period_month?: string; period_year: number; document: File; notes?: string }) => {
+    const body = new FormData();
+    body.append('type', payload.type);
+    body.append('period_year', String(payload.period_year));
+    if (payload.period_month) body.append('period_month', payload.period_month);
+    if (payload.notes) body.append('notes', payload.notes);
+    body.append('document', payload.document);
+
+    return api.post('/payroll/filings/upload', body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
    getFilingCatalogue: async (): Promise<
      Record<string, { label: string; available: boolean; unavailable_reason: string | null }>
    > => {
@@ -3831,6 +4212,30 @@ export const payrollApi = {
     api.post<any>(`/payroll/filings/${id}/approve`),
   rejectFiling: (id: number, reason: string) =>
     api.post<any>(`/payroll/filings/${id}/reject`, { reason }),
+  /**
+   * Record a filing, with its acknowledgement, in one request.
+   *
+   * The receipt goes in the SAME call deliberately. Split into two steps, the
+   * second one gets skipped - and a filing nobody can evidence is exactly what
+   * the acknowledgement columns exist to prevent.
+   */
+  markFilingFiledWithReceipt: (id: number, payload: {
+    acknowledgment_number: string;
+    filed_on?: string;
+    portal_status?: string;
+    receipt?: File | null;
+  }) => {
+    const body = new FormData();
+    body.append('acknowledgment_number', payload.acknowledgment_number);
+    if (payload.filed_on) body.append('filed_on', payload.filed_on);
+    if (payload.portal_status) body.append('portal_status', payload.portal_status);
+    if (payload.receipt) body.append('receipt', payload.receipt);
+
+    return api.post<any>(`/payroll/filings/${id}/mark-filed`, body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
   markFilingFiled: (id: number, acknowledgmentNumber: string, portalStatus?: string) =>
     api.post<any>(`/payroll/filings/${id}/mark-filed`, {
       acknowledgment_number: acknowledgmentNumber,

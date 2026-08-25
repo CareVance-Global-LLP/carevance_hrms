@@ -150,29 +150,29 @@ export default function SalaryComponentsEditor() {
 
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1.5 text-center">
-                  <div className="text-[10px] text-slate-400">Basic %</div>
+                  <div className="text-[10px] text-slate-500">Basic %</div>
                   <div className="text-xs font-semibold text-slate-700">{structure.basic_percentage}%</div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1.5 text-center">
-                  <div className="text-[10px] text-slate-400">HRA %</div>
+                  <div className="text-[10px] text-slate-500">HRA %</div>
                   <div className="text-xs font-semibold text-slate-700">{structure.hra_percentage}%</div>
                 </div>
                 <div className="bg-slate-50 border border-slate-100 rounded px-2 py-1.5 text-center">
-                  <div className="text-[10px] text-slate-400">Special %</div>
+                  <div className="text-[10px] text-slate-500">Special %</div>
                   <div className="text-xs font-semibold text-slate-700">{specialPercentage(structure)}%</div>
                 </div>
               </div>
 
               {earns.length > 0 && (
                 <div className="mb-1">
-                  <div className="text-[10px] font-medium text-slate-400 mb-0.5">Earnings ({earns.length})</div>
+                  <div className="text-[10px] font-medium text-slate-500 mb-0.5">Earnings ({earns.length})</div>
                   <div className="text-[11px] text-slate-500 leading-snug">{earns.join(' \u00b7 ')}</div>
                 </div>
               )}
 
               {deds.length > 0 && (
                 <div className="mb-3">
-                  <div className="text-[10px] font-medium text-slate-400 mb-0.5">Deductions ({deds.length})</div>
+                  <div className="text-[10px] font-medium text-slate-500 mb-0.5">Deductions ({deds.length})</div>
                   <div className="text-[11px] text-slate-500 leading-snug">{deds.join(' \u00b7 ')}</div>
                 </div>
               )}
@@ -213,8 +213,8 @@ export default function SalaryComponentsEditor() {
           onClick={() => setShowCreateModal(true)}
           className="border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-lg p-4 flex flex-col items-center justify-center min-h-[200px] cursor-pointer hover:border-slate-300 hover:bg-slate-50 transition-colors"
         >
-          <div className="text-2xl text-slate-400">+</div>
-          <div className="text-xs text-slate-400 mt-2">New Template</div>
+          <div className="text-2xl text-slate-500">+</div>
+          <div className="text-xs text-slate-500 mt-2">New Template</div>
         </button>
       </div>
       )}

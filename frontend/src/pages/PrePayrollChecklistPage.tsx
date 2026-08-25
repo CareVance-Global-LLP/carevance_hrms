@@ -232,7 +232,7 @@ export default function PrePayrollChecklistPage({ runId = null }: { runId?: numb
           <SurfaceCard className="p-12 text-center">
             <ClipboardList className="h-12 w-12 text-slate-300 mx-auto mb-3" />
             <p className="text-slate-500 mb-4">Select a payroll run to view validation checks</p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               Pre-payroll checks verify attendance data, bank details, salary templates, and compliance configurations.
             </p>
           </SurfaceCard>

@@ -186,9 +186,9 @@ export default function GeofenceSettings() {
         <div className="p-4">
           <h2 className="text-sm font-semibold text-slate-700 mb-3">Existing Zones</h2>
           {loading ? (
-            <p className="text-sm text-slate-400">Loading...</p>
+            <p className="text-sm text-slate-500">Loading...</p>
           ) : zones.length === 0 ? (
-            <p className="text-sm text-slate-400">No zones defined yet.</p>
+            <p className="text-sm text-slate-500">No zones defined yet.</p>
           ) : (
             <div className="space-y-3">
               {zones.map((zone) => (

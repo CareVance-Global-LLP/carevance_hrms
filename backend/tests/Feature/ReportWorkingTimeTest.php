@@ -16,6 +16,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -1265,6 +1266,10 @@ class ReportWorkingTimeTest extends TestCase
             $employee->groups()->sync([$digitalGroup->id]);
             $anotherManager->groups()->sync([$itGroup->id]);
 
+            // Stamps organization_id on the fixtures below the same way
+            // BelongsToOrganization would from a real authenticated request.
+            Auth::setUser($manager);
+
             $employeeEntry = $this->createOpenEntryFor($employee);
             $managerEntry = $this->createOpenEntryFor($anotherManager, '2026-03-16 10:50:00');
 
@@ -1314,6 +1319,11 @@ class ReportWorkingTimeTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call, the same way BelongsToOrganization would from a real
+        // authenticated request.
+        Auth::setUser($user);
+
         return [$user, $this->apiHeadersFor($user)];
     }
 
@@ -1339,6 +1349,11 @@ class ReportWorkingTimeTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call. $admin and $employee share an organization, so either
+        // works as the ambient actor.
+        Auth::setUser($admin);
 
         return [$admin, $employee, $this->apiHeadersFor($admin)];
     }

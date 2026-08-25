@@ -28,8 +28,9 @@ import {
   type CommandKind,
 } from '@/lib/commandRegistry';
 import { canAccess } from '@/lib/permissions';
+import { reportSilentError } from '@/lib/reportSilentError';
 import type { NavGroup } from '@/navigation/dashboardNavigation';
-import { searchApi, type GlobalSearchHit } from '@/services/api';
+import { searchApi, searchAskApi, type AskResponse, type GlobalSearchHit } from '@/services/api';
 
 /** Long enough to skip a keystroke burst, short enough to feel live. */
 const DEBOUNCE_MS = 200;
@@ -101,6 +102,10 @@ export default function GlobalCommandBar({
 
   const [remoteHits, setRemoteHits] = useState<GlobalSearchHit[]>([]);
   const [remoteLoading, setRemoteLoading] = useState(false);
+  const [aiMode, setAiMode] = useState(false);
+  const [aiAnswer, setAiAnswer] = useState<AskResponse | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<number | null>(null);
 
@@ -245,6 +250,56 @@ export default function GlobalCommandBar({
     []
   );
 
+  /* ------------------------------------------------------------------- ask */
+
+  const handleAskAi = useCallback(async (question: string) => {
+    setAiLoading(true);
+    setAiError(null);
+    setAiAnswer(null);
+
+    let answer: AskResponse;
+
+    try {
+      const response = await searchAskApi.ask(question);
+      answer = response.data;
+      setAiAnswer(answer);
+    } catch (error) {
+      const detail = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
+      setAiError(
+        detail?.status === 422
+          ? (detail.data?.detail ?? 'That question cannot be answered from your HR data.')
+          : 'Something went wrong reaching the AI service.',
+      );
+      return;
+    } finally {
+      setAiLoading(false);
+    }
+
+    /*
+     * Deliberately after the table is already on screen, and deliberately not
+     * awaited by the render path: the summary is an enrichment that costs another
+     * ~6s, and a failure must remove the sentence rather than the answer.
+     */
+    try {
+      const summary = await searchAskApi.summary({
+        question, columns: answer.columns, rows: answer.rows,
+      });
+      setAiAnswer((current) => (current ? { ...current, summary: summary.data.summary } : current));
+    } catch (error) {
+      reportSilentError('ai-mode-summary', error);
+    }
+  }, []);
+
+  // A closed palette must not reopen holding the last answer: the next question
+  // is a new one, and a stale table under a fresh prompt reads as a reply to it.
+  useEffect(() => {
+    if (!open) {
+      setAiMode(false);
+      setAiAnswer(null);
+      setAiError(null);
+    }
+  }, [open]);
+
   /* -------------------------------------------------------------- shortcuts */
 
   useEffect(() => {
@@ -298,6 +353,13 @@ export default function GlobalCommandBar({
       recentIds={recentIds}
       usesOf={usesOf}
       recentDisplayCount={RECENT_DISPLAY_COUNT}
+      aiMode={aiMode}
+      onAiModeChange={setAiMode}
+      aiAnswer={aiAnswer}
+      aiLoading={aiLoading}
+      aiError={aiError}
+      onAskAi={handleAskAi}
+      onAiExample={handleAskAi}
     />
   );
 }

@@ -262,10 +262,10 @@ export default function PlansManagement() {
                         </div>
                       ))
                     ) : (
-                      <p className="text-sm text-slate-400">No features configured</p>
+                      <p className="text-sm text-slate-500">No features configured</p>
                     )}
                     {plan.features && plan.features.length > 6 && (
-                      <p className="text-xs text-slate-400 pl-6">
+                      <p className="text-xs text-slate-500 pl-6">
                         +{plan.features.length - 6} more features
                       </p>
                     )}
@@ -284,7 +284,7 @@ export default function PlansManagement() {
                       {plan.is_active ? (
                         <ToggleRight className="h-6 w-6 text-emerald-500" />
                       ) : (
-                        <ToggleLeft className="h-6 w-6 text-slate-400" />
+                        <ToggleLeft className="h-6 w-6 text-slate-500" />
                       )}
                     </button>
                   </div>

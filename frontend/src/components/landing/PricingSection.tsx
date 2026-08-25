@@ -250,7 +250,7 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                       <span className="text-lg font-bold text-slate-900">{plan.label}</span>
                       {isHighlighted && <Star className="h-4 w-4 fill-blue-500 text-blue-500" />}
                     </div>
-                    <p className="text-sm font-medium text-slate-400 mt-0.5">{plan.tagline}</p>
+                    <p className="text-sm font-medium text-slate-500 mt-0.5">{plan.tagline}</p>
                   </div>
 
                   {/* Pricing */}
@@ -266,10 +266,10 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                         )}
                         <div className="mt-3 border-t border-slate-200 pt-3">
                           <div className="flex items-baseline justify-between">
-                            <span className="text-xs text-slate-400">Total for {seats} users</span>
+                            <span className="text-xs text-slate-500">Total for {seats} users</span>
                             <span className="text-sm font-semibold text-slate-700">
                               {PRICE_CURRENCY}{totalPrice.toLocaleString('en-IN')}
-                              <span className="text-xs font-normal text-slate-400">/{isYearly ? 'yr' : 'mo'}</span>
+                              <span className="text-xs font-normal text-slate-500">/{isYearly ? 'yr' : 'mo'}</span>
                             </span>
                           </div>
                         </div>
@@ -280,13 +280,13 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                           <span className="text-3xl font-bold text-slate-900">{PRICE_CURRENCY}{(plan.basePrice ?? 0).toLocaleString('en-IN')}</span>
                           <span className="text-sm text-slate-500">/mo</span>
                         </div>
-                        <p className="mt-1 text-xs text-slate-400">
+                        <p className="mt-1 text-xs text-slate-500">
                           Includes {plan.includedSeats} users. +{PRICE_CURRENCY}{plan.extraSeatPrice}/extra user
                         </p>
                         {seats > (plan.includedSeats ?? 50) && (
                           <div className="mt-3 border-t border-slate-200 pt-3">
                             <div className="flex items-baseline justify-between">
-                              <span className="text-xs text-slate-400">Total for {seats} users ({seats - (plan.includedSeats ?? 50)} extra)</span>
+                              <span className="text-xs text-slate-500">Total for {seats} users ({seats - (plan.includedSeats ?? 50)} extra)</span>
                               <span className="text-sm font-semibold text-slate-700">
                                 {PRICE_CURRENCY}{totalPrice.toLocaleString('en-IN')}/mo
                               </span>
@@ -305,7 +305,7 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
 
                   {/* Modules */}
                   <div className="flex-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-3">What's included</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-3">What's included</p>
                     <div className="grid gap-2 sm:grid-cols-2">
                       {plan.modules.map((mod) => (
                         <ModuleCard key={mod.name} module={mod} />

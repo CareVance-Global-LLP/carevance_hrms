@@ -506,7 +506,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     Company Name
                   </label>
                   <div className="relative">
-                    <Monitor className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Monitor className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input
                       id="company-name"
                       type="text"
@@ -525,7 +525,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     Full Name
                   </label>
                   <div className="relative">
-                    <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input
                       id="name"
                       type="text"
@@ -543,7 +543,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     Work Email
                   </label>
                   <div className="relative">
-                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input
                       id="email"
                       type="email"
@@ -569,7 +569,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     Password
                   </label>
                   <div className="relative">
-                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input
                       id="password"
                       type={showPassword ? 'text' : 'password'}
@@ -583,7 +583,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     <button
                       type="button"
                       onClick={() => setShowPassword((current) => !current)}
-                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 transition hover:text-slate-600"
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 transition hover:text-slate-600"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -598,7 +598,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                     Confirm Password
                   </label>
                   <div className="relative">
-                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                     <input
                       id="password-confirmation"
                       type={showPassword ? 'text' : 'password'}

@@ -52,13 +52,13 @@ export default function UnassignedEmployees({ onBack }: UnassignedEmployeesProps
 
       <SurfaceCard className="p-4">
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
-          <Search className="h-4 w-4 text-slate-400" />
+          <Search className="h-4 w-4 text-slate-500" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name, email, designation..."
-            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-500"
           />
         </div>
       </SurfaceCard>
@@ -118,24 +118,24 @@ export default function UnassignedEmployees({ onBack }: UnassignedEmployeesProps
                 </div>
                 <div className="flex items-center gap-6 flex-shrink-0 text-sm">
                   <div className="text-right hidden sm:block">
-                    <p className="text-xs text-slate-400">Department</p>
+                    <p className="text-xs text-slate-500">Department</p>
                     <p className="text-slate-700">{emp.department ?? '—'}</p>
                   </div>
                   <div className="text-right hidden md:block">
-                    <p className="text-xs text-slate-400">CTC (Annual)</p>
+                    <p className="text-xs text-slate-500">CTC (Annual)</p>
                     <p className="text-slate-700 font-medium">
                       {emp.annual_ctc ? `₹${Number(emp.annual_ctc).toLocaleString('en-IN')}` : '—'}
                     </p>
                   </div>
                   <div className="text-right hidden lg:block">
-                    <p className="text-xs text-slate-400">Joined</p>
+                    <p className="text-xs text-slate-500">Joined</p>
                     <p className="text-slate-700">
                       {emp.joining_date
                         ? new Date(emp.joining_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                         : '—'}
                     </p>
                   </div>
-                  <UserX className="h-4 w-4 text-slate-400" />
+                  <UserX className="h-4 w-4 text-slate-500" />
                 </div>
               </div>
             ))}

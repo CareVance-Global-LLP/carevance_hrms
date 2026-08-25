@@ -10,6 +10,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -35,6 +36,8 @@ class ScreenshotSecurityTest extends TestCase
                 'role' => 'employee',
                 'organization_id' => $organization->id,
             ]);
+
+            Auth::setUser($user);
 
             $timeEntry = TimeEntry::create([
                 'user_id' => $user->id,
@@ -76,6 +79,8 @@ class ScreenshotSecurityTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        Auth::setUser($user);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => now()->subHour(),
@@ -114,6 +119,8 @@ class ScreenshotSecurityTest extends TestCase
                 'role' => 'employee',
                 'organization_id' => $organization->id,
             ]);
+
+            Auth::setUser($user);
 
             $timeEntry = TimeEntry::create([
                 'user_id' => $user->id,
@@ -164,6 +171,8 @@ class ScreenshotSecurityTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        Auth::setUser($user);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => now()->subHour(),
@@ -206,6 +215,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($employee);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $employee->id,
@@ -251,6 +262,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($employee);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $employee->id,
@@ -319,6 +332,8 @@ class ScreenshotSecurityTest extends TestCase
         ]);
         $otherEmployee->groups()->attach($otherGroup->id);
 
+        Auth::setUser($otherEmployee);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $otherEmployee->id,
             'start_time' => now()->subHour(),
@@ -353,6 +368,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'manager',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($manager);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $manager->id,
@@ -389,6 +406,8 @@ class ScreenshotSecurityTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        Auth::setUser($user);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => now()->subHour(),
@@ -424,6 +443,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($user);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $user->id,
@@ -462,6 +483,8 @@ class ScreenshotSecurityTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        Auth::setUser($user);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => now()->subHour(),
@@ -499,6 +522,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($user);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $user->id,
@@ -554,6 +579,8 @@ class ScreenshotSecurityTest extends TestCase
                 'role' => 'employee',
                 'organization_id' => $organization->id,
             ]);
+
+            Auth::setUser($anotherEmployee);
 
             $matchingEntry = TimeEntry::create([
                 'user_id' => $employee->id,
@@ -639,6 +666,8 @@ class ScreenshotSecurityTest extends TestCase
                 'organization_id' => $organization->id,
             ]);
 
+            Auth::setUser($employee);
+
             $entry = TimeEntry::create([
                 'user_id' => $employee->id,
                 'start_time' => '2026-03-16 09:00:00',
@@ -702,6 +731,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($employee);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $employee->id,
@@ -768,6 +799,8 @@ class ScreenshotSecurityTest extends TestCase
                 'role' => 'employee',
                 'organization_id' => $organization->id,
             ]);
+
+            Auth::setUser($anotherEmployee);
 
             $matchingEntry = TimeEntry::create([
                 'user_id' => $employee->id,
@@ -856,6 +889,8 @@ class ScreenshotSecurityTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        Auth::setUser($employee);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $employee->id,
             'start_time' => '2026-03-16 09:00:00',
@@ -899,6 +934,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($employee);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $employee->id,
@@ -976,6 +1013,8 @@ class ScreenshotSecurityTest extends TestCase
                 'role' => 'manager',
                 'organization_id' => $organization->id,
             ]);
+
+            Auth::setUser($anotherManager);
 
             $employeeEntry = TimeEntry::create([
                 'user_id' => $employee->id,
@@ -1065,6 +1104,8 @@ class ScreenshotSecurityTest extends TestCase
         ]);
         $otherEmployee->groups()->attach($otherGroup->id);
 
+        Auth::setUser($otherEmployee);
+
         $timeEntry = TimeEntry::create([
             'user_id' => $otherEmployee->id,
             'start_time' => now()->subHour(),
@@ -1112,6 +1153,8 @@ class ScreenshotSecurityTest extends TestCase
             'role' => 'manager',
             'organization_id' => $organization->id,
         ]);
+
+        Auth::setUser($managerOwner);
 
         $timeEntry = TimeEntry::create([
             'user_id' => $managerOwner->id,

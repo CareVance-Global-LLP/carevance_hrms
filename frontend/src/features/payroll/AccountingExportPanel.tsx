@@ -23,7 +23,7 @@ export default function AccountingExportPanel({ runId }: { runId: number }) {
   });
 
   if (query.isLoading) {
-    return <p className="py-4 text-center text-xs text-slate-400">Building the journal…</p>;
+    return <p className="py-4 text-center text-xs text-slate-500">Building the journal…</p>;
   }
 
   const journal = query.data?.data;

@@ -328,7 +328,7 @@ export default function BulkPayrollMatrix({
   const renderInput = (empId: number, field: keyof MatrixRowData, value: number, opts?: { readOnly?: boolean }) => (
     <td key={`${empId}-${field}`} className="px-2 py-1.5">
       <div className="relative">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">₹</span>
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 pointer-events-none">₹</span>
         <input
           type="number"
           value={value || ''}
@@ -667,9 +667,9 @@ export default function BulkPayrollMatrix({
             return (
               <>
                 {renderEmployeeCell(emp)}
-                <td className="px-3 py-2 text-sm text-slate-400 italic">No active loans</td>
-                <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
-                <td className="px-3 py-2 text-right text-sm text-slate-400">—</td>
+                <td className="px-3 py-2 text-sm text-slate-500 italic">No active loans</td>
+                <td className="px-3 py-2 text-right text-sm text-slate-500">—</td>
+                <td className="px-3 py-2 text-right text-sm text-slate-500">—</td>
               </>
             );
           }
@@ -738,7 +738,7 @@ export default function BulkPayrollMatrix({
             <div key={c.label} className={`rounded-lg border p-4 ${c.bg}`}>
               <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{c.label}</p>
               <p className={`text-xl font-bold mt-1 tabular-nums ${c.color}`}>₹{fmt(c.value)}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{employees.length} employees</p>
+              <p className="text-xs text-slate-500 mt-0.5">{employees.length} employees</p>
             </div>
           ))}
         </div>
@@ -1032,7 +1032,7 @@ export default function BulkPayrollMatrix({
             </div>
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-400">
+          <div className="flex items-center justify-center h-full text-slate-500">
             <p className="text-sm">No employees to display</p>
           </div>
         ) : (

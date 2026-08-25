@@ -22,10 +22,24 @@ const GLOSSARY = [
   { term: 'ECR', def: 'Electronic Challan cum Return — monthly PF filing submitted to EPFO.' },
 ];
 
+/*
+ * A REFERENCE list, not a status list.
+ *
+ * These carried a pass/fail flag and rendered a red cross against TDS on every
+ * tenant, forever - inventing a compliance breach on a compliance product, in
+ * a drawer reachable from all six payroll tabs. Whether a filing is actually
+ * late is a question only the filing rows can answer, and the Filings screen
+ * answers it there. This says what the statute requires, and nothing more.
+ *
+ * ESI also read "21st"; reg. 31 of the ESI (General) Regulations 1950 gives
+ * the 15th of the following month.
+ */
 const DEADLINES = [
-  { text: 'PF ECR — 15th of every month', pass: true },
-  { text: 'TDS Challan — 7th of every month', pass: false },
-  { text: 'ESI — 21st of every month', pass: true },
+  { text: 'PF ECR — 15th of the following month', law: 'EPF Scheme 1952, para 38' },
+  { text: 'ESI contribution — 15th of the following month', law: 'ESI (Gen.) Regs 1950, reg. 31' },
+  { text: 'TDS deposit — 7th of the following month', law: 'IT Rules, r.30' },
+  { text: 'Form 24Q — 31 Jul / 31 Oct / 31 Jan / 31 May', law: 'IT Rules, r.31A' },
+  { text: 'Form 16 — 15 June', law: 'IT Rules, r.31' },
 ];
 
 export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
@@ -36,7 +50,7 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
   return (
     <SlideOver open onClose={onClose} titleId="help-drawer-title" widthClassName="max-w-[420px]">
         <div className="sticky top-0 bg-white z-10 px-[22px] py-5 flex items-center justify-between border-b border-slate-200">
-          <div id="help-drawer-title" className="text-[15px] font-bold text-slate-900">Help &amp; Resources — HelpDrawer</div>
+          <div id="help-drawer-title" className="text-[15px] font-bold text-slate-900">Help &amp; Resources</div>
           <button
             onClick={onClose}
             className="p-1.5 rounded-md text-slate-700 hover:bg-slate-100 transition-colors"
@@ -47,7 +61,7 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
         </div>
 
         <div className="px-[22px] py-[18px]">
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2.5">
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
             How It Works
           </div>
           <div className="rounded-lg border border-slate-200 overflow-hidden mb-3.5">
@@ -93,7 +107,7 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
             )}
           </div>
 
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2.5">
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
             Glossary
           </div>
           <div className="flex flex-col gap-2 mb-4">
@@ -107,23 +121,18 @@ export default function HelpDrawer({ isOpen, onClose }: HelpDrawerProps) {
 
           <div className="h-px bg-slate-200 my-4" />
 
-          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest mb-2.5">
-            Compliance Deadlines
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
+            Statutory Deadlines
           </div>
+          <p className="text-[12px] text-slate-500 mb-2">
+            What the law requires. Whether your filings are on time is shown on Payroll &rarr; Tax
+            &amp; Compliance &rarr; Statutory Filings, against your real filing records.
+          </p>
           <div>
             {DEADLINES.map((d) => (
-              <div
-                key={d.text}
-                className="flex items-center gap-2.5 py-2.5 border-b border-slate-200 last:border-b-0"
-              >
-                <div
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] flex-shrink-0 ${
-                    d.pass ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'
-                  }`}
-                >
-                  {d.pass ? '✓' : '✗'}
-                </div>
+              <div key={d.text} className="py-2.5 border-b border-slate-200 last:border-b-0">
                 <div className="text-[13px] text-slate-900">{d.text}</div>
+                <div className="text-[11px] text-slate-500">{d.law}</div>
               </div>
             ))}
           </div>

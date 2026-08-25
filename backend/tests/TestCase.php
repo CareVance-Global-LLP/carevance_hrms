@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Models\User;
+use App\Services\Ai\SemanticLayer;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -26,12 +27,23 @@ abstract class TestCase extends BaseTestCase
      * The cost is one flush per test; the alternative is a suite whose result
      * depends on the order it happened to run in, which is a suite you cannot
      * use to tell whether a change was safe.
+     *
+     * `SemanticLayer::forgetCached()` is here for the same reason and is not
+     * covered by the flush above: the layer keeps an in-process memo in front
+     * of the cache store, deliberately, because checking whether the cached
+     * copy is still valid means walking the whole schema and so costs more than
+     * the cache saves. A memo cannot be flushed by clearing the cache. Without
+     * this line, one test that touched the layer before its database was
+     * migrated would memoise an empty catalogue and hand it to every later test
+     * in the same PHP process — every plan then refused as "no such entity",
+     * in a full run only, passing in isolation.
      */
     protected function setUp(): void
     {
         parent::setUp();
 
         Cache::flush();
+        SemanticLayer::forgetCached();
     }
 
     protected function issueApiToken(User $user, string $name = 'test-token'): string

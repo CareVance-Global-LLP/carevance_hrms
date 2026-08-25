@@ -191,7 +191,7 @@ function TreeNodeCardBase({
 
       {!simple && (
         <>
-          <p className={`mt-1 truncate text-[11px] ${dept === 'Unassigned' ? 'italic text-slate-400' : 'text-slate-500'}`}>
+          <p className={`mt-1 truncate text-[11px] ${dept === 'Unassigned' ? 'italic text-slate-500' : 'text-slate-500'}`}>
             {dept === 'Unassigned' ? 'No department' : dept}
           </p>
           {user.team && (
@@ -460,14 +460,14 @@ function DeptNodeCard({ node, isCollapsed, onToggle }: { node: OrgNode & { kind:
         <Building2 className="h-5 w-5" />
       </div>
       <div className="min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Department</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Department</p>
         <p className="truncate text-base font-semibold text-slate-900">{node.name}</p>
       </div>
       <span className="ml-auto shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
         {node.headcount}
       </span>
       {onToggle && (
-        <button onClick={onToggle} className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600">
+        <button onClick={onToggle} className="shrink-0 rounded p-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-600">
           {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>
       )}
@@ -1277,7 +1277,7 @@ export default function OrganizationTree() {
                 <div>
                   <p className="text-xs text-slate-500">{s.label}</p>
                   <p className="mt-1 text-2xl font-semibold text-slate-950">{s.value}</p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">{s.hint}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-500">{s.hint}</p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <s.icon className={`h-5 w-5 ${s.accent}`} />
@@ -1292,7 +1292,7 @@ export default function OrganizationTree() {
                 <div>
                   <p className="text-xs text-slate-500">No Department</p>
                   <p className="mt-1 text-2xl font-semibold text-amber-600">{unassignedUsers.length}</p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">Unassigned employees</p>
+                  <p className="mt-0.5 text-[10px] text-slate-500">Unassigned employees</p>
                 </div>
                 <AlertTriangle className="h-5 w-5 text-amber-500" />
               </div>
@@ -1303,18 +1303,18 @@ export default function OrganizationTree() {
         {/* ── Toolbar ── */}
         <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, email, department, group…"
-              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-9 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-500 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-600"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1396,7 +1396,7 @@ export default function OrganizationTree() {
 
         {/* ── Legend ── */}
         <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Legend</span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Legend</span>
           {roleCards.map((s) => (
             <span key={s.key} className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
               <span className={`h-3 w-3 rounded-full ${s.dot}`} />
@@ -1407,7 +1407,7 @@ export default function OrganizationTree() {
             <span className="inline-block h-3 w-3 rounded-[3px] border-2 border-dashed border-indigo-300 bg-indigo-50" />
             Team group
           </span>
-          <span className="ml-auto text-[10px] text-slate-400">
+          <span className="ml-auto text-[10px] text-slate-500">
             Scroll + Ctrl/Cmd to zoom · drag to pan
           </span>
         </div>
@@ -1439,7 +1439,7 @@ export default function OrganizationTree() {
               {activeChain.map((u, i) => (
                 <Fragment key={u.id}>
                   {i > 0 ? (
-                    <span className="text-[11px] font-medium text-slate-400">→ reports to →</span>
+                    <span className="text-[11px] font-medium text-slate-500">→ reports to →</span>
                   ) : null}
                   <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
                     <span className="font-semibold text-slate-800">{u.name}</span>
@@ -1447,7 +1447,7 @@ export default function OrganizationTree() {
                       {u.role_name || u.role}
                     </span>
                     {i === activeChain.length - 1 ? (
-                      <span className="text-[10px] font-medium text-slate-400">Top</span>
+                      <span className="text-[10px] font-medium text-slate-500">Top</span>
                     ) : null}
                   </span>
                 </Fragment>
@@ -1465,7 +1465,7 @@ export default function OrganizationTree() {
             ) : null}
           </div>
         ) : (
-          <div className="flex h-full items-center rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-400">
+          <div className="flex h-full items-center rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-500">
             Hover a person to trace their reporting line · click to pin it
           </div>
         )}
@@ -1624,7 +1624,7 @@ export default function OrganizationTree() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-slate-800 truncate">{u.name}</p>
-                        <p className="text-[10px] text-slate-400">{u.role_name || u.role}</p>
+                        <p className="text-[10px] text-slate-500">{u.role_name || u.role}</p>
                       </div>
                     </div>
                   ))}
@@ -1636,7 +1636,7 @@ export default function OrganizationTree() {
         {/* ── Routing note ── */}
         <div className="mt-8 rounded-lg border border-slate-200 bg-white p-4">
           <p className="flex items-center gap-2 text-xs font-medium text-slate-700">
-            <Network className="h-3.5 w-3.5 text-slate-400" />
+            <Network className="h-3.5 w-3.5 text-slate-500" />
             How Routing Works
           </p>
           <p className="mt-1 text-xs leading-relaxed text-slate-500">

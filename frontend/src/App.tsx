@@ -771,7 +771,17 @@ function App() {
               <Route path="employee-pay" element={<EmployeePayTab />} />
               <Route path="operations" element={<OperationsTab />} />
               <Route path="tax-compliance" element={<TaxComplianceTab />} />
-              <Route path="reports" element={<PayrollReportsPage />} />
+              {/*
+                ReportsTab, not PayrollReportsPage. This route existed but
+                pointed at the older registers-only screen, which does not read
+                the `panel` query param — so `/payroll/filings`, which redirects
+                here with `?panel=filings`, silently landed on the wrong page.
+                ReportsTab subsumes those registers (its `register` panel
+                carries Summary, PF/ESI, TDS and Bank Recon) and is the only
+                route to Bank Payout, Proof Documents and the Accounting Export,
+                all three finished and until now unreachable.
+              */}
+              <Route path="reports" element={<ReportsTab />} />
             </Route>
             {/* Pay Group Settings - standalone page for configuring pay group state and statutory details */}
             {/*

@@ -1366,7 +1366,15 @@ class AttendanceService
 
     private function startPrimaryTimer(User $user, Carbon $startedAt, ?string $description = null): void
     {
+        // organization_id is set explicitly, matching the AttendancePunch and
+        // AttendanceRecord writes a few lines above in checkIn(). It cannot be
+        // left to BelongsToOrganization's create-time stamp: checkIn() is also
+        // reached from BiometricPunchProcessor::processDay(), driven by the
+        // scheduled biometric:process-pending command, with no authenticated
+        // user at all — the trait's stamp is a deliberate no-op there, and
+        // this row would otherwise be created with organization_id null.
         TimeEntry::create([
+            'organization_id' => $user->organization_id,
             'user_id' => $user->id,
             'project_id' => null,
             'task_id' => null,

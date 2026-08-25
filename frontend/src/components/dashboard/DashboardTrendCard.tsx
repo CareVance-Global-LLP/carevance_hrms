@@ -66,7 +66,7 @@ export default function DashboardTrendCard({
                     <div className="rounded-lg border border-slate-200 bg-surface-raised px-3 py-2 shadow-xl">
                       <p className="text-xs font-bold text-slate-900">{row.label}</p>
                       <p className="mt-1 text-xs text-slate-500">{row.formattedValue}</p>
-                      {row.hint && <p className="mt-0.5 text-xs text-slate-400">{row.hint}</p>}
+                      {row.hint && <p className="mt-0.5 text-xs text-slate-500">{row.hint}</p>}
                     </div>
                   );
                 }}

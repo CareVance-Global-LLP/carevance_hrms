@@ -265,20 +265,20 @@ export default function SuperAdminOrganizationDetailPage() {
                 {getStatusBadge(organization.subscription_status)}
               </div>
               <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-slate-400" />
+                <Users className="h-4 w-4 text-slate-500" />
                 <span className="text-sm text-slate-600">
                   {organization.users_count} users ({organization.active_users_count} active)
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-slate-400" />
+                <Calendar className="h-4 w-4 text-slate-500" />
                 <span className="text-sm text-slate-600">
                   Created {new Date(organization.created_at).toLocaleDateString()}
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4 text-slate-400" />
+              <CreditCard className="h-4 w-4 text-slate-500" />
               <span className="text-sm text-slate-600">
                 Plan: {organization.subscription_plan || organization.plan_code || 'No plan'}
               </span>
@@ -328,7 +328,7 @@ export default function SuperAdminOrganizationDetailPage() {
                 ) : (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Description</label>
-                    <p className="text-slate-400 mt-1 italic">No description provided</p>
+                    <p className="text-slate-500 mt-1 italic">No description provided</p>
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">
@@ -340,7 +340,7 @@ export default function SuperAdminOrganizationDetailPage() {
                   ) : (
                     <div>
                       <label className="text-sm font-medium text-slate-500">Industry</label>
-                      <p className="text-slate-400 mt-1 italic">Not specified</p>
+                      <p className="text-slate-500 mt-1 italic">Not specified</p>
                     </div>
                   )}
                   {organization.size ? (
@@ -351,7 +351,7 @@ export default function SuperAdminOrganizationDetailPage() {
                   ) : (
                     <div>
                       <label className="text-sm font-medium text-slate-500">Company Size</label>
-                      <p className="text-slate-400 mt-1 italic">Not specified</p>
+                      <p className="text-slate-500 mt-1 italic">Not specified</p>
                     </div>
                   )}
                 </div>
@@ -371,7 +371,7 @@ export default function SuperAdminOrganizationDetailPage() {
                 ) : (
                   <div>
                     <label className="text-sm font-medium text-slate-500">Website</label>
-                    <p className="text-slate-400 mt-1 italic">No website</p>
+                    <p className="text-slate-500 mt-1 italic">No website</p>
                   </div>
                 )}
               </div>
@@ -386,7 +386,7 @@ export default function SuperAdminOrganizationDetailPage() {
               <div className="space-y-4">
                 {organization.email ? (
                   <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-slate-400" />
+                    <Mail className="h-4 w-4 text-slate-500" />
                     <a
                       href={`mailto:${organization.email}`}
                       className="text-slate-700 hover:text-blue-600"
@@ -396,24 +396,24 @@ export default function SuperAdminOrganizationDetailPage() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <Mail className="h-4 w-4 text-slate-400" />
-                    <span className="text-slate-400 italic">No email</span>
+                    <Mail className="h-4 w-4 text-slate-500" />
+                    <span className="text-slate-500 italic">No email</span>
                   </div>
                 )}
                 {organization.phone ? (
                   <div className="flex items-center gap-3">
-                    <Phone className="h-4 w-4 text-slate-400" />
+                    <Phone className="h-4 w-4 text-slate-500" />
                     <span className="text-slate-700">{organization.phone}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-3">
-                    <Phone className="h-4 w-4 text-slate-400" />
-                    <span className="text-slate-400 italic">No phone</span>
+                    <Phone className="h-4 w-4 text-slate-500" />
+                    <span className="text-slate-500 italic">No phone</span>
                   </div>
                 )}
                 {(organization.address_line || organization.city) ? (
                   <div className="flex items-start gap-3">
-                    <MapPin className="h-4 w-4 text-slate-400 mt-0.5" />
+                    <MapPin className="h-4 w-4 text-slate-500 mt-0.5" />
                     <div className="text-slate-700">
                       {organization.address_line && <div>{organization.address_line}</div>}
                       {(organization.city || organization.state) && (
@@ -434,8 +434,8 @@ export default function SuperAdminOrganizationDetailPage() {
                   </div>
                 ) : (
                   <div className="flex items-start gap-3">
-                    <MapPin className="h-4 w-4 text-slate-400 mt-0.5" />
-                    <span className="text-slate-400 italic">No address</span>
+                    <MapPin className="h-4 w-4 text-slate-500 mt-0.5" />
+                    <span className="text-slate-500 italic">No address</span>
                   </div>
                 )}
               </div>
@@ -470,7 +470,7 @@ export default function SuperAdminOrganizationDetailPage() {
                   <UserCircle className="h-5 w-5 text-emerald-600" />
                   Organization Owner
                 </h3>
-                <p className="text-slate-400 italic">No owner information available</p>
+                <p className="text-slate-500 italic">No owner information available</p>
               </SurfaceCard>
             )}
           </div>
@@ -512,7 +512,7 @@ export default function SuperAdminOrganizationDetailPage() {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getRoleBadgeClass(user.role)}`}>
                           {user.role}
                         </span>
-                        <span className="text-sm text-slate-400">
+                        <span className="text-sm text-slate-500">
                           Joined {new Date(user.created_at).toLocaleDateString()}
                         </span>
                         {user.email_verified_at ? (

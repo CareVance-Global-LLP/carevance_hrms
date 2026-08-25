@@ -176,7 +176,7 @@ export default function SetupEmployees() {
 
       <SurfaceCard className="p-3 mb-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <TextInput
             placeholder="Search by name or email..."
             value={search}
@@ -188,7 +188,7 @@ export default function SetupEmployees() {
 
       {isLoading ? (
         <SurfaceCard className="p-8 text-center">
-          <Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-400" />
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-500" />
         </SurfaceCard>
       ) : filtered.length === 0 ? (
         <SurfaceCard className="p-8 text-center">
@@ -228,7 +228,7 @@ export default function SetupEmployees() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="relative max-w-[180px]">
-                          <IndianRupee className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+                          <IndianRupee className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
                           <TextInput
                             type="number"
                             value={currentCtc}

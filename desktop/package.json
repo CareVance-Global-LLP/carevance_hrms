@@ -1,6 +1,6 @@
 {
   "name": "carevance-desktop",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "CareVance Tracker desktop timer and activity tracker",
   "private": true,
   "author": "CareVance",
@@ -26,6 +26,9 @@
       "idle-popup.cjs",
       "idle-popup-preload.cjs",
       "idle-popup/**/*",
+      "quick-reply-popup.cjs",
+      "quick-reply-preload.cjs",
+      "quick-reply/**/*",
       "browser-tracking-bridge.cjs",
       "browser-tracking-install-guide.cjs",
       "browser-url/**/*",

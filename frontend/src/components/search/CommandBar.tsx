@@ -14,10 +14,12 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CornerDownLeft, Loader2, Search, X } from 'lucide-react';
+import { CornerDownLeft, Loader2, Search, Sparkles, X } from 'lucide-react';
 import { COMMAND_GROUPS, type CommandGroup, type CommandItem } from '@/lib/commandRegistry';
 import { highlightSegments, rankCandidates, suggestCorrection } from '@/lib/searchRanking';
+import type { AskResponse } from '@/services/api';
 import { cn } from '@/utils/cn';
+import AiAnswerTable from './AiAnswerTable';
 
 /** Scope prefixes. Typing one of these as the first character narrows the search. */
 const SCOPES = {
@@ -48,6 +50,21 @@ export interface CommandBarProps {
   usesOf: (id: string) => number;
   /** Shown before anyone types, under "Recent". */
   recentDisplayCount?: number;
+  /** AI mode: natural-language data questions answered as a table. */
+  aiMode?: boolean;
+  onAiModeChange?: (on: boolean) => void;
+  aiAnswer?: AskResponse | null;
+  aiLoading?: boolean;
+  /** The reason a question was refused. Refusing is a normal outcome. */
+  aiError?: string | null;
+  onAskAi?: (question: string) => void;
+  /**
+   * Runs one of the example questions the empty AI panel offers. Separate from
+   * `onAskAi` because this one also has to put the question in the field:
+   * without it the answer arrives under a blank prompt with nothing on screen
+   * saying what was asked. Left unwired, the examples render as plain text.
+   */
+  onAiExample?: (question: string) => void;
 }
 
 interface RenderRow {
@@ -71,6 +88,13 @@ export default function CommandBar({
   recentIds,
   usesOf,
   recentDisplayCount = 5,
+  aiMode = false,
+  onAiModeChange,
+  aiAnswer = null,
+  aiLoading = false,
+  aiError = null,
+  onAskAi,
+  onAiExample,
 }: CommandBarProps) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<ScopeKey | null>(null);
@@ -258,6 +282,29 @@ export default function CommandBar({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Tab into AI mode, but ONLY from an empty query — otherwise this steals the
+    // key from anyone tabbing through results.
+    if (!aiMode && event.key === 'Tab' && query.trim().length === 0 && !event.shiftKey) {
+      event.preventDefault();
+      onAiModeChange?.(true);
+      return;
+    }
+
+    if (aiMode) {
+      if (event.key === 'Enter' && query.trim().length > 0) {
+        event.preventDefault();
+        onAskAi?.(query.trim());
+        return;
+      }
+      // Esc leaves AI mode first — closing outright would discard an answer the
+      // user is still reading.
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onAiModeChange?.(false);
+        return;
+      }
+    }
+
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
@@ -333,179 +380,250 @@ export default function CommandBar({
         if (event.target === event.currentTarget) onClose();
       }}
     >
+      {/*
+        The glow lives on a wrapper OUTSIDE the panel, not inside it. The panel
+        is `overflow-hidden` so that its rounded corners clip the results list,
+        and a ring drawn at a negative inset within that box gets clipped away
+        entirely — leaving only the sliver that overlapped the input's bottom
+        border, which read as a stray line rather than a border.
+      */}
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command bar"
-        className="flex w-full max-w-xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+        className={`w-full rounded-xl transition-[max-width] duration-200 ${
+          aiMode ? 'ai-glow max-w-4xl' : 'max-w-xl'
+        }`}
         onMouseDown={(event) => event.stopPropagation()}
       >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command bar"
+          className="flex w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+        >
         {/* ------------------------------------------------------- input row */}
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
-          {remoteLoading ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" aria-hidden="true" />
-          ) : (
-            <Search className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
-          )}
+        <div>
+          <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+            {remoteLoading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-600" aria-hidden="true" />
+            ) : (
+              <Search className="h-4 w-4 shrink-0 text-blue-600" aria-hidden="true" />
+            )}
 
-          {/*
-            Chip fill is blue-700, not blue-600: the brand mid-tone only reaches
-            3.33:1 against its own foreground in light mode. Do not reach for
-            800+ — the dark ramp is inverted and those collapse to 1.09:1 there.
-          */}
-          {scope ? (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded bg-blue-700 px-1.5 py-0.5 text-[11px] font-semibold text-on-brand">
-              {SCOPES[scope].label}
-              <button
-                type="button"
-                onClick={() => {
-                  clearScope();
-                  inputRef.current?.focus();
-                }}
-                aria-label={`Clear ${SCOPES[scope].label} filter`}
-                className="rounded-sm hover:opacity-75"
-              >
-                <X className="h-3 w-3" aria-hidden="true" />
-              </button>
-            </span>
-          ) : null}
+            {/*
+              Chip fill is blue-700, not blue-600: the brand mid-tone only reaches
+              3.33:1 against its own foreground in light mode. Do not reach for
+              800+ — the dark ramp is inverted and those collapse to 1.09:1 there.
+            */}
+            {scope ? (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded bg-blue-700 px-1.5 py-0.5 text-[11px] font-semibold text-on-brand">
+                {SCOPES[scope].label}
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearScope();
+                    inputRef.current?.focus();
+                  }}
+                  aria-label={`Clear ${SCOPES[scope].label} filter`}
+                  className="rounded-sm hover:opacity-75"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              </span>
+            ) : null}
 
-          <input
-            ref={inputRef}
-            type="text"
-            role="combobox"
-            aria-expanded="true"
-            aria-controls={listboxId}
-            aria-autocomplete="list"
-            aria-activedescendant={activeOptionId}
-            aria-label="Search CareVance"
-            autoComplete="off"
-            spellCheck={false}
-            value={query}
-            onChange={(event) => handleChange(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={scope ? `Search ${SCOPES[scope].label.toLowerCase()}…` : 'Search or jump to…'}
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-600"
-          />
+            <input
+              ref={inputRef}
+              type="text"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls={listboxId}
+              aria-autocomplete="list"
+              aria-activedescendant={activeOptionId}
+              aria-label="Search CareVance"
+              autoComplete="off"
+              spellCheck={false}
+              value={query}
+              onChange={(event) => handleChange(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                aiMode
+                  ? 'Ask about your data…'
+                  : scope
+                    ? `Search ${SCOPES[scope].label.toLowerCase()}…`
+                    : 'Search or jump to…'
+              }
+              className="min-w-0 flex-1 bg-transparent text-[15px] text-slate-900 outline-none placeholder:text-slate-600"
+            />
 
-          <kbd className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 sm:inline-flex">
-            Esc
-          </kbd>
+            {/*
+              The glow is decorative and aria-hidden, so this button carries the state
+              for anyone who cannot see it: a real pressed state and a real label.
+            */}
+            <button
+              type="button"
+              onClick={() => onAiModeChange?.(!aiMode)}
+              aria-pressed={aiMode}
+              aria-label="AI mode"
+              className={`inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-semibold transition ${
+                aiMode ? 'bg-blue-700 text-on-brand' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <Sparkles className="h-3 w-3" aria-hidden="true" />
+              AI
+            </button>
+
+            <kbd className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 sm:inline-flex">
+              Esc
+            </kbd>
+          </div>
         </div>
 
         {/* --------------------------------------------------------- results */}
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Results" className="max-h-[19rem] overflow-y-auto p-1.5">
-          {options.length === 0 ? (
-            <div className="px-4 py-8 text-center">
-              <p className="text-sm text-slate-600">
-                {hasQuery ? (
-                  <>
-                    No results for <span className="font-semibold text-slate-900">{trimmedQuery}</span>
-                  </>
-                ) : (
-                  'Start typing to search.'
-                )}
-              </p>
-              {correction ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery(correction.title);
-                    setActiveIndex(0);
-                    inputRef.current?.focus();
-                  }}
-                  className="mt-3 rounded-md border border-blue-600 px-2.5 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50"
-                >
-                  Did you mean {correction.title}?
-                </button>
-              ) : hasQuery ? (
-                <p className="mt-2 text-xs text-slate-600">
-                  Try <span className="font-mono">@</span> for people or <span className="font-mono">&gt;</span> for actions.
-                </p>
-              ) : null}
-            </div>
+          {aiMode ? (
+            aiError ? (
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-slate-900">I can't answer that from your HR data.</p>
+                <p className="mt-1 text-xs text-slate-600">{aiError}</p>
+              </div>
+            ) : (
+              <AiAnswerTable
+                columns={aiAnswer?.columns ?? []}
+                rows={aiAnswer?.rows ?? []}
+                notes={aiAnswer?.notes ?? []}
+                truncated={aiAnswer?.truncated ?? false}
+                plan={aiAnswer?.plan ?? null}
+                summary={aiAnswer?.summary ?? null}
+                // Absent `kind` means a table — that is what every response was
+                // before prose existed, so an answer cached from before the
+                // merge still renders as the table it is.
+                kind={aiAnswer?.kind ?? 'table'}
+                reply={aiAnswer?.reply}
+                sources={aiAnswer?.sources}
+                loading={aiLoading}
+                onExampleClick={
+                  onAiExample
+                    ? (question) => {
+                        setQuery(question);
+                        setActiveIndex(0);
+                        onAiExample(question);
+                      }
+                    : undefined
+                }
+              />
+            )
           ) : (
-            rows.map((row) => {
-              if (row.type === 'header') {
+            options.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-slate-600">
+                  {hasQuery ? (
+                    <>
+                      No results for <span className="font-semibold text-slate-900">{trimmedQuery}</span>
+                    </>
+                  ) : (
+                    'Start typing to search.'
+                  )}
+                </p>
+                {correction ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery(correction.title);
+                      setActiveIndex(0);
+                      inputRef.current?.focus();
+                    }}
+                    className="mt-3 rounded-md border border-blue-600 px-2.5 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-50"
+                  >
+                    Did you mean {correction.title}?
+                  </button>
+                ) : hasQuery ? (
+                  <p className="mt-2 text-xs text-slate-600">
+                    Try <span className="font-mono">@</span> for people or <span className="font-mono">&gt;</span> for actions.
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              rows.map((row) => {
+                if (row.type === 'header') {
+                  return (
+                    <div
+                      key={row.key}
+                      className="flex items-center justify-between px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-600"
+                    >
+                      <span>{row.group}</span>
+                      <span aria-hidden="true">{row.count}</span>
+                    </div>
+                  );
+                }
+
+                const item = row.item as CommandItem;
+                const index = row.optionIndex as number;
+                const isActive = index === activeIndex;
+                const Icon = item.icon;
+                const segments = highlightSegments(item.title, hasQuery ? trimmedQuery : '');
+
                 return (
                   <div
                     key={row.key}
-                    className="flex items-center justify-between px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.09em] text-slate-600"
-                  >
-                    <span>{row.group}</span>
-                    <span aria-hidden="true">{row.count}</span>
-                  </div>
-                );
-              }
-
-              const item = row.item as CommandItem;
-              const index = row.optionIndex as number;
-              const isActive = index === activeIndex;
-              const Icon = item.icon;
-              const segments = highlightSegments(item.title, hasQuery ? trimmedQuery : '');
-
-              return (
-                <div
-                  key={row.key}
-                  id={`${listboxId}-option-${index}`}
-                  role="option"
-                  aria-selected={isActive}
-                  onMouseMove={() => setActiveIndex(index)}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => choose(item)}
-                  className={cn(
-                    'flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors',
-                    isActive ? 'bg-blue-50' : 'hover:bg-slate-50'
-                  )}
-                >
-                  <span
+                    id={`${listboxId}-option-${index}`}
+                    role="option"
+                    aria-selected={isActive}
+                    onMouseMove={() => setActiveIndex(index)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => choose(item)}
                     className={cn(
-                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
-                      isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                      'flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors',
+                      isActive ? 'bg-blue-50' : 'hover:bg-slate-50'
                     )}
                   >
-                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  </span>
+                    <span
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-md',
+                        isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
 
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-slate-900">
-                      {/*
-                        A wash, not a fill, and the text colour is inherited.
-                        A solid `bg-amber-200 text-slate-900` pairing looks fine
-                        in light mode but inverts in dark — slate-900 becomes
-                        near-white and lands on a light amber at 4.24:1. Letting
-                        the row's own colour through means the highlight can
-                        never introduce a contrast failure of its own.
-                      */}
-                      {segments.map((segment, segmentIndex) =>
-                        segment.match ? (
-                          <mark key={segmentIndex} className="rounded-sm bg-amber-400/30 font-semibold text-inherit">
-                            {segment.text}
-                          </mark>
-                        ) : (
-                          <span key={segmentIndex}>{segment.text}</span>
-                        )
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-900">
+                        {/*
+                          A wash, not a fill, and the text colour is inherited.
+                          A solid `bg-amber-200 text-slate-900` pairing looks fine
+                          in light mode but inverts in dark — slate-900 becomes
+                          near-white and lands on a light amber at 4.24:1. Letting
+                          the row's own colour through means the highlight can
+                          never introduce a contrast failure of its own.
+                        */}
+                        {segments.map((segment, segmentIndex) =>
+                          segment.match ? (
+                            <mark key={segmentIndex} className="rounded-sm bg-amber-400/30 font-semibold text-inherit">
+                              {segment.text}
+                            </mark>
+                          ) : (
+                            <span key={segmentIndex}>{segment.text}</span>
+                          )
+                        )}
+                      </span>
+                      {item.subtitle ? (
+                        <span className="block truncate text-xs text-slate-600">{item.subtitle}</span>
+                      ) : null}
+                    </span>
+
+                    {/* Never colour-only: the active row also gains the ↵ glyph. */}
+                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                      {isActive ? (
+                        <>
+                          <span className="text-blue-700">{item.effect === 'run' ? 'Run' : 'Open'}</span>
+                          <CornerDownLeft className="h-3 w-3 text-blue-700" aria-hidden="true" />
+                        </>
+                      ) : (
+                        <span>{item.effect === 'run' ? 'Run' : ''}</span>
                       )}
                     </span>
-                    {item.subtitle ? (
-                      <span className="block truncate text-xs text-slate-600">{item.subtitle}</span>
-                    ) : null}
-                  </span>
-
-                  {/* Never colour-only: the active row also gains the ↵ glyph. */}
-                  <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-slate-600">
-                    {isActive ? (
-                      <>
-                        <span className="text-blue-700">{item.effect === 'run' ? 'Run' : 'Open'}</span>
-                        <CornerDownLeft className="h-3 w-3 text-blue-700" aria-hidden="true" />
-                      </>
-                    ) : (
-                      <span>{item.effect === 'run' ? 'Run' : ''}</span>
-                    )}
-                  </span>
-                </div>
-              );
-            })
+                  </div>
+                );
+              })
+            )
           )}
         </div>
 
@@ -532,6 +650,7 @@ export default function CommandBar({
             <kbd className="rounded border border-slate-200 bg-white px-1 py-0.5 font-mono text-[10px]">#</kbd>
             records
           </span>
+        </div>
         </div>
       </div>
 

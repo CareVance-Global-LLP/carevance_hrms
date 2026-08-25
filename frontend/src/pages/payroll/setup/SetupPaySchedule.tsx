@@ -157,7 +157,7 @@ export default function SetupPaySchedule() {
               min="1"
               max="31"
             />
-            <p className="text-xs text-slate-400 mt-1">Usually 26 (Mon–Sat)</p>
+            <p className="text-xs text-slate-500 mt-1">Usually 26 (Mon–Sat)</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -171,7 +171,7 @@ export default function SetupPaySchedule() {
               min="1"
               max="31"
             />
-            <p className="text-xs text-slate-400 mt-1">Attendance after this day → next month</p>
+            <p className="text-xs text-slate-500 mt-1">Attendance after this day → next month</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -185,7 +185,7 @@ export default function SetupPaySchedule() {
               min="1"
               max="10"
             />
-            <p className="text-xs text-slate-400 mt-1">Buffer between cut-off and pay day</p>
+            <p className="text-xs text-slate-500 mt-1">Buffer between cut-off and pay day</p>
           </div>
         </div>
       </SurfaceCard>

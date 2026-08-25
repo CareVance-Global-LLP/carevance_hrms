@@ -313,6 +313,23 @@ Artisan::command('schedule:timers-close-idle', function () {
 })->everyMinute();
 
 /*
+ * Abandoned chunked uploads.
+ *
+ * People close the tab mid-upload — that is the normal case, not the
+ * exception — and each abandoned session leaves its pieces on disk. These are
+ * the largest files the system handles (up to 200 MB each), so without a sweep
+ * the chunk directory grows until something else breaks.
+ *
+ * Hourly rather than nightly, unlike its neighbours: the cost of deleting a
+ * few directories is trivial, and the cost of NOT deleting them for another
+ * twenty hours is measured in gigabytes.
+ */
+Artisan::command('schedule:uploads-purge', function () {
+    $purged = app(\App\Services\Uploads\ChunkedUploadService::class)->purgeExpired();
+    $this->info(sprintf('Purged %d expired upload session(s).', $purged));
+})->hourly();
+
+/*
  * Close attendance punches nobody checked out of.
  *
  * Hourly, not every minute: unlike the idle sweep this is not racing an active

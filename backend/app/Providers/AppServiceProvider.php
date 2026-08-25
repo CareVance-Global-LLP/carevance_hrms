@@ -69,6 +69,47 @@ class AppServiceProvider extends ServiceProvider
         }
 
         /*
+         * AI mode's vocabulary is DERIVED from the schema, so a migration is
+         * the event that makes it wrong.
+         *
+         * Registered here rather than folded into the cache key, which is what
+         * this replaced. That key was a hash of every table and column, so it
+         * invalidated itself perfectly — and had to read the entire schema to
+         * decide whether anything had changed, which cost more than the cache
+         * saved and was paid on every AI question. Listening moves that cost to
+         * the handful of times a year the schema actually changes.
+         *
+         * On the migration event rather than at the call sites for the same
+         * reason as the observers above: an invalidation somebody has to
+         * remember to call is one that silently stops being called. Migrator
+         * fires MigrationsEnded for both 'up' and 'down', so migrate,
+         * migrate:fresh and migrate:rollback are all covered.
+         *
+         * The day-long TTL on the entry is the backstop for the case this
+         * cannot see — a schema changed outside a migration, which has happened
+         * in this codebase before (bank_transfer_batches).
+         *
+         * DO NOT REMOVE THE rescue() AS DEFENSIVE NOISE. It guards one specific
+         * failure. forgetCached() calls Cache::forget(), and CACHE_STORE
+         * defaults to `database` (.env.example, config/cache.php), so that is a
+         * query against the `cache` TABLE. MigrationsEnded fires for 'down' as
+         * well as 'up', so `migrate:reset` or a full rollback drops that table
+         * and then this listener queries it — turning a rollback that SUCCEEDED
+         * into a QueryException thrown after all the work was done. The suite
+         * cannot catch it because phpunit.xml pins CACHE_STORE=array.
+         *
+         * rescue() rather than skipping 'down': a rollback changes the schema
+         * too, so the vocabulary is just as stale afterwards, and it should
+         * still be forgotten whenever the store is actually reachable. rescue()
+         * reports to the exception handler rather than swallowing silently, so
+         * this stays visible in logs rather than becoming a bare catch.
+         */
+        \Illuminate\Support\Facades\Event::listen(
+            \Illuminate\Database\Events\MigrationsEnded::class,
+            fn () => rescue(fn () => \App\Services\Ai\SemanticLayer::forgetCached()),
+        );
+
+        /*
          * The password policy, in one place.
          *
          * Every password-setting endpoint validated `min:8` and nothing else,
@@ -232,6 +273,20 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute((int) env('RATE_LIMIT_CHAT_MESSAGES_PER_MINUTE', 60))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);
 
+        /*
+         * Upload chunks are legitimately bursty.
+         *
+         * A 200 MB attachment at a 5 MB chunk size is ~40 requests back to
+         * back, and a slower link negotiates smaller pieces and therefore MORE
+         * of them — a 2 MB dev limit turns the same file into ~125. Applying an
+         * ordinary write throttle here would cut off exactly the large uploads
+         * this endpoint exists to make possible, and the failure would look
+         * like a network fault rather than a policy.
+         */
+        RateLimiter::for('uploads.chunks', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_UPLOAD_CHUNKS_PER_MINUTE', 600))->by((string) optional($request->user())->getAuthIdentifier()),
+        ]);
+
         RateLimiter::for('notifications.publish', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_NOTIFICATION_PUBLISH_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);
@@ -239,6 +294,10 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('ai.chat', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_AI_CHAT_PER_MINUTE', 10))
                 ->by((string) (optional($request->user())->getAuthIdentifier() ?? $request->ip())),
+        ]);
+
+        RateLimiter::for('search.ask', fn (Request $request) => [
+            Limit::perMinute(20)->by($request->user()?->id ?: $request->ip()),
         ]);
 
         RateLimiter::for('desktop.download', fn (Request $request) => [

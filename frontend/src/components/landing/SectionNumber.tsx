@@ -33,7 +33,7 @@ export default function SectionNumber({ number, label, className = '' }: Section
       {label && (
         <motion.span
           style={{ opacity, y }}
-          className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400"
+          className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500"
         >
           {label}
         </motion.span>

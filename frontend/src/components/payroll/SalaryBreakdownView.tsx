@@ -22,14 +22,14 @@ function LineTable({
         </span>
       </div>
       {lines.length === 0 ? (
-        <p className="px-3 py-4 text-xs text-slate-400">{emptyLabel}</p>
+        <p className="px-3 py-4 text-xs text-slate-500">{emptyLabel}</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100">
-              <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-slate-400">Component</th>
-              <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-400">Monthly</th>
-              <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-400">Annual</th>
+              <th className="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-slate-500">Component</th>
+              <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-500">Monthly</th>
+              <th className="px-3 py-2 text-right text-[11px] font-medium uppercase tracking-wider text-slate-500">Annual</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -38,7 +38,7 @@ function LineTable({
                 <td className="px-3 py-2 text-slate-700">
                   {line.label}
                   {line.origin === 'residual' && (
-                    <span className="ml-1.5 text-[10px] text-slate-400">balances to CTC</span>
+                    <span className="ml-1.5 text-[10px] text-slate-500">balances to CTC</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-slate-900">
@@ -82,7 +82,7 @@ export default function SalaryBreakdownView({
           { label: 'Net (take-home)', value: breakdown.monthly.net },
         ].map((tile) => (
           <div key={tile.label} className="rounded-lg border border-slate-200 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
               {tile.label}
             </div>
             <div className="mt-1 text-lg font-bold tabular-nums text-slate-900">

@@ -111,7 +111,7 @@ function MenuItemRow({
 
   const content = (
     <>
-      <item.icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? 'text-sky-700' : 'text-slate-400')} />
+      <item.icon className={cn('mt-0.5 h-4 w-4 shrink-0', active ? 'text-sky-700' : 'text-slate-500')} />
       <div className="min-w-0">
         <p className="whitespace-nowrap font-medium">{item.label}</p>
         <p className="text-xs text-slate-500">{description}</p>
@@ -700,7 +700,7 @@ export default function TopNavigation({
                           }}
                           className={`${directGroupClassName} w-full text-left`}
                         >
-                          <group.icon className={cn('h-4 w-4 shrink-0', directGroupActive ? 'text-sky-700' : 'text-slate-400')} />
+                          <group.icon className={cn('h-4 w-4 shrink-0', directGroupActive ? 'text-sky-700' : 'text-slate-500')} />
                           <span className="whitespace-nowrap font-medium">{group.label}</span>
                           <div className="ml-auto flex items-center">
                             <Badge count={group.unreadCount} active={directGroupActive} />
@@ -718,7 +718,7 @@ export default function TopNavigation({
                           }}
                           className={directGroupClassName}
                         >
-                          <group.icon className={cn('h-4 w-4 shrink-0', directGroupActive ? 'text-sky-700' : 'text-slate-400')} />
+                          <group.icon className={cn('h-4 w-4 shrink-0', directGroupActive ? 'text-sky-700' : 'text-slate-500')} />
                           <span className="whitespace-nowrap font-medium">{group.label}</span>
                           <div className="ml-auto flex items-center">
                             <Badge count={group.unreadCount} active={directGroupActive} />
@@ -729,7 +729,7 @@ export default function TopNavigation({
 
                     return (
                       <div key={group.label} className={cn(index > 0 ? 'border-t border-border-strong/40 pt-3' : '')}>
-                        <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        <div className="mb-2 flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                           <group.icon className="h-3.5 w-3.5" />
                           <span className="whitespace-nowrap">{group.label}</span>
                         </div>

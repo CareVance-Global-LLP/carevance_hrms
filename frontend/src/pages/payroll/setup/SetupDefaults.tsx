@@ -150,7 +150,7 @@ export default function SetupDefaults() {
               <InfoTooltip content="The foundation of salary. Most statutory calculations (PF, gratuity, HRA exemption) are anchored to Basic. Setting it too low reduces PF corpus; too high increases tax via lower allowances." title="Basic Salary" typical="40% – 50% of CTC" />
             </div>
             <TextInput type="number" value={basicPct} onChange={(e) => setBasicPct(e.target.value)} min="0" max="100" />
-            <p className="text-xs text-slate-400 mt-1">Industry standard: 40–50%</p>
+            <p className="text-xs text-slate-500 mt-1">Industry standard: 40–50%</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -158,7 +158,7 @@ export default function SetupDefaults() {
               <InfoTooltip content="Tax-exempt allowance for rent paid by employee. Exempt amount = minimum of (actual HRA, rent paid − 10% of Basic, 50% of Basic in metros or 40% in non-metros)." title="HRA" typical="50% of Basic (metro) or 40% (non-metro)" />
             </div>
             <TextInput type="number" value={hraPct} onChange={(e) => setHraPct(e.target.value)} min="0" max="100" />
-            <p className="text-xs text-slate-400 mt-1">Industry standard: 50%</p>
+            <p className="text-xs text-slate-500 mt-1">Industry standard: 50%</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -166,7 +166,7 @@ export default function SetupDefaults() {
               <InfoTooltip content="Transport allowance. Tax-exempt up to ₹1,600/month under Old Regime. Fully taxable under New Regime." title="Conveyance" typical="₹1,600/month" />
             </div>
             <TextInput type="number" value={conveyance} onChange={(e) => setConveyance(e.target.value)} min="0" />
-            <p className="text-xs text-slate-400 mt-1">Tax-exempt up to ₹1,600</p>
+            <p className="text-xs text-slate-500 mt-1">Tax-exempt up to ₹1,600</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -174,7 +174,7 @@ export default function SetupDefaults() {
               <InfoTooltip content="Number of days an employee is expected to work. Used for pro-rata calculations: LOP, overtime, partial-month salary for new joiners / exits." title="Working days" typical="26 days/month (Mon–Sat)" />
             </div>
             <TextInput type="number" value={workingDays} onChange={(e) => setWorkingDays(e.target.value)} min="1" max="31" />
-            <p className="text-xs text-slate-400 mt-1">Usually 26 (Mon–Sat)</p>
+            <p className="text-xs text-slate-500 mt-1">Usually 26 (Mon–Sat)</p>
           </div>
         </div>
       </SurfaceCard>
@@ -200,7 +200,7 @@ export default function SetupDefaults() {
                 </>
               )}
             </SelectInput>
-            <p className="text-xs text-slate-400 mt-1">Where your office is located</p>
+            <p className="text-xs text-slate-500 mt-1">Where your office is located</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -211,7 +211,7 @@ export default function SetupDefaults() {
               <option value="new">New Regime (default)</option>
               <option value="old">Old Regime</option>
             </SelectInput>
-            <p className="text-xs text-slate-400 mt-1">Employees can change this later</p>
+            <p className="text-xs text-slate-500 mt-1">Employees can change this later</p>
           </div>
         </div>
       </SurfaceCard>

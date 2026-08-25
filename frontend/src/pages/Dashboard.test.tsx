@@ -95,8 +95,11 @@ describe('Dashboard', () => {
   it('shows employee progress metrics without timer controls', async () => {
     renderWithProviders(<Dashboard />);
 
-    expect(await screen.findByRole('heading', { name: "Today's shift" })).toBeInTheDocument();
-    expect(screen.getByText('Worked Today')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Attendance & Shift' })).toBeInTheDocument();
+    // "Worked Today" split into the four KPI cards - tracked, worked, idle and
+    // break - so the one figure that used to stand for all of them is now the
+    // "Work Time" card, hinted "Worked (tracked minus idle)".
+    expect(screen.getByText('Work Time')).toBeInTheDocument();
     expect(screen.getByText('Time Left Today')).toBeInTheDocument();
     expect(screen.getByText('Attendance & Shift')).toBeInTheDocument();
     expect(screen.getByText('My Focus')).toBeInTheDocument();
@@ -195,43 +198,26 @@ describe('Dashboard', () => {
     expect(screen.getByText('No description provided')).toBeInTheDocument();
   });
 
-  it('shows universal search suggestions while typing', async () => {
-    renderWithProviders(<Dashboard />);
+  /*
+   * Removed: 'shows universal search suggestions while typing'.
+   *
+   * The per-dashboard search box is gone; searching across the product is the
+   * command bar's job, and it is reachable from every page rather than only
+   * this one. CommandBar.test.tsx and commandRegistry.test.ts own the
+   * suggestion behaviour this was asserting.
+   */
 
-    expect(await screen.findByRole('heading', { name: "Today's shift" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Universal dashboard search'), { target: { value: 'att' } });
-
-    expect(screen.getByRole('option', { name: /attendance open attendance and shift records/i })).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: /attendance & shift/i })).toBeInTheDocument();
-  });
-
-  it('opens dashboard notifications in a floating panel', async () => {
-    renderWithProviders(<Dashboard />);
-
-    const bellButton = await screen.findByRole('button', { name: /notifications/i });
-    fireEvent.click(bellButton);
-
-    const panel = await screen.findByRole('region', { name: /dashboard notifications/i });
-    expect(within(panel).getByText('Shift reminder')).toBeInTheDocument();
-    expect(within(panel).getByText('Please submit pending work updates.')).toBeInTheDocument();
-    expect(within(panel).getByRole('link', { name: /view all notifications/i })).toHaveAttribute('href', '/notifications');
-  });
-
-  it('clears the dashboard notification badge when notifications are viewed', async () => {
-    renderWithProviders(<Dashboard />);
-
-    expect(await screen.findByText('1')).toBeInTheDocument();
-
-    fireEvent.click(await screen.findByRole('button', { name: /notifications/i }));
-
-    expect(await screen.findByRole('region', { name: /dashboard notifications/i })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(mocks.notificationMarkAllReadMock).toHaveBeenCalledWith({
-        exclude_types: ['chat_direct_message', 'chat_group_message', 'chat_message', 'direct_message', 'group_message'],
-      });
-    });
-    expect(screen.queryByText('1')).not.toBeInTheDocument();
-  });
+  /*
+   * Removed: two tests for a notification bell and floating panel this page
+   * used to own.
+   *
+   * Notifications live in the application header now rather than on each
+   * dashboard - there were two implementations of the same panel, on the admin
+   * and employee dashboards, and neither was reachable from anywhere else.
+   * Layout.test.tsx holds what these protected: the panel opening and closing
+   * from its own button, "view all" pointing at /notifications, and
+   * mark-all-read excluding chat types.
+   */
 
   it('shows a live seconds clock for the active employee timer', async () => {
     vi.useFakeTimers();

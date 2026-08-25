@@ -75,7 +75,7 @@ function StackingCard({ shot, index, total }: { shot: typeof shots[0]; index: nu
           <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
           <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-          <div className="ml-3 flex-1 rounded-md bg-white/70 px-3 py-1 text-[10px] text-slate-400">
+          <div className="ml-3 flex-1 rounded-md bg-white/70 px-3 py-1 text-[10px] text-slate-500">
             app.carevance.com
           </div>
         </div>

@@ -177,7 +177,7 @@ export default function EmployeePayrollCards() {
         */}
       <div className="grid grid-cols-1 lg:grid-cols-[180px_240px_1fr] gap-0 border border-slate-200 rounded-lg overflow-hidden lg:h-[520px]">
         <div className="border-b lg:border-b-0 lg:border-r border-slate-200 overflow-y-auto">
-          <div className="p-3 border-b border-slate-200 text-xs font-semibold text-slate-400">
+          <div className="p-3 border-b border-slate-200 text-xs font-semibold text-slate-500">
             PAY GROUPS
           </div>
           {payGroupsLoading ? (
@@ -185,7 +185,7 @@ export default function EmployeePayrollCards() {
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </div>
           ) : payGroupsList.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-6 px-2">No pay groups found.</p>
+            <p className="text-xs text-slate-500 text-center py-6 px-2">No pay groups found.</p>
           ) : (
             payGroupsList.map((g) => (
               <button
@@ -206,7 +206,7 @@ export default function EmployeePayrollCards() {
         <div className="border-b lg:border-b-0 lg:border-r border-slate-200 overflow-y-auto">
           <div className="p-2.5 border-b border-slate-200">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 z-10" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 z-10" />
               <TextInput
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -217,13 +217,13 @@ export default function EmployeePayrollCards() {
           </div>
 
           {!selectedPayGroup ? (
-            <p className="text-xs text-slate-400 text-center py-6">Select a pay group to view employees.</p>
+            <p className="text-xs text-slate-500 text-center py-6">Select a pay group to view employees.</p>
           ) : loadingEmployees ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             </div>
           ) : filteredEmployees.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-6">No employees in this pay group.</p>
+            <p className="text-xs text-slate-500 text-center py-6">No employees in this pay group.</p>
           ) : (
             filteredEmployees.map((emp) => (
               <div

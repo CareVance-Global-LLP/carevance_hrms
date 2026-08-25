@@ -73,10 +73,25 @@ test('desktop foreground app tracking has its active-window dependency installed
  * never learned. Every "bring the app back" path has to go through one helper
  * that can create as well as reveal.
  */
+/*
+ * The tray's menu is built in applyTrayState now, not createTray.
+ *
+ * The menu became state-dependent when the tray gained a timer status - it is
+ * rebuilt on every start and stop so the first row can report whether a timer
+ * is running. createTray now only constructs the Tray and delegates. Both
+ * functions are read here so the assertions below still cover the whole
+ * surface rather than whichever half the item happens to sit in.
+ */
 const trayBody = (() => {
-  const start = mainSource.indexOf('const createTray = () => {');
-  const end = mainSource.indexOf('const checkForDesktopUpdates', start);
-  return start === -1 || end === -1 ? '' : mainSource.slice(start, end);
+  const slice = (from, to) => {
+    const start = mainSource.indexOf(from);
+    if (start === -1) return '';
+    const end = mainSource.indexOf(to, start);
+    return end === -1 ? mainSource.slice(start) : mainSource.slice(start, end);
+  };
+
+  return slice('const applyTrayState = () => {', 'const setTrayTimerState')
+    + slice('const createTray = () => {', 'const checkForDesktopUpdates');
 })();
 
 test('the tray can reopen the window after it has been closed', () => {

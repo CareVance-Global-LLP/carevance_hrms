@@ -263,8 +263,20 @@ export default function Sidebar({
       </div>
 
       {/* --------------------------------------------------------- command */}
-      {/* pt-4, not pt-3: the toggle now overhangs the seam and would otherwise
-          touch the search row. */}
+      {/*
+        Only on the collapsed rail.
+        
+        Expanded, this sat directly beneath a header that already carries a
+        wider "Search or jump to…" trigger for the same command bar - two
+        search entry points, the same shortcut, a couple of hundred pixels
+        apart, on every screen. On the narrow rail the header trigger is still
+        there but this icon is the only affordance inside the nav itself, so it
+        earns its place.
+        
+        pt-4, not pt-3: the toggle overhangs the seam and would otherwise touch
+        the search row.
+      */}
+      {narrow ? (
       <div className={cn('shrink-0 pt-4', narrow ? 'px-2' : 'px-3')}>
         <SidebarTooltip label="Search" detail={shortcutLabel()} enabled={narrow}>
           {(tooltipProps) => (
@@ -297,6 +309,7 @@ export default function Sidebar({
           )}
         </SidebarTooltip>
       </div>
+      ) : null}
 
       {/* -------------------------------------------------------- frequent */}
       {frequent.length ? (

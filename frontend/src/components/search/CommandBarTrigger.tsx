@@ -47,7 +47,7 @@ export default function CommandBarTrigger({ onOpen, className, compact = false }
       aria-label="Search or jump to — press Control K"
       aria-keyshortcuts="Control+K Meta+K"
       className={cn(
-        'flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-border-strong bg-white px-3 text-left text-[13px] text-slate-400 shadow-sm transition hover:border-slate-300 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80',
+        'flex h-9 w-full min-w-0 items-center gap-2 rounded-lg border border-border-strong bg-white px-3 text-left text-[13px] text-slate-500 shadow-sm transition hover:border-slate-300 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/80',
         className
       )}
     >

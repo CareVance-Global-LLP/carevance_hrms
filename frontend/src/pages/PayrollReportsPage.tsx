@@ -167,7 +167,7 @@ function FormatToggle({ value, onChange }: { value: ExportFormat; onChange: (f: 
           className={`px-2.5 py-1 text-[10px] font-medium rounded transition-colors ${
             value === fmt
               ? 'bg-white text-slate-700 shadow-sm'
-              : 'text-slate-400 hover:text-slate-600'
+              : 'text-slate-500 hover:text-slate-600'
           }`}
         >
           {fmt.toUpperCase()}
@@ -394,7 +394,7 @@ export default function PayrollReportsPage() {
             </div>
             {generateMutation.isPending ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               </div>
             ) : reportData ? (
               <div className="p-5">

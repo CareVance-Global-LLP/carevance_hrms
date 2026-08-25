@@ -9,6 +9,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -67,13 +68,20 @@ class IdleAutoStopDurationRuleTest extends TestCase
             ['name' => 'Org Idle Rule']
         );
 
-        return User::create([
+        $user = User::create([
             'name' => 'Employee',
             'email' => $email,
             'password' => Hash::make('password123'),
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call, the same way BelongsToOrganization would from a real
+        // authenticated request.
+        Auth::setUser($user);
+
+        return $user;
     }
 
     public function test_client_idle_stop_bills_to_the_last_keypress_and_records_the_idle_separately(): void

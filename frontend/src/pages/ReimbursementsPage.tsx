@@ -632,14 +632,14 @@ export default function ReimbursementsPage() {
                     /* ignore */
                   }
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-500 hover:text-slate-600"
                 aria-label="Clear month filter"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
             <div className="relative w-48">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <TextInput
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -701,7 +701,7 @@ export default function ReimbursementsPage() {
             {/* Header */}
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-slate-900">New Expense Claim</h3>
-              <button onClick={() => { setShowForm(false); resetForm(); }} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={() => { setShowForm(false); resetForm(); }} className="text-slate-500 hover:text-slate-600 transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -793,7 +793,7 @@ export default function ReimbursementsPage() {
                     <img src={receiptPreview} alt="Receipt" className="h-16 w-16 object-cover rounded border border-slate-200" />
                   ) : (
                     <div className="h-16 w-16 flex items-center justify-center bg-slate-100 rounded border border-slate-200">
-                      <FileText className="h-6 w-6 text-slate-400" />
+                      <FileText className="h-6 w-6 text-slate-500" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
@@ -830,7 +830,7 @@ export default function ReimbursementsPage() {
                   <button
                     type="button"
                     onClick={removeReceipt}
-                    className="text-slate-400 hover:text-red-500 transition-colors shrink-0"
+                    className="text-slate-500 hover:text-red-500 transition-colors shrink-0"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -844,7 +844,7 @@ export default function ReimbursementsPage() {
                 >
                   <Paperclip className="h-4 w-4" />
                   <span>Attach receipt (optional)</span>
-                  <span className="text-xs text-slate-400">— JPG, PNG, PDF up to 5MB</span>
+                  <span className="text-xs text-slate-500">— JPG, PNG, PDF up to 5MB</span>
                 </button>
               )}
             </div>
@@ -873,7 +873,7 @@ export default function ReimbursementsPage() {
             <h3 className="text-lg font-semibold text-slate-900 mb-1">Claim Submitted Successfully</h3>
             <p className="text-sm text-slate-500 mb-6">
               Your expense claim has been submitted and is awaiting approval.
-              {lastCreatedId && <span className="block text-xs text-slate-400 mt-1">Claim #{lastCreatedId}</span>}
+              {lastCreatedId && <span className="block text-xs text-slate-500 mt-1">Claim #{lastCreatedId}</span>}
             </p>
             <div className="flex items-center justify-center gap-3">
               <Button
@@ -1180,14 +1180,14 @@ export default function ReimbursementsPage() {
           <SurfaceCard className="w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h3 className="text-lg font-semibold text-slate-900">Claim Details</h3>
-              <button onClick={() => setSelectedClaimId(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setSelectedClaimId(null)} className="text-slate-500 hover:text-slate-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             {claimDetailLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               </div>
             ) : claimDetailData ? (
               <div className="space-y-5">
@@ -1255,7 +1255,7 @@ export default function ReimbursementsPage() {
                           by {claimDetailData.submitter?.name || claimDetailData.employee?.name || 'Employee'}
                         </p>
                         {claimDetailData.created_at && (
-                          <p className="text-xs text-slate-400 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5">
                             {new Date(claimDetailData.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         )}
@@ -1286,7 +1286,7 @@ export default function ReimbursementsPage() {
                         ) : (
                           <>
                             <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                              <Clock className="h-3.5 w-3.5 text-slate-400" />
+                              <Clock className="h-3.5 w-3.5 text-slate-500" />
                             </div>
                             <div className="w-px flex-1 bg-slate-200 my-1" />
                           </>
@@ -1304,7 +1304,7 @@ export default function ReimbursementsPage() {
                           <p className="text-xs text-slate-500">by {claimDetailData.managerApprover.name}</p>
                         )}
                         {claimDetailData.manager_approved_at && (
-                          <p className="text-xs text-slate-400 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5">
                             {new Date(claimDetailData.manager_approved_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         )}
@@ -1332,7 +1332,7 @@ export default function ReimbursementsPage() {
                           </div>
                         ) : (
                           <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                            <Clock className="h-3.5 w-3.5 text-slate-400" />
+                            <Clock className="h-3.5 w-3.5 text-slate-500" />
                           </div>
                         )}
                       </div>
@@ -1348,7 +1348,7 @@ export default function ReimbursementsPage() {
                           <p className="text-xs text-slate-500">by {claimDetailData.approver.name}</p>
                         )}
                         {claimDetailData.approved_at && (
-                          <p className="text-xs text-slate-400 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5">
                             {new Date(claimDetailData.approved_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </p>
                         )}
@@ -1378,7 +1378,7 @@ export default function ReimbursementsPage() {
                           {claimDetailData.payout_mode === 'outside_payroll' ? 'Outside Payroll' : 'Via Payroll'}
                           {claimDetailData.payment_reference ? ` · Ref: ${claimDetailData.payment_reference}` : ''}
                         </p>
-                        <p className="text-xs text-slate-400 mt-0.5">
+                        <p className="text-xs text-slate-500 mt-0.5">
                           {new Date(claimDetailData.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </p>
                       </div>

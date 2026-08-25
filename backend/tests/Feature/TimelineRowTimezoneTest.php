@@ -8,6 +8,7 @@ use App\Models\Organization;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -80,12 +81,19 @@ class TimelineRowTimezoneTest extends TestCase
 
     private function makeUser(Organization $organization, string $email, string $role): User
     {
-        return User::create([
+        $user = User::create([
             'name' => ucfirst(strtok($email, '@')),
             'email' => $email,
             'password' => Hash::make('password123'),
             'role' => $role,
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on fixtures the test creates directly after
+        // this call, the same way BelongsToOrganization would from a real
+        // authenticated request.
+        Auth::setUser($user);
+
+        return $user;
     }
 }

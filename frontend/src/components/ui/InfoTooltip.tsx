@@ -94,7 +94,7 @@ export default function InfoTooltip({
         aria-label={title ? `More info about ${title}` : 'More info'}
         aria-expanded={isOpen}
         className={cn(
-          'inline-flex items-center justify-center rounded-full text-slate-400 hover:text-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
+          'inline-flex items-center justify-center rounded-full text-slate-500 hover:text-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1',
           isOpen && 'text-blue-600',
         )}
       >

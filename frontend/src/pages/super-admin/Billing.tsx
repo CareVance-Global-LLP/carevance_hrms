@@ -103,7 +103,7 @@ export default function SuperAdminBilling() {
       case 'past_due':
         return <AlertCircle className="h-5 w-5 text-rose-600" />;
       default:
-        return <AlertCircle className="h-5 w-5 text-slate-400" />;
+        return <AlertCircle className="h-5 w-5 text-slate-500" />;
     }
   };
 
@@ -199,7 +199,7 @@ export default function SuperAdminBilling() {
                 <p className="mt-2 text-2xl font-semibold text-slate-900">
                   {formatCurrency(revenue.average_revenue_per_user)}
                 </p>
-                <p className="text-xs text-slate-400 mt-1">Average revenue per user</p>
+                <p className="text-xs text-slate-500 mt-1">Average revenue per user</p>
               </div>
               <div className="p-3 rounded-lg bg-violet-50">
                 <Users className="h-6 w-6 text-violet-600" />
@@ -268,13 +268,13 @@ export default function SuperAdminBilling() {
                       <tr key={sub.id} className="hover:bg-slate-50/50">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-slate-400" />
+                            <Building2 className="h-4 w-4 text-slate-500" />
                             <span className="font-medium text-slate-900">{sub.organization_name}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <CreditCard className="h-4 w-4 text-slate-400" />
+                            <CreditCard className="h-4 w-4 text-slate-500" />
                             <span className="text-sm text-slate-600">{sub.plan_name}</span>
                           </div>
                         </td>

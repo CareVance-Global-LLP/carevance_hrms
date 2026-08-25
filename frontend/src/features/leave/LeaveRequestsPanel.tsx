@@ -129,7 +129,7 @@ export default function LeaveRequestsPanel({
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-xs text-slate-400">
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-xs text-slate-500">
           Loading requests…
         </div>
       ) : visible.length === 0 ? (
@@ -185,7 +185,7 @@ export default function LeaveRequestsPanel({
                         <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-warning-800">
                           <AlertTriangle className="h-3 w-3 shrink-0" />
                           {overlaps.length} teammate{overlaps.length > 1 ? 's' : ''} already off in this span
-                          <span className="font-normal text-slate-400">
+                          <span className="font-normal text-slate-500">
                             ({overlaps
                               .slice(0, 2)
                               .map((other: any) => String(other.user?.name || 'Unknown').split(' ')[0])

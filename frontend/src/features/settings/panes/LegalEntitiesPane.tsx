@@ -87,7 +87,7 @@ export default function LegalEntitiesPane() {
 
       <div className="space-y-2">
         {entities.map((entity) => (
-          <div key={entity.id} className="rounded-lg border border-slate-200 bg-white p-3">
+          <div key={entity.id} className="rounded-lg border border-slate-200 bg-surface-card p-3">
             <div className="flex flex-wrap items-center gap-2">
               <Building2 className="h-4 w-4 shrink-0 text-slate-500" />
               <span className="font-medium text-slate-950">{entity.name}</span>
@@ -109,7 +109,7 @@ export default function LegalEntitiesPane() {
                 ['ESI code', entity.esi_code],
               ] as const).map(([label, value]) => (
                 <div key={label}>
-                  <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+                  <dt className="text-[10px] uppercase tracking-wide text-slate-500">{label}</dt>
                   {/* An absent identifier is called out, not left blank: a
                       filing generated without it reports "not configured"
                       rather than failing, so the gap is otherwise silent. */}
@@ -194,7 +194,7 @@ export default function LegalEntitiesPane() {
             * these are not preferences — they are what the law requires of a
             * registered establishment, and the entity is what is registered.
             */}
-          <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <div className="rounded-lg border border-slate-200 bg-surface-card p-3">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Working hours and overtime</p>
 
             <div className="mt-2 grid gap-3 sm:grid-cols-2">

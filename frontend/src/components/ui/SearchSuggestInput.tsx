@@ -92,7 +92,7 @@ export default function SearchSuggestInput({
 
   return (
     <div className={cn('relative', wrapperClassName)} ref={containerRef}>
-      {icon ? <div className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400">{icon}</div> : null}
+      {icon ? <div className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-500">{icon}</div> : null}
       <TextInput
         {...props}
         ref={inputRef}

@@ -192,6 +192,8 @@ export function useSettingsController() {
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<SettingsTabId>(SETTINGS_FALLBACK_PANE);
+  // The tab somebody asked for while they still had unsaved edits.
+  const [pendingTab, setPendingTab] = useState<SettingsTabId | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const hasLoadedOnce = useRef(false);
   const [error, setError] = useState('');
@@ -719,25 +721,43 @@ export function useSettingsController() {
   }, []);
 
   // ---- tab switching -------------------------------------------------------
-  const handleTabChange = useCallback((nextTab: SettingsTabId) => {
-    if (nextTab === activeTab) {
-      return;
-    }
-    if (dirtyCount > 0) {
-      const confirmed = window.confirm(
-        `You have ${dirtyCount} unsaved change${dirtyCount === 1 ? '' : 's'}. Leave without saving?`
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
+  /*
+   * Leaving a tab with unsaved edits.
+   *
+   * This used to be a synchronous window.confirm inside the handler, which
+   * cannot be styled or themed and reads as a prototype the moment it appears.
+   * The switch is now HELD - the requested tab goes into state and the shell
+   * renders a real dialog - so the confirm can carry the same weight as the
+   * rest of the screen.
+   */
+  const commitTabChange = useCallback((nextTab: SettingsTabId) => {
     setActiveTab(nextTab);
     setError('');
     setFieldErrors({});
     if (location.search) {
       navigate(location.pathname, { replace: true });
     }
-  }, [activeTab, dirtyCount, location.pathname, location.search, navigate]);
+  }, [location.pathname, location.search, navigate]);
+
+  const handleTabChange = useCallback((nextTab: SettingsTabId) => {
+    if (nextTab === activeTab) {
+      return;
+    }
+    if (dirtyCount > 0) {
+      setPendingTab(nextTab);
+      return;
+    }
+    commitTabChange(nextTab);
+  }, [activeTab, commitTabChange, dirtyCount]);
+
+  const confirmTabChange = useCallback(() => {
+    if (pendingTab) {
+      commitTabChange(pendingTab);
+    }
+    setPendingTab(null);
+  }, [commitTabChange, pendingTab]);
+
+  const cancelTabChange = useCallback(() => setPendingTab(null), []);
 
   // ---- profile -------------------------------------------------------------
   const validatePersonalDetails = (): { valid: boolean; errors: Record<string, string[]> } => {
@@ -1319,6 +1339,9 @@ export function useSettingsController() {
     // shell
     activeTab,
     handleTabChange,
+    pendingTab,
+    confirmTabChange,
+    cancelTabChange,
     visibleTabs,
     isLoading,
     error,

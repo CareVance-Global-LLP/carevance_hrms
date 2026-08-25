@@ -2483,7 +2483,7 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
                 { label: 'Break', value: formatDuration(selectedRow.total_break_seconds || 0) },
               ].map((stat) => (
                 <div key={stat.label} className="rounded-lg border border-slate-200 px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{stat.label}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{stat.label}</p>
                   <p className={`mt-0.5 text-sm font-bold tabular-nums ${stat.warn ? 'text-warning-800' : 'text-slate-900'}`}>
                     {stat.value}
                   </p>
@@ -2492,10 +2492,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
             </div>
 
             <div>
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Present dates</p>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Present dates</p>
               <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
                 {(selectedRow.present_dates || []).length === 0 ? (
-                  <p className="text-xs text-slate-400">None in the selected range.</p>
+                  <p className="text-xs text-slate-500">None in the selected range.</p>
                 ) : (
                   (selectedRow.present_dates || []).map((date: string) => (
                     <span key={date} className="rounded-full border border-success-100 bg-success-50 px-2 py-0.5 text-[11px] tabular-nums text-success-800">
@@ -2508,10 +2508,10 @@ export default function Attendance({ mode = 'full' }: AttendanceProps) {
 
             {canAccessLeave ? (
               <div>
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Leave dates</p>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Leave dates</p>
                 <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto">
                   {(selectedRow.leave_dates || []).length === 0 ? (
-                    <p className="text-xs text-slate-400">None in the selected range.</p>
+                    <p className="text-xs text-slate-500">None in the selected range.</p>
                   ) : (
                     (selectedRow.leave_dates || []).map((date: string) => (
                       <span key={date} className="rounded-full border border-accent-200 bg-accent-50 px-2 py-0.5 text-[11px] tabular-nums text-warning-800">

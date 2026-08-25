@@ -195,7 +195,7 @@ export default function CreateOrganizationPage() {
                       {copiedField === 'email' ? (
                         <Check className="h-4 w-4 text-emerald-600" />
                       ) : (
-                        <Copy className="h-4 w-4 text-slate-400" />
+                        <Copy className="h-4 w-4 text-slate-500" />
                       )}
                     </button>
                   </div>
@@ -212,7 +212,7 @@ export default function CreateOrganizationPage() {
                       {copiedField === 'password' ? (
                         <Check className="h-4 w-4 text-emerald-600" />
                       ) : (
-                        <Copy className="h-4 w-4 text-slate-400" />
+                        <Copy className="h-4 w-4 text-slate-500" />
                       )}
                     </button>
                   </div>
@@ -605,7 +605,7 @@ export default function CreateOrganizationPage() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>

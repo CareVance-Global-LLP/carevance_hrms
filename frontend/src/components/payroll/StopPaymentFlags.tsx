@@ -129,7 +129,7 @@ export default function StopPaymentFlags({ payGroupId, monthYear }: StopPaymentF
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-900">{flag.user_name}</p>
                 <p className="text-xs text-slate-500">{flag.user_email}</p>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {flag.month_year} · {flag.hold_type === 'processing' ? 'Hold (Processing)' : 'Hold (Payout)'}
                   {flag.reason ? ` · ${flag.reason}` : ''}
                 </p>

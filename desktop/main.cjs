@@ -20,7 +20,7 @@ if (fs.existsSync(frontendEnvPath)) {
   console.log('[Desktop] No .env file found, using existing environment variables');
 }
 
-const { app, BrowserWindow, Notification, desktopCapturer, ipcMain, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, globalShortcut, ipcMain, nativeImage, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const { execSync } = require('child_process');
@@ -32,7 +32,9 @@ const {
   hideIdlePopup,
   destroyIdlePopup,
   onIdlePopupAction,
+  focusPopup,
 } = require('./idle-popup.cjs');
+const quickReplyPopup = require('./quick-reply-popup.cjs');
 const {
   getBrowserTrackingManagerUrl,
   getBrowserTrackingOptionsUrl,
@@ -239,6 +241,19 @@ const THEME_STATE_FILENAME = 'desktop-theme.json';
 const SHELL_BACKGROUND = { light: '#F5F7F8', dark: '#0E141A' };
 let mainWindow = null;
 let tray = null;
+
+/*
+ * What the tray is currently saying.
+ *
+ * The tray is the surface somebody watches all day - it is what you glance at
+ * INSTEAD of restoring the window. It used to be inert: setToolTip was called
+ * once at creation with the literal string 'CareVance Tracker' and never again,
+ * so the one question a tracker's tray exists to answer - is my timer running -
+ * could only be answered by opening the app, which is the interaction a tray
+ * exists to remove.
+ */
+let trayTimerState = { running: false, startedAt: null, label: null };
+let trayRefreshInterval = null;
 let allowWindowClose = false;
 let closePreparationInProgress = false;
 let closePreparationTimeout = null;
@@ -1592,43 +1607,37 @@ const revealMainWindow = () => {
     targetWindow.setFullScreen(false);
   }
 
-  if (!targetWindow.isMaximized()) {
-    targetWindow.maximize();
-  }
-
+  /*
+   * Restore, show, focus. Nothing else.
+   *
+   * This used to force-maximize any window that was not already maximized,
+   * pin the app above everything at 'screen-saver' level for three seconds,
+   * flash the taskbar button, and call bringToFront() three times - at 0ms,
+   * 150ms and 500ms. Clicking a chat notification therefore destroyed whatever
+   * window size the person had chosen, planted the app over their other
+   * applications, and made the window visibly jump twice while it settled.
+   *
+   * A native app restores the window to where it was and gives it focus. The
+   * OS already owns "this window wants attention"; flashFrame stays only for
+   * the case where the platform refuses the focus request, and the OS clears
+   * it on activation.
+   */
   if (!targetWindow.isVisible()) {
     targetWindow.show();
   }
 
   targetWindow.setSkipTaskbar(false);
   targetWindow.setFocusable(true);
-  targetWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-  targetWindow.flashFrame(true);
 
-  const bringToFront = () => {
-    if (targetWindow.isDestroyed()) {
-      return;
-    }
+  app.focus();
+  targetWindow.show();
+  targetWindow.focus();
+  targetWindow.webContents.focus();
 
-    app.focus();
-    targetWindow.show();
-    if (typeof targetWindow.moveTop === 'function') {
-      targetWindow.moveTop();
-    }
-    targetWindow.focus();
-    targetWindow.webContents.focus();
-  };
-
-  bringToFront();
-  setTimeout(bringToFront, 150);
-  setTimeout(bringToFront, 500);
-
-  setTimeout(() => {
-    if (!targetWindow.isDestroyed()) {
-      targetWindow.setAlwaysOnTop(false);
-      targetWindow.flashFrame(false);
-    }
-  }, 3000);
+  // Only if the OS declined to hand over focus.
+  if (!targetWindow.isFocused()) {
+    targetWindow.flashFrame(true);
+  }
 
   return true;
 };
@@ -1650,16 +1659,45 @@ const openOrRevealMainWindow = () => {
   void createWindow();
 };
 
-const createTray = () => {
-  if (process.platform !== 'win32') return;
+/** hh:mm:ss since a start timestamp, for the tray tooltip. */
+const elapsedSince = (startedAt) => {
+  if (!startedAt) return null;
 
-  const trayIconPath = path.join(__dirname, 'tray-icon.ico');
-  const iconPath = fs.existsSync(trayIconPath) ? trayIconPath : APP_ICON;
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  const pad = (n) => String(n).padStart(2, '0');
 
-  tray = new Tray(iconPath);
-  tray.setToolTip('CareVance Tracker');
+  return `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor((seconds % 3600) / 60))}:${pad(seconds % 60)}`;
+};
 
-  const contextMenu = Menu.buildFromTemplate([
+/*
+ * Repaint the tray from trayTimerState.
+ *
+ * Tooltip and menu together, because they answer the same question at two
+ * levels of effort: the tooltip on hover, the menu on right-click. The first
+ * menu row is a disabled status line rather than an action - the main process
+ * cannot start or stop a timer on its own, and offering a control that has to
+ * round-trip through a window that may be closed would be a worse lie than
+ * saying nothing.
+ */
+const applyTrayState = () => {
+  if (!tray || tray.isDestroyed?.()) return;
+
+  const elapsed = elapsedSince(trayTimerState.startedAt);
+
+  tray.setToolTip(
+    trayTimerState.running
+      ? `CareVance — running${elapsed ? ` ${elapsed}` : ''}${trayTimerState.label ? ` · ${trayTimerState.label}` : ''}`
+      : 'CareVance — timer stopped'
+  );
+
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: trayTimerState.running
+        ? `Running${elapsed ? ` ${elapsed}` : ''}${trayTimerState.label ? ` · ${trayTimerState.label}` : ''}`
+        : 'No timer running',
+      enabled: false,
+    },
+    { type: 'separator' },
     {
       label: 'Open CareVance Tracker',
       click: () => {
@@ -1674,9 +1712,48 @@ const createTray = () => {
         app.quit();
       },
     },
-  ]);
+  ]));
+};
 
-  tray.setContextMenu(contextMenu);
+/**
+ * Called by the renderer whenever the timer starts, stops or changes task.
+ *
+ * The elapsed figure keeps ticking on a 30s interval while running - Windows
+ * re-reads the tooltip on hover, so a finer cadence would burn wakeups nobody
+ * can see. The interval is cleared on stop so an idle app is not waking up
+ * every half minute forever.
+ */
+const setTrayTimerState = (next = {}) => {
+  trayTimerState = {
+    running: Boolean(next.running),
+    startedAt: next.running ? (next.startedAt || new Date().toISOString()) : null,
+    label: next.label || null,
+  };
+
+  if (trayRefreshInterval) {
+    clearInterval(trayRefreshInterval);
+    trayRefreshInterval = null;
+  }
+
+  if (trayTimerState.running) {
+    trayRefreshInterval = setInterval(applyTrayState, 30000);
+    if (typeof trayRefreshInterval.unref === 'function') trayRefreshInterval.unref();
+  }
+
+  applyTrayState();
+};
+
+const createTray = () => {
+  if (process.platform !== 'win32') return;
+
+  const trayIconPath = path.join(__dirname, 'tray-icon.ico');
+  const iconPath = fs.existsSync(trayIconPath) ? trayIconPath : APP_ICON;
+
+  tray = new Tray(iconPath);
+
+  // Tooltip and menu both come from applyTrayState, so there is one place that
+  // decides what the tray says.
+  applyTrayState();
 
   tray.on('double-click', () => {
     openOrRevealMainWindow();
@@ -1936,6 +2013,61 @@ ipcMain.handle('desktop:hide-idle-popup', async () => {
  * exactly as it would to an in-app click. Registered once at startup rather
  * than per-window, because the popup outlives any single renderer load.
  */
+/*
+ * The quick-reply route.
+ *
+ * The main process deliberately holds no session and no API client, so it
+ * cannot send the message itself. It hands the text to the renderer — which
+ * already has the bearer token, the axios instance and every interceptor that
+ * goes with them — and waits for a verdict. A second send path living here,
+ * with its own copy of auth, is precisely what this must not become.
+ *
+ * Each reply carries a requestId because the box stays open on failure: two
+ * attempts can be in flight, and matching results to attempts by arrival order
+ * would report the wrong one.
+ */
+let quickReplyRequestSeq = 0;
+
+const forwardQuickReply = (reply) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    // The tray keeps the window alive, so this is rare — but a reply that
+    // silently vanished would be worse than one that says it failed.
+    quickReplyPopup.reportQuickReplyResult({ ok: false, error: 'CareVance is not running' });
+    return;
+  }
+
+  quickReplyRequestSeq += 1;
+  mainWindow.webContents.send('desktop:quick-reply-send', {
+    requestId: quickReplyRequestSeq,
+    threadType: reply.threadType,
+    threadId: reply.threadId,
+    text: reply.text,
+  });
+};
+
+quickReplyPopup.onQuickReplySubmit((reply) => forwardQuickReply(reply));
+
+// "Open chat" — the way out of the box for somebody who wanted the thread
+// rather than a one-line reply. On Windows the toast click is the only
+// interaction the OS gives us, so this is where that choice lives.
+quickReplyPopup.onQuickReplyOpen((state) => {
+  revealMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop:notification-clicked', {
+      id: state.id,
+      route: state.route,
+      type: state.type,
+    });
+  }
+});
+
+ipcMain.on('desktop:quick-reply-result', (_event, result = {}) => {
+  quickReplyPopup.reportQuickReplyResult({
+    ok: Boolean(result.ok),
+    error: result.error ? String(result.error) : null,
+  });
+});
+
 onIdlePopupAction((payload) => {
   if (payload?.action === 'still-working' || payload?.action === 'dismiss') {
     // Nothing to decide: the click itself was real input, so the OS idle clock
@@ -1997,6 +2129,18 @@ ipcMain.handle('desktop:get-all-window-contexts', async () => {
   return processes;
 });
 
+/*
+ * The renderer telling the tray what the timer is doing.
+ *
+ * Deliberately a fire-and-forget report rather than the main process polling:
+ * only the renderer knows the timer, and it already tracks every start, stop
+ * and task change.
+ */
+ipcMain.handle('desktop:set-timer-state', async (_event, state = {}) => {
+  setTrayTimerState(state);
+  return true;
+});
+
 ipcMain.handle('desktop:reveal-window', async () => {
   return revealMainWindow();
 });
@@ -2012,13 +2156,72 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
   const route = String(payload.route || '').trim();
   const type = String(payload.type || '').trim();
 
+  /*
+   * The attachment preview, when the renderer sent one.
+   *
+   * Arrives as a data: URL because this runs outside the page — an https URL
+   * would need the bearer token the main process does not hold, and a blob:
+   * URL belongs to a context that does not exist here.
+   *
+   * Guarded rather than trusted: a malformed or oversized payload must cost
+   * the picture, never the notification. An empty NativeImage is discarded so
+   * Windows falls back to the app icon instead of rendering a blank square.
+   */
+  let image;
+  const rawImage = typeof payload.image === 'string' ? payload.image : '';
+  if (rawImage.startsWith('data:image/')) {
+    try {
+      const candidate = nativeImage.createFromDataURL(rawImage);
+      if (candidate && !candidate.isEmpty()) {
+        image = candidate;
+      }
+    } catch {
+      image = undefined;
+    }
+  }
+
+  const replyOptions = payload.reply && process.platform === 'darwin'
+    // darwin only — see the platform note on the click handler below.
+    ? { hasReply: true, replyPlaceholder: 'Reply…' }
+    : {};
+
   const notification = new Notification({
     title,
     body,
     silent: false,
+    ...(image ? { icon: image } : {}),
+    ...replyOptions,
   });
 
+  /*
+   * Replying without opening the app.
+   *
+   * `reply` is present only for chat notifications, and only then does the
+   * click open the reply box instead of raising the window. Everything else
+   * keeps the behaviour it had: a leave approval has nothing to reply to.
+   *
+   * The box is what a Windows toast cannot be. Electron's inline reply
+   * (`hasReply`) and toast action buttons are both `@platform darwin`, so on
+   * win32 there is no way to put either a text field or a button on the
+   * notification itself — the click is the only interaction the OS offers, and
+   * this spends it on the thing people actually want.
+   */
+  const reply = payload.reply && typeof payload.reply === 'object' ? payload.reply : null;
+
   notification.on('click', () => {
+    if (reply && reply.threadId && reply.threadType) {
+      quickReplyPopup.showQuickReply({
+        threadType: reply.threadType,
+        threadId: Number(reply.threadId),
+        title: String(reply.title || title),
+        preview: String(body || ''),
+        route,
+        id,
+        type,
+      });
+      return;
+    }
+
     revealMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('desktop:notification-clicked', {
@@ -2028,6 +2231,25 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
       });
     }
   });
+
+  /*
+   * macOS gets the real thing.
+   *
+   * Where the OS supports a text field in the notification, use it — the popup
+   * is a workaround for platforms that do not, not a preference. Both paths
+   * end at the same handler, so there is one send route rather than two.
+   */
+  if (reply && process.platform === 'darwin') {
+    notification.on('reply', (_event, replyText) => {
+      const text = String(replyText || '').trim();
+      if (!text) return;
+      forwardQuickReply({
+        threadType: reply.threadType,
+        threadId: Number(reply.threadId),
+        text,
+      });
+    });
+  }
 
   notification.show();
   return true;
@@ -2413,6 +2635,45 @@ ipcMain.handle('desktop:offline-get-queue-details', async () => {
 
 if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
+  /*
+   * No application menu at all.
+   *
+   * autoHideMenuBar only HIDES Electron's stock File/Edit/View/Window/Help
+   * bar - pressing Alt brings it back, and View carries Reload, Force Reload
+   * and Toggle Developer Tools. On a tracker that is both an odd thing for an
+   * employee to find and a route into the renderer of an app that records
+   * attendance. None of those menus does anything this product needs; the
+   * shortcuts people actually expect (copy, paste, select-all) keep working
+   * without a menu bar.
+   */
+  Menu.setApplicationMenu(null);
+
+  /*
+   * A keyboard route to the idle prompt.
+   *
+   * The popup is shown with showInactive() and skipTaskbar, so it never takes
+   * focus and has no Alt-Tab entry - deliberate, because it must not eat the
+   * keystrokes of whatever somebody is typing. The cost was that a keyboard-only
+   * user had no way at all to answer the two buttons deciding whether their
+   * idle time is paid.
+   *
+   * This is the opposite of grabbing focus: the person presses the shortcut,
+   * and only then does focus move. Registration failing is not fatal - another
+   * application may already own the combination - so it is logged and the
+   * mouse path continues to work.
+   */
+  try {
+    const bound = globalShortcut.register('CommandOrControl+Alt+I', () => {
+      focusPopup();
+    });
+
+    if (!bound) {
+      console.warn('[desktop] Ctrl+Alt+I is taken; the idle prompt stays mouse-only');
+    }
+  } catch (error) {
+    console.warn('[desktop] Could not register the idle-prompt shortcut:', error?.message);
+  }
+
   // Registered here rather than at module scope because nativeTheme is only
   // safe to touch after ready, same as powerMonitor below. Only fires on a real
   // OS change: under an explicit light/dark choice shouldUseDarkColors is
@@ -2587,6 +2848,15 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  // Electron releases these on exit anyway, but an explicit unregister keeps
+  // the combination free if the app is restarted before the OS has caught up.
+  globalShortcut.unregisterAll();
+
+  if (trayRefreshInterval) {
+    clearInterval(trayRefreshInterval);
+    trayRefreshInterval = null;
+  }
+
   if (pendingSessionsStore) {
     pendingSessionsStore.dispose();
   }
@@ -2615,6 +2885,7 @@ app.on('before-quit', () => {
   // A live always-on-top window counts as an open window, so leaving it would
   // hold the app up on quit with nothing visible but the popup itself.
   destroyIdlePopup();
+  quickReplyPopup.destroyQuickReply();
 
   stopForegroundWindowWatcher();
   if (browserTrackingBridge) {

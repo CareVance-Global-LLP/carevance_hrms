@@ -6,6 +6,7 @@ use App\Models\Organization;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 class EmployeeInsightsAnalyticsCoverageTest extends TestCase
@@ -52,6 +53,10 @@ class EmployeeInsightsAnalyticsCoverageTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id the same way BelongsToOrganization would
+        // from a real authenticated request.
+        Auth::setUser($tracked);
 
         TimeEntry::create([
             'user_id' => $tracked->id,
@@ -129,6 +134,10 @@ class EmployeeInsightsAnalyticsCoverageTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id the same way BelongsToOrganization would
+        // from a real authenticated request.
+        Auth::setUser($tracked);
 
         TimeEntry::create([
             'user_id' => $tracked->id,

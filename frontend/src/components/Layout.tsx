@@ -13,7 +13,11 @@ import { webAppUrl, payrollEnabled } from '@/lib/runtimeConfig';
 import { resolveMediaUrl } from '@/lib/mediaUrl';
 import { attendanceTimeEditApi, chatApi, leaveApi, notificationApi, payrollApi } from '@/services/api';
 import type { AppNotificationItem } from '@/types';
-import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound } from '@/lib/desktopNotifications';
+import { formatNotificationTitle, formatNotificationMessage, getNotificationSoundType, playNotificationSound, shouldShowDesktopNotification } from '@/lib/desktopNotifications';
+import { connectRealtime, disconnectRealtime, type RealtimeStatus } from '@/lib/realtime';
+import { clearAuthStorage } from '@/lib/authStorage';
+import { resolveNotificationThumbnail } from '@/lib/notificationThumbnail';
+import { useQuickReply } from '@/hooks/useQuickReply';
 import DashboardTopbar from '@/components/dashboard/DashboardTopbar';
 import DesktopUpdatePanel from '@/components/desktop/DesktopUpdatePanel';
 import IdleReturnPrompt from '@/components/desktop/IdleReturnPrompt';
@@ -55,6 +59,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 export default function Layout() {
   const { user, organization, logout, token, desktopHandoffToken } = useAuth();
   useDesktopTracker();
+  // Sends replies typed into the desktop shell's quick-reply box.
+  useQuickReply(Boolean(user?.id));
   const { hasFeature } = usePlan();
   const navigate = useNavigate();
   const location = useLocation();
@@ -79,6 +85,29 @@ export default function Layout() {
   const desktopNotificationByIdRef = useRef<Map<number, AppNotificationItem>>(new Map());
   const seenNotificationIdsRef = useRef<Set<number>>(new Set());
   const isInitialLoadRef = useRef(true);
+
+  /*
+   * Real-time delivery state.
+   *
+   * `realtimeStatus` drives a small header affordance; `realtimeStatusRef`
+   * exists because the polling interval's closure would otherwise capture the
+   * status from the render that created it and keep polling forever after the
+   * socket came up.
+   *
+   * The watermark is the highest notification id this client has already seen.
+   * It is what a reconnect uses to ask for the exact gap rather than guessing,
+   * and it stays a ref rather than state because changing it must never
+   * re-render anything.
+   */
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('disabled');
+  const realtimeStatusRef = useRef<RealtimeStatus>('disabled');
+  const notificationWatermarkRef = useRef(0);
+  // The alerts loader and the catch-up routine both live inside effects that
+  // close over state the realtime effect must not depend on. Holding them in
+  // refs lets the socket call the current version without re-subscribing every
+  // time a badge count changes.
+  const loadAlertsRef = useRef<(() => Promise<void>) | null>(null);
+  const catchUpRef = useRef<(() => Promise<void>) | null>(null);
   const isAdminView = hasAdminAccess(user);
   const isPayrollAdminView = hasPayrollAdminAccess(user);
   const isStrictAdminView = hasStrictAdminAccess(user);
@@ -145,7 +174,56 @@ export default function Layout() {
     navigate(resolveNotificationRoute(notification, user));
   };
 
-  const showDesktopNotification = (notification: AppNotificationItem) => {
+  /**
+   * Record what this client has already seen.
+   *
+   * Two things at once, and they answer different questions. The id set is
+   * "have I already raised a toast for this", which is what stops a refresh
+   * re-announcing everything on screen. The watermark is "how far have I got",
+   * which is what a reconnect sends as since_id to fetch precisely the
+   * notifications that arrived while the socket was down.
+   */
+  const rememberNotifications = (items: AppNotificationItem[]) => {
+    items.forEach((item) => {
+      const id = Number(item.id);
+      if (!Number.isFinite(id) || id <= 0) return;
+      seenNotificationIdsRef.current.add(id);
+      if (id > notificationWatermarkRef.current) {
+        notificationWatermarkRef.current = id;
+      }
+    });
+  };
+
+  /**
+   * Where a reply to this notification would go, or null if nowhere.
+   *
+   * Read from the meta the server already sends for routing, so there is one
+   * source of truth for which conversation a notification belongs to rather
+   * than a second one parsed out of the route string.
+   */
+  const resolveReplyTarget = (
+    notification: AppNotificationItem
+  ): { threadType: 'direct' | 'group'; threadId: number; title: string } | null => {
+    const meta = notification.meta as { conversation_id?: number; group_id?: number; group_name?: string; sender_name?: string } | undefined;
+
+    const conversationId = Number(meta?.conversation_id || 0);
+    if (notification.type === 'chat_direct_message' && conversationId > 0) {
+      return {
+        threadType: 'direct',
+        threadId: conversationId,
+        title: meta?.sender_name || notification.sender?.name || 'Reply',
+      };
+    }
+
+    const groupId = Number(meta?.group_id || 0);
+    if (notification.type === 'chat_group_message' && groupId > 0) {
+      return { threadType: 'group', threadId: groupId, title: meta?.group_name || 'Reply' };
+    }
+
+    return null;
+  };
+
+  const showDesktopNotification = async (notification: AppNotificationItem) => {
     if (!desktopPushEnabled || typeof window === 'undefined') {
       return;
     }
@@ -163,6 +241,17 @@ export default function Layout() {
       desktopNotificationByIdRef.current.set(notificationId, notification);
     }
 
+    /*
+     * The picture, when the message carried one.
+     *
+     * Awaited before the notification is raised rather than added afterwards,
+     * because neither Windows nor macOS lets a toast change its image once it
+     * is on screen. Resolves to null for everything that is not an image
+     * attachment — which is most notifications — and never throws, so a
+     * missing preview costs the picture and never the notification.
+     */
+    const thumbnail = await resolveNotificationThumbnail(notification);
+
     if (window.desktopTracker?.showNotification) {
       void window.desktopTracker.showNotification({
         id: notificationId,
@@ -170,6 +259,10 @@ export default function Layout() {
         body: formattedMessage,
         route: resolveNotificationRoute(notification, user),
         type: notification.type,
+        image: thumbnail ?? undefined,
+        // Only chat can be replied to. Its presence is what tells the shell to
+        // open the reply box rather than raise the window.
+        reply: resolveReplyTarget(notification) ?? undefined,
       });
       playNotificationSound(soundType);
       return;
@@ -181,7 +274,10 @@ export default function Layout() {
     const systemNotification = new Notification(formattedTitle, {
       body: formattedMessage,
       tag: `app-notification-${notification.id}`,
-      icon: notification.type === 'announcement' ? '/carevance-logo-icon.png' : undefined,
+      // The preview takes precedence over the app icon: showing what was sent
+      // is the entire point, and the app icon is already implied by the toast.
+      icon: thumbnail
+        ?? (notification.type === 'announcement' ? '/carevance-logo-icon.png' : undefined),
     });
 
     systemNotification.onclick = () => {
@@ -481,8 +577,24 @@ export default function Layout() {
          * waiting. The local filter below stays as a backstop for a server that
          * does not honour the parameter.
          */
-        const [notificationResponse, chatUnreadResponse, approvalResponses, reimbursementResponse] = await Promise.all([
+        const [notificationResponse, chatNotificationResponse, chatUnreadResponse, approvalResponses, reimbursementResponse] = await Promise.all([
           notificationApi.list({ limit: 20, exclude_types: CHAT_NOTIFICATION_TYPES }),
+          /*
+           * Chat notifications, fetched SEPARATELY and only to raise alerts.
+           *
+           * They cannot come from the request above, which excludes them
+           * server-side for the reason given there. The consequence went
+           * unnoticed for a long time: `nextChat` was derived by filtering a
+           * response chat had already been removed from, so it was ALWAYS
+           * empty and a chat message could never raise a desktop notification
+           * at all. The badge updated, the toast never fired.
+           *
+           * A second small request is the honest fix. Merging the two into one
+           * unfiltered call would re-create the original problem — a busy
+           * thread would fill the 20-row page with chat and push approvals out
+           * of the panel entirely.
+           */
+          notificationApi.list({ limit: 10, types: CHAT_NOTIFICATION_TYPES }),
           chatApi.getUnreadSummary(),
           approvalPromise,
           payrollApi.reimbursementInboxCount(),
@@ -491,9 +603,11 @@ export default function Layout() {
         if (!active) return;
 
         const allItems = (notificationResponse.data?.data || []) as AppNotificationItem[];
-        // Filter out chat notifications from the panel - but keep all others (read and unread)
+        const chatItems = (chatNotificationResponse.data?.data || []) as AppNotificationItem[];
+        // The local filter stays as a backstop for a server that does not
+        // honour exclude_types; chat alerts now come from their own request.
         const nextNonChat = allItems.filter((item) => !isChatNotification(item));
-        const nextChat = allItems.filter((item) => isChatNotification(item));
+        const nextChat = chatItems;
 
         // Calculate unread count only for non-chat notifications
         const unreadNonChatCount = nextNonChat.filter((item) => !item.is_read).length;
@@ -522,7 +636,7 @@ export default function Layout() {
         }
 
         if (isInitialLoadRef.current) {
-          allItems.forEach((item) => seenNotificationIdsRef.current.add(Number(item.id)));
+          rememberNotifications([...allItems, ...chatItems]);
           isInitialLoadRef.current = false;
           return;
         }
@@ -537,10 +651,10 @@ export default function Layout() {
           return !item.is_read && !seenNotificationIdsRef.current.has(id);
         });
 
-        newNonChat.forEach((item) => showDesktopNotification(item));
-        newChat.forEach((item) => showDesktopNotification(item));
+        newNonChat.forEach((item) => void showDesktopNotification(item));
+        newChat.forEach((item) => void showDesktopNotification(item));
 
-        allItems.forEach((item) => seenNotificationIdsRef.current.add(Number(item.id)));
+        rememberNotifications([...allItems, ...chatItems]);
       } catch (error) {
         // Every badge used to be reset to zero here. A single dropped poll —
         // a flaky connection, a redeploy, a 502 — told the user they had no
@@ -551,14 +665,27 @@ export default function Layout() {
       }
     };
 
+    loadAlertsRef.current = loadAlerts;
     loadAlerts();
 
     // Five endpoints every 8 seconds, on every authenticated page, whether or
     // not anyone was looking — a backgrounded tab kept 37 requests a minute
     // going all day. Poll only while the tab is visible, and refresh once on
     // the way back so returning to the tab still shows current badges.
+    //
+    // The interval is now a FALLBACK rather than the delivery mechanism. While
+    // the socket is connected it is pure waste — events already refresh these
+    // badges the moment anything changes — so it stands down and costs nothing.
+    //
+    // It stays at 30s, deliberately unchanged. An earlier draft slowed it to
+    // 60s on the reasoning that a backstop should be cheap, which would have
+    // meant that on the day Reverb was down users got notifications LATER than
+    // before any of this existed. A degraded path must never be worse than the
+    // thing it replaced.
     const tick = () => {
-      if (document.visibilityState === 'visible') loadAlerts();
+      if (document.visibilityState !== 'visible') return;
+      if (realtimeStatusRef.current === 'connected') return;
+      loadAlerts();
     };
 
     const interval = setInterval(tick, 30000);
@@ -574,6 +701,107 @@ export default function Layout() {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [isAdminView]);
+
+  /**
+   * Recover the notifications that arrived while the socket was down.
+   *
+   * `loadAlerts` fetches the newest 20, which is fine for badges but not for
+   * toasts: somebody who was disconnected through a busy afternoon can have
+   * more than that waiting, and the ones past the page boundary would never be
+   * announced at all. This asks for everything above the watermark instead and
+   * drains it, so "you were offline, here is what you missed" is complete
+   * rather than approximately complete.
+   *
+   * Bounded at 20 pages. A client returning after weeks should not fire an
+   * unbounded number of requests before the interface settles, and the page
+   * itself will show the backlog regardless.
+   */
+  const catchUpOnMissedNotifications = async () => {
+    if (notificationWatermarkRef.current <= 0) return;
+
+    try {
+      let watermark = notificationWatermarkRef.current;
+
+      for (let page = 0; page < 20; page += 1) {
+        const response = await notificationApi.list({ since_id: watermark, limit: 100 });
+        const rows = (response.data?.data || []) as AppNotificationItem[];
+        if (rows.length === 0) break;
+
+        rows.forEach((item) => {
+          if (shouldShowDesktopNotification(item, seenNotificationIdsRef.current)) {
+            void showDesktopNotification(item);
+          }
+        });
+
+        rememberNotifications(rows);
+
+        const nextWatermark = Number(response.data?.latest_id ?? watermark);
+        // Refuse to loop on a watermark that did not move. Without this a
+        // server that stopped advancing latest_id would spin here.
+        if (nextWatermark <= watermark) break;
+        watermark = nextWatermark;
+
+        if (!response.data?.has_more) break;
+      }
+    } catch (error) {
+      reportSilentError('Layout: notification catch-up failed; the fallback poll will reconcile', error);
+    }
+  };
+
+  // Kept current on every render rather than in a dependency array: the socket
+  // effect must not re-subscribe every time a badge count changes.
+  catchUpRef.current = catchUpOnMissedNotifications;
+
+  /**
+   * The real-time connection.
+   *
+   * Keyed on the user id alone. Re-running this on anything else would tear
+   * down and re-establish the socket — and re-authorize the channel — for
+   * reasons as trivial as an unread count changing.
+   */
+  useEffect(() => {
+    const userId = Number(user?.id || 0);
+    if (!userId) return;
+
+    const teardown = connectRealtime(userId, {
+      // The event is only a signal that something arrived; the rows come from
+      // the API. That keeps one rendering path for notifications instead of
+      // two that have to be kept in step, and it means mark-read works because
+      // real ids are present.
+      onNotification: () => {
+        void loadAlertsRef.current?.();
+      },
+
+      // Access was taken away while this tab was open. Channel authorization
+      // happened once, at subscribe time, so without this the socket would
+      // outlive the credentials that opened it.
+      onSessionRevoked: () => {
+        disconnectRealtime();
+        clearAuthStorage();
+        window.dispatchEvent(new Event('app:auth-cleared'));
+      },
+
+      onStatusChange: (status) => {
+        realtimeStatusRef.current = status;
+        setRealtimeStatus(status);
+
+        if (status !== 'connected') return;
+
+        // Order matters. Catch-up reads the OLD watermark to find what was
+        // missed; loadAlerts advances it to the newest. Run them the other way
+        // round and the catch-up finds nothing, silently losing every toast
+        // past the first page.
+        void (async () => {
+          await catchUpRef.current?.();
+          await loadAlertsRef.current?.();
+        })();
+      },
+    });
+
+    return () => {
+      teardown();
+    };
+  }, [user?.id]);
 
   // The employee directory used to be downloaded in full here on every mount,
   // for every admin, whether or not they ever searched. People search is now a
@@ -790,7 +1018,39 @@ export default function Layout() {
                     backgroundColor="rgba(255,255,255,0.95)"
                   >
                     <div className="flex items-center justify-between border-b border-border-strong/40 px-4 py-3">
-                      <p className="text-sm font-semibold contrast-text-primary">Notifications</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold contrast-text-primary">Notifications</p>
+                        {/*
+                          * Whether these are arriving live or on a timer.
+                          *
+                          * Shown here rather than as a header badge because
+                          * this is where somebody wonders about it, and only
+                          * when real-time is configured at all — announcing
+                          * "offline" in an environment that never had a socket
+                          * would describe a fault that does not exist.
+                          *
+                          * The degraded label names the actual interval. "We
+                          * are checking every 30 seconds" is something a user
+                          * can act on; a bare warning triangle is not.
+                          */}
+                        {realtimeStatus === 'connected' ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-600"
+                            title="Notifications are arriving in real time"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Live
+                          </span>
+                        ) : realtimeStatus !== 'disabled' ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-600"
+                            title="The live connection is down. Notifications are still arriving, but on a 30-second refresh."
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            {realtimeStatus === 'unavailable' ? 'Every 30s' : 'Reconnecting'}
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="flex items-center gap-3">
                         <Link
                           to="/notifications"
@@ -911,7 +1171,7 @@ export default function Layout() {
                         onClick={() => setProfileOpen(false)}
                         className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        <Settings className="h-4 w-4 text-slate-400" />
+                        <Settings className="h-4 w-4 text-slate-500" />
                         Settings
                       </Link>
                       <Link
@@ -919,7 +1179,7 @@ export default function Layout() {
                         onClick={() => setProfileOpen(false)}
                         className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        <LifeBuoy className="h-4 w-4 text-slate-400" />
+                        <LifeBuoy className="h-4 w-4 text-slate-500" />
                         Help
                       </Link>
                       <button
@@ -1074,7 +1334,7 @@ export default function Layout() {
                       onClick={() => setProfileOpen(false)}
                       className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                     >
-                      <Settings className="h-4 w-4 text-slate-400" />
+                      <Settings className="h-4 w-4 text-slate-500" />
                       Settings
                     </Link>
                     <Link
@@ -1082,7 +1342,7 @@ export default function Layout() {
                       onClick={() => setProfileOpen(false)}
                       className="flex items-center gap-3 rounded-[18px] px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                     >
-                      <LifeBuoy className="h-4 w-4 text-slate-400" />
+                      <LifeBuoy className="h-4 w-4 text-slate-500" />
                       Help
                     </Link>
                     {isDesktopShell ? (
@@ -1095,7 +1355,7 @@ export default function Layout() {
                         }}
                         className="relative flex w-full items-center gap-3 rounded-[18px] px-3 py-2.5 text-left text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        <Sparkles className="h-4 w-4 text-slate-400" />
+                        <Sparkles className="h-4 w-4 text-slate-500" />
                         Updates
                         {hasUnreadDesktopUpdate ? (
                           <span className="ml-auto h-2.5 w-2.5 rounded-full border-2 border-white bg-rose-500" />

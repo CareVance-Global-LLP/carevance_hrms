@@ -214,7 +214,7 @@ export default function FormulaEnginePage() {
                   rows={3}
                   className={cn(
                     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-mono',
-                    'placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20',
+                    'placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20',
                     'transition-colors resize-none'
                   )}
                 />
@@ -246,7 +246,7 @@ export default function FormulaEnginePage() {
                         onChange={(e) => updateVariable(index, 'key', e.target.value)}
                         className="flex-1 font-mono text-sm"
                       />
-                      <span className="text-slate-400">=</span>
+                      <span className="text-slate-500">=</span>
                       <TextInput
                         placeholder="value"
                         value={variable.value}
@@ -255,7 +255,7 @@ export default function FormulaEnginePage() {
                       />
                       <button
                         onClick={() => removeVariable(index)}
-                        className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors"
+                        className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-rose-50 rounded transition-colors"
                         title="Remove variable"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -265,7 +265,7 @@ export default function FormulaEnginePage() {
                 </div>
 
                 {variables.length === 0 && (
-                  <p className="text-xs text-slate-400 italic mt-2">No variables defined. Add one above.</p>
+                  <p className="text-xs text-slate-500 italic mt-2">No variables defined. Add one above.</p>
                 )}
               </div>
 
@@ -429,7 +429,7 @@ export default function FormulaEnginePage() {
                 <div className="text-center py-12">
                   <FlaskConical className="h-12 w-12 text-slate-300 mx-auto mb-3" />
                   <p className="text-sm text-slate-500">Enter a formula and click Evaluate or Validate</p>
-                  <p className="text-xs text-slate-400 mt-1">Results will appear here</p>
+                  <p className="text-xs text-slate-500 mt-1">Results will appear here</p>
                 </div>
               )}
             </SurfaceCard>

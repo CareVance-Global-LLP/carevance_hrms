@@ -198,7 +198,7 @@ export default function UploadForm16Modal({
                     />
                     <Archive className={cn(
                       'h-10 w-10 mx-auto mb-3',
-                      partAFile ? 'text-emerald-600' : partAError ? 'text-rose-500' : 'text-slate-400',
+                      partAFile ? 'text-emerald-600' : partAError ? 'text-rose-500' : 'text-slate-500',
                     )} />
                     {partAFile ? (
                       <div>
@@ -254,7 +254,7 @@ export default function UploadForm16Modal({
                     />
                     <Archive className={cn(
                       'h-10 w-10 mx-auto mb-3',
-                      partBFile ? 'text-emerald-600' : partBError ? 'text-rose-500' : 'text-slate-400',
+                      partBFile ? 'text-emerald-600' : partBError ? 'text-rose-500' : 'text-slate-500',
                     )} />
                     {partBFile ? (
                       <div>

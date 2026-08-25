@@ -420,7 +420,7 @@ export default function TaskDetailPanel({
                           notifyError('Could not delete comment. Please try again.', error);
                         }
                       }}
-                      className="shrink-0 rounded p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-700"
+                      className="shrink-0 rounded p-1 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -465,7 +465,7 @@ export default function TaskDetailPanel({
                       notifyError('Could not delete checklist item. Please try again.', error);
                     }
                   }}
-                  className="rounded p-0.5 text-slate-400 transition hover:text-rose-700"
+                  className="rounded p-0.5 text-slate-500 transition hover:text-rose-700"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -520,7 +520,7 @@ export default function TaskDetailPanel({
                           notifyError('Could not delete attachment. Please try again.', error);
                         }
                       }}
-                      className="shrink-0 rounded p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-700"
+                      className="shrink-0 rounded p-1 text-slate-500 transition hover:bg-rose-50 hover:text-rose-700"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -586,7 +586,7 @@ export default function TaskDetailPanel({
                         notifyError('Could not remove dependency. Please try again.', error);
                       }
                     }}
-                    className="rounded p-0.5 text-slate-400 transition hover:text-rose-700"
+                    className="rounded p-0.5 text-slate-500 transition hover:text-rose-700"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -677,7 +677,7 @@ export default function TaskDetailPanel({
                     type="button"
                     aria-label="Remove recurrence rule"
                     onClick={() => setConfirmRemoveRecurrence(true)}
-                    className="rounded p-0.5 text-slate-400 transition hover:text-rose-700"
+                    className="rounded p-0.5 text-slate-500 transition hover:text-rose-700"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

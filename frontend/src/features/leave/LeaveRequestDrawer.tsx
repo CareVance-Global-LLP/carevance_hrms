@@ -189,7 +189,7 @@ export default function LeaveRequestDrawer({
               min={from}
               disabled={leaveType === 'half_day'}
               onChange={(event) => setTo(event.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-blue-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-blue-400 focus:outline-none disabled:bg-slate-50 disabled:text-slate-500"
             />
           </div>
         </div>
@@ -204,7 +204,7 @@ export default function LeaveRequestDrawer({
             onChange={(event) => setReason(event.target.value)}
             rows={3}
             placeholder="Why are you taking leave?"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
           />
         </div>
 
@@ -215,7 +215,7 @@ export default function LeaveRequestDrawer({
             <b className="tabular-nums">
               {cost.days}
               {skippedTotal > 0 ? (
-                <span className="ml-1 font-normal text-slate-400">
+                <span className="ml-1 font-normal text-slate-500">
                   ({cost.skippedWeekend > 0 ? `${cost.skippedWeekend} weekend` : ''}
                   {cost.skippedWeekend > 0 && cost.skippedHoliday > 0 ? ' + ' : ''}
                   {cost.skippedHoliday > 0 ? `${cost.skippedHoliday} holiday` : ''} skipped)
@@ -245,13 +245,13 @@ export default function LeaveRequestDrawer({
             </p>
           ) : null}
 
-          <p className="border-t border-slate-100 px-3.5 py-1.5 text-[10px] text-slate-400">
+          <p className="border-t border-slate-100 px-3.5 py-1.5 text-[10px] text-slate-500">
             Estimate — the final deduction is computed at submit.
           </p>
         </div>
 
         {reasonMissing ? (
-          <p className="text-[11px] text-slate-400">A reason is required before you can submit.</p>
+          <p className="text-[11px] text-slate-500">A reason is required before you can submit.</p>
         ) : null}
       </div>
     </SlideOver>

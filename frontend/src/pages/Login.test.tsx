@@ -5,6 +5,22 @@ import { renderWithProviders } from '@/test/renderWithProviders';
 
 const loginMock = vi.fn();
 const navigateMock = vi.fn();
+// vi.hoisted: the vi.mock factory below is lifted above this file's
+// top-level consts, so a plain `const` here is not yet initialised when it runs.
+const checkEmailMock = vi.hoisted(() => vi.fn());
+
+/*
+ * The page probes /auth/check-email as you type. Unmocked it reaches the real
+ * axios client, which retries and leaves the form mid-flight long past the
+ * assertions - so every test here failed looking like a broken submit.
+ */
+vi.mock('@/services/api', async () => {
+  const actual = await vi.importActual<typeof import('@/services/api')>('@/services/api');
+  return {
+    ...actual,
+    authApi: { ...actual.authApi, checkEmail: checkEmailMock },
+  };
+});
 
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
@@ -24,6 +40,7 @@ describe('Login page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    checkEmailMock.mockResolvedValue({ data: { success: true, exists: true, has_verified_email: true } });
   });
 
   it('submits credentials and navigates to dashboard on success', async () => {

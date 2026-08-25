@@ -243,14 +243,14 @@ export default function TimelineSwimlanes({ rows, timezone, focusedUserId, onFoc
           ))}
           <div className="grid grid-cols-[minmax(150px,190px)_1fr] gap-3">
             <span />
-            <div className="flex justify-between font-mono text-[10px] text-slate-400">
+            <div className="flex justify-between font-mono text-[10px] text-slate-500">
               {ticks.map((tick) => (
                 <span key={tick}>{timeLabel(tick, timezone)}</span>
               ))}
             </div>
           </div>
         </div>
-        <p className="mt-3 text-xs text-slate-400">
+        <p className="mt-3 text-xs text-slate-500">
           Colored blocks are classified activity, diagonal hatch is recorded idle, vertical hatch is
           break time, empty is untracked. Hover a block for the tool and the classification reason. Click a name to zoom into their day.
         </p>

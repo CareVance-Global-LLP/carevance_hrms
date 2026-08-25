@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>Reply</title>
+<style>
+  /*
+   * Follows the OS theme rather than the app's.
+   *
+   * This window sits over whatever the person was doing, next to their system
+   * notifications — not inside CareVance. Matching the app while the desktop
+   * is dark would make it the one bright rectangle on screen.
+   */
+  :root {
+    color-scheme: light dark;
+    --surface: #ffffff;
+    --border: #d8dee6;
+    --text: #14181c;
+    --muted: #5c6673;
+    --field: #f4f6f8;
+    --accent: #0e7490;
+    --accent-text: #ffffff;
+    --danger: #b42318;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface: #1c2127;
+      --border: #333c46;
+      --text: #eef2f6;
+      --muted: #9aa6b4;
+      --field: #262d35;
+      --accent: #22a3bd;
+      --accent-text: #06222a;
+      --danger: #ff9a90;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: transparent;
+    color: var(--text);
+  }
+
+  .card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 18px 44px -20px rgba(0, 0, 0, 0.55);
+  }
+
+  header { display: flex; align-items: baseline; gap: 8px; }
+  .to { font-size: 13px; font-weight: 650; }
+  .hint { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+  .preview {
+    font-size: 11px;
+    color: var(--muted);
+    /* One line. This is context for the reply, not the conversation. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  textarea {
+    flex: 1;
+    width: 100%;
+    resize: none;
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--field);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea:disabled { opacity: 0.6; }
+
+  footer { display: flex; align-items: center; gap: 8px; }
+  .error { font-size: 11px; color: var(--danger); flex: 1; }
+
+  button {
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <span class="to" id="to">Reply</span>
+      <span class="hint">Enter to send · Esc to close</span>
+    </header>
+    <div class="preview" id="preview"></div>
+    <textarea id="text" rows="2" placeholder="Type a reply…" aria-label="Your reply"></textarea>
+    <footer>
+      <span class="error" id="error" role="alert"></span>
+      <button type="button" id="open">Open chat</button>
+      <button type="button" id="cancel">Cancel</button>
+      <button type="button" id="send" class="primary">Send</button>
+    </footer>
+  </div>
+
+<script>
+  (function () {
+    var bridge = window.quickReply;
+    var toEl = document.getElementById('to');
+    var previewEl = document.getElementById('preview');
+    var textEl = document.getElementById('text');
+    var errorEl = document.getElementById('error');
+    var sendBtn = document.getElementById('send');
+    var cancelBtn = document.getElementById('cancel');
+    var sending = false;
+
+    function setSending(value) {
+      sending = value;
+      textEl.disabled = value;
+      sendBtn.disabled = value;
+      sendBtn.textContent = value ? 'Sending…' : 'Send';
+    }
+
+    function submit() {
+      var text = textEl.value.trim();
+      // A blank reply is a no-op, not an error worth explaining.
+      if (!text || sending) return;
+      errorEl.textContent = '';
+      setSending(true);
+      bridge.submit(text);
+    }
+
+    sendBtn.addEventListener('click', submit);
+    cancelBtn.addEventListener('click', function () { bridge.cancel(); });
+    document.getElementById('open').addEventListener('click', function () { bridge.openChat(); });
+
+    textEl.addEventListener('keydown', function (event) {
+      // Enter sends; Shift+Enter is a newline, as in every chat composer.
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        submit();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        bridge.cancel();
+      }
+    });
+
+    bridge.onState(function (state) {
+      toEl.textContent = state && state.title ? state.title : 'Reply';
+      previewEl.textContent = state && state.preview ? state.preview : '';
+      // Cleared per conversation: text left over from a previous reply must
+      // never be sent to a different person.
+      textEl.value = '';
+      errorEl.textContent = '';
+      setSending(false);
+      textEl.focus();
+    });
+
+    bridge.onResult(function (result) {
+      setSending(false);
+      if (result && result.ok) {
+        // The window is hidden by the main process on success; clearing here
+        // means the next reply starts empty even though the page persists.
+        textEl.value = '';
+        errorEl.textContent = '';
+        return;
+      }
+      // The text is deliberately left in place so a failed send can be
+      // retried rather than retyped.
+      errorEl.textContent = (result && result.error) || 'Could not send';
+      textEl.focus();
+    });
+
+    bridge.ready();
+  })();
+</script>
+</body>
+</html>

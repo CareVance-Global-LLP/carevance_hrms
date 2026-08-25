@@ -145,7 +145,7 @@ export default function FnFSettlementsPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">Gratuity {Number(s.years_of_service || 0) < 5 ? '(not eligible — <5yrs)' : ''}</span>
-                  <span className={`font-medium ${Number(s.years_of_service || 0) < 5 ? 'text-slate-400' : 'text-slate-900'}`}>
+                  <span className={`font-medium ${Number(s.years_of_service || 0) < 5 ? 'text-slate-500' : 'text-slate-900'}`}>
                     {formatPayrollAmount(s.gratuity_amount || 0)}
                   </span>
                 </div>
@@ -196,7 +196,7 @@ export default function FnFSettlementsPage() {
                         ) : (
                           <span className="h-4 w-4 rounded-full border-2 border-slate-300" />
                         )}
-                        <span className={`text-xs font-medium ${isPass ? 'text-emerald-600' : isFail ? 'text-rose-600' : 'text-slate-400'}`}>
+                        <span className={`text-xs font-medium ${isPass ? 'text-emerald-600' : isFail ? 'text-rose-600' : 'text-slate-500'}`}>
                           {isPass ? 'Pass' : isFail ? 'Fail' : 'Pending'}
                         </span>
                       </span>
@@ -296,7 +296,7 @@ export default function FnFSettlementsPage() {
             <div className="flex-1 min-w-[200px]">
               <FieldLabel>Search</FieldLabel>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <TextInput
                   placeholder="Search by employee name..."
                   value={searchQuery}

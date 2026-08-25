@@ -104,7 +104,7 @@ export default function EmailTagInput({
               }
             }}
             placeholder="Type or paste email addresses"
-            className="min-w-[16rem] flex-1 border-0 bg-transparent px-2 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+            className="min-w-[16rem] flex-1 border-0 bg-transparent px-2 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-500"
           />
         </div>
       </div>

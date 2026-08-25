@@ -98,7 +98,7 @@ export default function GoogleSignupCompletion() {
                     ? 'bg-emerald-50 text-emerald-600'
                     : step.tone === 'active'
                       ? 'bg-blue-50 text-blue-600'
-                      : 'bg-slate-100 text-slate-400'
+                      : 'bg-slate-100 text-slate-500'
                 }`}
               >
                 {index + 1}

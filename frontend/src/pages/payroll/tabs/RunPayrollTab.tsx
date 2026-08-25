@@ -160,7 +160,7 @@ export default function RunPayrollTab() {
       ) : (
         <SurfaceCard className="p-12 text-center">
           <p className="text-slate-500 font-medium">No pay groups yet</p>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             Create a pay group and assign employees before running payroll.
           </p>
         </SurfaceCard>

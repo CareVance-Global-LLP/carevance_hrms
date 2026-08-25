@@ -47,13 +47,13 @@ graph TD
 
 ```bash
 # backend  (cwd: backend/)
-php artisan test                      # 1761 tests, all passing
+php artisan test                      # 2496 passed, 1 skipped, 0 failed (24 Aug 2026)
 php artisan test --filter=SomeTest
 php artisan migrate
 
 # frontend (cwd: frontend/)
 npm run dev                           # :5173
-npx vitest run                        # 1244 tests, 34 known failures
+npx vitest run                        # 1375 tests across 140 files, all green (24 Aug 2026)
 npx tsc --noEmit                      # must stay at 0 errors
 ```
 
@@ -106,12 +106,18 @@ Model::forOrganization($id)         // pin to a known tenant
 
 Excluded on purpose: `User` (the scope resolves the acting user through Auth), `Organization`, `OrganizationStats`, `Invitation` (written before a user exists).
 
-### The test suites have known failures — gate on new ones
+### Gate on failing test NAMES, not counts
 
-The frontend still carries a tail of pre-existing failures (34); **the backend
-baseline is now empty — every backend test passes.** Either way, **never judge a
-change by the failure count** — compare failing test *names* against the
-committed baseline:
+**Both suites are green** — 2496 backend (1 skipped), 1375 frontend, zero
+failures, measured 24 Aug 2026. Both sides of this entry have claimed a tail
+of known failures at different times (36/49, then 34 on the frontend);
+neither is true now, and believing a stale one means shrugging off a real
+regression as "one of the known ones".
+
+The rule survives the tail disappearing, because the count was always the
+wrong thing to watch: a change that fixes one test and breaks another leaves
+the number identical. Compare failing test *names* against the committed
+baseline:
 
 ```bash
 node scripts/ci/test-baseline.mjs --junit <report.xml> \
@@ -137,6 +143,43 @@ In JSX, `·` in *text* renders as the literal characters — it is only an escap
 ### Errors
 
 No bare `catch {}`. Use `frontend/src/lib/reportSilentError.ts` where swallowing is genuinely right. Silent catches previously turned three separate failures into no-ops that looked like success.
+
+### Replying from a notification: the OS decides what is possible
+
+**Typing into a Windows toast is not achievable with Electron.** `hasReply`, `replyPlaceholder` and toast `actions` are all `@platform darwin` in Electron's own typings, and web notifications have action buttons but no text field anywhere in the spec. So on win32 the *click* is the only interaction the OS offers.
+
+`desktop/quick-reply-popup.cjs` spends that click on a small always-on-top reply box — the same trade `idle-popup.cjs` already makes when the OS cannot show what we need inside its own surface.
+
+- **The shell collects the text; the RENDERER sends it.** The main process has no token, no axios instance and none of the interceptors. A second send path there, with its own copy of auth, would drift the first time anything about authentication changed — silently, in a window nobody looks at until they need it.
+- **Only chat notifications carry `reply`.** Its presence is what makes the click open the box instead of raising the window; a leave approval has nothing to reply to and keeps the old behaviour.
+- **The box takes focus, unlike the idle popup.** It exists to be typed into, and one you must click before typing has thrown away the convenience. That also makes blur an unambiguous "they moved on" signal, so it dismisses itself.
+- **A failure keeps the window and the text.** Only success closes it — otherwise a dropped request silently eats the message.
+- **macOS gets real inline reply** (`hasReply`), routed to the same handler. The popup is a workaround for platforms without it, not a preference.
+- **`desktop/package.json` `build.files` is an ALLOW-LIST.** New shell files must be added or the packaged app ships without them — and since `main.cjs` requires the popup at load, a missing entry means the built app does not start at all.
+
+### Chat notifications describe the attachment
+
+`Sent an attachment` was the body for everything — a photo, a payslip and a 40 MB archive were indistinguishable, so the only way to learn what somebody sent was to open the app. `AttachmentPresenter` now produces WhatsApp's vocabulary and `ThumbnailGenerator` supplies the picture.
+
+- **A caption always outranks the label.** If the sender typed something, that IS the message; replacing it with "Photo" discards their words for one we generated.
+- **Media is labelled, documents are named.** `IMG_20260824_113045.jpg` tells a reader nothing, so images/video/audio show "📷 Photo". A document shows its filename, because "invoice-March.pdf" is what decides whether you open it now.
+- **The caption comes from the REQUEST, never from `$message->body`.** An attachment-only message is stored with the literal placeholder `'Attachment'` (see `buildMessagePayload`), so reading the column back renders "📷 Attachment".
+- **Previews are `data:` URLs, not links.** The OS renders a toast outside the page, where a blob: URL is meaningless and an authenticated https: URL cannot carry a bearer token. Fetched and awaited *before* the notification is raised — neither Windows nor macOS lets a toast change its image afterwards.
+- **A thumbnail is checked for size before it is decoded.** GD decodes to roughly `width × height × 4` bytes regardless of file size, so a 3 MB JPEG at 12000×9000 needs ~430 MB against a 128 MB limit — a fatal error, not a catchable one. `getimagesize()` first is the only safe way to decline.
+- **No preview is never an error.** Most notifications are not chat, most chat has no attachment, most attachments are not images. The endpoint answers 404 and every caller falls back to an icon; a failed preview must never cost the notification.
+- **A preview is as protected as the file.** Same access checks as the attachment route — a different tenant gets 404 (the row is not visible to the scope, and 403 would confirm it exists), a colleague outside the conversation gets 403.
+
+### File uploads: PHP's limit is not Laravel's limit
+
+**A `max:` rule cannot enforce a size PHP will not accept.** Chat attachments claimed 200 MB in the UI *and* in `SendChatMessageRequest` (`max:204800`), while `upload_max_filesize` was 2 MB locally and 10 MB in production. PHP discards an oversized body **before Laravel runs**, so the request arrived with an empty files array and the validator reported *"no attachment"* for a file the user had visibly attached. A limit that can never fire is worse than none — it reads like a guarantee.
+
+Anything larger than one request can carry now goes through `ChunkedUploadService` (`POST /api/uploads` → `/chunks/{i}` → `/complete`), and the message quotes the returned `upload_key`.
+
+- **The server names the chunk size; the client never picks one.** It is derived from *that machine's* `php.ini`, so the same client works against a 2 MB dev box and a 10 MB deployment. Hardcoding it re-creates the original bug in whichever environment you did not test.
+- **Type is detected from the assembled bytes.** A chunked upload bypasses Laravel's `mimetypes` rule completely, so `ChunkedUploadService::ALLOWED_MIMES` is the only thing standing between this and an unrestricted file drop. Both paths validate against that one list.
+- **Assembly orders by chunk INDEX, never by arrival.** Pieces legitimately arrive out of order — that is what makes resuming work — and getting this wrong corrupts every multi-chunk file silently, since size and count checks still pass.
+- **An upload is single-use.** Claiming is a conditional `UPDATE ... WHERE status = 'completed'`, not read-then-write. Two messages sharing one stored path means deleting either destroys the other's attachment.
+- **Abandoned sessions are swept hourly** (`schedule:uploads-purge`). People close tabs mid-upload constantly, and these are the largest files on the disk.
 
 ---
 
@@ -211,6 +254,18 @@ Two payroll data models coexist. `payroll_monthly_runs` + `payroll_items` is cor
 ### Filings
 
 Generators produce real EPFO ECR and NSDL FVU formats. Statutory identifiers resolve through `User::statutoryId('pan'|'uan'|'esi')`, which reads the profile column *or* `employee_government_ids` — they live in both places. A filing must report `filing_ready: false` when the org has no PAN/TAN rather than emitting `PANINVALID` and claiming success.
+
+**Generating a return is half of it.** The other half is the evidence, and it is what an inspection actually asks for:
+
+- **The lifecycle is `generated → [submitted → approved] → filed → acknowledged`.** `filed` means we uploaded it; `acknowledged` means the authority confirmed. Those are different facts and both are recorded.
+- **The receipt arrives in the SAME request as the filing.** Split into two steps, the second gets skipped — and a filing nobody can evidence is what these columns exist to prevent. `markFiled` takes an optional `receipt` file and a `filed_on` date, because people record a filing after the fact and back-dating it correctly is what decides "on time" versus "late".
+- **The receipt never overwrites `file_path`.** That column holds the return the acknowledgement is evidence *for*; it has its own `receipt_path`.
+- **A return prepared outside this system can be recorded**, and is stored `reference_only` whatever it is — we did not produce the file and cannot vouch for its format.
+- **`FilingDueDates` is the only place a deadline is written down**, with the provision cited per line, the way `StatutoryWorkingTime` is. Three rules: the 15th of the **following** month (the calendar this replaced used the period month, so every deadline was a month early and every filing permanently overdue); an unknown deadline is **null, never a guess** — several states levy no professional tax, and inventing a date puts an overdue badge on a return that does not exist; and **a filed return can never become overdue**, however long ago the deadline passed.
+- **`compliance_status: 'ready'` means "matches the government portal upload format exactly"** and nothing else. Seven generators claimed it and did not qualify. If you add a generator, classify it honestly — `reference_only` is not a lesser status, it is a true one.
+- **Data files carry no banners.** Full ECR opened with four title lines and closed with a totals footer; EPFO's parser reads line 1 as a member record and rejects the file there. Totals belong on `meta_data`.
+- **The Filings screen derives status from the filing rows**, never from a literal on a card. It used to hardcode "ESI — Filed — Paid: 12 Nov" on every tenant, including ones that had never filed anything, beside a Filing History table that correctly showed nothing.
+- **Blue-collar forms lead**, with staff and registration forms behind an "All forms" toggle. Showing e-SHRAM beside a PF ECR contradicts itself on the same screen — it excludes EPFO members.
 
 ---
 
@@ -355,7 +410,7 @@ Real, and deliberately not yet built:
 > it cost real marks in a customer evaluation for features that already
 > shipped. When you close a gap, delete the line in the same commit.
 
-- **Four filings are schedules rather than statutory returns.** All nineteen generators now produce output: the ten declaration forms have templates under `resources/views/filings/`. But `eshram_registration`, `shram_card_registration`, `se_registration` and `form_1` are **preparation sheets**, not returns — e-SHRAM covers unorganised workers so most of a PF-deducting payroll is ineligible, and S&E registration is state legislation filed on each state's own form. Each says so on its face. Nothing here submits anything: every filing is a document a human uploads.
+- **Seven filings are schedules rather than statutory returns, and nothing submits to a portal.** All nineteen generators produce output, and the full lifecycle now runs — `generated → [submitted → approved] → filed → acknowledged`, with the portal's challan attached in the same request as the filing (see the Filings section below). But `eshram_registration`, `shram_card_registration`, `se_registration`, `form_1`, `uan_activation`, `form_124` and `full_ecr` are `compliance_status: reference_only` — preparation sheets and worklists, not returns. e-SHRAM covers unorganised workers and *excludes EPFO members*, so most of a PF-deducting payroll is ineligible; S&E is state legislation on each state's own form; there is no central Form 124 for salary TDS. What is genuinely absent for a blue-collar payroll is the **wage register, wage slip and muster roll** set (Minimum Wages Rules Forms V/XI, CLRA Forms XVI–XIX, the combined register under the Code on Wages Rules 2021) — the first thing a labour inspector asks for, and every figure for it already sits in `payroll_items`. Also missing: EPF Form 11, Bonus Forms A and B, ESI Form 1, Gratuity Form F.
 - **SCIM has no group provisioning.** Users sync and deprovision, and a token is issued from Settings → Single sign-on. `/Groups` is unimplemented, so people sync but the roles they should get do not.
 - **Recruitment has no careers page, and BGV has no vendor integration.** Openings, candidates, applications, a configurable pipeline, interviews with panel feedback, offers with an approval chain, a signed offer letter, and consent-gated background verification all exist and all have screens. What is missing is a public careers page a candidate can browse and apply from, and a connection to AuthBridge/IDfy — today a human records the BGV findings. No engagement surveys or HR helpdesk either.
 - **Rostering has no drag-and-drop calendar.** Patterns, generation, publishing, coverage and swaps all have a screen at `/roster` (see below). What is missing is direct manipulation — a manager sets a one-off day through the API rather than by dragging a shift onto a cell.
@@ -375,7 +430,7 @@ Real, and deliberately not yet built:
   no folders either, though those matter less.
 - **English only.** No i18n layer of any kind, which caps self-service adoption on a shop floor.
 - **0 Laravel policies.** Authorization is inline in controllers, though the `Role`/`Permission` schema and `hasPermission()` are real and maker-checker now covers the full payroll chain.
-- **No real-time transport.** `BROADCAST_CONNECTION=log`; chat polls every 10s.
+- **Chat still polls, and there is no typing/presence over the socket.** Notifications are now real-time (Reverb — see "Reverb, and the third daemon"), which covers the unread badge and every notification type including chat messages. What still polls is the chat *page itself*: the thread list every 10s and the open thread every 2.5s. Removing those is a separate change with its own regression risk. Presence and live typing indicators are cheap on Reverb now and deliberately not built.
 - **Error boundaries are per-route, not per-widget.** `RouteErrorBoundary` wraps the routed area and resets on `location.pathname`, so a crash costs one page and navigating away clears it; `RootErrorBoundary` in `main.tsx` remains the last resort. What is still missing is boundaries around individual widgets — one failing card still takes its whole page.
 
 ### Not gaps — these were on this list and are built
@@ -518,6 +573,32 @@ php artisan schedule:work          # dev
 Without it the only thing that can stop an idle timer is the desktop app itself, which cannot act once it is closed, asleep or crashed. Measured 17 Aug 2026 with no scheduler running: `time_entries` #2114 started 17:59 and was still open at midday the next day.
 
 Money stays correct either way — every auto-stop path rewinds `end_time` to the last real activity and records the idle tail in `trailing_idle_seconds`, so a late stop never bills the idle. What breaks is the timer appearing to run all night.
+
+### Reverb, and the third daemon
+
+Notifications are delivered over WebSockets. `BROADCAST_CONNECTION=reverb` needs a **third** long-running process next to the queue worker and the scheduler:
+
+```bash
+composer dev                       # dev — starts serve, queue, vite, pail AND reverb
+php artisan reverb:start           # or on its own, binds :8080
+# production: the `reverb` service. NOTE deploy.sh uses docker-compose.deploy.yml,
+# NOT docker-compose.yml — both carry the service, but only the former ships.
+```
+
+**nginx does not proxy WebSockets transparently.** Caddy does; nginx needs `proxy_http_version 1.1` plus the `Upgrade`/`Connection` headers, or the handshake is answered as an ordinary request and the socket silently never opens. Both edges are configured (`frontend/nginx.conf`, `deploy/lightsail/Caddyfile`). The `location /app/` trailing slash is load-bearing twice over: it also stops `/apps/` — Reverb's HMAC-authenticated publish API — being routable from the internet.
+
+The frontend container `depends_on: reverb` because **nginx resolves `proxy_pass` upstreams at startup** and aborts with `host not found in upstream` if the container is not there yet — which would take the whole web app down over a notification transport.
+
+**Unlike the other two, forgetting this one does not break anything.** Clients that cannot open a socket fall back to the 30-second poll the product used before real-time existed, so notifications get slower, never lost. Three rules make that true and are worth keeping true:
+
+- **The frontend's `VITE_REVERB_APP_KEY` is the on switch.** With no key configured the clients never *attempt* a socket, which is what makes a fresh checkout with no `reverb:start` behave exactly as it always did instead of retrying a doomed connection on every page load.
+- **The degraded poll stays at 30s — the pre-existing interval.** An early draft slowed it to 60s as a "cheap backstop", which would have meant notifications arrived *later than before this feature existed* on precisely the day Reverb was down. A fallback must never be worse than what it replaced.
+- **The failure is visible.** The notification panel reads "Live" on a socket and "Every 30s" when it has fallen back. A transport that dies invisibly is the failure mode that cost a day on the scheduler bug above.
+
+Two things about the design are load-bearing:
+
+- **Channel auth is registered under `/api`, with `api.token`.** There is no Sanctum here, so the framework default would authenticate against a session guard nothing populates — and Caddy only proxies `/api/*`, so the default path would 404 against the frontend's nginx in production. Both failures are silent: private channels simply never subscribe. See `bootstrap/app.php`.
+- **Revoking access closes the socket.** Channel authorization runs once, at subscribe time, so deleting a bearer token stops the next *request* and does nothing to an open connection. `SessionRevoked` is broadcast on deactivation, or a leaver with a tab open keeps receiving notifications — the exact failure SCIM exists to prevent.
 
 `POST /payroll/filings/generate/all` works the same way through `GenerateRunFilings`, and its progress appears under `filings` on the same status endpoint. **The bank file is deliberately still synchronous** — one eager-loaded query plus string formatting, returning content the user is waiting to download. Queueing it would turn a one-click download into prepare-poll-download for no gain.
 

@@ -124,7 +124,7 @@ export default function RunPayrollChecklist({ runId, className }: RunPayrollChec
                   'h-7 w-7 rounded-full flex items-center justify-center flex-shrink-0',
                   step.status === 'completed' ? 'bg-emerald-100 text-emerald-600' :
                   step.status === 'pending' ? 'bg-amber-100 text-amber-600' :
-                  'bg-slate-100 text-slate-400',
+                  'bg-slate-100 text-slate-500',
                 )}
               >
                 {step.status === 'completed' ? <Check className="h-3.5 w-3.5" /> :
@@ -134,17 +134,17 @@ export default function RunPayrollChecklist({ runId, className }: RunPayrollChec
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <Icon className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                  <Icon className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
                   <p className="text-sm font-medium text-slate-900 truncate">{step.title}</p>
                   {'locked' in step && (step as any).locked && (
-                    <Lock className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                    <Lock className="h-3 w-3 text-slate-500 flex-shrink-0" />
                   )}
                 </div>
                 {step.detail && (
                   <p className="text-xs text-slate-600 mt-0.5 leading-snug">{step.detail}</p>
                 )}
                 {step.last_changed_at && (
-                  <p className="text-[10px] text-slate-400 mt-1">
+                  <p className="text-[10px] text-slate-500 mt-1">
                     Last reviewed {new Date(step.last_changed_at).toLocaleString('en-IN', {
                       day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
                     })}

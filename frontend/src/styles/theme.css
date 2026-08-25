@@ -248,6 +248,14 @@
   /* Tinted wash behind avatar tiles and the active workspace tab. */
   --wash-from: 224 242 254;
   --wash-to: 219 234 254;
+
+  /* AI mode glow — five stops around a conic sweep. Space-separated RGB like
+     every other token here, so they compose with Tailwind's <alpha-value>. */
+  --ai-glow-1: 59 130 246;
+  --ai-glow-2: 139 92 246;
+  --ai-glow-3: 236 72 153;
+  --ai-glow-4: 245 158 11;
+  --ai-glow-5: 16 185 129;
 }
 
 /* ===================== DARK ===================== */
@@ -472,6 +480,13 @@
   --wash-from: 22 48 58;
   --wash-to: 30 69 80;
 
+  /* Lifted for the dark surface: the light values read muddy against it. */
+  --ai-glow-1: 96 165 250;
+  --ai-glow-2: 167 139 250;
+  --ai-glow-3: 244 114 182;
+  --ai-glow-4: 251 191 36;
+  --ai-glow-5: 52 211 153;
+
   /* ---- legacy variables kept in sync so pre-token components follow the theme ---- */
   --background: #0E141A;
   --surface: #161F26;
@@ -592,6 +607,94 @@
 
 @media (prefers-reduced-motion: reduce) {
   .chat-panel-enter {
+    animation: none;
+  }
+}
+
+/*
+ * The AI mode border. A conic gradient masked to a 2px ring, rotated by
+ * animating a registered custom property so the whole thing runs on the
+ * compositor rather than in JS.
+ *
+ * Decorative only: it is aria-hidden and never the sole indicator that AI mode
+ * is on — the toggle's pressed state and the placeholder carry that meaning for
+ * anyone who cannot see the glow.
+ */
+@property --ai-glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.ai-glow {
+  position: relative;
+}
+
+/*
+ * The sweep, written once and used by both layers so the crisp ring and the
+ * soft halo are always the same colours at the same angle.
+ */
+@keyframes ai-glow-spin {
+  to {
+    --ai-glow-angle: 360deg;
+  }
+}
+
+/* Soft halo, behind the panel. This is the part that reads as "glow" rather
+   than "outline" — a wide blur with no mask, sat under an opaque panel so only
+   the bleed around the edges is visible. */
+.ai-glow::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  z-index: -1;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--ai-glow-angle),
+    rgb(var(--ai-glow-1)),
+    rgb(var(--ai-glow-2)),
+    rgb(var(--ai-glow-3)),
+    rgb(var(--ai-glow-4)),
+    rgb(var(--ai-glow-5)),
+    rgb(var(--ai-glow-1))
+  );
+  filter: blur(18px);
+  opacity: 0.65;
+  animation: ai-glow-spin 6s linear infinite;
+  pointer-events: none;
+}
+
+/* The crisp ring. 3px so it reads as a deliberate border at a glance rather
+   than a hairline that looks like a rendering artefact. */
+.ai-glow::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  padding: 3px;
+  background: conic-gradient(
+    from var(--ai-glow-angle),
+    rgb(var(--ai-glow-1)),
+    rgb(var(--ai-glow-2)),
+    rgb(var(--ai-glow-3)),
+    rgb(var(--ai-glow-4)),
+    rgb(var(--ai-glow-5)),
+    rgb(var(--ai-glow-1))
+  );
+  /* The mask stencil is a shape, not a colour — the keyword rather than a hex
+     so the no-hex-literals rule holds here too. */
+  -webkit-mask:
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ai-glow-spin 6s linear infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-glow::before,
+  .ai-glow::after {
     animation: none;
   }
 }

@@ -123,7 +123,7 @@ export default function MyOnboardingCard() {
                     <Circle className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
                   )}
                   <span className="min-w-0 flex-1">
-                    <span className={`block text-xs font-medium ${done ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                    <span className={`block text-xs font-medium ${done ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
                       {item.title}
                     </span>
                     <span className="mt-0.5 block text-[11px] text-slate-500">

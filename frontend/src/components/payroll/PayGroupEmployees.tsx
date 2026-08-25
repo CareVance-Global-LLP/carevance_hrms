@@ -161,7 +161,7 @@ function EmployeeCard({
           ) : isPaid ? (
             <CheckCircle2 className="h-5 w-5 text-emerald-300" />
           ) : (
-            <Square className="h-5 w-5 text-slate-300 hover:text-slate-400" />
+            <Square className="h-5 w-5 text-slate-300 hover:text-slate-500" />
           )}
         </button>
 
@@ -187,11 +187,11 @@ function EmployeeCard({
                 >
                   {employee.name}
                 </h3>
-                <p className={`text-sm truncate ${status !== 'pending' ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-sm truncate ${status !== 'pending' ? 'text-slate-500' : 'text-slate-500'}`}>
                 {employee.designation || employee.email}
               </p>
               {employee.employee_code && (
-                <p className="text-xs text-slate-400 mt-0.5">{employee.employee_code}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{employee.employee_code}</p>
               )}
             </div>
             <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${config.bgColor} ${config.textColor}`}>
@@ -206,8 +206,8 @@ function EmployeeCard({
             <div>
               {hasCTC ? (
                 <div>
-                  <p className="text-xs text-slate-400">CTC</p>
-                  <p className="font-semibold text-slate-900">{formatCurrency(employee.annual_ctc!)}<span className="text-slate-400 font-normal">/yr</span></p>
+                  <p className="text-xs text-slate-500">CTC</p>
+                  <p className="font-semibold text-slate-900">{formatCurrency(employee.annual_ctc!)}<span className="text-slate-500 font-normal">/yr</span></p>
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-amber-600">
@@ -220,7 +220,7 @@ function EmployeeCard({
             {/* Net Pay Display */}
             {isProcessed ? (
               <div className="text-right">
-                <p className="text-xs text-slate-400">Net Pay</p>
+                <p className="text-xs text-slate-500">Net Pay</p>
                 <p className="font-semibold text-emerald-600">
                   {formatCurrency(employee.payroll_status.net_pay)}
                 </p>
@@ -551,7 +551,7 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
        {/* Search */}
        <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <TextInput
             placeholder="Search by name, email, or designation..."
             value={searchQuery}
@@ -581,7 +581,7 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
           <div className="text-center py-12">
             <Users className="h-12 w-12 mx-auto mb-3 text-slate-300" />
             <p className="text-slate-500 font-medium">No employees found</p>
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-slate-500">
               {searchQuery
                 ? 'Try adjusting your search'
                 : 'This pay group has no active members'}
@@ -596,7 +596,7 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
                     {selectedEmployees.size === filteredEmployees.filter(e => e.payroll_status?.payment_status !== 'paid').length && filteredEmployees.length > 0 ? (
                       <CheckSquare className="h-4 w-4 text-emerald-600" />
                     ) : (
-                      <Square className="h-4 w-4 text-slate-400" />
+                      <Square className="h-4 w-4 text-slate-500" />
                     )}
                   </button>
                 </th>
@@ -668,7 +668,7 @@ const [reprocessConfirmIds, setReprocessConfirmIds] = useState<number[] | null>(
                             </Button>
                           </>
                         ) : status === 'processed' ? (
-                          <span className="text-xs text-slate-400 italic">Processed — select & Run Payroll to re-process</span>
+                          <span className="text-xs text-slate-500 italic">Processed — select & Run Payroll to re-process</span>
                         ) : (
                           <Button
                             variant="primary"
@@ -845,7 +845,7 @@ function SetCtcModal({
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600"
+            className="text-slate-500 hover:text-slate-600"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -857,7 +857,7 @@ function SetCtcModal({
             Annual CTC (₹)
           </label>
           <div className="relative">
-            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
             <input
               type="number"
               min="0"
@@ -971,7 +971,7 @@ function ReviewStep({
         comment: decision.comment || '',
       }));
 
-      const response = await payrollApi.submitRunReviewDecisions(0, decisionList);
+      const response = await payrollApi.submitRunReviewDecisions(0, decisionList, monthYear);
       if (!response.data?.success) {
         throw new Error(response.data?.message || 'Failed to submit review decisions.');
       }

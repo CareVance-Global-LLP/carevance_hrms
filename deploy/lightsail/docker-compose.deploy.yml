@@ -1,3 +1,16 @@
+# ⚠️  NOT WHAT PRODUCTION RUNS.
+#
+# Lightsail is a NATIVE deploy — nginx + PHP-FPM + PostgreSQL on the host, with
+# four systemd units. Nothing here is running. See:
+#   deploy/lightsail/SYSTEMD-NATIVE.md   the services, ports and cron
+#   deploy/lightsail/nginx-native.conf   the nginx blocks that actually serve
+#
+# Kept as reference for a future containerised deployment, and because the
+# instance is 2 GB: eight containers do not fit where four PHP daemons cost
+# 42 MB. Do not edit this expecting production to change — that mistake cost a
+# day, twice, when a Reverb service and an /updates/ rule were added here and
+# silently did nothing.
+
 # The single deployed topology. `docker-compose.ci.yml` (which the workflow used)
 # and `docker-compose.production.yml` (which deploy.sh used) disagreed about the
 # most load-bearing setting in the stack: production.yml pinned
@@ -137,6 +150,38 @@ services:
     networks:
       - carevance
 
+  # The WebSocket server behind real-time notifications. Caddy proxies /app/*
+  # here — that path is the Pusher protocol's, not ours. The backend publishes
+  # to it over this network and never through the edge.
+  #
+  # Without it notifications do not stop: clients detect a socket they cannot
+  # open and fall back to a 30-second poll, which is how the product behaved
+  # before this service existed. The visible symptom is the notification panel
+  # reading "Every 30s" instead of "Live" — deliberate, because a transport
+  # that fails invisibly is the failure mode that actually costs you.
+  #
+  # No storage volume: it holds connections, not files, and writes nothing.
+  reverb:
+    image: ${BACKEND_IMAGE:?Set BACKEND_IMAGE before running docker compose}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    command: ["sh", "-lc", "php artisan reverb:start --host=0.0.0.0 --port=8080"]
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - carevance
+
   frontend:
     image: ${FRONTEND_IMAGE:?Set FRONTEND_IMAGE before running docker compose}
     restart: unless-stopped
@@ -148,8 +193,27 @@ services:
       VITE_IDLE_TRACK_THRESHOLD_SECONDS: ${VITE_IDLE_TRACK_THRESHOLD_SECONDS}
       VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS: ${VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS}
       VITE_IDLE_GUARD_INTERVAL_MS: ${VITE_IDLE_GUARD_INTERVAL_MS}
+      # Real-time notifications. VITE_REVERB_APP_KEY is the on switch: leave it
+      # unset and the clients never attempt a socket and stay on their 30-second
+      # poll, which is the pre-real-time behaviour. It must match REVERB_APP_KEY
+      # on the backend exactly — a mismatch fails at subscribe time, silently,
+      # and looks identical to the daemon being down.
+      #
+      # Host and port default to the page's own origin over 443, because Caddy
+      # proxies /app/* on the same domain. Only set them if the socket is
+      # somewhere the browser genuinely cannot infer.
+      VITE_REVERB_APP_KEY: ${VITE_REVERB_APP_KEY}
+      VITE_REVERB_HOST: ${VITE_REVERB_HOST}
+      VITE_REVERB_PORT: ${VITE_REVERB_PORT}
+      VITE_REVERB_SCHEME: ${VITE_REVERB_SCHEME}
     depends_on:
       backend:
+        condition: service_started
+      # nginx resolves proxy_pass upstreams at STARTUP, so without this the
+      # frontend container aborts with "host not found in upstream: reverb"
+      # whenever it happens to boot first — taking the whole web app down over
+      # a notification transport.
+      reverb:
         condition: service_started
     # No published port. It used to take host :80, which caddy now needs for the
     # ACME HTTP-01 challenge; caddy reaches it over the carevance network.

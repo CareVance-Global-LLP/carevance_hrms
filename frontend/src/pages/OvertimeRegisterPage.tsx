@@ -204,7 +204,7 @@ export default function OvertimeRegisterPage() {
                   <td className="px-3 py-2 text-right tabular-nums text-slate-900">
                     {/* Never rendered as 0.00 — an unpriced row is a different
                         fact from a row worth nothing. */}
-                    {row.amount === null ? <span className="text-slate-400">no rate</span> : row.amount}
+                    {row.amount === null ? <span className="text-slate-500">no rate</span> : row.amount}
                   </td>
                 </tr>
               ))}

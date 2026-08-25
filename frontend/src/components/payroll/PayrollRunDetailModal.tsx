@@ -377,7 +377,7 @@ export default function PayrollRunDetailModal({
                   <div className="p-3 bg-white rounded-lg border">
                     <p className="text-xs text-slate-500 mb-1">Employees</p>
                     <p className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                      <Users className="h-5 w-5 text-slate-400" />
+                      <Users className="h-5 w-5 text-slate-500" />
                       {totals.employees}
                     </p>
                   </div>
@@ -1544,7 +1544,7 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -1595,7 +1595,7 @@ function EmployeesTable({ items, formatCurrency }: EmployeesTableProps) {
                   <td colSpan={6} className="px-5 py-16 text-center">
                     <Users className="h-12 w-12 mx-auto text-slate-300 mb-3" />
                     <p className="text-sm font-medium text-slate-500">No employees found</p>
-                    <p className="text-xs text-slate-400 mt-1">Try adjusting your search or filter criteria</p>
+                    <p className="text-xs text-slate-500 mt-1">Try adjusting your search or filter criteria</p>
                   </td>
                 </tr>
               ) : (

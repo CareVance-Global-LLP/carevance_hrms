@@ -6,6 +6,7 @@ use App\Models\Organization;
 use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -323,6 +324,11 @@ class ActivitySessionApiTest extends TestCase
             'role' => 'employee',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on every fixture the test creates directly
+        // after this call, the same way BelongsToOrganization would from a
+        // real authenticated request.
+        Auth::setUser($user);
 
         return [$user, $this->apiHeadersFor($user)];
     }

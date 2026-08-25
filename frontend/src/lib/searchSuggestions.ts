@@ -186,7 +186,14 @@ export const buildEmployeeSearchSuggestions = <T extends EmployeeSearchSource>(e
       label,
       description: email && email.toLowerCase() !== label.toLowerCase() ? email : undefined,
       value: label,
-      searchValues: [label, email],
+      /*
+       * NAME ONLY. Every address ends in the same handful of characters, so
+       * including the email here makes a single "m" match every employee on
+       * the strength of ".com" - the suggestion list stops narrowing exactly
+       * when somebody has started typing. The email is still shown as the
+       * supporting line above; it is display, not a search key.
+       */
+      searchValues: [label],
       payload: employee,
     };
   });

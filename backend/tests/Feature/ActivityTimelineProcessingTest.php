@@ -9,6 +9,7 @@ use App\Models\TimeEntry;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 class ActivityTimelineProcessingTest extends TestCase
@@ -25,6 +26,10 @@ class ActivityTimelineProcessingTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        Auth::setUser($user);
 
         $entry = TimeEntry::create([
             'user_id' => $user->id,
@@ -90,6 +95,10 @@ class ActivityTimelineProcessingTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        Auth::setUser($user);
+
         $entry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => '2026-04-21 10:00:00',
@@ -134,6 +143,10 @@ class ActivityTimelineProcessingTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        Auth::setUser($user);
 
         $entry = TimeEntry::create([
             'user_id' => $user->id,
@@ -228,6 +241,10 @@ class ActivityTimelineProcessingTest extends TestCase
             'organization_id' => $organization->id,
         ]);
 
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        Auth::setUser($user);
+
         $entry = TimeEntry::create([
             'user_id' => $user->id,
             'start_time' => '2026-04-21 10:00:00',
@@ -265,6 +282,10 @@ class ActivityTimelineProcessingTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        Auth::setUser($user);
 
         $entry = TimeEntry::create([
             'user_id' => $user->id,
@@ -323,6 +344,10 @@ class ActivityTimelineProcessingTest extends TestCase
             'role' => 'admin',
             'organization_id' => $organization->id,
         ]);
+
+        // Stamps organization_id on the fixtures below the same way
+        // BelongsToOrganization would from a real authenticated request.
+        Auth::setUser($user);
 
         $entry = TimeEntry::create([
             'user_id' => $user->id,

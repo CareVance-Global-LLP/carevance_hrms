@@ -308,7 +308,7 @@ function RosterRowBase({
                 </span>
               ) : null}
             </div>
-            <p className="truncate text-[11px] text-slate-400">{user.email}</p>
+            <p className="truncate text-[11px] text-slate-500">{user.email}</p>
           </div>
         </div>
       </td>
@@ -324,8 +324,8 @@ function RosterRowBase({
       </td>
 
       <td className="hidden border-b border-slate-100 px-3 py-2.5 xl:table-cell">
-        <p className="font-mono text-[11px] text-slate-400">{code}</p>
-        <p className="truncate text-[10px] text-slate-400">{timezone}</p>
+        <p className="font-mono text-[11px] text-slate-500">{code}</p>
+        <p className="truncate text-[10px] text-slate-500">{timezone}</p>
       </td>
 
       <td className="border-b border-slate-100 px-3 py-2.5 text-right">
@@ -337,7 +337,7 @@ function RosterRowBase({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((current) => !current)}
-            className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
           >
             <MoreVertical className="h-4 w-4" />
           </button>
@@ -353,7 +353,7 @@ function RosterRowBase({
                 onClick={() => setMenuOpen(false)}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-slate-700 transition hover:bg-slate-50"
               >
-                <UserRound className="h-3.5 w-3.5 text-slate-400" /> Open profile
+                <UserRound className="h-3.5 w-3.5 text-slate-500" /> Open profile
               </Link>
               <button
                 type="button"
@@ -363,7 +363,7 @@ function RosterRowBase({
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-50"
               >
-                <SlidersHorizontal className="h-3.5 w-3.5 text-slate-400" /> Settings
+                <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" /> Settings
               </button>
               {canRemove ? (
                 <>
@@ -536,20 +536,20 @@ export default function EmployeeRoster({
 
         <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, email or code"
               aria-label="Search employees"
-              className="w-60 rounded-lg border border-slate-200 py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+              className="w-60 rounded-lg border border-slate-200 py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
             />
             {query ? (
               <button
                 type="button"
                 onClick={() => setQuery('')}
                 aria-label="Clear search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-slate-700"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -588,7 +588,7 @@ export default function EmployeeRoster({
             onClear={() => setSort('default')}
           />
 
-          <p className="text-[11px] font-medium text-slate-400">
+          <p className="text-[11px] font-medium text-slate-500">
             {rows.length} of {users.length}
           </p>
 
@@ -687,7 +687,7 @@ export default function EmployeeRoster({
                   <th
                     key={heading || `actions-${index}`}
                     scope="col"
-                    className={`border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 ${
+                    className={`border-b border-slate-200 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 ${
                       heading === 'Role' ? 'hidden md:table-cell' : ''
                     } ${heading === 'Department' ? 'hidden lg:table-cell' : ''} ${
                       heading === 'Code / timezone' ? 'hidden xl:table-cell' : ''

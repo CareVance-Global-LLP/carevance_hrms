@@ -28,11 +28,16 @@ class CloseStaleTimers extends Command
         $this->line("Closing running timers started before {$cutoff->toIso8601String()} (max {$maxMinutes} minutes)");
         $this->line("Mode: " . ($dryRun ? 'dry-run' : 'apply'));
 
+        // withoutOrganizationScope() is explicit on purpose — see
+        // CloseIdleTimers. This is the same kind of system-wide backstop and
+        // must reach every tenant's running timers, not just whichever one an
+        // ambient Auth::user() happens to belong to.
+        //
         // is_break is excluded deliberately — see CloseIdleTimers. Force-closing
         // the is_break entry orphans the paired break_times row, which this
         // command cannot close, and that orphan permanently locks the user out
         // of break tracking once the date rolls over.
-        $staleEntries = TimeEntry::query()
+        $staleEntries = TimeEntry::withoutOrganizationScope()
             ->whereNull('end_time')
             ->where('is_break', false)
             ->where('start_time', '<', $cutoff)

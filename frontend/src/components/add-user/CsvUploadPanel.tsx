@@ -149,14 +149,14 @@ export default function CsvUploadPanel({
                       <td className="px-3 py-2">{row.email}</td>
                       <td className="px-3 py-2">{row.name}</td>
                       <td className="px-3 py-2 capitalize">{row.role}</td>
-                      <td className="px-3 py-2">{row.employeeCode || <span className="text-slate-400">—</span>}</td>
-                      <td className="px-3 py-2">{row.jobTitle || <span className="text-slate-400">—</span>}</td>
+                      <td className="px-3 py-2">{row.employeeCode || <span className="text-slate-500">—</span>}</td>
+                      <td className="px-3 py-2">{row.jobTitle || <span className="text-slate-500">—</span>}</td>
                       <td className="px-3 py-2">
                         {row.groupIds.length > 0
                           ? row.groupIds.map(departmentNameFor).join(', ')
-                          : <span className="text-slate-400">Defaults</span>}
+                          : <span className="text-slate-500">Defaults</span>}
                       </td>
-                      <td className="px-3 py-2">{row.joiningDate || <span className="text-slate-400">On accept</span>}</td>
+                      <td className="px-3 py-2">{row.joiningDate || <span className="text-slate-500">On accept</span>}</td>
                     </tr>
                   ))}
                 </tbody>

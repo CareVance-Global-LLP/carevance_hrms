@@ -2,6 +2,7 @@
 
 namespace App\Services\Lifecycle;
 
+use App\Events\SessionRevoked;
 use App\Models\ChecklistTemplate;
 use App\Models\EmployeeExit;
 use App\Models\Resignation;
@@ -192,6 +193,18 @@ class ExitService
 
             $exit->update(['access_revoked_at' => now()]);
         });
+
+        // Deleting the bearer stops the next request; it does not close a
+        // socket that is already open, because channel authorization runs once
+        // at subscribe time. Without this a leaver with a tab still open keeps
+        // receiving live notifications after their last working day — exactly
+        // what the token deletion above exists to prevent.
+        //
+        // After the transaction, never inside it: signalling from within would
+        // sign somebody out on a write that then rolled back.
+        if ($exit->user_id) {
+            SessionRevoked::dispatch((int) $exit->user_id, SessionRevoked::REASON_DEACTIVATED);
+        }
 
         Log::info('Exit access revoked', [
             'employee_exit_id' => $exit->id,

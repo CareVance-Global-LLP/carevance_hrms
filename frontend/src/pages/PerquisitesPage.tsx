@@ -145,7 +145,7 @@ export default function PerquisitesPage() {
             <div className="flex-1 min-w-[200px]">
               <FieldLabel>Search</FieldLabel>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <TextInput
                   placeholder="Search type, description..."
                   value={searchQuery}
@@ -290,7 +290,7 @@ export default function PerquisitesPage() {
                           <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{p.description || '-'}</td>
                           <td className="px-4 py-3 font-medium text-rose-600">{formatPayrollAmount(p.taxable_value || p.annual_value || 0, { compact: true })}</td>
                           <td className="px-4 py-3 text-right">
-                            <button className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100" title="Edit">
+                            <button className="p-1.5 rounded-lg text-slate-500 hover:text-slate-600 hover:bg-slate-100" title="Edit">
                               <Pencil className="h-4 w-4" />
                             </button>
                           </td>

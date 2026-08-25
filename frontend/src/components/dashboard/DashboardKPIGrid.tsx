@@ -43,7 +43,7 @@ export default function DashboardKPIGrid({ items, secondaryItems = [] }: Dashboa
                   <p className="text-xs text-slate-500">{item.label}</p>
                   <p className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{item.value}</p>
                   {item.caption ? <p className="mt-2 text-[11px] text-slate-500">{item.caption}</p> : null}
-                  {item.meta ? <p className="mt-1 text-[11px] text-slate-400">{item.meta}</p> : null}
+                  {item.meta ? <p className="mt-1 text-[11px] text-slate-500">{item.meta}</p> : null}
                 </div>
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${accentClasses[item.accent || 'sky']}`}>
                   <Icon className="h-5 w-5" />

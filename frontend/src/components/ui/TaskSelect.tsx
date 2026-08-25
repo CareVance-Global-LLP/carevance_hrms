@@ -133,11 +133,11 @@ export default function TaskSelect({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          'flex w-full items-center justify-between rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-300 focus:bg-surface-card focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400',
+          'flex w-full items-center justify-between rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-300 focus:bg-surface-card focus:ring-2 focus:ring-sky-300/25 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500',
           open && 'border-sky-300 bg-surface-card ring-2 ring-sky-300/25'
         )}
       >
-        <span className={cn('truncate', !selectedTask && !includeAllOption && 'text-slate-400')}>
+        <span className={cn('truncate', !selectedTask && !includeAllOption && 'text-slate-500')}>
           {triggerLabel}
         </span>
         <ChevronDown className={cn('h-4 w-4 shrink-0 text-slate-500 transition', open && 'rotate-180')} />
@@ -151,12 +151,12 @@ export default function TaskSelect({
         >
           <div className="border-b border-border-strong/50 p-3">
             <div className="flex items-center gap-2 rounded-lg border border-border-strong bg-slate-50 px-3 py-2">
-              <Search className="h-4 w-4 text-slate-400" />
+              <Search className="h-4 w-4 text-slate-500" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder={searchPlaceholder}
-                className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                className="w-full border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-500"
               />
             </div>
           </div>

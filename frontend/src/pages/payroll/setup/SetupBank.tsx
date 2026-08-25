@@ -168,7 +168,7 @@ export default function SetupBank() {
               <option value="neft">NEFT only</option>
               <option value="rtgs">RTGS only</option>
             </SelectInput>
-            <p className="text-xs text-slate-400 mt-1">RTGS for amounts ≥ ₹2 lakh</p>
+            <p className="text-xs text-slate-500 mt-1">RTGS for amounts ≥ ₹2 lakh</p>
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">
@@ -180,7 +180,7 @@ export default function SetupBank() {
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
             </SelectInput>
-            <p className="text-xs text-slate-400 mt-1">Used when generating the disbursement file</p>
+            <p className="text-xs text-slate-500 mt-1">Used when generating the disbursement file</p>
           </div>
         </div>
       </SurfaceCard>

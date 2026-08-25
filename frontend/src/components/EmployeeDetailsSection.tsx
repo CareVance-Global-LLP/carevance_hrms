@@ -1069,7 +1069,7 @@ export default function EmployeeDetailsSection({
                   ) : govIdCheck?.valid ? (
                     <span className="text-emerald-600">Format valid — not a check that it belongs to this person</span>
                   ) : (
-                    <span className="text-slate-400">Expected: {govIdHint(govForm.id_type)}</span>
+                    <span className="text-slate-500">Expected: {govIdHint(govForm.id_type)}</span>
                   )}
                 </p>
               </div>

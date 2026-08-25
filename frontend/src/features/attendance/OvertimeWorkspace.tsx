@@ -387,7 +387,7 @@ export default function OvertimeWorkspace({
 
         {accrual.rows.length > 0 ? (
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+            <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
               Approved overtime · this month
             </h3>
             <div className="mt-2 space-y-1.5">
@@ -408,7 +408,7 @@ export default function OvertimeWorkspace({
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-[10px] text-slate-400">
+            <p className="mt-2 text-[10px] text-slate-500">
               Summed from approved requests — context, so approvals stop being judged in a vacuum.
             </p>
           </div>
@@ -455,7 +455,7 @@ export default function OvertimeWorkspace({
         </div>
 
         {isLoading ? (
-          <div className="rounded-xl border border-slate-200 bg-white px-6 py-14 text-center text-sm text-slate-400">
+          <div className="rounded-xl border border-slate-200 bg-white px-6 py-14 text-center text-sm text-slate-500">
             Loading requests…
           </div>
         ) : visible.length === 0 ? (
@@ -483,7 +483,7 @@ export default function OvertimeWorkspace({
                     <span className="block truncate text-[13px] font-bold text-slate-950">
                       {Number(item.user_id) === currentUserId ? 'You' : item.user?.name || 'Unknown'}
                     </span>
-                    <span className="block text-[10px] text-slate-400">
+                    <span className="block text-[10px] text-slate-500">
                       submitted {age === 0 ? 'today' : `${age}d ago`}
                       {item.reviewer?.name ? ` · reviewed by ${item.reviewer.name}` : ''}
                     </span>
@@ -498,7 +498,7 @@ export default function OvertimeWorkspace({
                   {item.status === 'pending' ? (
                     <span
                       className={`flex shrink-0 items-center gap-1 text-[10px] font-bold tabular-nums ${
-                        age > AGE_WARN_DAYS ? 'text-warning-800' : 'text-slate-400'
+                        age > AGE_WARN_DAYS ? 'text-warning-800' : 'text-slate-500'
                       }`}
                     >
                       {age > AGE_WARN_DAYS ? <Hourglass className="h-3 w-3" /> : null}
@@ -526,7 +526,7 @@ export default function OvertimeWorkspace({
                     onClick={() => toggleExpand(item.id)}
                     aria-expanded={isOpen}
                     aria-label="Details"
-                    className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                    className="shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
                   >
                     {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   </button>
@@ -535,7 +535,7 @@ export default function OvertimeWorkspace({
                 {reviewable ? (
                   <div className="border-t border-slate-100 px-3.5 py-2.5">
                     {cachedDay === undefined ? (
-                      <p className="text-[11px] text-slate-400">Loading that day…</p>
+                      <p className="text-[11px] text-slate-500">Loading that day…</p>
                     ) : (
                       <DayMath
                         worked={cachedDay?.worked_seconds != null ? Number(cachedDay.worked_seconds) : null}

@@ -212,7 +212,7 @@ function PersonRow({
             {roleLabel(card.user)}
           </span>
         </span>
-        <span className="block truncate text-[11px] text-slate-400">{card.user.email}</span>
+        <span className="block truncate text-[11px] text-slate-500">{card.user.email}</span>
       </span>
       {badge}
       {canRemove ? (
@@ -220,7 +220,7 @@ function PersonRow({
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${card.user.name} from this department`}
-          className="shrink-0 rounded-md p-1.5 text-slate-400 transition hover:bg-danger-50 hover:text-danger-700"
+          className="shrink-0 rounded-md p-1.5 text-slate-500 transition hover:bg-danger-50 hover:text-danger-700"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -335,7 +335,7 @@ function Focus({
 
           {leadership.length > 0 ? (
             <>
-              <p className="flex items-center gap-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <p className="flex items-center gap-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Leadership <span className="h-px flex-1 bg-slate-100" />
               </p>
               {leadership.map((card) => (
@@ -360,7 +360,7 @@ function Focus({
 
             return (
               <div key={group.teamId ?? 'none'}>
-                <p className="flex items-center gap-2 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                <p className="flex items-center gap-2 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   {group.name}
                   {group.teamId !== null && !group.hasManager ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-accent-200 bg-accent-50 px-1.5 py-0.5 text-[9px] text-warning-800">
@@ -372,7 +372,7 @@ function Focus({
                 </p>
 
                 {rows.length === 0 ? (
-                  <p className="py-2 text-xs text-slate-400">Nobody in this team yet.</p>
+                  <p className="py-2 text-xs text-slate-500">Nobody in this team yet.</p>
                 ) : (
                   rows.map((card) => (
                     <PersonRow
@@ -446,10 +446,10 @@ function Focus({
         </div>
 
         <aside className="border-t border-slate-200 bg-slate-50 p-4 lg:border-l lg:border-t-0">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Teams</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Teams</p>
           <div className="mb-3 rounded-lg border border-slate-200 bg-white px-3">
             {teams.length === 0 ? (
-              <p className="py-3 text-xs text-slate-400">No teams yet.</p>
+              <p className="py-3 text-xs text-slate-500">No teams yet.</p>
             ) : (
               teams.map((team) => {
                 const group = groups.find((candidate) => candidate.teamId === team.id);
@@ -461,7 +461,7 @@ function Focus({
                     {group && !group.hasManager ? (
                       <AlertTriangle className="h-3 w-3 shrink-0 text-accent-500" aria-label="No manager" />
                     ) : null}
-                    <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-400">
+                    <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-500">
                       {group?.cards.length ?? 0}
                     </span>
                     {canManage ? (
@@ -492,7 +492,7 @@ function Focus({
                   }
                 }}
                 placeholder="New team name"
-                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+                className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
               />
               <Button
                 size="sm"
@@ -507,7 +507,7 @@ function Focus({
             </div>
           ) : null}
 
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">About</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">About</p>
           <div className="mb-5 rounded-lg border border-slate-200 bg-white p-3">
             <p className="text-xs leading-relaxed text-slate-600">
               {dept.description || 'No description added yet.'}
@@ -526,7 +526,7 @@ function Focus({
 
           {canCreateGroups ? (
             <>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Danger zone
               </p>
               <div className="rounded-lg border border-danger-100 bg-white p-3">

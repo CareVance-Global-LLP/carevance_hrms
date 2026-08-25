@@ -185,6 +185,34 @@ class ChatController extends Controller
         return $result;
     }
 
+    /**
+     * A small preview for rendering in a notification or the panel.
+     *
+     * Returns the image itself rather than JSON so it can be used directly as
+     * an <img> source or converted to a data URL for an OS toast.
+     */
+    public function thumbnail(Request $request, int $messageId)
+    {
+        $result = $this->chatService->thumbnail($request->user(), $messageId);
+
+        if (is_array($result)) {
+            return response()->json($result['payload'], $result['status']);
+        }
+
+        return $result;
+    }
+
+    public function groupThumbnail(Request $request, int $messageId)
+    {
+        $result = $this->chatService->groupThumbnail($request->user(), $messageId);
+
+        if (is_array($result)) {
+            return response()->json($result['payload'], $result['status']);
+        }
+
+        return $result;
+    }
+
     public function groupAttachment(Request $request, int $messageId)
     {
         $result = $this->chatService->groupAttachment($request->user(), $messageId);

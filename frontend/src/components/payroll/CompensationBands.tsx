@@ -134,13 +134,13 @@ export default function CompensationBands() {
           <div className="space-y-4">
             {ctcLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               </div>
             ) : ctcBandList.length === 0 ? (
               <SurfaceCard className="p-8 text-center">
                 <BarChart3 className="h-12 w-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-slate-500">No CTC bands configured yet.</p>
-                <p className="text-xs text-slate-400 mt-1">Bands are created from payroll settings.</p>
+                <p className="text-xs text-slate-500 mt-1">Bands are created from payroll settings.</p>
               </SurfaceCard>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -178,13 +178,13 @@ export default function CompensationBands() {
           <div className="space-y-4">
             {wageLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               </div>
             ) : wageList.length === 0 ? (
               <SurfaceCard className="p-8 text-center">
                 <IndianRupee className="h-12 w-12 text-slate-300 mx-auto mb-3" />
                 <p className="text-slate-500">No daily wage structures configured yet.</p>
-                <p className="text-xs text-slate-400 mt-1">Daily wage rates are set in payroll organization settings.</p>
+                <p className="text-xs text-slate-500 mt-1">Daily wage rates are set in payroll organization settings.</p>
               </SurfaceCard>
             ) : (
               <SurfaceCard className="overflow-hidden">

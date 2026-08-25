@@ -68,20 +68,20 @@ export default function PermissionMatrix({
     <div className="rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search permissions"
             aria-label="Search permissions"
-            className="w-56 rounded-lg border border-slate-200 py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none"
+            className="w-56 rounded-lg border border-slate-200 py-1.5 pl-9 pr-8 text-xs text-slate-800 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
           />
           {query ? (
             <button
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-slate-700"
             >
               <X className="h-3 w-3" />
             </button>
@@ -101,7 +101,7 @@ export default function PermissionMatrix({
           Granted by someone
         </button>
 
-        <p className="text-[11px] font-medium text-slate-400">
+        <p className="text-[11px] font-medium text-slate-500">
           {totalShown} permission{totalShown === 1 ? '' : 's'} · {roles.length} role
           {roles.length === 1 ? '' : 's'}
         </p>
@@ -113,7 +113,7 @@ export default function PermissionMatrix({
             <tr>
               <th
                 scope="col"
-                className="sticky left-0 top-0 z-30 min-w-[15rem] border-b border-r border-slate-200 bg-white px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"
+                className="sticky left-0 top-0 z-30 min-w-[15rem] border-b border-r border-slate-200 bg-white px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500"
               >
                 Permission
               </th>
@@ -142,7 +142,7 @@ export default function PermissionMatrix({
                           {role.name}
                         </span>
                       </span>
-                      <span className="mt-0.5 block text-[9px] font-semibold tabular-nums text-slate-400">
+                      <span className="mt-0.5 block text-[9px] font-semibold tabular-nums text-slate-500">
                         L{role.hierarchy_level} · {role.users_count}
                         {role.is_active ? '' : ' · off'}
                       </span>
@@ -158,7 +158,7 @@ export default function PermissionMatrix({
               <tr>
                 <td
                   colSpan={roles.length + 1}
-                  className="px-4 py-10 text-center text-sm text-slate-400"
+                  className="px-4 py-10 text-center text-sm text-slate-500"
                 >
                   No permissions match “{query}”.
                 </td>
@@ -176,7 +176,7 @@ export default function PermissionMatrix({
                         <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                           {group.group}
                           {locked ? (
-                            <Lock className="h-2.5 w-2.5 text-slate-400" aria-label="Managed elsewhere" />
+                            <Lock className="h-2.5 w-2.5 text-slate-500" aria-label="Managed elsewhere" />
                           ) : null}
                         </span>
                       </th>

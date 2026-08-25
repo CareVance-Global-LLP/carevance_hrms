@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import PageHeader from '@/components/dashboard/PageHeader';
 import { FeedbackBanner, PageLoadingState } from '@/components/ui/PageState';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -55,6 +56,9 @@ export default function SettingsPage() {
   const {
     activeTab,
     handleTabChange,
+    pendingTab,
+    confirmTabChange,
+    cancelTabChange,
     visibleTabs,
     isLoading,
     error,
@@ -144,6 +148,16 @@ export default function SettingsPage() {
           />
         </div>
       </div>
-    </div>
+          <ConfirmDialog
+        isOpen={pendingTab !== null}
+        title="Leave without saving?"
+        message={`You have ${dirtyCount} unsaved change${dirtyCount === 1 ? '' : 's'} on this tab. Leaving now discards ${dirtyCount === 1 ? 'it' : 'them'}.`}
+        confirmLabel="Discard changes"
+        cancelLabel="Stay on this tab"
+        tone="danger"
+        onConfirm={confirmTabChange}
+        onClose={cancelTabChange}
+      />
+</div>
   );
 }

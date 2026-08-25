@@ -117,13 +117,50 @@ declare global {
       Id: number;
     }>>;
     revealWindow: () => Promise<boolean>;
+    /** Optional: added in the build that gave the tray a timer status. */
+    setTimerState?: (state: { running: boolean; startedAt?: string | null; label?: string | null }) => Promise<boolean>;
     showNotification?: (payload: {
       id?: number;
       title: string;
       body?: string;
       route?: string;
       type?: string;
+      /**
+       * A data: URL preview of an image attachment, shown on the toast itself.
+       *
+       * A data URL rather than an https one because the shell renders this
+       * outside the page, where a bearer token cannot be attached and a blob:
+       * URL has no meaning. Optional in both directions: an older installed
+       * shell simply ignores it, so a renderer that sends one never breaks.
+       */
+      image?: string;
+      /**
+       * Where a reply to this notification would go.
+       *
+       * Present only for chat notifications. Its presence is what makes the
+       * shell open its quick-reply box on click instead of raising the window —
+       * a leave approval has nothing to reply to.
+       */
+      reply?: {
+        threadType: 'direct' | 'group';
+        threadId: number;
+        title?: string;
+      };
     }) => Promise<boolean>;
+
+    /**
+     * A reply typed into the shell's quick-reply box, handed to the renderer
+     * to send. The shell has no session; this side does.
+     *
+     * Optional because an older installed shell does not have it — the
+     * renderer updates itself, the shell does not.
+     */
+    onQuickReplySend?: (
+      callback: (payload: { requestId: number; threadType: 'direct' | 'group'; threadId: number; text: string }) => void
+    ) => () => void;
+
+    /** Report whether that send worked. */
+    sendQuickReplyResult?: (result: { requestId?: number; ok: boolean; error?: string | null }) => void;
     /**
      * The native idle popup. Optional because the renderer updates itself while
      * the installed shell does not — an older build has this bridge without

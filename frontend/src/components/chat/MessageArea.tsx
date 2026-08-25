@@ -107,6 +107,8 @@ interface MessageAreaProps {
   handleComposerPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
   applyAttachmentFiles: (files: FileList | null) => void;
   removeAttachmentFile: (index: number) => void;
+  uploadProgress?: Record<string, { uploadedBytes: number; totalBytes: number; percent: number }>;
+  onCancelUpload?: () => void;
   getFilePreviewUrl: (file: File) => string | null;
   handleDragEnter: (e: React.DragEvent) => void;
   handleDragOver: (e: React.DragEvent) => void;
@@ -151,6 +153,8 @@ export default function MessageArea({
   handleComposerPaste,
   applyAttachmentFiles,
   removeAttachmentFile,
+  uploadProgress,
+  onCancelUpload,
   getFilePreviewUrl,
   handleDragEnter,
   handleDragOver,
@@ -548,6 +552,8 @@ export default function MessageArea({
         attachmentFiles={attachmentFiles}
         onAddAttachments={applyAttachmentFiles}
         onRemoveAttachment={removeAttachmentFile}
+        uploadProgress={uploadProgress}
+        onCancelUpload={onCancelUpload}
         disabled={!selectedThread}
         placeholder={
           attachmentFiles.length > 0

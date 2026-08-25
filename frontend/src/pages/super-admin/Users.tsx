@@ -96,7 +96,7 @@ export default function SuperAdminUsers() {
         <SurfaceCard className="p-4 mb-6">
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
               <input
                 type="text"
                 value={search}
@@ -156,11 +156,11 @@ export default function SuperAdminUsers() {
                         <td className="px-6 py-4">
                           {user.organization ? (
                             <div className="flex items-center gap-2">
-                              <Building2 className="h-4 w-4 text-slate-400" />
+                              <Building2 className="h-4 w-4 text-slate-500" />
                               <span className="text-sm text-slate-600">{user.organization.name}</span>
                             </div>
                           ) : (
-                            <span className="text-sm text-slate-400">No organization</span>
+                            <span className="text-sm text-slate-500">No organization</span>
                           )}
                         </td>
                         <td className="px-6 py-4">

@@ -61,29 +61,29 @@ export default function PayrollRunCard({
         </div>
         <div className="text-right ml-4 flex-shrink-0">
           <p className="text-xl font-bold text-slate-900">{formatPayrollAmount(run.total_net_pay, { compact: true })}</p>
-          <p className="text-xs text-slate-400">Net Pay</p>
+          <p className="text-xs text-slate-500">Net Pay</p>
         </div>
       </div>
 
       {/* Amount Breakdown */}
       <div className="grid grid-cols-3 gap-4 py-3 border-t border-slate-100">
         <div>
-          <p className="text-xs text-slate-400">Gross</p>
+          <p className="text-xs text-slate-500">Gross</p>
           <p className="text-sm font-semibold text-slate-700">{formatPayrollAmount(run.total_gross, { compact: true })}</p>
         </div>
         <div>
-          <p className="text-xs text-slate-400">Deductions</p>
+          <p className="text-xs text-slate-500">Deductions</p>
           <p className="text-sm font-semibold text-slate-700">{formatPayrollAmount(run.total_deductions, { compact: true })}</p>
         </div>
         <div>
-          <p className="text-xs text-slate-400">Net Pay</p>
+          <p className="text-xs text-slate-500">Net Pay</p>
           <p className="text-sm font-semibold text-emerald-600">{formatPayrollAmount(run.total_net_pay, { compact: true })}</p>
         </div>
       </div>
 
       {/* Footer Row */}
       <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-slate-500">
           {run.disbursed_at 
             ? `Disbursed ${formatRelativeTime(run.disbursed_at)}`
             : run.created_at 

@@ -164,7 +164,7 @@ export default function LoansPage() {
             <div className="flex-1 min-w-[200px]">
               <FieldLabel>Search</FieldLabel>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
                 <TextInput
                   placeholder={isAdmin ? 'Search employee, purpose...' : 'Search purpose...'}
                   value={search}
@@ -268,7 +268,7 @@ export default function LoansPage() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-slate-900">Repayment Schedule</h3>
-              <button className="p-1 text-slate-400 hover:text-slate-600" onClick={() => setSelectedLoan(null)}>
+              <button className="p-1 text-slate-500 hover:text-slate-600" onClick={() => setSelectedLoan(null)}>
                 <span className="sr-only">Close</span>
                 ×
               </button>
@@ -422,7 +422,7 @@ function LoanRow({ loan, isAdmin, colCount, onAction, onViewSchedule }: { loan: 
               )}
               {loan.status === 'approved' && (
                 <button
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-600 hover:bg-slate-100"
                   title="View Schedule"
                   onClick={() => onViewSchedule(loan)}
                 >

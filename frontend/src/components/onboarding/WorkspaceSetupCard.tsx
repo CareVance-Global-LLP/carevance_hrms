@@ -99,11 +99,11 @@ export default function WorkspaceSetupCard() {
               >
                 {complete ? <Check className="h-3 w-3" /> : null}
               </span>
-              <span className={`min-w-0 flex-1 truncate ${complete ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+              <span className={`min-w-0 flex-1 truncate ${complete ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
                 {label}
               </span>
               {!complete && route ? (
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
               ) : null}
             </>
           );

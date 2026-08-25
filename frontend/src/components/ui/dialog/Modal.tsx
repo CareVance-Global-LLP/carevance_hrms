@@ -144,7 +144,7 @@ export default function Modal({
                   onClick={onClose}
                   disabled={busy}
                   aria-label="Close"
-                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+                  className="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
                 >
                   <X className="h-4 w-4" />
                 </button>

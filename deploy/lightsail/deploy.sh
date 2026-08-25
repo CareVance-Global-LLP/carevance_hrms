@@ -152,10 +152,13 @@ docker-compose -f "$COMPOSE_FILE" exec -T backend php artisan config:cache
 docker-compose -f "$COMPOSE_FILE" exec -T backend php artisan route:cache
 docker-compose -f "$COMPOSE_FILE" exec -T backend php artisan view:cache
 
-echo -e "${YELLOW}Step 11: Restarting queue worker...${NC}"
+echo -e "${YELLOW}Step 11: Restarting long-running workers...${NC}"
 
-# Restart queue worker
-docker-compose -f "$COMPOSE_FILE" restart queue
+# Recycle the daemons after migrations and config:cache. They are long-lived
+# processes that booted before this step, so restarting them is what guarantees
+# they are running against the deployed schema and configuration rather than
+# whatever was true when the container first came up.
+docker-compose -f "$COMPOSE_FILE" restart queue reverb
 
 echo -e "${YELLOW}Step 12: Setting up log rotation...${NC}"
 

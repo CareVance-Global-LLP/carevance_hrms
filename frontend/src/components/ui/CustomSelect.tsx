@@ -136,12 +136,12 @@ export default function CustomSelect({
            * TextInput. `border-border-strong` and `bg-surface-card` are the
            * semantic tokens that stay legible in both themes.
            */
-          'flex w-full items-center justify-between rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate-400',
+          'flex w-full items-center justify-between rounded-lg border border-border-strong bg-surface-card px-3.5 py-2.5 text-left text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-300/30 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate-500',
           open && 'border-sky-400 ring-2 ring-sky-300/30',
           className
         )}
       >
-        <span className={cn('truncate', !selectedOption && 'text-slate-400')}>
+        <span className={cn('truncate', !selectedOption && 'text-slate-500')}>
           {selectedOption ? selectedOption.label : placeholder}
         </span>
         <ChevronDown

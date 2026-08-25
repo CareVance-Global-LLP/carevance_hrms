@@ -205,7 +205,7 @@ export function ProcessAndPayPanel({
                     <div>
                       <p className="text-xs text-slate-500 mb-1">Employees to process</p>
                       <p className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        <Users className="h-5 w-5 text-slate-400" />
+                        <Users className="h-5 w-5 text-slate-500" />
                         {pendingCount}
                       </p>
                     </div>
@@ -220,7 +220,7 @@ export function ProcessAndPayPanel({
                     <div>
                       <p className="text-xs text-slate-500 mb-1">Estimated net pay</p>
                       <p className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                        <IndianRupee className="h-5 w-5 text-slate-400" />
+                        <IndianRupee className="h-5 w-5 text-slate-500" />
                         {formatCurrency(expectedNetPay)}
                       </p>
                     </div>
@@ -240,17 +240,17 @@ export function ProcessAndPayPanel({
                     <h3 className="font-semibold text-slate-900 mb-2">Payroll Overview</h3>
                     <div className="grid grid-cols-3 gap-4 text-center">
                       <div className="p-3 bg-white rounded-lg">
-                        <Calendar className="h-5 w-5 text-slate-400 mx-auto mb-1" />
+                        <Calendar className="h-5 w-5 text-slate-500 mx-auto mb-1" />
                         <p className="text-xs text-slate-500">Period</p>
                         <p className="font-semibold text-slate-900">{formatMonthLabel(monthYear)}</p>
                       </div>
                       <div className="p-3 bg-white rounded-lg">
-                        <Clock className="h-5 w-5 text-slate-400 mx-auto mb-1" />
+                        <Clock className="h-5 w-5 text-slate-500 mx-auto mb-1" />
                         <p className="text-xs text-slate-500">Status</p>
                         <p className="font-semibold text-slate-900">Pending</p>
                       </div>
                       <div className="p-3 bg-white rounded-lg">
-                        <Shield className="h-5 w-5 text-slate-400 mx-auto mb-1" />
+                        <Shield className="h-5 w-5 text-slate-500 mx-auto mb-1" />
                         <p className="text-xs text-slate-500">Compliance</p>
                         <p className="font-semibold text-slate-900">Ready</p>
                       </div>
@@ -334,7 +334,7 @@ export function ProcessAndPayPanel({
                 <p className="text-sm text-slate-600 max-w-md mx-auto">
                   Calculating salaries, applying PF/ESI/PT/TDS, locking the run, generating bank file.
                 </p>
-                <p className="text-xs text-slate-400 mt-2">This usually takes 5–15 seconds.</p>
+                <p className="text-xs text-slate-500 mt-2">This usually takes 5–15 seconds.</p>
               </div>
               
               <div className="max-w-md mx-auto">
@@ -681,7 +681,7 @@ function LifecycleRow({ label, timestamp, actor, muted }: {
 }) {
   const done = !!timestamp;
   return (
-    <div className={`flex items-center justify-between py-1 ${muted && !done ? 'text-slate-400' : ''}`}>
+    <div className={`flex items-center justify-between py-1 ${muted && !done ? 'text-slate-500' : ''}`}>
       <span className="flex items-center gap-2">
         {done
           ? <Check className="h-4 w-4 text-emerald-600" />

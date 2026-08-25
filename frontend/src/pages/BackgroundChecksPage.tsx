@@ -83,7 +83,7 @@ export default function BackgroundChecksPage() {
                   }`}
                 >
                   <span className="flex items-center gap-2 text-sm">
-                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-slate-500" />
                     <span className="min-w-0 flex-1 truncate font-medium text-slate-950">
                       {check.candidate
                         ? `${check.candidate.first_name} ${check.candidate.last_name ?? ''}`.trim()

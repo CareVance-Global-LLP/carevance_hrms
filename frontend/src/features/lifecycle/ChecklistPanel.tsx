@@ -151,7 +151,7 @@ export default function ChecklistPanel({
               <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                 {OWNER_LABEL[owner]}
               </h4>
-              <span className="text-[10px] font-bold tabular-nums text-slate-400">
+              <span className="text-[10px] font-bold tabular-nums text-slate-500">
                 {done}/{ownerItems.length}
               </span>
             </div>
@@ -212,7 +212,7 @@ export default function ChecklistPanel({
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span
                           className={`text-[13px] font-semibold ${
-                            settled ? 'text-slate-400 line-through' : 'text-slate-900'
+                            settled ? 'text-slate-500 line-through' : 'text-slate-900'
                           }`}
                         >
                           {item.title}
@@ -248,7 +248,7 @@ export default function ChecklistPanel({
                           </button>
                         ) : RequiresIcon ? (
                           <span title={item.requires.replace('_', ' ')}>
-                            <RequiresIcon className="h-3 w-3 text-slate-400" />
+                            <RequiresIcon className="h-3 w-3 text-slate-500" />
                           </span>
                         ) : null}
                       </div>
@@ -280,7 +280,7 @@ export default function ChecklistPanel({
                             className={
                               item.is_overdue
                                 ? 'flex items-center gap-1 text-warning-800'
-                                : 'text-slate-400'
+                                : 'text-slate-500'
                             }
                           >
                             {item.is_overdue ? <AlertTriangle className="h-2.5 w-2.5" /> : null}
@@ -288,7 +288,7 @@ export default function ChecklistPanel({
                           </span>
                         ) : null}
                         {item.owner?.name ? (
-                          <span className="text-slate-400">· {item.owner.name}</span>
+                          <span className="text-slate-500">· {item.owner.name}</span>
                         ) : (
                           <span className="text-slate-300">· unassigned</span>
                         )}

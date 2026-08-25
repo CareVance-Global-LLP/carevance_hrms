@@ -132,15 +132,15 @@ export default function PayrollOutcome({ run, items }: PayrollOutcomeProps) {
         <div className="flex items-center gap-2 text-sm flex-wrap">
           <span className="font-semibold text-slate-900">Total Payroll Cost</span>
           <span className="font-bold text-slate-900">{formatINR(toNum(run.total_gross))}</span>
-          <span className="text-slate-400">=</span>
+          <span className="text-slate-500">=</span>
           <span className="text-slate-600">
             Employee Deposit <span className="font-semibold">{formatINR(toNum(run.total_net_pay))}</span>
           </span>
-          <span className="text-slate-400">+</span>
+          <span className="text-slate-500">+</span>
           <span className="text-slate-600">
             Deductions <span className="font-semibold">{formatINR(toNum(run.total_deductions))}</span>
           </span>
-          <span className="text-slate-400">+</span>
+          <span className="text-slate-500">+</span>
           <span className="text-slate-600">
             Contributions <span className="font-semibold">{formatINR(toNum(run.total_employer_contributions))}</span>
           </span>
