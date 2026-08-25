@@ -21,6 +21,8 @@ export interface LeaveRequestsPanelProps {
   formatCategoryLabel: (code?: string | null) => string;
   colorOf: (code?: string | null) => string;
   renderEscalate: (item: any) => ReactNode;
+  /** How many rows the server holds, so a capped list can say so. */
+  totalOnServer?: number;
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -53,6 +55,7 @@ export default function LeaveRequestsPanel({
   formatCategoryLabel,
   colorOf,
   renderEscalate,
+  totalOnServer = 0,
 }: LeaveRequestsPanelProps) {
   const [segment, setSegment] = useState<Segment>(hasApprovalPowers ? 'inbox' : 'mine');
 
@@ -78,6 +81,17 @@ export default function LeaveRequestsPanel({
   ];
 
   const visible = segment === 'inbox' ? inbox : segment === 'mine' ? mine : requests;
+
+  /*
+   * Whether the server holds more than it sent.
+   *
+   * Only meaningful on 'Everyone': the other two are filtered client-side out
+   * of whatever arrived, so a count against the server total would be wrong.
+   * Silence here is what made a capped list indistinguishable from a complete
+   * one, and a request paged out of view indistinguishable from one that was
+   * never recorded.
+   */
+  const isTruncated = segment === 'all' && totalOnServer > requests.length;
 
   return (
     <div>
@@ -106,6 +120,13 @@ export default function LeaveRequestsPanel({
           </button>
         ))}
       </div>
+
+      {isTruncated ? (
+        <p className="mb-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-[11px] text-warning-800">
+          Showing the {requests.length} most recent of {totalOnServer} requests. Narrow the range or filter by
+          employee to see older ones.
+        </p>
+      ) : null}
 
       {isLoading ? (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-xs text-slate-400">
