@@ -1226,6 +1226,40 @@ const createWindow = async () => {
     mainWindow.loadURL(APP_URL).catch(() => {});
   };
 
+  /*
+   * Ctrl+R / F5, put back by hand.
+   *
+   * `Menu.setApplicationMenu(null)` removes Electron's stock menu bar to take
+   * View -> Toggle Developer Tools away from a tracker's renderer. Reload and
+   * Force Reload live on that same menu, so removing it silently removed the
+   * one shortcut everybody reaches for when a page is stuck — and the app looks
+   * frozen rather than reloadable. Reported by a user whose Ctrl+R did nothing.
+   *
+   * `before-input-event` rather than `globalShortcut`: a global accelerator
+   * would swallow Ctrl+R system-wide, breaking refresh in every other app while
+   * the tracker merely runs. This fires only while this window has focus.
+   *
+   * It calls reloadRemoteUrl() rather than webContents.reload(), because a
+   * plain reload on the offline fallback page reloads the FALLBACK — the very
+   * screen the person is trying to escape. This clears the fallback state and
+   * asks for the real app.
+   *
+   * DevTools stays gone. Reload is a recovery affordance; a console on a page
+   * that records attendance is not.
+   */
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+
+    const key = String(input.key || '').toLowerCase();
+    const isReload = key === 'f5' || (key === 'r' && (input.control || input.meta));
+
+    if (!isReload) return;
+
+    // Swallowed so the page cannot also handle it and reload twice.
+    event.preventDefault();
+    reloadRemoteUrl();
+  });
+
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || String(validatedURL || '').startsWith('data:text/html')) {
       return;

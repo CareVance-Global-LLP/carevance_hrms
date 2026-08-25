@@ -253,3 +253,58 @@ test('the reader resolves the helper to the unpacked path', () => {
     'browser-url-reader.cjs must rewrite app.asar -> app.asar.unpacked when resolving the helper.'
   );
 });
+
+/*
+ * Removing the menu bar to hide DevTools also removed Reload, which lives on
+ * the same View menu. The symptom was Ctrl+R doing nothing on a stuck page —
+ * the app looked frozen rather than reloadable.
+ */
+test('reload is reachable by keyboard even with no application menu', () => {
+  assert.match(
+    mainSource,
+    /Menu\.setApplicationMenu\(null\)/,
+    'The stock menu bar must stay off — it carries Toggle Developer Tools.'
+  );
+
+  assert.match(
+    mainSource,
+    /before-input-event[\s\S]{0,900}f5[\s\S]{0,200}input\.control/i,
+    'Ctrl+R and F5 must be handled directly, since the menu that used to carry them is gone.'
+  );
+});
+
+test('the reload shortcut escapes the offline fallback rather than reloading it', () => {
+  /*
+   * webContents.reload() on the offline fallback page reloads the FALLBACK —
+   * the very screen somebody is pressing Ctrl+R to get out of. reloadRemoteUrl
+   * clears that state and asks for the real app.
+   */
+  const start = mainSource.indexOf("before-input-event");
+  assert.ok(start > -1, 'the before-input-event handler must exist');
+
+  // A window of the handler body, taken by offset rather than by regex: the
+  // block spans newlines and a multiline pattern here is more fragile than the
+  // thing it is checking.
+  const handler = mainSource.slice(start, start + 1200);
+
+  assert.match(
+    handler,
+    /reloadRemoteUrl\(\)/,
+    'the shortcut must call reloadRemoteUrl(), not webContents.reload().'
+  );
+  assert.doesNotMatch(
+    handler,
+    /openDevTools/,
+    'restoring reload must not restore a devtools route.'
+  );
+});
+
+test('the reload shortcut is window-scoped, not a global accelerator', () => {
+  // A globalShortcut for Ctrl+R would swallow refresh in every other
+  // application for as long as the tracker is running.
+  assert.doesNotMatch(
+    mainSource,
+    /globalShortcut\.register\(\s*['"`]CommandOrControl\+R/i,
+    'Ctrl+R must not be registered globally.'
+  );
+});
