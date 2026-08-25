@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   armAutoStart,
   DESKTOP_TIMER_IDLE_RESOLVED_EVENT,
+  ACTIVE_TIMER_KEY,
   setWorkedBaselineSnapshot,
   suppressAutoStart,
 } from '@/lib/desktopTimerSession';
-import DesktopTimerDashboard from '@/pages/DesktopTimerDashboard';
+import DesktopTimerDashboard, { restoreTimerSnapshot } from '@/pages/DesktopTimerDashboard';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 /**
@@ -911,5 +912,65 @@ describe('DesktopTimerDashboard', () => {
         expect(mocks.todayMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
       });
     });
+  });
+});
+
+describe('restoreTimerSnapshot', () => {
+  /*
+   * Navigating to Chat unmounts the dashboard and drops its anchor ref. Coming
+   * back re-anchors on this snapshot — so if the snapshot's `duration` is taken
+   * at face value the timer restarts from whatever it was when last written.
+   *
+   * In practice that is ZERO: `start()` never writes `duration`, so every
+   * running row carries 0 for its whole life. Measured on production: four
+   * running timers, all `duration = 0`, real elapsed 331s to 5,627s. The
+   * server and the admin view were right the entire time; only this screen
+   * forgot.
+   */
+  // The real key, imported rather than guessed.
+  const KEY = ACTIVE_TIMER_KEY;
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const writeSnapshot = (startedSecondsAgo: number, duration: number) => {
+    localStorage.setItem(KEY, JSON.stringify({
+      id: 4242,
+      start_time: new Date(Date.now() - startedSecondsAgo * 1000).toISOString(),
+      duration,
+      timer_slot: 'primary',
+      description: '',
+    }));
+  };
+
+  it('recovers the elapsed span when the snapshot duration is stale', () => {
+    // Twenty minutes running, snapshot says 0 — the shape every running timer
+    // actually has.
+    writeSnapshot(1200, 0);
+
+    const restored = restoreTimerSnapshot(7, 1);
+
+    expect(restored).not.toBeNull();
+    expect(restored!.duration).toBeGreaterThanOrEqual(1195);
+  });
+
+  it('never reads lower than a duration already recorded', () => {
+    // A reconciled duration can exceed the raw span is impossible, but a
+    // reconciled one can be LOWER than the span because a stop path removes
+    // in-window idle. Taking the larger stops a restore from rewinding.
+    writeSnapshot(100, 5000);
+
+    const restored = restoreTimerSnapshot(7, 1);
+
+    expect(restored!.duration).toBe(5000);
+  });
+
+  it('does not invent time when the snapshot has no usable start', () => {
+    localStorage.setItem(KEY, JSON.stringify({ id: 1, duration: 30 }));
+
+    // No start_time: the snapshot is unusable and must be discarded outright
+    // rather than restored against a guessed anchor.
+    expect(restoreTimerSnapshot(7, 1)).toBeNull();
   });
 });

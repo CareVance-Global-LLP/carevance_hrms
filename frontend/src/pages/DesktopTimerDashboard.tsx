@@ -125,7 +125,12 @@ const getEntryLocalDateString = (value?: string) => {
   return new Date(date.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
 };
 
-const restoreTimerSnapshot = (
+/**
+ * Exported for test: the snapshot restore is where a navigation away and back
+ * silently reset the visible timer, and that is worth asserting directly
+ * rather than through a full render.
+ */
+export const restoreTimerSnapshot = (
   userId: number | null,
   organizationId: number | null | undefined,
 ): TimeEntry | null => {
@@ -142,8 +147,37 @@ const restoreTimerSnapshot = (
   try {
     const parsed = JSON.parse(rawSnapshot) as Partial<TimeEntry>;
     const entryId = Number(parsed.id);
-    const duration = Number.isFinite(Number(parsed.duration)) ? Number(parsed.duration) : 0;
     const startTime = typeof parsed.start_time === 'string' ? parsed.start_time : '';
+
+    /*
+     * THE SNAPSHOT'S `duration` IS FROZEN AT THE MOMENT IT WAS WRITTEN.
+     *
+     * Restoring it verbatim is what reset the visible timer. Navigating to Chat
+     * unmounts this screen and drops `startAnchorRef`; coming back re-anchors
+     * on this snapshot, so the display restarted from whatever the number
+     * happened to be when it was last saved — commonly 0, because `start()`
+     * never writes `duration` and the row carries 0 for the whole life of a
+     * running timer. The server was always right; only this screen forgot.
+     *
+     * `start_time` is in the same snapshot and IS the truth, so the elapsed
+     * span is recovered from it. That is not the clock-skew mistake
+     * liveTimerDuration warns about: this compares a start_time the CLIENT
+     * received against the CLIENT's own now, and the result is used only as a
+     * base that the live API response immediately corrects. The rule that
+     * matters — never subtract a server instant from a client instant in the
+     * ticking arithmetic — is untouched.
+     *
+     * `max` of the two: a reconciled duration can legitimately be LOWER than
+     * the raw span, because a stop path removes in-window idle. Taking the
+     * larger keeps a restored timer from ever reading lower than what has
+     * already been shown.
+     */
+    const storedDuration = Number.isFinite(Number(parsed.duration)) ? Number(parsed.duration) : 0;
+    const startedAtMs = startTime ? new Date(startTime).getTime() : NaN;
+    const spanSeconds = Number.isFinite(startedAtMs)
+      ? Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000))
+      : 0;
+    const duration = Math.max(storedDuration, spanSeconds);
 
     if (!entryId || !startTime) {
       localStorage.removeItem(ACTIVE_TIMER_KEY);
