@@ -359,6 +359,7 @@ export default function GlobalCommandBar({
       aiLoading={aiLoading}
       aiError={aiError}
       onAskAi={handleAskAi}
+      onAiExample={handleAskAi}
     />
   );
 }

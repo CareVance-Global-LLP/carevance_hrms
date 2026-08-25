@@ -531,4 +531,80 @@ class EntityRetrieverTest extends TestCase
         $this->assertLessThanOrEqual(5, count($result));
         $this->assertSame('payroll', array_key_first($result));
     }
+
+    /**
+     * The subject of a sentence must not lose to its own predicate.
+     *
+     * Found live 24 Aug 2026: "list employees with no bank account" retrieved
+     * employee_bank_accounts (105.6), bank_transfer_items, bank_api_configs,
+     * bank_transfer_batches and payroll. `employees` scored 18.7 and ranked
+     * EIGHTH, so the prompt never carried the entity the question was about and
+     * the model answered "the employee master entity is not in this system's
+     * catalogue" — a refusal caused entirely by retrieval, on a question §8
+     * lists as one that must work.
+     *
+     * Four tables carrying "bank" and "account" in their column names beat one
+     * word that NAMED an entity. A naming is a promise about which table is
+     * meant, not evidence to be weighed against how many names collide.
+     */
+    public function test_a_named_entity_is_retrieved_even_when_the_predicate_scores_higher(): void
+    {
+        $result = EntityRetriever::forQuestion(
+            'list employees with no bank account',
+            $this->bankHeavyCatalogue()
+        );
+
+        $this->assertArrayHasKey('employees', $result, 'the question named employees; it must reach the prompt');
+        $this->assertSame('employees', array_key_first($result), 'the named subject leads');
+
+        // The predicate's tables are still wanted — a cross-entity filter needs
+        // them. They must come as well, not instead.
+        $this->assertArrayHasKey('employee_bank_accounts', $result);
+    }
+
+    public function test_naming_does_not_evict_everything_else(): void
+    {
+        // A named entity reserves ONE slot, not the whole set.
+        $result = EntityRetriever::forQuestion(
+            'list employees with no bank account',
+            $this->bankHeavyCatalogue()
+        );
+
+        $this->assertLessThanOrEqual(5, count($result));
+        $this->assertGreaterThan(1, count($result), 'the rest of the set is still filled by score');
+    }
+
+    /**
+     * The four bank-named tables are the whole point of the case above, so the
+     * fixture carries them under their real names.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function bankHeavyCatalogue(): array
+    {
+        $catalogue = $this->canonicalCatalogue();
+
+        foreach ([
+            'employee_bank_accounts' => ['account_holder_name', 'bank_name', 'branch_name'],
+            'bank_transfer_items' => ['bank_reference', 'account_status'],
+            'bank_api_configs' => ['bank_code', 'account_prefix'],
+            'bank_transfer_batches' => ['bank_name', 'account_count'],
+        ] as $table => $columns) {
+            $catalogue[$table] = [
+                'label' => ucwords(str_replace('_', ' ', $table)),
+                'table' => $table,
+                'metrics' => ['count' => ['label' => 'Count']],
+                'dimensions' => array_combine(
+                    $columns,
+                    array_map(fn ($c) => ['label' => ucwords(str_replace('_', ' ', $c)), 'select' => $table.'.'.$c], $columns)
+                ),
+                'list_columns' => array_combine(
+                    $columns,
+                    array_map(fn ($c) => ['label' => ucwords(str_replace('_', ' ', $c)), 'select' => $table.'.'.$c], $columns)
+                ),
+            ];
+        }
+
+        return $catalogue;
+    }
 }

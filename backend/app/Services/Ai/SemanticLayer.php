@@ -163,6 +163,16 @@ final class SemanticLayer
                         // for that format and is why range filters work at all.
                         'select' => 'payroll_items.month_year',
                         'null_label' => '(no month)',
+                        // §3, and the reason it is spelled out rather than
+                        // inferred: the COLUMN is a varchar, so derivation
+                        // truthfully calls it text and offers no format. The
+                        // executor compares a period in the column's own
+                        // format, and a `Y-m-d` bound against a `Y-m` column
+                        // matches nothing at all — `'2026-07' >= '2026-07-01'`
+                        // is false — so the answer comes back empty rather
+                        // than wrong, which is harder to notice, not easier.
+                        'type' => 'date',
+                        'date_format' => 'Y-m',
                     ],
                 ],
             ],
@@ -204,6 +214,12 @@ final class SemanticLayer
                         'join' => null,
                         'select' => 'attendance_records.attendance_date',
                         'null_label' => '(no date)',
+                        // §3. A curated dimension predates the type key, and an
+                        // undeclared format is one the executor refuses to
+                        // guess — so "absences last month" would be refused on
+                        // the very dimension it is asked about.
+                        'type' => 'date',
+                        'date_format' => 'Y-m-d',
                     ],
                 ],
             ],
@@ -490,10 +506,335 @@ final class SemanticLayer
         Cache::forget(self::CACHE_KEY);
     }
 
+    /** The indent every list line under an entity header carries. */
+    private const INDENT = '    ';
+
     /**
-     * The catalogue for a SPECIFIC set of entities — what the retriever hands
-     * the planner once it has narrowed 80 entities down to the handful a
-     * question is actually about. Names and labels only — no rows, no column
+     * How long a list line may run before it is wrapped and its label repeated.
+     *
+     * Held well under the 400 characters `SemanticLayerCatalogueTest` asserts,
+     * because the limit exists for a reader, not for a byte count: `payroll`'s
+     * dimensions and list columns used to arrive as ONE ~2,500 character line,
+     * and `department` sat three-quarters of the way along it. The model
+     * reported that payroll had no `department` dimension. It had one, and has
+     * had one all along.
+     */
+    private const CATALOGUE_LINE_LIMIT = 360;
+
+    /** The four aggregates derivation always produces together for a measurable column. */
+    private const DERIVED_AGGREGATES = ['sum', 'avg', 'min', 'max'];
+
+    /**
+     * The planner's catalogue for a SPECIFIC set of entities — what the
+     * retriever hands the planner once it has narrowed 149 entities down to the
+     * handful a question is actually about. Names and labels only: no rows, no
+     * column values, nothing that could carry employee data to the model.
+     *
+     * This is the READABLE form, and it exists because the compressed form
+     * below was legible to the budget and not to the reader. Retrieval buys
+     * roughly 30x fewer entities; that budget is spent here on STRUCTURE, which
+     * 149 entities could not afford:
+     *
+     *  - metrics, group-by dimensions and list columns each get their OWN
+     *    labelled line. They used to share one `per/columns:` list, and a name
+     *    on it answered neither "can I group by this?" nor "can I list it?".
+     *  - no line runs past `CATALOGUE_LINE_LIMIT`; a long list is wrapped with
+     *    its label repeated, so every line still says what it is a list of.
+     *  - curated dimensions and metrics come FIRST within their line and the
+     *    curated metrics are marked, because those definitions are
+     *    hand-verified and a derived one's is not.
+     *
+     * Two compressions survive, and neither loses a name:
+     *
+     *  - a column carrying all four of `sum_X`/`avg_X`/`min_X`/`max_X` is named
+     *    ONCE on the `group_by (numeric)` line, with the legend spelling the
+     *    prefixes out. `payroll` alone derives 300+ such metrics; enumerating
+     *    them costs more than every other entity put together. Any metric that
+     *    is NOT implied that way is enumerated literally.
+     *  - `list_columns` is almost always the dimension set over again — 94 of
+     *    the same 95 names on `payroll`. So the `columns:` line says so in a
+     *    sentence, naming the exceptions, whenever that is shorter than
+     *    repeating them. It is a separate labelled line either way; what it
+     *    must never be is the same line as the dimensions.
+     *
+     * @param  array<int, string>  $entityKeys
+     */
+    public static function catalogueFor(array $entityKeys): string
+    {
+        $blocks = [];
+        $usesNumericGroupBy = false;
+        $usesColumns = false;
+
+        foreach ($entityKeys as $key) {
+            $entity = self::entity($key);
+
+            if ($entity === null) {
+                continue;
+            }
+
+            $aggregatable = self::fullyAggregatableColumns($entity);
+            [$plain, $numeric] = self::partitionDimensions($entity['dimensions'] ?? [], $aggregatable);
+
+            $lines = [sprintf('- %s (%s)', $key, $entity['label'])];
+
+            $curated = self::curatedMetricNames($entity['metrics'] ?? []);
+            if ($curated !== []) {
+                array_push($lines, ...self::wrapNames('metrics (curated)', $curated));
+            }
+
+            $enumerated = self::metricsNotImpliedByAColumn($entity['metrics'] ?? [], $aggregatable);
+            if ($enumerated !== []) {
+                array_push($lines, ...self::wrapNames('metrics', $enumerated));
+            }
+
+            if ($plain !== []) {
+                array_push($lines, ...self::wrapNames('group_by', $plain));
+            }
+
+            if ($numeric !== []) {
+                $usesNumericGroupBy = true;
+                array_push($lines, ...self::wrapNames('group_by (numeric)', $numeric));
+            }
+
+            $columnLines = self::columnLines($entity);
+            $usesColumns = $usesColumns || $columnLines !== [];
+            array_push($lines, ...$columnLines);
+
+            $blocks[] = implode("\n", $lines);
+        }
+
+        if ($blocks === []) {
+            return '';
+        }
+
+        return implode("\n", array_merge(self::catalogueLegend($usesNumericGroupBy, $usesColumns), $blocks));
+    }
+
+    /**
+     * The key to the layout, stated rather than left to be inferred.
+     *
+     * The prompt tells the planner never to invent a name that is not listed,
+     * so a compression it cannot decode is a refusal wearing a smaller token
+     * count. Emitted only for the notation actually used.
+     *
+     * @return list<string>
+     */
+    private static function catalogueLegend(bool $usesNumericGroupBy, bool $usesColumns): array
+    {
+        $legend = ['# Choose every entity, metric, group_by field and column BY NAME from the lists below. Nothing that is not listed exists.'];
+
+        if ($usesNumericGroupBy) {
+            $legend[] = '# A field on a "group_by (numeric)" line also names four metrics: sum_X, avg_X, min_X and max_X — a field net_pay gives sum_net_pay. All four exist and may be used.';
+        }
+
+        if ($usesColumns) {
+            $legend[] = '# "group_by" names the fields an aggregate can be broken down by; "columns" names the fields a row listing can show. A label repeated on the next line continues the same list.';
+        }
+
+        return $legend;
+    }
+
+    /**
+     * Columns for which ALL FOUR of `sum_X`, `avg_X`, `min_X` and `max_X` exist
+     * AND which are groupable under their own name — the only condition under
+     * which the `group_by (numeric)` line's promise is true.
+     *
+     * Checked by metric NAME rather than by counting derived metrics, because a
+     * curated override replaces one of the four in place: `payroll.avg_net_pay`
+     * is curated, so `net_pay` has three derived aggregates and four real
+     * metrics. Counting origins would drop `net_pay` out of the numeric line
+     * and lose `sum_net_pay` from the catalogue for no reason.
+     *
+     * @param  array<string, mixed>  $entity
+     * @return array<string, true>
+     */
+    private static function fullyAggregatableColumns(array $entity): array
+    {
+        $metrics = $entity['metrics'] ?? [];
+        $dimensions = $entity['dimensions'] ?? [];
+        $candidates = [];
+
+        foreach ($metrics as $metric) {
+            $column = $metric['column'] ?? null;
+
+            if ($column !== null && in_array($metric['aggregate'], self::DERIVED_AGGREGATES, true)) {
+                $candidates[$column] = true;
+            }
+        }
+
+        $aggregatable = [];
+
+        foreach (array_keys($candidates) as $column) {
+            if (! isset($dimensions[$column])) {
+                continue; // not groupable under that name, so the line cannot carry it
+            }
+
+            foreach (self::DERIVED_AGGREGATES as $aggregate) {
+                if (! isset($metrics[$aggregate.'_'.$column])) {
+                    continue 2;
+                }
+            }
+
+            $aggregatable[$column] = true;
+        }
+
+        return $aggregatable;
+    }
+
+    /**
+     * Every metric name that the `group_by (numeric)` line does NOT already
+     * imply, and that is not already on the curated line. `count` is always
+     * here; so is any aggregate over a column the numeric line could not carry.
+     *
+     * @param  array<string, array<string, mixed>>  $metrics
+     * @param  array<string, true>  $aggregatable
+     * @return list<string>
+     */
+    private static function metricsNotImpliedByAColumn(array $metrics, array $aggregatable): array
+    {
+        $names = [];
+
+        foreach ($metrics as $name => $metric) {
+            if (($metric['origin'] ?? null) === 'curated') {
+                continue; // named and marked on its own line
+            }
+
+            $column = $metric['column'] ?? null;
+
+            if ($column !== null
+                && isset($aggregatable[$column])
+                && $name === $metric['aggregate'].'_'.$column) {
+                continue; // spelled out by the notation, not lost
+            }
+
+            $names[] = $name;
+        }
+
+        return $names;
+    }
+
+    /**
+     * Dimensions split into the two group-by lines, curated names first in
+     * each. Curated first is not cosmetic: `department` and `month` are the two
+     * dimensions on `payroll` that somebody hand-verified, they are what
+     * questions actually ask for, and putting them at the head of the line is
+     * what makes them the first thing a reader sees rather than the 73rd.
+     *
+     * @param  array<string, array<string, mixed>>  $dimensions
+     * @param  array<string, true>  $aggregatable
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    private static function partitionDimensions(array $dimensions, array $aggregatable): array
+    {
+        $plain = [];
+        $numeric = [];
+
+        foreach ([true, false] as $curatedPass) {
+            foreach ($dimensions as $name => $dimension) {
+                if ((($dimension['origin'] ?? null) === 'curated') !== $curatedPass) {
+                    continue;
+                }
+
+                if (isset($aggregatable[$name])) {
+                    $numeric[] = $name;
+                } else {
+                    $plain[] = $name;
+                }
+            }
+        }
+
+        return [$plain, $numeric];
+    }
+
+    /**
+     * The `columns:` line — its own labelled line, always.
+     *
+     * Derivation builds `dimensions` and `list_columns` from the same per-column
+     * loop, so on a wide table they are the same names twice: 94 of `payroll`'s
+     * 95. Printing both in full is what put the retrieved-entity catalogue over
+     * budget in the first place, and printing them merged is what hid
+     * `department`. So the line states the relationship in a sentence and names
+     * the exceptions, whenever saying so is shorter than saying them all again.
+     *
+     * @param  array<string, mixed>  $entity
+     * @return list<string>
+     */
+    private static function columnLines(array $entity): array
+    {
+        $columns = array_keys($entity['list_columns'] ?? []);
+
+        if ($columns === []) {
+            return [];
+        }
+
+        $enumerated = self::wrapNames('columns', $columns);
+        $dimensions = array_keys($entity['dimensions'] ?? []);
+
+        if ($dimensions === []) {
+            return $enumerated;
+        }
+
+        $sentence = 'any group_by field above';
+
+        $missing = array_values(array_diff($dimensions, $columns));
+        if ($missing !== []) {
+            $sentence .= ' except '.implode(', ', $missing);
+        }
+
+        $extra = array_values(array_diff($columns, $dimensions));
+        if ($extra !== []) {
+            $sentence .= ', plus '.implode(', ', $extra);
+        }
+
+        $line = self::INDENT.'columns: '.$sentence;
+
+        if (strlen($line) <= self::CATALOGUE_LINE_LIMIT && strlen($line) < strlen(implode("\n", $enumerated))) {
+            return [$line];
+        }
+
+        return $enumerated;
+    }
+
+    /**
+     * One list, wrapped so no line hides a name, with the label REPEATED on
+     * each continuation rather than left dangling — a line that does not say
+     * what it is a list of is the run-on all over again, just narrower.
+     *
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    private static function wrapNames(string $label, array $names): array
+    {
+        $prefix = self::INDENT.$label.': ';
+        $lines = [];
+        $current = '';
+
+        foreach ($names as $name) {
+            $candidate = $current === '' ? $name : $current.', '.$name;
+
+            if ($current !== '' && strlen($prefix.$candidate) > self::CATALOGUE_LINE_LIMIT) {
+                $lines[] = $prefix.$current;
+                $current = $name;
+
+                continue;
+            }
+
+            $current = $candidate;
+        }
+
+        if ($current !== '') {
+            $lines[] = $prefix.$current;
+        }
+
+        return $lines;
+    }
+
+    /**
+     * The COMPRESSED catalogue for a specific set of entities, superseded for
+     * the planner by `catalogueFor()` above and kept for `promptCatalogue()`,
+     * which renders all 149 entities at once and cannot afford the structure.
+     *
+     * Names and labels only — no rows, no column
      * values, nothing that could carry employee data to the model.
      *
      * Curated metrics are listed BY NAME — a planner has to pick one by name,

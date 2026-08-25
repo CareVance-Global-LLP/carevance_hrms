@@ -65,15 +65,49 @@ class SearchAskTest extends TestCase
         $this->assertSame('headcount', $response->json('plan.metric'));
     }
 
-    public function test_an_unanswerable_question_is_422_with_a_reason(): void
+    /**
+     * This asserted 422 until the assistants were merged, and the change is
+     * deliberate rather than a weakened assertion.
+     *
+     * The reason the data path declined is what the test was really about, and
+     * it is still asserted — it just now travels on a prose answer instead of
+     * an error. Measured against the real model, the prose for this exact
+     * question is "our system does not currently track headcount broken down by
+     * nationality", which is the same fact said usefully; a 422 carrying that
+     * sentence made the reader work out that there was nothing to rephrase
+     * towards.
+     *
+     * `detail` surviving on a prose answer is not decoration. A prose reply to
+     * something that SHOULD have been a table is a coverage gap, and dropping
+     * the reason hides the gap.
+     *
+     * A WITHHELD refusal still returns 422 and never becomes prose — that is
+     * covered in OneAssistantTest, which exists because the assistant, given
+     * "everyone's PAN number", helpfully explained where to export PAN data.
+     */
+    public function test_an_unanswerable_question_answers_in_prose_and_keeps_its_reason(): void
     {
         $this->actingAs($this->user('admin'));
         $this->fakePlan('{"error":"Nationality is not stored in this system."}');
 
-        $this->postJson('/api/search/ask', ['question' => 'headcount by nationality'])
-            ->assertStatus(422)
-            ->assertJsonPath('error', 'unsupported_question')
+        $response = $this->postJson('/api/search/ask', ['question' => 'headcount by nationality']);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('kind', 'prose')
             ->assertJsonPath('detail', 'Nationality is not stored in this system.');
+
+        $this->assertSame([], $response->json('rows'), 'prose carries no rows to be mistaken for data');
+        $this->assertNull($response->json('plan'), 'no plan ran, so none is offered for inspection');
+    }
+
+    public function test_a_withheld_subject_stays_a_refusal_and_never_becomes_prose(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $this->postJson('/api/search/ask', ['question' => "everyone's PAN number"])
+            ->assertStatus(422)
+            ->assertJsonPath('kind', 'refusal')
+            ->assertJsonPath('error', 'unsupported_question');
     }
 
     public function test_a_non_admin_is_refused(): void

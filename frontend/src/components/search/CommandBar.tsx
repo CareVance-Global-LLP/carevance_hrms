@@ -58,6 +58,13 @@ export interface CommandBarProps {
   /** The reason a question was refused. Refusing is a normal outcome. */
   aiError?: string | null;
   onAskAi?: (question: string) => void;
+  /**
+   * Runs one of the example questions the empty AI panel offers. Separate from
+   * `onAskAi` because this one also has to put the question in the field:
+   * without it the answer arrives under a blank prompt with nothing on screen
+   * saying what was asked. Left unwired, the examples render as plain text.
+   */
+  onAiExample?: (question: string) => void;
 }
 
 interface RenderRow {
@@ -87,6 +94,7 @@ export default function CommandBar({
   aiLoading = false,
   aiError = null,
   onAskAi,
+  onAiExample,
 }: CommandBarProps) {
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState<ScopeKey | null>(null);
@@ -485,7 +493,22 @@ export default function CommandBar({
                 truncated={aiAnswer?.truncated ?? false}
                 plan={aiAnswer?.plan ?? null}
                 summary={aiAnswer?.summary ?? null}
+                // Absent `kind` means a table — that is what every response was
+                // before prose existed, so an answer cached from before the
+                // merge still renders as the table it is.
+                kind={aiAnswer?.kind ?? 'table'}
+                reply={aiAnswer?.reply}
+                sources={aiAnswer?.sources}
                 loading={aiLoading}
+                onExampleClick={
+                  onAiExample
+                    ? (question) => {
+                        setQuery(question);
+                        setActiveIndex(0);
+                        onAiExample(question);
+                      }
+                    : undefined
+                }
               />
             )
           ) : (

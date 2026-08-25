@@ -343,6 +343,24 @@ final class SchemaIntrospector
                     // answer.
                     'join' => null,
                     'select' => $alias.'.'.$label,
+                    /*
+                     * A NAME IS NOT AN IDENTITY, and grouping by one merges
+                     * people.
+                     *
+                     * This database has twelve separate users all called
+                     * "QA E2E". Grouped by `users.name` alone, "who was absent
+                     * more than 3 days last month" answered `QA E2E — 47`: the
+                     * sum across all twelve, presented as one person, in a
+                     * 31-day month. Four was the true figure for any one of
+                     * them.
+                     *
+                     * The executor groups by this alongside the label, so rows
+                     * sharing a label but not an identity stay separate. Two
+                     * real employees called Priya Sharma get two rows — which
+                     * looks duplicated and IS correct, where one merged row is
+                     * tidy and is a lie about both of them.
+                     */
+                    'identity' => $table.'.'.$name,
                     'null_label' => '(none)',
                     'type' => 'text',
                     'date_format' => null,

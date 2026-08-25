@@ -2602,6 +2602,72 @@ export const attendanceTimeEditApi = {
     api.get<{ data: DepartmentTeamForwardTarget[] }>(`/attendance-time-edit-requests/${id}/forward-targets`),
 };
 
+/**
+ * Resumable uploads for files a single request cannot carry.
+ *
+ * The chunk size comes FROM the server rather than being chosen here. It is a
+ * property of that machine's php.ini and differs between environments — 2 MB
+ * on a dev box, 10 MB deployed — so a client that picked its own number would
+ * work against one and fail against the other, which is the bug this replaces.
+ */
+export const uploadApi = {
+  limits: () =>
+    api.get<{ chunk_size: number; max_upload_bytes: number; allowed_mimes: string[] }>('/uploads/limits'),
+
+  begin: (data: { name: string; size: number; mime?: string }) =>
+    api.post<{
+      upload_key: string;
+      chunk_size: number;
+      total_chunks: number;
+      missing_chunks: number[];
+      expires_at: string | null;
+    }>('/uploads', data),
+
+  /** What is still outstanding — the resume point after a dropped connection. */
+  status: (uploadKey: string) =>
+    api.get<{
+      upload_key: string;
+      status: string;
+      chunk_size: number;
+      total_chunks: number;
+      missing_chunks: number[];
+      progress_percent: number;
+    }>(`/uploads/${uploadKey}`),
+
+  sendChunk: (
+    uploadKey: string,
+    index: number,
+    chunk: Blob,
+    options?: { signal?: AbortSignal; onProgress?: (loadedBytes: number) => void }
+  ) => {
+    const formData = new FormData();
+    formData.append('chunk', chunk, `${index}.part`);
+
+    return api.post<{
+      received: number;
+      total_chunks: number;
+      progress_percent: number;
+      is_complete: boolean;
+    }>(`/uploads/${uploadKey}/chunks/${index}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal: options?.signal,
+      // Per-chunk byte progress. Without it the bar would only move once per
+      // chunk, which on a slow link looks frozen for a minute at a time.
+      onUploadProgress: (event) => options?.onProgress?.(event.loaded),
+      // A single chunk can legitimately take a while on a poor connection, and
+      // the default 30s would abort it and look like a server fault.
+      timeout: 120000,
+    });
+  },
+
+  complete: (uploadKey: string) =>
+    api.post<{ upload_key: string; name: string; mime: string; size: number }>(
+      `/uploads/${uploadKey}/complete`
+    ),
+
+  abort: (uploadKey: string) => api.delete(`/uploads/${uploadKey}`),
+};
+
 export const chatApi = {
   getConversations: () => api.get<ChatConversation[]>('/chat/conversations'),
   getGroups: () => api.get<ChatGroup[]>('/chat/groups'),
@@ -2616,7 +2682,17 @@ export const chatApi = {
   /** Message-body search across every thread the caller belongs to. */
   searchMessages: (q: string) =>
     api.get<{ data: ChatMessageSearchHit[] }>('/chat/search', { params: { q } }),
-  sendMessage: (conversationId: number, data: { body?: string; attachment?: File | null }) => {
+  sendMessage: (conversationId: number, data: { body?: string; attachment?: File | null; uploadKey?: string }) => {
+    // A file already uploaded in pieces is claimed by key. Checked first: if a
+    // caller somehow supplies both, the deliberately-prepared upload is the one
+    // it meant, and re-sending the raw file would defeat the point of chunking.
+    if (data.uploadKey) {
+      return api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, {
+        body: data.body || '',
+        upload_key: data.uploadKey,
+      });
+    }
+
     if (data.attachment) {
       const formData = new FormData();
       if (data.body?.trim()) {
@@ -2630,7 +2706,14 @@ export const chatApi = {
 
     return api.post<ChatMessage>(`/chat/conversations/${conversationId}/messages`, { body: data.body || '' });
   },
-  sendGroupMessage: (groupId: number, data: { body?: string; attachment?: File | null }) => {
+  sendGroupMessage: (groupId: number, data: { body?: string; attachment?: File | null; uploadKey?: string }) => {
+    if (data.uploadKey) {
+      return api.post<ChatGroupMessage>(`/chat/groups/${groupId}/messages`, {
+        body: data.body || '',
+        upload_key: data.uploadKey,
+      });
+    }
+
     if (data.attachment) {
       const formData = new FormData();
       if (data.body?.trim()) {
@@ -2668,6 +2751,21 @@ export const chatApi = {
     api.get<ChatTypingUser[]>(`/chat/conversations/${conversationId}/typing`),
   getGroupTyping: (groupId: number) =>
     api.get<ChatTypingUser[]>(`/chat/groups/${groupId}/typing`),
+  /**
+   * A small square preview of an image attachment.
+   *
+   * Separate from getAttachment because a notification must not download a
+   * 40 MB original to show a thumbnail on a toast. 404 is the ordinary answer
+   * for anything that is not an image — callers fall back to an icon.
+   */
+  getThumbnail: (messageId: number) =>
+    api.get<Blob>(`/chat/messages/${messageId}/thumbnail`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
+  getGroupThumbnail: (messageId: number) =>
+    api.get<Blob>(`/chat/groups/messages/${messageId}/thumbnail`, {
+      responseType: 'blob' as AxiosRequestConfig['responseType'],
+    }),
   getAttachment: (messageId: number) =>
     api.get<Blob>(`/chat/messages/${messageId}/attachment`, {
       responseType: 'blob' as AxiosRequestConfig['responseType'],
@@ -2686,24 +2784,111 @@ export const aiChatApi = {
     api.post<{ reply: string; sources: Array<{ label: string; route: string }> }>('/ai/chat', data),
 };
 
-export type AskColumn = { key: string; label: string; type: 'text' | 'money' | 'number' };
+/**
+ * AI mode's answer shape — the v2 query grammar, section 7.
+ * @see docs/superpowers/specs/2026-08-24-ai-mode-grammar-v2.md
+ */
+
+/**
+ * `date` is its own type, not text: a calendar date has to render as
+ * "24 Aug 2026" and still copy to CSV as `2026-08-24`, and only the column
+ * can say which of those a string is.
+ */
+export type AskColumnType = 'text' | 'money' | 'number' | 'date';
+
+export type AskColumn = {
+  key: string;
+  label: string;
+  type: AskColumnType;
+  /**
+   * Section 12: where this column's DEFINITION came from. `derived` is naive by
+   * construction — a plain AVG over the column, no exclusions — and the reader
+   * has to be able to tell it from a hand-checked `curated` one. Absent on
+   * dimensions and list columns, which are values rather than definitions.
+   */
+  origin?: 'curated' | 'derived';
+};
+
+/** Section 2. `is_null` / `is_not_null` carry no value at all. */
+export type AskFilterOperator =
+  | 'eq' | 'neq'
+  | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'between'
+  | 'contains'
+  | 'in' | 'not_in'
+  | 'is_null' | 'is_not_null'
+  | 'period';
+
+export type AskFilterValue = string | number | Array<string | number> | null;
+
+export type AskFilter = {
+  field: string;
+  op: AskFilterOperator;
+  value?: AskFilterValue;
+};
+
+/** A threshold on an AGGREGATE — what makes "more than 3 days" expressible. */
+export type AskHaving = {
+  metric: string;
+  op: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte';
+  value: number;
+};
+
+export type AskSort = { by: string; dir: 'asc' | 'desc' };
 
 export type AskPlan = {
   entity: string;
-  metric: string;
-  group_by: string | null;
-  filters: Record<string, unknown>;
-  sort: string | null;
+  /** `aggregate` groups and measures; `list` returns rows. */
+  mode: 'aggregate' | 'list';
+  /** aggregate mode — 1..4 named metrics, one column each. */
+  metrics: string[];
+  /** list mode — 1..8 columns from the entity's allow-list. Never SELECT *. */
+  columns: string[];
+  /** 0..2 dimensions, aggregate mode only. */
+  group_by: string[];
+  filters: AskFilter[];
+  having: AskHaving[];
+  sort: AskSort | null;
   limit: number;
 };
 
 export type AskRow = Record<string, string | number | null>;
 
+/** Where an answer came from. Switch on this, never on `rows.length`. */
+export type AskKind = 'table' | 'prose';
+
+export type AskSource = { label: string; route: string };
+
 export type AskResponse = {
-  plan: AskPlan;
+  /**
+   * One assistant, two answer shapes. A data question yields a table; anything
+   * else falls through to the prose assistant rather than being refused, so
+   * "how do I run payroll?" gets an answer instead of "I can't answer that
+   * from your HR data".
+   *
+   * Optional because a cached response from before the merge has no `kind`;
+   * `resolveAskKind()` treats its absence as a table, which is what those
+   * responses were.
+   */
+  kind?: AskKind;
+  /** Prose only: the answer itself. */
+  reply?: string;
+  /** Prose only: pages that back the answer up, so a figure can be checked. */
+  sources?: AskSource[];
+  /**
+   * Why the data path declined, kept on prose answers too. A prose reply to
+   * something that SHOULD have been a table is a coverage gap, and dropping
+   * the reason hides the gap.
+   */
+  detail?: string;
+  plan: AskPlan | null;
   columns: AskColumn[];
   rows: AskRow[];
-  /** Metric caveats — e.g. which rows an average deliberately excludes. */
+  /**
+   * Footnotes, and there are usually several: the caveat a curated metric
+   * carries, the period a token actually resolved to, and the warning that a
+   * derived definition applied no exclusions.
+   */
   notes: string[];
   /** Always null here; filled by the separate summary call. */
   summary: string | null;
@@ -2722,10 +2907,19 @@ export const searchAskApi = {
 };
 
 export const notificationApi = {
-  list: (params?: { limit?: number; type?: string; types?: string[]; exclude_types?: string[]; q?: string; unread_only?: boolean }) =>
+  /**
+   * `since_id` switches the endpoint into catch-up mode: rows ABOVE the
+   * watermark, oldest first, with `has_more` and `latest_id` so a client
+   * returning from a long disconnect can drain a gap bigger than one page
+   * instead of silently losing the remainder. Without it the response is the
+   * ordinary newest-first list and neither extra field is present.
+   */
+  list: (params?: { limit?: number; type?: string; types?: string[]; exclude_types?: string[]; q?: string; unread_only?: boolean; since_id?: number }) =>
     api.get<{
       data: AppNotificationItem[];
       unread_count: number;
+      has_more?: boolean;
+      latest_id?: number;
     }>('/notifications', { params }),
 
   publish: (data: {

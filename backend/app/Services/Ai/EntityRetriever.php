@@ -175,21 +175,107 @@ final class EntityRetriever
          */
         $top = $top > 0 ? $top : self::DEFAULT_TOP;
 
+        $scores = self::scoreAll($question, $catalogue);
+
+        /*
+         * AN ENTITY THE QUESTION NAMED OUTRIGHT IS RESERVED A SLOT.
+         *
+         * Scoring alone let the SUBJECT of a sentence lose to its own
+         * predicate. "list employees with no bank account" scored
+         * `employee_bank_accounts` 105.6 and `employees` 18.7 — eighth, past
+         * the cap, so the prompt never saw the entity the question was about
+         * and the model answered "the employee master entity is not in this
+         * system's catalogue". Four bank-named tables matched "bank" and
+         * "account" structurally and buried the one word that was a naming.
+         *
+         * `SYNONYM_NAMES` already encodes the distinction: a synonym that
+         * names an entity is a promise about which table is meant, not
+         * evidence to be weighed against how many column names happen to
+         * collide. Scoring it 10 and then letting 105 outrank it discards
+         * that. So a named entity is placed first, and the remaining slots
+         * are filled by score as before.
+         *
+         * The predicate's tables still come — they are what a cross-entity
+         * filter would need — they just no longer come INSTEAD.
+         */
         $picked = [];
 
-        foreach (self::scoreAll($question, $catalogue) as $key => $score) {
+        foreach (self::namedEntities($question, $catalogue) as $key) {
+            if (count($picked) >= $top) {
+                break;
+            }
+
+            $picked[$key] = $catalogue[$key];
+        }
+
+        foreach ($scores as $key => $score) {
+            if (count($picked) >= $top) {
+                break;
+            }
+
             if ($score < self::FLOOR) {
                 break; // ranked, so the first entity below the floor ends it
             }
 
             $picked[$key] = $catalogue[$key];
-
-            if (count($picked) >= $top) {
-                break;
-            }
         }
 
         return $picked;
+    }
+
+    /**
+     * The entities this question NAMED, best-scoring first.
+     *
+     * Naming is the `SYNONYM_NAMES` case of `synonymScore()` — the token
+     * matched the entity key or its table, rather than pointing at a concept
+     * one of its columns happens to carry.
+     *
+     * @param  array<string, array<string, mixed>>  $catalogue
+     * @return list<string>
+     */
+    private static function namedEntities(string $question, array $catalogue): array
+    {
+        $tokens = self::tokenise($question);
+        $named = [];
+
+        foreach ($catalogue as $key => $entity) {
+            $table = (string) ($entity['table'] ?? $key);
+
+            foreach ($tokens as $token) {
+                /*
+                 * A token that IS the entity's name names it, before any map is
+                 * consulted. This case is not redundant with the synonym below:
+                 * "project" is mapped to the `work` concept, whose table is
+                 * `tasks`, so against a schema-derived catalogue the map named
+                 * `tasks` and left the literal `projects` table to fight for a
+                 * slot on score alone.
+                 */
+                $canonical = self::normalise($token);
+
+                if ($canonical === self::normalise($key) || $canonical === self::normalise($table)) {
+                    $named[] = $key;
+                    continue 2;
+                }
+
+                foreach (self::synonymTargets($token) as $target) {
+                    if ($target === $key || $target === $table) {
+                        $named[] = $key;
+                        continue 3;
+                    }
+                }
+            }
+        }
+
+        if (count($named) < 2) {
+            return $named;
+        }
+
+        // More than one entity named — "leave taken by employee" names both.
+        // Order them by their own score so the stronger subject leads.
+        $scores = self::scoreAll($question, $catalogue);
+        usort($named, fn (string $left, string $right) => ($scores[$right] ?? 0.0) <=> ($scores[$left] ?? 0.0));
+
+        return $named;
     }
 
     /**

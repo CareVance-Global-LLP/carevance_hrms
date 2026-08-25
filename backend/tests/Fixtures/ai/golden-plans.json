@@ -1,28 +1,1626 @@
 {
+  "$note": "Golden plans for the v2 query grammar, read by tests/Feature/Ai/GoldenPlanTest.php and by nothing else. `plan` is what a planner emits; `expect` is the NORMALISED plan PlanValidator must return for it, asserted key by key. A refused case carries the `names` its refusal must contain - a refusal that does not say which word was wrong is a dead end - and the `category` is which of the two legitimate buckets it falls in. No model is called: this fixture tests the layer's contract with no vendor in the loop. See docs/superpowers/specs/2026-08-24-ai-mode-grammar-v2.md.",
   "accepted": [
-    { "question": "headcount by department",              "plan": {"entity":"employees","metric":"headcount","group_by":"department"} },
-    { "question": "how many people do we have",            "plan": {"entity":"employees","metric":"headcount"} },
-    { "question": "headcount by employment type",          "plan": {"entity":"employees","metric":"headcount","group_by":"employment_type"} },
-    { "question": "compare average net pay by department", "plan": {"entity":"payroll","metric":"avg_net_pay","group_by":"department","sort":"metric_desc","limit":10} },
-    { "question": "total gross by month",                  "plan": {"entity":"payroll","metric":"total_gross","group_by":"month"} },
-    { "question": "average net pay",                       "plan": {"entity":"payroll","metric":"avg_net_pay"} },
-    { "question": "absences by department",                "plan": {"entity":"attendance","metric":"absent_days"} },
-    { "question": "how many late arrivals this month",     "plan": {"entity":"attendance","metric":"late_count"} },
-    { "question": "attendance by status",                  "plan": {"entity":"attendance","metric":"absent_days","group_by":"status"} },
-    { "question": "leave days taken by type",              "plan": {"entity":"leave","metric":"leave_days_taken","group_by":"leave_type"} },
-    { "question": "leave requests by status",              "plan": {"entity":"leave","metric":"leave_requests","group_by":"status"} },
-    { "question": "how many assets do we have",            "plan": {"entity":"assets","metric":"asset_count"} },
-    { "question": "assets by status",                      "plan": {"entity":"assets","metric":"asset_count","group_by":"status"} },
-    { "question": "tasks by status",                       "plan": {"entity":"work","metric":"task_count","group_by":"status"} }
+    {
+      "question": "who was absent more than 3 days last month",
+      "spec": "8 row 1",
+      "why": "The user's own first question, and the one v1 could not express at all: a threshold on an aggregate is a HAVING, and without it this needs a per-person count nobody can filter.",
+      "plan": {
+        "entity": "attendance",
+        "metrics": [
+          "absent_days"
+        ],
+        "group_by": [
+          "employee"
+        ],
+        "filters": [
+          {
+            "field": "date",
+            "op": "period",
+            "value": "last_month"
+          }
+        ],
+        "having": [
+          {
+            "metric": "absent_days",
+            "op": "gt",
+            "value": 3
+          }
+        ],
+        "sort": {
+          "by": "absent_days",
+          "dir": "desc"
+        }
+      },
+      "expect": {
+        "entity": "attendance",
+        "mode": "aggregate",
+        "metrics": [
+          "absent_days"
+        ],
+        "columns": [],
+        "group_by": [
+          "employee"
+        ],
+        "filters": [
+          {
+            "field": "date",
+            "op": "period",
+            "token": "last_month"
+          }
+        ],
+        "having": [
+          {
+            "metric": "absent_days",
+            "op": "gt",
+            "value": 3
+          }
+        ],
+        "sort": {
+          "by": "absent_days",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "compare avg net pay by department and month",
+      "spec": "8 row 2",
+      "why": "Two group-by dimensions in one plan - the second thing v1's single group_by could not say.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "avg_net_pay"
+        ],
+        "group_by": [
+          "department",
+          "month"
+        ]
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "avg_net_pay"
+        ],
+        "columns": [],
+        "group_by": [
+          "department",
+          "month"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "list employees who joined this year",
+      "spec": "8 row 4",
+      "why": "Section 8's own list-mode example. It is also DEFECT 2's canonical plan: a row listing computes no aggregate, so there is no cell a zero could be written into. An empty answer here is rows: [], which is the true fact.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "department",
+          "joining_date"
+        ],
+        "filters": [
+          {
+            "field": "joining_date",
+            "op": "period",
+            "value": "this_year"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "department",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "joining_date",
+            "op": "period",
+            "token": "this_year"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "top 5 departments by total gross in July 2026",
+      "spec": "8 row 6",
+      "why": "An explicit month token rather than a relative one, a sort by the metric and a real limit. payroll.month is a YYYY-MM string, so the declared date_format is what keeps this from matching nothing.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "total_gross"
+        ],
+        "group_by": [
+          "department"
+        ],
+        "filters": [
+          {
+            "field": "month",
+            "op": "period",
+            "value": "2026-07"
+          }
+        ],
+        "sort": {
+          "by": "total_gross",
+          "dir": "desc"
+        },
+        "limit": 5
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "total_gross"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [
+          {
+            "field": "month",
+            "op": "period",
+            "token": "2026-07"
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "total_gross",
+          "dir": "desc"
+        },
+        "limit": 5
+      }
+    },
+    {
+      "question": "late arrivals by employee last 30 days",
+      "spec": "8 row 7",
+      "why": "Grouping by employee is what turns 'how many' into 'who' (section 4), and late_count is curated because status misses 134 of 405 late arrivals.",
+      "plan": {
+        "entity": "attendance",
+        "metrics": [
+          "late_count"
+        ],
+        "group_by": [
+          "employee"
+        ],
+        "filters": [
+          {
+            "field": "date",
+            "op": "period",
+            "value": "last_30_days"
+          }
+        ],
+        "sort": {
+          "by": "late_count",
+          "dir": "desc"
+        }
+      },
+      "expect": {
+        "entity": "attendance",
+        "mode": "aggregate",
+        "metrics": [
+          "late_count"
+        ],
+        "columns": [],
+        "group_by": [
+          "employee"
+        ],
+        "filters": [
+          {
+            "field": "date",
+            "op": "period",
+            "token": "last_30_days"
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "late_count",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "leave taken by type this year",
+      "spec": "8 row 8",
+      "why": "leave_days_taken is a span over approved requests only - auto_cancelled is 92 of 318 rows, so counting every row overstates leave taken by nearly 3x.",
+      "plan": {
+        "entity": "leave",
+        "metrics": [
+          "leave_days_taken"
+        ],
+        "group_by": [
+          "leave_type"
+        ],
+        "filters": [
+          {
+            "field": "start_date",
+            "op": "period",
+            "value": "this_year"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "leave",
+        "mode": "aggregate",
+        "metrics": [
+          "leave_days_taken"
+        ],
+        "columns": [],
+        "group_by": [
+          "leave_type"
+        ],
+        "filters": [
+          {
+            "field": "start_date",
+            "op": "period",
+            "token": "this_year"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "compare average net pay by department",
+      "why": "DEFECT 1, 24 Aug 2026. The model refused this with 'department is not a supported group-by dimension for the payroll entity'. The LAYER was correct all along - SemanticLayer::dimension('payroll','department') exists and joins groups - so the refusal was prompt legibility, not vocabulary: payroll's catalogue line ran ~2,500 characters and buried 'department' three-quarters of the way along it. This case pins the contract the prompt has to make findable. It returned Engineering 91,575.93 / Marketing 61,584.00 and must again.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_net_pay",
+        "group_by": "department",
+        "sort": "metric_desc",
+        "limit": 10
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "avg_net_pay"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": {
+          "by": "avg_net_pay",
+          "dir": "desc"
+        },
+        "limit": 10
+      }
+    },
+    {
+      "question": "list employees who joined this year (the nested filter the model actually emitted)",
+      "why": "DEFECT 2, 24 Aug 2026. This exact plan answered count: 0 against a true answer of 14. The model wrote its date range as a map of bounds; the v1 validator understood only flat equality, so it neither honoured the shape nor refused it by name, and a query with NO date filter came back as a confident zero. Both bounds must survive as filters - a dropped filter asks a wider question and reports the answer with undiminished confidence.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "department",
+          "joining_date"
+        ],
+        "filters": {
+          "joining_date": {
+            "gte": "2026-01-01",
+            "lte": "2026-12-31"
+          }
+        }
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "department",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "joining_date",
+            "op": "gte",
+            "value": "2026-01-01"
+          },
+          {
+            "field": "joining_date",
+            "op": "lte",
+            "value": "2026-12-31"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "headcount by department",
+      "why": "employees.headcount and the curated employees.department dimension. There is no departments table - departments ARE the groups table, reached through report_group_id, which is why derivation cannot get this right on its own.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount",
+        "group_by": "department"
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "aggregate",
+        "metrics": [
+          "headcount"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "how many people do we have",
+      "why": "The whole-org number, with no breakdown. headcount excludes non-active staff, which is a no-op today and will not be once leavers arrive.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount"
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "aggregate",
+        "metrics": [
+          "headcount"
+        ],
+        "columns": [],
+        "group_by": [],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "headcount by employment type",
+      "why": "A curated dimension that needs no join.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount",
+        "group_by": "employment_type"
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "aggregate",
+        "metrics": [
+          "headcount"
+        ],
+        "columns": [],
+        "group_by": [
+          "employment_type"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "total gross by month",
+      "why": "total_gross carries the SAME exclusion as avg_net_pay so the two reconcile.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "total_gross",
+        "group_by": "month"
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "total_gross"
+        ],
+        "columns": [],
+        "group_by": [
+          "month"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "average net pay",
+      "why": "The bare curated figure. Derived AVG(net_pay) averages in unprocessed items carrying 0 and answers thousands of rupees low.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_net_pay"
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "avg_net_pay"
+        ],
+        "columns": [],
+        "group_by": [],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "average net pay and total gross by department",
+      "why": "Two metrics rendered as two columns - v2's multi-metric shape, and the reason the two curated payroll metrics share one exclusion.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "avg_net_pay",
+          "total_gross"
+        ],
+        "group_by": [
+          "department"
+        ],
+        "sort": {
+          "by": "total_gross",
+          "dir": "desc"
+        }
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "avg_net_pay",
+          "total_gross"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": {
+          "by": "total_gross",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "how many absences have there been",
+      "why": "attendance.absent_days with no breakdown.",
+      "plan": {
+        "entity": "attendance",
+        "metric": "absent_days"
+      },
+      "expect": {
+        "entity": "attendance",
+        "mode": "aggregate",
+        "metrics": [
+          "absent_days"
+        ],
+        "columns": [],
+        "group_by": [],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "attendance by status",
+      "why": "Grouping the absence count by the day's status.",
+      "plan": {
+        "entity": "attendance",
+        "metric": "absent_days",
+        "group_by": "status"
+      },
+      "expect": {
+        "entity": "attendance",
+        "mode": "aggregate",
+        "metrics": [
+          "absent_days"
+        ],
+        "columns": [],
+        "group_by": [
+          "status"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "how many late arrivals this month",
+      "why": "A period filter with no group-by at all.",
+      "plan": {
+        "entity": "attendance",
+        "metric": "late_count",
+        "filters": [
+          {
+            "field": "date",
+            "op": "period",
+            "value": "this_month"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "attendance",
+        "mode": "aggregate",
+        "metrics": [
+          "late_count"
+        ],
+        "columns": [],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "date",
+            "op": "period",
+            "token": "this_month"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "leave requests by status",
+      "why": "leave_requests counts every row on purpose - it answers 'how many requests', which is a different question from 'how much leave was taken'.",
+      "plan": {
+        "entity": "leave",
+        "metric": "leave_requests",
+        "group_by": "status"
+      },
+      "expect": {
+        "entity": "leave",
+        "mode": "aggregate",
+        "metrics": [
+          "leave_requests"
+        ],
+        "columns": [],
+        "group_by": [
+          "status"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "how many assets do we have",
+      "why": "assets.asset_count.",
+      "plan": {
+        "entity": "assets",
+        "metric": "asset_count"
+      },
+      "expect": {
+        "entity": "assets",
+        "mode": "aggregate",
+        "metrics": [
+          "asset_count"
+        ],
+        "columns": [],
+        "group_by": [],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "assets by status",
+      "why": "assets.asset_count broken down.",
+      "plan": {
+        "entity": "assets",
+        "metric": "asset_count",
+        "group_by": "status"
+      },
+      "expect": {
+        "entity": "assets",
+        "mode": "aggregate",
+        "metrics": [
+          "asset_count"
+        ],
+        "columns": [],
+        "group_by": [
+          "status"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "tasks by status",
+      "why": "work.task_count - the entity is `work` and the table is `tasks`, whose plural Laravel's queue owns.",
+      "plan": {
+        "entity": "work",
+        "metric": "task_count",
+        "group_by": "status"
+      },
+      "expect": {
+        "entity": "work",
+        "mode": "aggregate",
+        "metrics": [
+          "task_count"
+        ],
+        "columns": [],
+        "group_by": [
+          "status"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "who took more than 10 days of leave this year",
+      "why": "A HAVING on a curated span metric, grouped by person. 'more than N' on a computed number is the shape v1 had no way to express.",
+      "plan": {
+        "entity": "leave",
+        "metrics": [
+          "leave_days_taken"
+        ],
+        "group_by": [
+          "employee"
+        ],
+        "filters": [
+          {
+            "field": "start_date",
+            "op": "period",
+            "value": "this_year"
+          }
+        ],
+        "having": [
+          {
+            "metric": "leave_days_taken",
+            "op": "gt",
+            "value": 10
+          }
+        ],
+        "sort": {
+          "by": "leave_days_taken",
+          "dir": "desc"
+        }
+      },
+      "expect": {
+        "entity": "leave",
+        "mode": "aggregate",
+        "metrics": [
+          "leave_days_taken"
+        ],
+        "columns": [],
+        "group_by": [
+          "employee"
+        ],
+        "filters": [
+          {
+            "field": "start_date",
+            "op": "period",
+            "token": "this_year"
+          }
+        ],
+        "having": [
+          {
+            "metric": "leave_days_taken",
+            "op": "gt",
+            "value": 10
+          }
+        ],
+        "sort": {
+          "by": "leave_days_taken",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "show me the ten most recent joiners and their designation",
+      "why": "A row listing sorted by a COLUMN rather than a metric, with an explicit direction. Direction is never guessed on a stated sort: newest ten and oldest ten are different answers.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "designation",
+          "joining_date"
+        ],
+        "sort": {
+          "by": "joining_date",
+          "dir": "desc"
+        },
+        "limit": 10
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "designation",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [],
+        "having": [],
+        "sort": {
+          "by": "joining_date",
+          "dir": "desc"
+        },
+        "limit": 10
+      }
+    },
+    {
+      "question": "find everyone called sharma",
+      "why": "contains on a TEXT column. The executor escapes % and _; an unescaped % returns the whole table, which is the bug SearchController already guards against.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "employee_code"
+        ],
+        "filters": [
+          {
+            "field": "name",
+            "op": "contains",
+            "value": "sharma"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "employee_code"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "name",
+            "op": "contains",
+            "value": "sharma"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "which payroll lines in July 2026 paid between 50,000 and 90,000 net",
+      "why": "between on money, beside a period on a YYYY-MM dimension, in list mode.",
+      "plan": {
+        "entity": "payroll",
+        "mode": "list",
+        "columns": [
+          "employee",
+          "net_pay"
+        ],
+        "filters": [
+          {
+            "field": "net_pay",
+            "op": "between",
+            "value": [
+              50000,
+              90000
+            ]
+          },
+          {
+            "field": "month",
+            "op": "period",
+            "value": "2026-07"
+          }
+        ],
+        "sort": {
+          "by": "net_pay",
+          "dir": "desc"
+        },
+        "limit": 50
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "employee",
+          "net_pay"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "net_pay",
+            "op": "between",
+            "value": [
+              50000,
+              90000
+            ]
+          },
+          {
+            "field": "month",
+            "op": "period",
+            "token": "2026-07"
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "net_pay",
+          "dir": "desc"
+        },
+        "limit": 50
+      }
+    },
+    {
+      "question": "show me every absent or half day record",
+      "why": "in with a real set - section 1's own example, written as the descriptor list.",
+      "plan": {
+        "entity": "attendance",
+        "mode": "list",
+        "columns": [
+          "employee",
+          "attendance_date",
+          "status"
+        ],
+        "filters": [
+          {
+            "field": "status",
+            "op": "in",
+            "value": [
+              "absent",
+              "half_day"
+            ]
+          }
+        ],
+        "sort": {
+          "by": "attendance_date",
+          "dir": "desc"
+        },
+        "limit": 50
+      },
+      "expect": {
+        "entity": "attendance",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "employee",
+          "attendance_date",
+          "status"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "status",
+            "op": "in",
+            "value": [
+              "absent",
+              "half_day"
+            ]
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "attendance_date",
+          "dir": "desc"
+        },
+        "limit": 50
+      }
+    },
+    {
+      "question": "who has not left yet",
+      "why": "is_null on a column policy DOES allow - the same shape as the bank-account example in section 8, on a field section 10 does not exclude.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "joining_date"
+        ],
+        "filters": [
+          {
+            "field": "exit_date",
+            "op": "is_null"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "exit_date",
+            "op": "is_null",
+            "value": null
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "who joined before 2024",
+      "why": "A bare comparison on a date column, no period token involved.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "joining_date"
+        ],
+        "filters": [
+          {
+            "field": "joining_date",
+            "op": "lt",
+            "value": "2024-01-01"
+          }
+        ],
+        "sort": {
+          "by": "joining_date",
+          "dir": "asc"
+        }
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "joining_date",
+            "op": "lt",
+            "value": "2024-01-01"
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "joining_date",
+          "dir": "asc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "how many tasks are not done",
+      "why": "neq, and a filter on the same field the plan groups by.",
+      "plan": {
+        "entity": "work",
+        "metric": "task_count",
+        "group_by": "status",
+        "filters": [
+          {
+            "field": "status",
+            "op": "neq",
+            "value": "done"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "work",
+        "mode": "aggregate",
+        "metrics": [
+          "task_count"
+        ],
+        "columns": [],
+        "group_by": [
+          "status"
+        ],
+        "filters": [
+          {
+            "field": "status",
+            "op": "neq",
+            "value": "done"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "candidates by source",
+      "why": "A DERIVED entity with no curated metric at all. Coverage is derived and correctness is curated: a question about hiring is answerable the day the table exists, and the answer says its metric is derived.",
+      "plan": {
+        "entity": "hiring",
+        "metric": "count",
+        "group_by": "source"
+      },
+      "expect": {
+        "entity": "hiring",
+        "mode": "aggregate",
+        "metrics": [
+          "count"
+        ],
+        "columns": [],
+        "group_by": [
+          "source"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "tracked activity by classification",
+      "why": "A second derived entity, and a derived sum. sum_duration_seconds is naive by construction, which is why section 12 makes the answer say so.",
+      "plan": {
+        "entity": "activity",
+        "metrics": [
+          "count",
+          "sum_duration_seconds"
+        ],
+        "group_by": [
+          "classification"
+        ],
+        "sort": {
+          "by": "sum_duration_seconds",
+          "dir": "desc"
+        }
+      },
+      "expect": {
+        "entity": "activity",
+        "mode": "aggregate",
+        "metrics": [
+          "count",
+          "sum_duration_seconds"
+        ],
+        "columns": [],
+        "group_by": [
+          "classification"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": {
+          "by": "sum_duration_seconds",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "headcount by department, largest first, all of it",
+      "why": "limit 0 means 'use the default', NOT 'one row'. An explicit 0 clamped to 1 is what made this very question return a single arbitrary department and read like the org had one.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount",
+        "group_by": "department",
+        "sort": "metric_desc",
+        "limit": 0
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "aggregate",
+        "metrics": [
+          "headcount"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": {
+          "by": "headcount",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    }
   ],
   "refused": [
-    { "question": "what is the weather in Mumbai",  "plan": {"error":"Weather is not HR data."} },
-    { "question": "headcount by nationality",       "plan": {"entity":"employees","metric":"headcount","group_by":"nationality"} },
-    { "question": "everyone's PAN number",          "plan": {"entity":"employees","metric":"pan"} },
-    { "question": "average bonus percentage",       "plan": {"entity":"payroll","metric":"avg_bonus_percentage"} },
-    { "question": "net pay by blood group",         "plan": {"entity":"payroll","metric":"avg_net_pay","group_by":"blood_group"} },
-    { "question": "attendance for a made-up thing", "plan": {"entity":"telepathy","metric":"headcount"} },
-    { "question": "net pay on the attendance table","plan": {"entity":"attendance","metric":"avg_net_pay"} },
-    { "question": "employees filtered by salary band","plan": {"entity":"employees","metric":"headcount","filters":{"salary_band":"senior"}} }
+    {
+      "question": "everyone's PAN number",
+      "spec": "8 row 9",
+      "category": "policy",
+      "rule": "excluded_pan",
+      "why": "Section 10. The column EXISTS and we will not expose it. Saying 'no such column' would be a lie that sends somebody looking for the right spelling.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "pan"
+        ]
+      },
+      "names": [
+        "pan"
+      ]
+    },
+    {
+      "question": "employees with no bank account",
+      "spec": "8 row 5 vs 10",
+      "category": "policy",
+      "rule": "excluded_bank_account",
+      "why": "Section 8 lists this as an accepted example and section 10 excludes bank details from every table at every role. Section 10 wins, and this case records that on purpose: it is the one place the spec contradicts itself, and resolving it silently in either direction is how a bank column reaches an answer.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name"
+        ],
+        "filters": [
+          {
+            "field": "bank_account",
+            "op": "is_null"
+          }
+        ]
+      },
+      "names": [
+        "bank_account"
+      ]
+    },
+    {
+      "question": "show me the password hashes",
+      "category": "policy",
+      "rule": "excluded_password",
+      "why": "Section 10, and the reason the exclusion is a global pattern rather than per-entity vigilance: it cannot be forgotten on entity 81.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "password"
+        ]
+      },
+      "names": [
+        "password"
+      ]
+    },
+    {
+      "question": "headcount by nationality",
+      "spec": "8 row 10",
+      "category": "not_in_schema",
+      "rule": "unknown_dimension",
+      "why": "Section 14's second category. Nothing stores nationality, so there is no honest answer and no near match worth guessing at.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount",
+        "group_by": "nationality"
+      },
+      "names": [
+        "nationality"
+      ]
+    },
+    {
+      "question": "average bonus percentage",
+      "category": "not_in_schema",
+      "rule": "unknown_metric",
+      "why": "performance_bonus is a column and a percentage of it is not. A nearest match here answers a different question with the same confidence.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_bonus_percentage"
+      },
+      "names": [
+        "avg_bonus_percentage"
+      ]
+    },
+    {
+      "question": "net pay by blood group",
+      "category": "not_in_schema",
+      "rule": "unknown_dimension_on_payroll",
+      "why": "A real metric grouped by a dimension that does not exist.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_net_pay",
+        "group_by": "blood_group"
+      },
+      "names": [
+        "blood_group"
+      ]
+    },
+    {
+      "question": "employees in the senior salary band",
+      "category": "not_in_schema",
+      "rule": "unknown_filter_field",
+      "why": "A flat v1-shaped filter naming a field nothing has. Refused BY NAME rather than dropped - dropping it is defect 2 wearing a different hat.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount",
+        "filters": {
+          "salary_band": "senior"
+        }
+      },
+      "names": [
+        "salary_band"
+      ]
+    },
+    {
+      "question": "attendance for a made-up thing",
+      "category": "not_in_schema",
+      "rule": "unknown_entity",
+      "why": "No such entity.",
+      "plan": {
+        "entity": "telepathy",
+        "metric": "headcount"
+      },
+      "names": [
+        "telepathy"
+      ]
+    },
+    {
+      "question": "what is the weather in Mumbai",
+      "category": "not_in_schema",
+      "rule": "model_refusal_passthrough",
+      "why": "The model's own refusal, passed through verbatim. Its sentence is what the person reads.",
+      "plan": {
+        "error": "Weather is not HR data."
+      },
+      "names": [
+        "weather"
+      ]
+    },
+    {
+      "question": "headcount and average net pay by department",
+      "spec": "8 row 3",
+      "category": "grammar",
+      "rule": "metric_from_wrong_entity",
+      "why": "Section 8's two-entity row. One plan reads one entity: avg_net_pay is real, and it is not on employees. Merging the two would attribute a payroll figure to a headcount query.",
+      "plan": {
+        "entity": "employees",
+        "metrics": [
+          "headcount",
+          "avg_net_pay"
+        ],
+        "group_by": [
+          "department"
+        ]
+      },
+      "names": [
+        "avg_net_pay"
+      ]
+    },
+    {
+      "question": "net pay on the attendance table",
+      "category": "grammar",
+      "rule": "metric_from_wrong_entity_2",
+      "why": "Section 5.1. Nearest-match coercion here is how a payroll figure gets attributed to attendance data.",
+      "plan": {
+        "entity": "attendance",
+        "metric": "avg_net_pay"
+      },
+      "names": [
+        "avg_net_pay"
+      ]
+    },
+    {
+      "question": "payroll lines whose net pay contains 5",
+      "category": "grammar",
+      "rule": "contains_on_a_number",
+      "why": "Section 5.4. contains is a LIKE, and a LIKE on a decimal is not a question anybody asked - it is a text search that happens to run.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_net_pay",
+        "filters": [
+          {
+            "field": "net_pay",
+            "op": "contains",
+            "value": "5"
+          }
+        ]
+      },
+      "names": [
+        "net_pay",
+        "contains"
+      ]
+    },
+    {
+      "question": "net pay between fifty thousand and nothing",
+      "category": "grammar",
+      "rule": "between_one_element",
+      "why": "Section 5.5. One bound is not a band. Reading the missing end as open would widen the question without saying so.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_net_pay",
+        "filters": [
+          {
+            "field": "net_pay",
+            "op": "between",
+            "value": [
+              50000
+            ]
+          }
+        ]
+      },
+      "names": [
+        "net_pay",
+        "between"
+      ]
+    },
+    {
+      "question": "attendance for these fifty-one statuses",
+      "category": "grammar",
+      "rule": "in_over_fifty",
+      "why": "Section 2 bounds an in list at 50 so a plan cannot smuggle a table through it.",
+      "plan": {
+        "entity": "attendance",
+        "mode": "list",
+        "columns": [
+          "employee",
+          "status"
+        ],
+        "filters": [
+          {
+            "field": "status",
+            "op": "in",
+            "value": [
+              "status_00",
+              "status_01",
+              "status_02",
+              "status_03",
+              "status_04",
+              "status_05",
+              "status_06",
+              "status_07",
+              "status_08",
+              "status_09",
+              "status_10",
+              "status_11",
+              "status_12",
+              "status_13",
+              "status_14",
+              "status_15",
+              "status_16",
+              "status_17",
+              "status_18",
+              "status_19",
+              "status_20",
+              "status_21",
+              "status_22",
+              "status_23",
+              "status_24",
+              "status_25",
+              "status_26",
+              "status_27",
+              "status_28",
+              "status_29",
+              "status_30",
+              "status_31",
+              "status_32",
+              "status_33",
+              "status_34",
+              "status_35",
+              "status_36",
+              "status_37",
+              "status_38",
+              "status_39",
+              "status_40",
+              "status_41",
+              "status_42",
+              "status_43",
+              "status_44",
+              "status_45",
+              "status_46",
+              "status_47",
+              "status_48",
+              "status_49",
+              "status_50"
+            ]
+          }
+        ]
+      },
+      "names": [
+        "status",
+        "51"
+      ]
+    },
+    {
+      "question": "who was absent more than 3 days, ranked by lateness",
+      "category": "grammar",
+      "rule": "having_unselected_metric",
+      "why": "Section 5.6. late_count is a real metric this plan does not compute, so there is no value to compare it against. Told apart from a metric that does not exist at all, because this one is fixable by adding it to metrics.",
+      "plan": {
+        "entity": "attendance",
+        "metrics": [
+          "absent_days"
+        ],
+        "group_by": [
+          "employee"
+        ],
+        "having": [
+          {
+            "metric": "late_count",
+            "op": "gt",
+            "value": 3
+          }
+        ]
+      },
+      "names": [
+        "late_count"
+      ]
+    },
+    {
+      "question": "headcount by department sorted by salary",
+      "category": "grammar",
+      "rule": "sort_names_nothing",
+      "why": "Section 5.7. Sorting by something the plan does not compute is either an error or a second query nobody asked for.",
+      "plan": {
+        "entity": "employees",
+        "metric": "headcount",
+        "group_by": "department",
+        "sort": {
+          "by": "salary",
+          "dir": "desc"
+        }
+      },
+      "names": [
+        "salary"
+      ]
+    },
+    {
+      "question": "list employees grouped by department",
+      "category": "grammar",
+      "rule": "list_mode_with_group_by",
+      "why": "Section 5.2. A row listing has no aggregate to group, so a group_by on one is a plan whose two halves mean different things.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name"
+        ],
+        "group_by": [
+          "department"
+        ]
+      },
+      "names": [
+        "department"
+      ]
+    },
+    {
+      "question": "who joined since Diwali",
+      "category": "grammar",
+      "rule": "unresolvable_period",
+      "why": "Section 3. An unrecognised token is a refusal, never a guess. A wrong range does not degrade an answer - it answers a different question with the same confidence.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "joining_date"
+        ],
+        "filters": [
+          {
+            "field": "joining_date",
+            "op": "period",
+            "value": "since_diwali"
+          }
+        ]
+      },
+      "names": [
+        "since_diwali"
+      ]
+    },
+    {
+      "question": "average net pay for the period 90000",
+      "category": "grammar",
+      "rule": "period_on_a_money_field",
+      "why": "Section 5.4 the other way round: a period covers dates and net_pay holds rupees.",
+      "plan": {
+        "entity": "payroll",
+        "metric": "avg_net_pay",
+        "filters": [
+          {
+            "field": "net_pay",
+            "op": "period",
+            "value": "this_year"
+          }
+        ]
+      },
+      "names": [
+        "net_pay"
+      ]
+    },
+    {
+      "question": "average net pay by department, month and employee",
+      "category": "grammar",
+      "rule": "too_many_group_by",
+      "why": "Section 5.3. Two dimensions is the ceiling; a third turns a readable table into a cross-product nobody reads.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "avg_net_pay"
+        ],
+        "group_by": [
+          "department",
+          "month",
+          "employee"
+        ]
+      },
+      "names": [
+        "at most 2"
+      ]
+    },
+    {
+      "question": "show every payroll figure at once",
+      "category": "grammar",
+      "rule": "too_many_metrics",
+      "why": "Section 5.3. Four metrics is the ceiling.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "avg_net_pay",
+          "total_gross",
+          "sum_basic",
+          "sum_hra",
+          "sum_tds"
+        ]
+      },
+      "names": [
+        "at most 4"
+      ]
+    },
+    {
+      "question": "average net pay per employee name",
+      "category": "grammar",
+      "rule": "aggregate_with_columns",
+      "why": "Section 5.2 the other way: an aggregate cannot also render raw list columns. Group by them, or ask for a row listing.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "avg_net_pay"
+        ],
+        "columns": [
+          "employee"
+        ]
+      },
+      "names": [
+        "employee"
+      ]
+    },
+    {
+      "question": "employees whose joining date is roughly 2026",
+      "category": "grammar",
+      "rule": "unhonourable_filter_shape",
+      "why": "The nested shape from DEFECT 2, with an inner key that is NOT an operator. This is the third path the validator must not have: not honoured, not dropped - refused naming both the field and the word.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "joining_date"
+        ],
+        "filters": {
+          "joining_date": {
+            "around": "2026"
+          }
+        }
+      },
+      "names": [
+        "joining_date",
+        "around"
+      ]
+    }
   ]
 }

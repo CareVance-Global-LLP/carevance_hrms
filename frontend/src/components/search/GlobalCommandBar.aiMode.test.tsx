@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalCommandBar from './GlobalCommandBar';
+import { AI_EXAMPLE_QUESTIONS } from './AiAnswerTable';
 import { searchAskApi } from '@/services/api';
 
 vi.mock('@/services/api', () => ({
@@ -28,7 +29,10 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 const answer = {
-  plan: { entity: 'payroll', metric: 'avg_net_pay', group_by: 'department', filters: {}, sort: null, limit: 20 },
+  plan: {
+    entity: 'payroll', mode: 'aggregate', metrics: ['avg_net_pay'], columns: [],
+    group_by: ['department'], filters: [], having: [], sort: null, limit: 20,
+  },
   columns: [
     { key: 'department', label: 'Department', type: 'text' as const },
     { key: 'avg_net_pay', label: 'Avg net pay', type: 'money' as const },
@@ -95,5 +99,31 @@ describe('GlobalCommandBar AI mode', () => {
     await userEvent.type(screen.getByRole('combobox'), 'headcount by nationality{Enter}');
 
     await waitFor(() => expect(screen.getByText(/nationality is not stored/i)).toBeInTheDocument());
+  });
+
+  it('offers the example questions the moment AI mode opens', async () => {
+    setup();
+
+    await userEvent.click(screen.getByRole('button', { name: /ai mode/i }));
+
+    // Not "No records match": nothing has been asked yet, and the two states
+    // read completely differently.
+    expect(screen.queryByText(/no records match/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: AI_EXAMPLE_QUESTIONS[0] })).toBeInTheDocument();
+  });
+
+  it('asks the example that was clicked and shows it in the field', async () => {
+    (searchAskApi.ask as ReturnType<typeof vi.fn>).mockResolvedValue({ data: answer });
+    (searchAskApi.summary as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}));
+    setup();
+
+    await userEvent.click(screen.getByRole('button', { name: /ai mode/i }));
+    await userEvent.click(screen.getByRole('button', { name: AI_EXAMPLE_QUESTIONS[1] }));
+
+    await waitFor(() => expect(searchAskApi.ask).toHaveBeenCalledWith(AI_EXAMPLE_QUESTIONS[1]));
+    // The question stays in the input, or the answer sits under a blank prompt
+    // with nothing on screen saying what was asked.
+    expect(screen.getByRole('combobox')).toHaveValue(AI_EXAMPLE_QUESTIONS[1]);
+    await waitFor(() => expect(screen.getByText('₹91,575.93')).toBeInTheDocument());
   });
 });
