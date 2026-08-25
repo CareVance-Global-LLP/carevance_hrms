@@ -1,3 +1,16 @@
+# ⚠️  NOT WHAT PRODUCTION RUNS.
+#
+# Lightsail is a NATIVE deploy — nginx + PHP-FPM + PostgreSQL on the host, with
+# four systemd units. Nothing here is running. See:
+#   deploy/lightsail/SYSTEMD-NATIVE.md   the services, ports and cron
+#   deploy/lightsail/nginx-native.conf   the nginx blocks that actually serve
+#
+# Kept as reference for a future containerised deployment, and because the
+# instance is 2 GB: eight containers do not fit where four PHP daemons cost
+# 42 MB. Do not edit this expecting production to change — that mistake cost a
+# day, twice, when a Reverb service and an /updates/ rule were added here and
+# silently did nothing.
+
 services:
   db:
     image: postgres:16-alpine
