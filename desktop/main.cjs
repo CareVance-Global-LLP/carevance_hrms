@@ -20,7 +20,7 @@ if (fs.existsSync(frontendEnvPath)) {
   console.log('[Desktop] No .env file found, using existing environment variables');
 }
 
-const { app, BrowserWindow, Notification, desktopCapturer, globalShortcut, ipcMain, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
+const { app, BrowserWindow, Notification, desktopCapturer, globalShortcut, ipcMain, nativeImage, nativeTheme, powerMonitor, screen, shell, safeStorage, systemPreferences, Tray, Menu, net } = require('electron');
 const crypto = require('crypto');
 const os = require('os');
 const { execSync } = require('child_process');
@@ -34,6 +34,7 @@ const {
   onIdlePopupAction,
   focusPopup,
 } = require('./idle-popup.cjs');
+const quickReplyPopup = require('./quick-reply-popup.cjs');
 const {
   getBrowserTrackingManagerUrl,
   getBrowserTrackingOptionsUrl,
@@ -2012,6 +2013,61 @@ ipcMain.handle('desktop:hide-idle-popup', async () => {
  * exactly as it would to an in-app click. Registered once at startup rather
  * than per-window, because the popup outlives any single renderer load.
  */
+/*
+ * The quick-reply route.
+ *
+ * The main process deliberately holds no session and no API client, so it
+ * cannot send the message itself. It hands the text to the renderer — which
+ * already has the bearer token, the axios instance and every interceptor that
+ * goes with them — and waits for a verdict. A second send path living here,
+ * with its own copy of auth, is precisely what this must not become.
+ *
+ * Each reply carries a requestId because the box stays open on failure: two
+ * attempts can be in flight, and matching results to attempts by arrival order
+ * would report the wrong one.
+ */
+let quickReplyRequestSeq = 0;
+
+const forwardQuickReply = (reply) => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    // The tray keeps the window alive, so this is rare — but a reply that
+    // silently vanished would be worse than one that says it failed.
+    quickReplyPopup.reportQuickReplyResult({ ok: false, error: 'CareVance is not running' });
+    return;
+  }
+
+  quickReplyRequestSeq += 1;
+  mainWindow.webContents.send('desktop:quick-reply-send', {
+    requestId: quickReplyRequestSeq,
+    threadType: reply.threadType,
+    threadId: reply.threadId,
+    text: reply.text,
+  });
+};
+
+quickReplyPopup.onQuickReplySubmit((reply) => forwardQuickReply(reply));
+
+// "Open chat" — the way out of the box for somebody who wanted the thread
+// rather than a one-line reply. On Windows the toast click is the only
+// interaction the OS gives us, so this is where that choice lives.
+quickReplyPopup.onQuickReplyOpen((state) => {
+  revealMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop:notification-clicked', {
+      id: state.id,
+      route: state.route,
+      type: state.type,
+    });
+  }
+});
+
+ipcMain.on('desktop:quick-reply-result', (_event, result = {}) => {
+  quickReplyPopup.reportQuickReplyResult({
+    ok: Boolean(result.ok),
+    error: result.error ? String(result.error) : null,
+  });
+});
+
 onIdlePopupAction((payload) => {
   if (payload?.action === 'still-working' || payload?.action === 'dismiss') {
     // Nothing to decide: the click itself was real input, so the OS idle clock
@@ -2100,13 +2156,72 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
   const route = String(payload.route || '').trim();
   const type = String(payload.type || '').trim();
 
+  /*
+   * The attachment preview, when the renderer sent one.
+   *
+   * Arrives as a data: URL because this runs outside the page — an https URL
+   * would need the bearer token the main process does not hold, and a blob:
+   * URL belongs to a context that does not exist here.
+   *
+   * Guarded rather than trusted: a malformed or oversized payload must cost
+   * the picture, never the notification. An empty NativeImage is discarded so
+   * Windows falls back to the app icon instead of rendering a blank square.
+   */
+  let image;
+  const rawImage = typeof payload.image === 'string' ? payload.image : '';
+  if (rawImage.startsWith('data:image/')) {
+    try {
+      const candidate = nativeImage.createFromDataURL(rawImage);
+      if (candidate && !candidate.isEmpty()) {
+        image = candidate;
+      }
+    } catch {
+      image = undefined;
+    }
+  }
+
+  const replyOptions = payload.reply && process.platform === 'darwin'
+    // darwin only — see the platform note on the click handler below.
+    ? { hasReply: true, replyPlaceholder: 'Reply…' }
+    : {};
+
   const notification = new Notification({
     title,
     body,
     silent: false,
+    ...(image ? { icon: image } : {}),
+    ...replyOptions,
   });
 
+  /*
+   * Replying without opening the app.
+   *
+   * `reply` is present only for chat notifications, and only then does the
+   * click open the reply box instead of raising the window. Everything else
+   * keeps the behaviour it had: a leave approval has nothing to reply to.
+   *
+   * The box is what a Windows toast cannot be. Electron's inline reply
+   * (`hasReply`) and toast action buttons are both `@platform darwin`, so on
+   * win32 there is no way to put either a text field or a button on the
+   * notification itself — the click is the only interaction the OS offers, and
+   * this spends it on the thing people actually want.
+   */
+  const reply = payload.reply && typeof payload.reply === 'object' ? payload.reply : null;
+
   notification.on('click', () => {
+    if (reply && reply.threadId && reply.threadType) {
+      quickReplyPopup.showQuickReply({
+        threadType: reply.threadType,
+        threadId: Number(reply.threadId),
+        title: String(reply.title || title),
+        preview: String(body || ''),
+        route,
+        id,
+        type,
+      });
+      return;
+    }
+
     revealMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('desktop:notification-clicked', {
@@ -2116,6 +2231,25 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
       });
     }
   });
+
+  /*
+   * macOS gets the real thing.
+   *
+   * Where the OS supports a text field in the notification, use it — the popup
+   * is a workaround for platforms that do not, not a preference. Both paths
+   * end at the same handler, so there is one send route rather than two.
+   */
+  if (reply && process.platform === 'darwin') {
+    notification.on('reply', (_event, replyText) => {
+      const text = String(replyText || '').trim();
+      if (!text) return;
+      forwardQuickReply({
+        threadType: reply.threadType,
+        threadId: Number(reply.threadId),
+        text,
+      });
+    });
+  }
 
   notification.show();
   return true;
@@ -2751,6 +2885,7 @@ app.on('before-quit', () => {
   // A live always-on-top window counts as an open window, so leaving it would
   // hold the app up on quit with nothing visible but the popup itself.
   destroyIdlePopup();
+  quickReplyPopup.destroyQuickReply();
 
   stopForegroundWindowWatcher();
   if (browserTrackingBridge) {

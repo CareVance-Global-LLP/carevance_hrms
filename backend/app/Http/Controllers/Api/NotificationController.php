@@ -73,11 +73,63 @@ $query = AppNotification::with(['sender:id,name,email', 'poll' => function ($que
                         ->orWhere('message', 'like', "%{$term}%");
                 });
             })
-            ->orderByDesc('created_at');
+            ;
+
+        // The badge is the TOTAL unread, always — never "unread since the
+        // watermark". Counting off the since_id-filtered query would collapse
+        // the badge to the size of the gap, so a user with 40 unread who
+        // reconnects and finds one new notification would see "1".
+        $unreadCount = (int) (clone $query)->where('is_read', false)->count();
+
+        $sinceId = $request->filled('since_id') ? (int) $request->input('since_id') : null;
+
+        if ($sinceId === null) {
+            return response()->json([
+                // id breaks the tie. created_at alone is not unique — a publish
+                // to one person writes several rows in the same second, and an
+                // announcement writes hundreds — so the order of anything
+                // sharing a timestamp was whatever the database felt like
+                // returning, and could differ between two loads of the same
+                // list. Descending id is insertion order reversed, which is
+                // what "newest first" already meant.
+                'data' => $query->orderByDesc('created_at')->orderByDesc('id')->limit($limit)->get(),
+                'unread_count' => $unreadCount,
+            ]);
+        }
+
+        /*
+         * Catch-up mode: the client reconnected and wants the exact gap.
+         *
+         * Ordered by id ASCENDING, not created_at descending, for two reasons.
+         * The client advances a watermark, and it can only do that safely from
+         * a monotonic column it can take the last value of — created_at is not
+         * unique and two notifications written in the same second would make
+         * the watermark ambiguous. Ascending also means a truncated page
+         * leaves the client positioned to ask for the rest.
+         *
+         * Fetching limit + 1 answers "is there more" without a second count
+         * query. It matters: a client returning from a long disconnect can
+         * have a gap larger than the 100-row cap, and silently truncating it
+         * would lose notifications PERMANENTLY — a worse outcome than the
+         * delay this whole feature exists to remove. The client drains until
+         * has_more is false.
+         */
+        $rows = $query->where('id', '>', $sinceId)
+            ->orderBy('id')
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $limit;
+        $rows = $rows->take($limit)->values();
 
         return response()->json([
-            'data' => $query->limit($limit)->get(),
-            'unread_count' => (int) (clone $query)->where('is_read', false)->count(),
+            'data' => $rows,
+            'unread_count' => $unreadCount,
+            'has_more' => $hasMore,
+            // Where the client should set its watermark. Echoing back the
+            // caller's own since_id on an empty page keeps it from rewinding
+            // to zero and re-fetching everything on the next reconnect.
+            'latest_id' => (int) ($rows->last()->id ?? $sinceId),
         ]);
     }
 

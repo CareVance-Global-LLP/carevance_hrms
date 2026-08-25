@@ -96,6 +96,25 @@ return [
             'report' => false,
         ],
 
+        /*
+         * In-flight upload pieces.
+         *
+         * Deliberately ALWAYS local, with no S3 branch like its neighbours.
+         * Assembly reads the pieces back as streams from real filesystem paths
+         * to concatenate them, which a remote disk cannot offer; the finished
+         * file is then streamed onto `chat_attachments` and honours whatever
+         * that disk is configured to be.
+         *
+         * Contents are transient by design and swept on a schedule — see
+         * ChunkedUploadService::purgeExpired().
+         */
+        'upload_chunks' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/upload_chunks'),
+            'throw' => false,
+            'report' => false,
+        ],
+
         'employee_documents' => env('AWS_BUCKET') ? [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

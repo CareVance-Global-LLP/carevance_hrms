@@ -2,6 +2,7 @@
 
 namespace App\Services\Auth;
 
+use App\Events\SessionRevoked;
 use App\Models\Organization;
 use App\Models\ScimToken;
 use App\Models\User;
@@ -193,6 +194,17 @@ class ScimProvisioningService
                 ->where('tokenable_id', $user->id)
                 ->delete();
         });
+
+        // Revoking the token stops the next REQUEST. It does not stop a socket
+        // that is already open — channel authorization happens once, at
+        // subscribe time, so a leaver with a tab still open would keep
+        // receiving notifications in real time long after their access ended.
+        // That is the same failure this method's tokens-not-flags rule exists
+        // to prevent, so the teardown belongs here rather than in a follow-up.
+        //
+        // Dispatched AFTER the transaction commits: signalling from inside it
+        // would sign somebody out on a write that then rolled back.
+        SessionRevoked::dispatch((int) $user->id, SessionRevoked::REASON_DEACTIVATED);
 
         return $user->fresh();
     }

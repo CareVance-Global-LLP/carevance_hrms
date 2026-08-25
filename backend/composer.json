@@ -11,6 +11,7 @@
         "google/apiclient": "^2.19",
         "guzzlehttp/guzzle": "^7.15",
         "laravel/framework": "^12.0",
+        "laravel/reverb": "^1.11",
         "laravel/tinker": "^2.10.1",
         "onelogin/php-saml": "^4.3",
         "phpoffice/phpspreadsheet": "^3.0",
@@ -50,7 +51,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74,#67e8f9,#a3e635\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" \"php artisan reverb:start\" \"php artisan schedule:work\" --names=server,queue,logs,vite,reverb,cron --kill-others"
         ],
         "test": [
             "@php artisan config:clear --ansi",

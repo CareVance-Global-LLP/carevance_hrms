@@ -273,6 +273,20 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute((int) env('RATE_LIMIT_CHAT_MESSAGES_PER_MINUTE', 60))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);
 
+        /*
+         * Upload chunks are legitimately bursty.
+         *
+         * A 200 MB attachment at a 5 MB chunk size is ~40 requests back to
+         * back, and a slower link negotiates smaller pieces and therefore MORE
+         * of them — a 2 MB dev limit turns the same file into ~125. Applying an
+         * ordinary write throttle here would cut off exactly the large uploads
+         * this endpoint exists to make possible, and the failure would look
+         * like a network fault rather than a policy.
+         */
+        RateLimiter::for('uploads.chunks', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_UPLOAD_CHUNKS_PER_MINUTE', 600))->by((string) optional($request->user())->getAuthIdentifier()),
+        ]);
+
         RateLimiter::for('notifications.publish', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_NOTIFICATION_PUBLISH_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);

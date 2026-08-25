@@ -34,6 +34,10 @@ class ListNotificationsRequest extends ApiFormRequest
             'exclude_types.*' => 'string|max:50',
             'q' => 'nullable|string|max:255',
             'unread_only' => 'nullable|boolean',
+            // Catch-up watermark. Present only when a client is recovering the
+            // gap after a dropped real-time connection; absent on the ordinary
+            // list request, which keeps its newest-first ordering unchanged.
+            'since_id' => 'nullable|integer|min:0',
         ];
     }
 }

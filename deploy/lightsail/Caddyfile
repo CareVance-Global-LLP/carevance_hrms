@@ -35,6 +35,26 @@
 		}
 	}
 
+	# The WebSocket endpoint for real-time notifications.
+	#
+	# /app/* is the Pusher protocol's client-facing path, not a name we chose,
+	# which is why it sits at the root rather than under /api. Caddy upgrades
+	# and proxies WebSockets transparently, so this needs no special directive
+	# — and because Caddy already terminates TLS for this domain, clients get
+	# wss:// with no certificate work of its own.
+	#
+	# The read timeout must stay long. A notification socket is idle by nature
+	# — that is the point of it — and a short timeout would cut healthy
+	# connections and produce a reconnect loop that looks like a client bug.
+	handle /app/* {
+		reverse_proxy reverb:8080 {
+			transport http {
+				read_timeout 3600s
+				write_timeout 3600s
+			}
+		}
+	}
+
 	# Everything else is the React app, served by its nginx container unchanged.
 	handle {
 		reverse_proxy frontend:80

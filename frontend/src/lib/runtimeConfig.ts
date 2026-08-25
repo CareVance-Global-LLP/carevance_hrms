@@ -16,6 +16,10 @@ type AppRuntimeConfig = {
   VITE_IDLE_GUARD_INTERVAL_MS?: string;
   VITE_PAYROLL_ENABLED?: string;
   VITE_DEV_MODE_NAVIGATION?: string;
+  VITE_REVERB_APP_KEY?: string;
+  VITE_REVERB_HOST?: string;
+  VITE_REVERB_PORT?: string;
+  VITE_REVERB_SCHEME?: string;
 };
 
 const runtimeConfig: AppRuntimeConfig =
@@ -91,6 +95,49 @@ const resolveDefaultApiUrl = () => {
 export const apiUrl = resolveConfigValue(runtimeConfig.VITE_API_URL, import.meta.env.VITE_API_URL) || resolveDefaultApiUrl();
 
 export const apiBaseUrl = apiUrl.replace(/\/api\/?$/, '');
+
+/*
+ * Real-time transport (Reverb).
+ *
+ * Resolved the same way as everything else here, so one build serves every
+ * environment and the deployed container injects values through
+ * window.__APP_CONFIG__ rather than needing a rebuild.
+ *
+ * The app key is the gate. When it is absent the client does not attempt a
+ * socket at all and stays on its polling path — which is what makes a local
+ * checkout with no `php artisan reverb:start` behave exactly as it did before
+ * real-time existed, rather than spending every page load retrying a
+ * connection that was never going to succeed. It is a public identifier, not a
+ * secret; the secret stays on the server and signs the auth response.
+ */
+export const reverbAppKey = resolveConfigValue(
+  runtimeConfig.VITE_REVERB_APP_KEY,
+  import.meta.env.VITE_REVERB_APP_KEY
+);
+
+const isLoopbackHost = () =>
+  typeof window !== 'undefined' &&
+  ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+export const reverbHost =
+  resolveConfigValue(runtimeConfig.VITE_REVERB_HOST, import.meta.env.VITE_REVERB_HOST) ||
+  (typeof window !== 'undefined' ? window.location.hostname : 'localhost');
+
+export const reverbScheme =
+  resolveConfigValue(runtimeConfig.VITE_REVERB_SCHEME, import.meta.env.VITE_REVERB_SCHEME) ||
+  (isLoopbackHost() ? 'http' : 'https');
+
+// Reverb's own default is 8080 and that is what `reverb:start` binds locally.
+// Deployed, the socket comes through Caddy on 443 alongside everything else,
+// which is also why wss needs no certificate work of its own.
+export const reverbPort = resolveNumericConfigValue(
+  runtimeConfig.VITE_REVERB_PORT,
+  import.meta.env.VITE_REVERB_PORT,
+  isLoopbackHost() ? 8080 : 443,
+  1
+);
+
+export const realtimeEnabled = reverbAppKey !== '';
 
 export const webAppUrl =
   resolveConfigValue(runtimeConfig.VITE_WEB_APP_URL, import.meta.env.VITE_WEB_APP_URL) ||

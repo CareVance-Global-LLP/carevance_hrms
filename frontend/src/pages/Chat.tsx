@@ -4,6 +4,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatDateTime } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { chatApi } from '@/services/api';
+import {
+  getUploadLimits,
+  uploadFileInChunks,
+  UploadCancelledError,
+  type UploadLimits,
+  type UploadProgress,
+} from '@/lib/chunkedUpload';
+import { attachmentKey } from '@/components/chat/MessageComposer';
+import { reportSilentError } from '@/lib/reportSilentError';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import MessageArea from '@/components/chat/MessageArea';
@@ -25,11 +34,29 @@ type ImageViewerState = {
 
 const getThreadKey = (thread: ThreadSelection) => (thread ? `${thread.type}:${thread.id}` : '');
 
+/**
+ * Fallback ceiling, used only until the server states its own.
+ *
+ * This number used to be the whole story, and it was a lie: PHP discarded any
+ * body over upload_max_filesize before Laravel ran — 2 MB on a dev box, 10 MB
+ * in production — so a 50 MB file was accepted by this check, sent, and then
+ * reported back as "no attachment". The real limits now come from
+ * `/uploads/limits`, and anything above the server's chunk size goes up in
+ * pieces instead of in one request.
+ */
 const MAX_CHAT_ATTACHMENT_BYTES = 200 * 1024 * 1024;
 
 const isSameThread = (left: ThreadSelection, right: ThreadSelection) => (
   left?.type === right?.type && left?.id === right?.id
 );
+
+/** Sizes in the units people actually think in, for limits and progress. */
+const formatFileSize = (bytes: number): string => {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+};
 
 const isGroupMessage = (message: ChatFeedMessage): message is ChatGroupMessage => 'group_id' in message;
 const getInlineAttachmentKey = (message: ChatFeedMessage) => `${isGroupMessage(message) ? 'group' : 'direct'}:${message.id}`;
@@ -50,6 +77,14 @@ export default function Chat() {
   const [typingUsers, setTypingUsers] = useState<ChatTypingUser[]>([]);
   const [messageText, setMessageText] = useState('');
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  // What this server actually accepts. Asked once; until it answers, the
+  // fallback ceiling above applies.
+  const [uploadLimits, setUploadLimits] = useState<UploadLimits | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, UploadProgress>>({});
+  const [isSending, setIsSending] = useState(false);
+  // Lets the composer's X button actually stop a transfer rather than just
+  // hiding it while it carries on to the server.
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounterRef = useRef(0);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
@@ -239,6 +274,36 @@ export default function Chat() {
     loadThreads();
     const interval = setInterval(loadThreads, 10000);
     return () => clearInterval(interval);
+  }, []);
+
+  /*
+   * Ask the server what it can take, once.
+   *
+   * Until this answers, the fallback ceiling applies and nothing is chunked —
+   * which is the old behaviour, so a failure here degrades to what the product
+   * did before rather than blocking attachments entirely.
+   */
+  useEffect(() => {
+    let active = true;
+
+    void getUploadLimits()
+      .then((limits) => {
+        if (active) setUploadLimits(limits);
+      })
+      .catch((error) => {
+        reportSilentError('Chat: could not read upload limits; falling back to single-request uploads', error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // An upload must not outlive the screen that started it.
+  useEffect(() => {
+    return () => {
+      uploadAbortRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -492,10 +557,14 @@ export default function Chat() {
   const applyAttachmentFiles = (nextFiles: FileList | null) => {
     if (!nextFiles || nextFiles.length === 0) return;
 
+    const ceiling = uploadLimits?.maxUploadBytes || MAX_CHAT_ATTACHMENT_BYTES;
+
     const valid: File[] = [];
     for (const file of Array.from(nextFiles)) {
-      if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
-        setError(`"${file.name}" exceeds the 200 MB limit and was skipped.`);
+      if (file.size > ceiling) {
+        // Names the real ceiling rather than a hardcoded one, so the message
+        // cannot disagree with what the server will actually accept.
+        setError(`"${file.name}" is ${formatFileSize(file.size)}, over the ${formatFileSize(ceiling)} limit. It was skipped.`);
         continue;
       }
       valid.push(file);
@@ -531,8 +600,9 @@ export default function Chat() {
     const pastedFile = imageItem.getAsFile();
     if (!pastedFile) return;
     event.preventDefault();
-    if (pastedFile.size > MAX_CHAT_ATTACHMENT_BYTES) {
-      setError('Pasted image exceeds the 200 MB limit.');
+    const pasteCeiling = uploadLimits?.maxUploadBytes || MAX_CHAT_ATTACHMENT_BYTES;
+    if (pastedFile.size > pasteCeiling) {
+      setError(`Pasted image is ${formatFileSize(pastedFile.size)}, over the ${formatFileSize(pasteCeiling)} limit.`);
       return;
     }
     setAttachmentFiles((prev) => [...prev, pastedFile!]);
@@ -581,10 +651,16 @@ export default function Chat() {
     e.preventDefault();
     setError('');
     if (!selectedThread || (!messageText.trim() && attachmentFiles.length === 0)) return;
+    // A second send while a large upload is in flight would start the same
+    // files again alongside the first attempt.
+    if (isSending) return;
 
     const body = messageText.trim();
     const filesToSend = attachmentFiles.length > 0 ? attachmentFiles : [];
     const responses: ChatFeedMessage[] = [];
+    let appendedResponses = false;
+
+    setIsSending(true);
 
     try {
       if (filesToSend.length === 0) {
@@ -593,18 +669,50 @@ export default function Chat() {
           : await chatApi.sendGroupMessage(selectedThread.id, { body });
         responses.push(response.data);
       } else {
+        const controller = new AbortController();
+        uploadAbortRef.current = controller;
+
         for (let i = 0; i < filesToSend.length; i++) {
           const file = filesToSend[i];
           const messageBody = i === 0 ? body : '';
-          const response = selectedThread.type === 'direct'
-            ? await chatApi.sendMessage(selectedThread.id, { body: messageBody, attachment: file })
-            : await chatApi.sendGroupMessage(selectedThread.id, { body: messageBody, attachment: file });
-          responses.push(response.data);
+
+          /*
+           * Two routes, chosen by what a single request can actually carry.
+           *
+           * Below the server's chunk size the file rides along with the
+           * message, exactly as before — one round trip, nothing to clean up.
+           * Above it the file goes up in pieces first and the message quotes
+           * the resulting key. That boundary is the server's, not ours: it is
+           * derived from that machine's php.ini, and it is the number this
+           * feature previously got wrong in both environments.
+           */
+          const mustChunk = Boolean(uploadLimits?.chunkSize) && file.size > uploadLimits!.chunkSize;
+
+          if (mustChunk) {
+            const key = attachmentKey(file, i);
+
+            const uploadKey = await uploadFileInChunks(file, {
+              signal: controller.signal,
+              onProgress: (progress) =>
+                setUploadProgress((previous) => ({ ...previous, [key]: progress })),
+            });
+
+            const response = selectedThread.type === 'direct'
+              ? await chatApi.sendMessage(selectedThread.id, { body: messageBody, uploadKey })
+              : await chatApi.sendGroupMessage(selectedThread.id, { body: messageBody, uploadKey });
+            responses.push(response.data);
+          } else {
+            const response = selectedThread.type === 'direct'
+              ? await chatApi.sendMessage(selectedThread.id, { body: messageBody, attachment: file })
+              : await chatApi.sendGroupMessage(selectedThread.id, { body: messageBody, attachment: file });
+            responses.push(response.data);
+          }
         }
       }
 
       setMessageText('');
       clearAttachmentFiles();
+      setUploadProgress({});
 
       if (selectedThread.type === 'direct') {
         await chatApi.setTyping(selectedThread.id, false);
@@ -613,10 +721,37 @@ export default function Chat() {
       }
 
       setMessages((prev) => [...prev, ...responses]);
+      appendedResponses = true;
       await loadThreads();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Could not send message');
+      // A cancellation is the user's own doing, not a failure to report at
+      // them. Anything already sent stays sent — the files are separate
+      // messages — so the composer keeps what has not gone yet.
+      if (err instanceof UploadCancelledError) {
+        setUploadProgress({});
+      } else {
+        setError(err?.response?.data?.message || 'Could not send message');
+      }
+
+      // Whatever DID send stays on screen — each file is its own message, so
+      // a failure on the third does not un-send the first two. Guarded by the
+      // flag because the throw may have come from loadThreads(), AFTER these
+      // were already appended, and adding them twice would show duplicates.
+      if (responses.length > 0 && !appendedResponses) {
+        setMessages((prev) => [...prev, ...responses]);
+      }
+    } finally {
+      uploadAbortRef.current = null;
+      setIsSending(false);
+      setUploadProgress({});
     }
+  };
+
+  /** Stop an upload in flight. The composer's X becomes this while sending. */
+  const cancelUpload = () => {
+    uploadAbortRef.current?.abort();
+    uploadAbortRef.current = null;
+    setUploadProgress({});
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -871,6 +1006,8 @@ export default function Chat() {
           handleComposerPaste={handleComposerPaste}
           applyAttachmentFiles={applyAttachmentFiles}
           removeAttachmentFile={removeAttachmentFile}
+          uploadProgress={uploadProgress}
+          onCancelUpload={cancelUpload}
           getFilePreviewUrl={getFilePreviewUrl}
           handleDragEnter={handleDragEnter}
           handleDragOver={handleDragOver}

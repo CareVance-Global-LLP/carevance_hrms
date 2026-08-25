@@ -81,6 +81,39 @@ services:
     networks:
       - carevance
 
+  # The WebSocket server behind real-time notifications. Caddy proxies /app/*
+  # here, which is the client-facing endpoint the Pusher protocol connects to;
+  # the backend publishes to it over this network and never through the edge.
+  #
+  # Without it notifications do not stop — the clients detect a socket they
+  # cannot open and fall back to a 30-second poll, which is how the product
+  # behaved before this service existed. The visible symptom is the
+  # notification panel reporting "Every 30s" instead of "Live", which is
+  # deliberate: a transport that fails invisibly is the failure mode that
+  # matters, and the reason the timers-run-all-night bug went unnoticed for a
+  # day.
+  #
+  # No storage volume: it holds connections, not files, and writes nothing.
+  reverb:
+    build:
+      context: ../../backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+    command: ["sh", "-lc", "php artisan reverb:start --host=0.0.0.0 --port=8080"]
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - carevance
+
   frontend:
     build:
       context: ../../frontend
@@ -93,8 +126,20 @@ services:
       VITE_IDLE_TRACK_THRESHOLD_SECONDS: ${VITE_IDLE_TRACK_THRESHOLD_SECONDS}
       VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS: ${VITE_IDLE_AUTO_STOP_THRESHOLD_SECONDS}
       VITE_IDLE_GUARD_INTERVAL_MS: ${VITE_IDLE_GUARD_INTERVAL_MS}
+      # VITE_REVERB_APP_KEY is the on switch for real-time notifications, and
+      # must match REVERB_APP_KEY on the backend exactly. Unset means the
+      # clients never attempt a socket and stay on their 30-second poll.
+      VITE_REVERB_APP_KEY: ${VITE_REVERB_APP_KEY}
+      VITE_REVERB_HOST: ${VITE_REVERB_HOST}
+      VITE_REVERB_PORT: ${VITE_REVERB_PORT}
+      VITE_REVERB_SCHEME: ${VITE_REVERB_SCHEME}
     depends_on:
       backend:
+        condition: service_started
+      # nginx resolves proxy_pass upstreams at STARTUP, so without this the
+      # frontend aborts with "host not found in upstream: reverb" whenever it
+      # boots first — taking the web app down over a notification transport.
+      reverb:
         condition: service_started
     ports:
       - "${FRONTEND_PORT:-80}:80"

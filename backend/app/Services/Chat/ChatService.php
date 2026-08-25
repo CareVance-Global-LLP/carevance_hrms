@@ -13,6 +13,7 @@ use App\Models\ChatMessageReaction;
 use App\Models\ChatTypingStatus;
 use App\Models\User;
 use App\Services\AppNotificationService;
+use App\Services\Uploads\ChunkedUploadService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -23,6 +24,9 @@ class ChatService
 {
     public function __construct(
         private readonly AppNotificationService $notificationService,
+        private readonly ChunkedUploadService $uploads,
+        private readonly AttachmentPresenter $attachments,
+        private readonly ThumbnailGenerator $thumbnails,
     ) {
     }
     public function conversations(?User $user)
@@ -435,13 +439,36 @@ class ChatService
                 senderId: (int) $user->id,
                 type: 'chat_direct_message',
                 title: sprintf('New message from %s', $user->name),
-                message: $message->body ?: 'Sent an attachment',
-                meta: [
+                // "Sent an attachment" for everything — a photo, a payslip and
+                // a 40 MB zip read identically, so the notification told you
+                // nothing you did not already know.
+                message: $message->attachment_path
+                    ? $this->attachments->summary(
+                        // The REQUEST body, not $message->body. An
+                        // attachment-only message is stored with the literal
+                        // placeholder "Attachment" (see buildMessagePayload),
+                        // so reading it back would treat that placeholder as
+                        // the sender's caption and render "📷 Attachment".
+                        (string) $request->input('body', ''),
+                        $message->attachment_name,
+                        $message->attachment_mime
+                    )
+                    : $message->body,
+                meta: array_filter([
                     'route' => sprintf('/chat?threadType=direct&threadId=%d', $conversation->id),
                     'conversation_id' => $conversation->id,
                     'sender_name' => $user->name,
                     'message_preview' => $message->body,
-                ]
+                    'attachment' => $message->attachment_path
+                        ? $this->attachments->meta(
+                            (int) $message->id,
+                            'direct',
+                            $message->attachment_name,
+                            $message->attachment_mime,
+                            $message->attachment_size,
+                        )
+                        : null,
+                ], fn ($value) => $value !== null)
             );
         }
 
@@ -478,14 +505,34 @@ class ChatService
                 senderId: (int) $user->id,
                 type: 'chat_group_message',
                 title: sprintf('%s sent a message in %s', $user->name, $group->name),
-                message: $message->body ?: 'Sent an attachment',
-                meta: [
+                message: $message->attachment_path
+                    ? $this->attachments->summary(
+                        // The REQUEST body, not $message->body. An
+                        // attachment-only message is stored with the literal
+                        // placeholder "Attachment" (see buildMessagePayload),
+                        // so reading it back would treat that placeholder as
+                        // the sender's caption and render "📷 Attachment".
+                        (string) $request->input('body', ''),
+                        $message->attachment_name,
+                        $message->attachment_mime
+                    )
+                    : $message->body,
+                meta: array_filter([
                     'route' => sprintf('/chat?threadType=group&threadId=%d', $group->id),
                     'group_id' => $group->id,
                     'group_name' => $group->name,
                     'sender_name' => $user->name,
                     'message_preview' => $message->body,
-                ]
+                    'attachment' => $message->attachment_path
+                        ? $this->attachments->meta(
+                            (int) $message->id,
+                            'group',
+                            $message->attachment_name,
+                            $message->attachment_mime,
+                            $message->attachment_size,
+                        )
+                        : null,
+                ], fn ($value) => $value !== null)
             );
         }
 
@@ -859,6 +906,64 @@ class ChatService
         return $this->buildAttachmentResponse($message->attachment_path, $message->attachment_mime, $message->attachment_name);
     }
 
+    /**
+     * A small square preview of an image attachment.
+     *
+     * Same access rules as the attachment itself — a preview is still the
+     * content, just smaller, so it cannot be less protected than the file.
+     *
+     * A message with no preview available answers 404 rather than an error:
+     * the client's fallback is an icon, and a non-image attachment having no
+     * thumbnail is the normal case, not a fault.
+     */
+    public function thumbnail(?User $user, int $messageId)
+    {
+        $message = ChatMessage::with('conversation')->find($messageId);
+        if (!$message || !$message->conversation) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        if (!$this->findUserConversation($user?->id, (int) $message->conversation_id)) {
+            return ['status' => 403, 'payload' => ['message' => 'Forbidden']];
+        }
+
+        return $this->buildThumbnailResponse($message->attachment_path, $message->attachment_mime);
+    }
+
+    public function groupThumbnail(?User $user, int $messageId)
+    {
+        $message = ChatGroupMessage::with('group')->find($messageId);
+        if (!$message || !$message->group) {
+            return ['status' => 404, 'payload' => ['message' => 'Message not found']];
+        }
+
+        if (!$this->findUserGroup($user?->id, (int) $message->group_id)) {
+            return ['status' => 403, 'payload' => ['message' => 'Forbidden']];
+        }
+
+        return $this->buildThumbnailResponse($message->attachment_path, $message->attachment_mime);
+    }
+
+    private function buildThumbnailResponse(?string $attachmentPath, ?string $mime)
+    {
+        $thumbnailPath = $this->thumbnails->forAttachment($attachmentPath, $mime);
+
+        if (!$thumbnailPath) {
+            return ['status' => 404, 'payload' => ['message' => 'No preview available']];
+        }
+
+        return response()->file(Storage::disk('chat_attachments')->path($thumbnailPath), [
+            'Content-Type' => 'image/jpeg',
+            // Inline, unlike the attachment route: this is meant to be
+            // rendered, never downloaded.
+            'Content-Disposition' => 'inline',
+            // The bytes for a given message never change, so the client may
+            // keep it for as long as it likes. `private` because it is
+            // somebody's conversation, and no shared cache should hold it.
+            'Cache-Control' => 'private, max-age=604800',
+        ]);
+    }
+
     private function buildMessagePayload(Request $request): array
     {
         $body = trim((string) $request->input('body', ''));
@@ -867,7 +972,33 @@ class ChatService
         $attachmentMime = null;
         $attachmentSize = null;
 
-        if ($request->hasFile('attachment')) {
+        /*
+         * Two ways an attachment can arrive, and the reason there are two.
+         *
+         * A small file still comes straight in on the message request — one
+         * round trip, no session to clean up. Anything large arrives as a
+         * completed chunked upload and is claimed here by its key, because a
+         * single request cannot carry it: PHP discards a body over
+         * upload_max_filesize before Laravel runs, which is why this used to
+         * report "no attachment" for files the user had plainly attached.
+         *
+         * The upload path is checked first. If a client somehow sends both, the
+         * deliberately-prepared upload is the one it meant.
+         */
+        $uploadKey = trim((string) $request->input('upload_key', ''));
+
+        if ($uploadKey !== '') {
+            $claimed = $this->uploads->claimCompleted($request->user(), $uploadKey);
+
+            if (isset($claimed['error'])) {
+                return ['error' => $claimed['error']];
+            }
+
+            $attachmentPath = $claimed['path'];
+            $attachmentName = $claimed['name'];
+            $attachmentMime = $claimed['mime'];
+            $attachmentSize = $claimed['size'];
+        } elseif ($request->hasFile('attachment')) {
             $file = $request->file('attachment');
             $attachmentPath = $file->store('', 'chat_attachments');
             $attachmentName = $file->getClientOriginalName();

@@ -70,6 +70,28 @@ contextBridge.exposeInMainWorld('desktopTracker', {
   clearNotificationClickListeners: () => {
     ipcRenderer.removeAllListeners('desktop:notification-clicked');
   },
+
+  /**
+   * A reply typed into the quick-reply box, handed here to be sent.
+   *
+   * The shell holds no session, so it cannot send a chat message itself. The
+   * renderer owns the token and the API client; this is the shell asking it to
+   * do the one thing only it can do.
+   */
+  onQuickReplySend: (callback) => {
+    const listener = (_event, payload) => {
+      callback(payload);
+    };
+    ipcRenderer.on('desktop:quick-reply-send', listener);
+    return () => {
+      ipcRenderer.removeListener('desktop:quick-reply-send', listener);
+    };
+  },
+
+  /** Report whether the send worked, so the box closes or shows the failure. */
+  sendQuickReplyResult: (result) => {
+    ipcRenderer.send('desktop:quick-reply-result', result);
+  },
   onForegroundWindowChange: (callback) => {
     const listener = (_event, payload) => {
       callback(payload);

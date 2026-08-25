@@ -24,6 +24,7 @@ Route::middleware(['api.token', 'mfa.enrolled'])->group(function () {
     require base_path('routes/api/protected/monitoring.php');
     require base_path('routes/api/protected/reports.php');
     require base_path('routes/api/protected/chat.php');
+    require base_path('routes/api/protected/uploads.php');
     require base_path('routes/api/protected/invoices.php');
     require base_path('routes/api/protected/invitations.php');
     require base_path('routes/api/protected/notifications.php');
