@@ -308,3 +308,61 @@ test('the reload shortcut is window-scoped, not a global accelerator', () => {
     'Ctrl+R must not be registered globally.'
   );
 });
+
+/*
+ * Clicking a chat notification with the app closed opened the reply box and
+ * nothing else — the tracker appeared not to start. Both click paths did
+ * `revealMainWindow()` and then `if (mainWindow) send(...)`; with no window the
+ * first returns false and the second is skipped, so the click was dropped.
+ */
+test('a notification click opens the app when no window exists', () => {
+  assert.match(
+    mainSource,
+    /const deliverNotificationClick = \(/,
+    'notification clicks must go through one delivery path.'
+  );
+
+  const start = mainSource.indexOf('const deliverNotificationClick');
+  const body = mainSource.slice(start, start + 900);
+
+  assert.match(
+    body,
+    /openOrRevealMainWindow\(\)/,
+    'delivery must CREATE a window when none exists, not merely reveal one.'
+  );
+  assert.match(
+    body,
+    /pendingNotificationClick = payload/,
+    'a click that arrives before the renderer is listening must be held, not dropped.'
+  );
+});
+
+test('neither click path reveals-and-hopes any more', () => {
+  // The old shape: revealMainWindow() followed by a guarded send. Both callers
+  // are now one line, so the pattern should not appear near either of them.
+  const quickReply = mainSource.indexOf('onQuickReplyOpen');
+  assert.ok(quickReply > -1, 'the quick-reply open handler must exist');
+
+  assert.match(
+    mainSource.slice(quickReply, quickReply + 300),
+    /deliverNotificationClick\(/,
+    'the quick-reply "Open chat" route must use the shared delivery.'
+  );
+});
+
+test('a held click is flushed once the renderer is listening', () => {
+  assert.match(
+    mainSource,
+    /flushPendingNotificationClick\(\);/,
+    'the queued click must be delivered when the renderer becomes ready.'
+  );
+
+  const flush = mainSource.indexOf('const flushPendingNotificationClick');
+  const body = mainSource.slice(flush, flush + 500);
+
+  assert.match(
+    body,
+    /pendingNotificationClick = null;/,
+    'the held click must be cleared when delivered, so it fires once and not on every load.'
+  );
+});

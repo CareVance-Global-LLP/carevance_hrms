@@ -1500,6 +1500,11 @@ const createWindow = async () => {
     lastForegroundWindowSignature = null;
 
     showMainWindow();
+
+    // A notification clicked while the app was closed has been waiting for a
+    // renderer to listen. This is that moment.
+    flushPendingNotificationClick();
+
     broadcastUpdateState();
     broadcastBrowserTrackingState();
     startForegroundWindowWatcher();
@@ -1685,6 +1690,51 @@ const revealMainWindow = () => {
  * is genuinely gone the only correct move is to build a new one. Callers that
  * open the app on the user's behalf want that whole behaviour, not the half.
  */
+/*
+ * A notification click that arrived while the app had no window.
+ *
+ * Held here until the renderer is listening, then delivered once. Without it
+ * the click was simply dropped: both callers did `revealMainWindow()` and then
+ * `if (mainWindow) send(...)`, and with the app closed the first returns false
+ * and the second is skipped — so clicking a chat notification opened the reply
+ * box and NOTHING ELSE. The tracker appeared not to start.
+ */
+let pendingNotificationClick = null;
+
+/**
+ * Open the app at a notification, whether or not it is currently running.
+ *
+ * `revealMainWindow()` can only act on a window that still exists. On Windows
+ * closing the window destroys it while the app stays alive in the tray, which
+ * is exactly the state somebody is in when a chat notification arrives — so
+ * the path that needs this most is the one that had it least.
+ */
+const deliverNotificationClick = (payload) => {
+  const ready = mainWindow
+    && !mainWindow.isDestroyed()
+    && !mainWindow.webContents.isLoading();
+
+  if (ready) {
+    revealMainWindow();
+    mainWindow.webContents.send('desktop:notification-clicked', payload);
+    return;
+  }
+
+  // Only the most recent click is kept. Two notifications clicked before the
+  // window is up should land on the second one, not replay the first.
+  pendingNotificationClick = payload;
+  openOrRevealMainWindow();
+};
+
+const flushPendingNotificationClick = () => {
+  if (!pendingNotificationClick) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const payload = pendingNotificationClick;
+  pendingNotificationClick = null;
+  mainWindow.webContents.send('desktop:notification-clicked', payload);
+};
+
 const openOrRevealMainWindow = () => {
   if (revealMainWindow()) {
     return;
@@ -2085,14 +2135,11 @@ quickReplyPopup.onQuickReplySubmit((reply) => forwardQuickReply(reply));
 // rather than a one-line reply. On Windows the toast click is the only
 // interaction the OS gives us, so this is where that choice lives.
 quickReplyPopup.onQuickReplyOpen((state) => {
-  revealMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('desktop:notification-clicked', {
-      id: state.id,
-      route: state.route,
-      type: state.type,
-    });
-  }
+  deliverNotificationClick({
+    id: state.id,
+    route: state.route,
+    type: state.type,
+  });
 });
 
 ipcMain.on('desktop:quick-reply-result', (_event, result = {}) => {
@@ -2256,14 +2303,7 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
       return;
     }
 
-    revealMainWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('desktop:notification-clicked', {
-        id,
-        route,
-        type,
-      });
-    }
+    deliverNotificationClick({ id, route, type });
   });
 
   /*
