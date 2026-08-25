@@ -67,6 +67,13 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
 
 export interface GlobalCommandBarProps {
   open: boolean;
+  /**
+   * Timestamp of the last request to open straight into AI mode, from the
+   * header's AI chip. A counter rather than a boolean because opening in AI
+   * mode twice running must be two distinct events — a boolean already `true`
+   * produces no change to react to.
+   */
+  aiRequestedAt?: number;
   onOpen: () => void;
   onClose: () => void;
   /** Already permission-filtered by Layout — the single source of truth. */
@@ -83,6 +90,7 @@ export interface GlobalCommandBarProps {
 
 export default function GlobalCommandBar({
   open,
+  aiRequestedAt = 0,
   onOpen,
   onClose,
   navigation,
@@ -231,6 +239,15 @@ export default function GlobalCommandBar({
     },
     [runRemoteSearch]
   );
+
+  /*
+   * Opened by the header's AI chip. Only ever turns AI mode ON — a
+   * `useEffect` that also turned it off would fight the user's own toggle
+   * every time the palette re-rendered.
+   */
+  useEffect(() => {
+    if (aiRequestedAt > 0) setAiMode(true);
+  }, [aiRequestedAt]);
 
   // Closing must cancel in-flight work, or a late response repopulates a
   // palette that is no longer on screen.
