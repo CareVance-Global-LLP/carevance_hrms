@@ -6,10 +6,10 @@ import {
   Check,
   ChevronDown,
   Download,
+  LogOut,
   MoreVertical,
   Search,
   SlidersHorizontal,
-  Trash2,
   UserRound,
   X,
 } from 'lucide-react';
@@ -246,11 +246,10 @@ interface RowProps {
   incomplete: boolean;
   exit: RosterExit | null;
   selected: boolean;
-  canRemove: boolean;
+  canStartExit: boolean;
   rehireAction: ReactNode;
   onToggleSelect: () => void;
   onOpenSettings: () => void;
-  onRemove: () => void;
 }
 
 function RosterRowBase({
@@ -263,11 +262,10 @@ function RosterRowBase({
   incomplete,
   exit,
   selected,
-  canRemove,
+  canStartExit,
   rehireAction,
   onToggleSelect,
   onOpenSettings,
-  onRemove,
 }: RowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -431,19 +429,32 @@ function RosterRowBase({
               {rehireAction ? (
                 <div onClick={() => setMenuOpen(false)}>{rehireAction}</div>
               ) : null}
-              {canRemove ? (
+              {/*
+                * OFFBOARDING IS AN EXIT, NOT A DELETE.
+                *
+                * This was "Remove employee", and it called DELETE /users/{id} —
+                * a hard delete with 101 tables cascading off a users row,
+                * payslips and bank-transfer lines among them. The API refuses it
+                * now for anyone with history, which left a menu item that could
+                * only ever fail: worse than absent, because a button that always
+                * errors teaches people the product is broken.
+                *
+                * Keka answers "how do I remove an employee" with Initiate Exit
+                * and nothing else. So does this. The admin opening this menu
+                * wants to offboard somebody, and the exit is what gives them a
+                * notice period, a clearance checklist, a settlement, and the
+                * seat back on the last working day.
+                */}
+              {canStartExit ? (
                 <>
                   <div className="my-1 h-px bg-slate-100" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onRemove();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-danger-700 transition hover:bg-danger-50"
+                  <Link
+                    to="/exits"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Remove employee
-                  </button>
+                    <LogOut className="h-3.5 w-3.5 text-slate-500" /> Start exit
+                  </Link>
                 </>
               ) : null}
             </div>,
@@ -490,7 +501,6 @@ export interface EmployeeRosterProps {
   resolveHref: (user: RosterUser) => string;
   isIncomplete: (user: RosterUser) => boolean;
   onOpenSettings: (user: RosterUser) => void;
-  onRemove: (user: RosterUser) => void;
   onExport: () => void;
   bulk: BulkActions;
   addEmployeeSlot?: ReactNode;
@@ -501,12 +511,10 @@ export interface BulkActions {
   roles: Array<{ id: number; name: string }>;
   canMoveDepartment: boolean;
   canAssignRole: boolean;
-  canRemove: boolean;
   isBusy: boolean;
   onAddToDepartment: (userIds: number[], departmentId: number, departmentName: string) => void;
   onAssignRole: (userIds: number[], roleId: number, roleName: string) => void;
   onExportSelected: (selectedUsers: RosterUser[]) => void;
-  onRemove: (userIds: number[]) => void;
 }
 
 const SORT_LABEL: Record<DirectorySort, string> = {
@@ -544,7 +552,6 @@ export default function EmployeeRoster({
   resolveHref,
   isIncomplete,
   onOpenSettings,
-  onRemove,
   onExport,
   bulk,
   addEmployeeSlot,
@@ -717,20 +724,14 @@ export default function EmployeeRoster({
               <Download className="h-3.5 w-3.5" /> Export selected
             </Button>
 
-            {bulk.canRemove ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={bulk.isBusy}
-                className="text-danger-700 hover:bg-danger-50"
-                onClick={() => {
-                  bulk.onRemove(selectedIds);
-                  setSelected(new Set());
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Remove
-              </Button>
-            ) : null}
+            {/*
+              * There is no bulk offboarding, deliberately. An exit is a dated,
+              * per-person decision — a notice period, a last working day, a
+              * clearance list, a settlement — and none of that has a sensible
+              * batch form. The old bulk Remove fired one DELETE per selected
+              * person and reported only the successes, so a mixed selection said
+              * "Removed 3" while silently dropping seven refusals.
+              */}
 
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setSelected(new Set())}>
               Clear
@@ -802,10 +803,9 @@ export default function EmployeeRoster({
                     exit={resolveExit?.(user) ?? null}
                     rehireAction={rehireSlot?.(user) ?? null}
                     selected={selected.has(user.id)}
-                    canRemove={canManage}
+                    canStartExit={canManage}
                     onToggleSelect={() => toggleOne(user.id)}
                     onOpenSettings={() => onOpenSettings(user)}
-                    onRemove={() => onRemove(user)}
                   />
                 ))
               )}

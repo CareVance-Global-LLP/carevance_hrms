@@ -383,76 +383,45 @@ describe('EmployeeManagementWorkspace', () => {
     ).toBeInTheDocument();
   });
 
-  it('explains that history is archived rather than deleted, and shows the refusal from the server', async () => {
-    apiMocks.deleteUser.mockRejectedValue({
-      response: { data: { message: 'Zara Khan has payroll records on file and cannot be deleted.' } },
-    });
-
+  it('offers to start an exit, and no longer offers to delete the employee', async () => {
+    /*
+     * "Remove employee" called DELETE /users/{id} — a hard delete with 101
+     * tables cascading off a users row, payslips and bank-transfer lines among
+     * them. The API refuses it now for anyone with history, which left a menu
+     * item that could only ever fail. A button that always errors is worse than
+     * an absent one: it teaches people the product is broken.
+     *
+     * Keka answers "how do I remove an employee" with Initiate Exit and nothing
+     * else. The exit is what gives a leaver a notice period, a clearance list, a
+     * settlement, and the seat back on their last working day.
+     */
     renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
 
     expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Actions for Zara Khan' }));
-    fireEvent.click(await screen.findByRole('button', { name: /Remove employee/ }));
 
-    const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/archived rather than deleted/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/People → Exits/)).toBeInTheDocument();
+    const startExit = await screen.findByRole('link', { name: /Start exit/ });
+    expect(startExit).toHaveAttribute('href', '/exits');
 
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete account' }));
-
-    expect(
-      await screen.findByText('Zara Khan has payroll records on file and cannot be deleted.')
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove employee/ })).toBeNull();
+    expect(apiMocks.deleteUser).not.toHaveBeenCalled();
   });
 
-  it('names the people a bulk remove could not delete instead of reporting plain success', async () => {
-    apiMocks.deleteUser.mockImplementation((userId: number) =>
-      userId === 12
-        ? Promise.reject({ response: { data: { message: 'Ayush Temp has attendance records on file.' } } })
-        : Promise.resolve({ data: {} })
-    );
-
+  it('offers no bulk offboarding, because an exit is a per-person decision', async () => {
+    /*
+     * The old bulk Remove fired one DELETE per selected person and reported only
+     * the successes, so a mixed selection said "Removed 3" while silently
+     * dropping seven refusals. An exit has a last working day, a clearance list
+     * and a settlement — none of which has a sensible batch form.
+     */
     renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
 
     expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Select Zara Khan'));
     fireEvent.click(screen.getByLabelText('Select Ayush Temp'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
 
-    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete accounts' }));
-
-    /*
-     * The bug this pins: runBulk reported a success count only, so a mixed
-     * selection said "Removed 1 employee" and the seven refusals vanished.
-     *
-     * The reason shown is the SERVER's, per person. Narrating every failure as
-     * a history refusal — the first fix — sent an admin chasing a 403 or a
-     * dropped connection to the Exits screen, where there is nothing to do.
-     */
-    expect(
-      await screen.findByText(
-        /1 could not be deleted\. Ayush Temp — Ayush Temp has attendance records on file\./
-      )
-    ).toBeInTheDocument();
-  });
-
-  it('quotes a non-history failure as itself rather than sending the admin to Exits', async () => {
-    apiMocks.deleteUser.mockImplementation((userId: number) =>
-      userId === 12
-        ? Promise.reject({ response: { status: 500, data: { message: 'Server error.' } } })
-        : Promise.resolve({ data: {} })
-    );
-
-    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
-
-    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('Select Ayush Temp'));
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
-
-    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete accounts' }));
-
-    expect(
-      await screen.findByText(/1 could not be deleted\. Ayush Temp — Server error\./)
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Export selected/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(apiMocks.deleteUser).not.toHaveBeenCalled();
   });
 });

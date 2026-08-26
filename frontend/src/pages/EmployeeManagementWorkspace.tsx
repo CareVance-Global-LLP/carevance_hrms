@@ -31,16 +31,16 @@ type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'working_first';
 
 /**
- * The three decisions on this page that are worth interrupting for.
+ * The one decision on this page worth interrupting for.
  *
- * They share one ConfirmDialog rather than three native `confirm()` calls: the
- * copy each one needs is a paragraph, not a sentence, and two of them now have
- * to explain a server rule the admin has never met before.
+ * It uses ConfirmDialog rather than a native `confirm()` because the copy is a
+ * paragraph, not a sentence: bringing somebody back takes a seat and re-bases
+ * their joining date, and neither is obvious from the button.
+ *
+ * Deleting an employee used to live here too. It is gone — offboarding is an
+ * exit, which the row menu now links to directly.
  */
-type PendingConfirm =
-  | { kind: 'delete'; user: any }
-  | { kind: 'bulkDelete'; userIds: number[] }
-  | { kind: 'rejoin'; user: any; exitId: number };
+type PendingConfirm = { kind: 'rejoin'; user: any; exitId: number };
 
 type TableColumn<T> = {
   key: string;
@@ -561,24 +561,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
   });
 
-  const deleteUserMutation = useMutation({
-    mutationFn: async ({ userId }: { userId: number }) => {
-      await userApi.delete(userId);
-    },
-    onSuccess: async (_data, variables) => {
-      const remainingUsers = users.filter((item: any) => item.id !== variables.userId);
-      setSelectedUserId(remainingUsers[0]?.id || null);
-      setFeedback({ tone: 'success', message: 'Employee removed successfully.' });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
-      ]);
-    },
-    onError: (error: any) => {
-      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to remove employee.' });
-    },
-  });
-
   const rejoinMutation = useMutation({
     mutationFn: async ({ exitId, joiningDate }: { exitId: number; joiningDate: string; name: string }) =>
       (await exitApi.rejoin(exitId, { joining_date: joiningDate })).data.data,
@@ -825,51 +807,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     );
   };
 
-  const handleBulkRemove = (userIds: number[]) => {
-    const removable = userIds.filter((id) => Number(id) !== Number(user.id));
-    if (removable.length === 0) {
-      setFeedback({ tone: 'error', message: 'You cannot remove your own account.' });
-      return;
-    }
-
-    setPendingConfirm({ kind: 'bulkDelete', userIds: removable });
-  };
-
-  /**
-   * Reports the refusals BY NAME, and with the reason the SERVER gave.
-   *
-   * The server refuses to delete anyone with payroll, attendance or leave on
-   * file. A count-only report would say "Removed 3 employees" after silently
-   * dropping seven — the admin would believe a mixed selection had been
-   * cleared, and only the roster would disagree with them.
-   *
-   * The message each failure came back with is what gets shown, rather than a
-   * sentence written here. Narrating every failure as a history refusal sent
-   * an admin chasing a 403, a 500 or a dropped connection to the Exits screen,
-   * where there is nothing for them to do. The history refusal already names
-   * Exits in its own text, so nothing is lost by quoting it.
-   */
-  const runBulkRemove = (userIds: number[]) =>
-    void runBulk(
-      userIds,
-      (userId) => userApi.delete(userId),
-      (ok) => `Removed ${ok} ${ok === 1 ? 'employee' : 'employees'}.`,
-      (failures) => {
-        const removed = userIds.length - failures.length;
-        const reasons = failures
-          .map(({ userId, message }) => {
-            const name = findUserById(userId)?.name || `#${userId}`;
-            return message
-              ? `${name} — ${message}`
-              : `${name} — the server refused without saying why.`;
-          })
-          .join(' ');
-
-        return `${removed > 0 ? `Removed ${removed}. ` : ''}` +
-          `${failures.length} could not be deleted. ${reasons}`;
-      }
-    );
-
   /**
    * Built in the browser from the rows already on screen. `userApi.exportCsv`
    * only accepts a department filter, so it cannot express "these ten people".
@@ -1053,14 +990,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [timezoneOptions, directoryTimezoneFilter]);
 
-  const handleDeleteUser = (targetUser: any) => {
-    if (!isStrictAdmin || !targetUser?.id) {
-      return;
-    }
-
-    setPendingConfirm({ kind: 'delete', user: targetUser });
-  };
-
   const handleRejoin = (targetUser: any) => {
     const exit = exitByUserId.get(Number(targetUser?.id));
     if (!exit) {
@@ -1079,32 +1008,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const confirmCopy = ((): { title: string; message: string; label: string; tone: 'danger' | 'default' } | null => {
     if (!pendingConfirm) return null;
 
-    if (pendingConfirm.kind === 'delete') {
-      const name = pendingConfirm.user?.name || 'this employee';
-      return {
-        title: `Delete ${name}'s account?`,
-        message:
-          'This only works for an account with no records at all — a mistyped invite nobody ever used. ' +
-          'Anyone with payroll, attendance or leave history is archived rather than deleted: run their exit ' +
-          'from People → Exits, which revokes access on their last working day and frees the seat.',
-        label: 'Delete account',
-        tone: 'danger',
-      };
-    }
-
-    if (pendingConfirm.kind === 'bulkDelete') {
-      const count = pendingConfirm.userIds.length;
-      return {
-        title: `Delete ${count} ${count === 1 ? 'account' : 'accounts'}?`,
-        message:
-          'Only accounts with no records at all can be deleted. Anyone with payroll, attendance or leave ' +
-          'history is archived instead — those will be refused and named, and you can run their exit from ' +
-          'People → Exits.',
-        label: 'Delete accounts',
-        tone: 'danger',
-      };
-    }
-
     const name = pendingConfirm.user?.name || 'this person';
     return {
       title: `Bring ${name} back?`,
@@ -1120,11 +1023,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const handleConfirm = () => {
     if (!pendingConfirm) return;
 
-    if (pendingConfirm.kind === 'delete') {
-      deleteUserMutation.mutate({ userId: pendingConfirm.user.id });
-    } else if (pendingConfirm.kind === 'bulkDelete') {
-      runBulkRemove(pendingConfirm.userIds);
-    } else {
+    {
       rejoinMutation.mutate({
         exitId: pendingConfirm.exitId,
         joiningDate: todayIso(),
@@ -1262,19 +1161,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             resolveHref={(row: any) => `/employees/${employeeCodeOf(row) || row.id}`}
             isIncomplete={(row: any) => hasIncompleteProfile(row, incompleteFilterType)}
             onOpenSettings={(row: any) => handleOpenSettings(row)}
-            onRemove={(row: any) => handleDeleteUser(row)}
             onExport={() => void handleExportCsv()}
             bulk={{
               departments: groups.map((group: any) => ({ id: Number(group.id), name: group.name })),
               roles: (customRolesQuery.data || []).map((role: any) => ({ id: role.id, name: role.name })),
               canMoveDepartment: canManageDepartments,
               canAssignRole: isStrictAdmin,
-              canRemove: isStrictAdmin,
               isBusy: isBulkRunning,
               onAddToDepartment: handleBulkAddToDepartment,
               onAssignRole: handleBulkAssignRole,
               onExportSelected: handleExportSelected,
-              onRemove: handleBulkRemove,
             }}
             addEmployeeSlot={isStrictAdmin ? (
               <Link
@@ -1293,7 +1189,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
               message={confirmCopy.message}
               confirmLabel={confirmCopy.label}
               tone={confirmCopy.tone}
-              isLoading={deleteUserMutation.isPending || rejoinMutation.isPending || isBulkRunning}
+              isLoading={rejoinMutation.isPending || isBulkRunning}
               onConfirm={handleConfirm}
               onClose={() => setPendingConfirm(null)}
             />
