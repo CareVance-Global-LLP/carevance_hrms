@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\OrganizationStats;
 use App\Models\User;
+use App\Services\Lifecycle\EmployeeHistoryProbe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -254,14 +255,46 @@ class SuperAdminController extends Controller
     /**
      * Delete organization (soft delete)
      */
+    /**
+     * Remove a workspace that never became one.
+     *
+     * `users.organization_id` is ON DELETE CASCADE and neither `Organization`
+     * nor `User` uses SoftDeletes, so this line destroys every account in the
+     * tenant and everything hanging off them — payslips, attendance, the leave
+     * ledger, Form 16s. The docblock used to say "(soft delete)" and it was
+     * never true. `DELETE /api/users/{id}` refuses an account with history;
+     * this route reached the same rows without asking, which is exactly the
+     * "route around the stricter one" the guard exists to prevent.
+     *
+     * A spam signup with nothing in it still deletes. Anything a person
+     * actually worked in does not, and the refusal names what it found.
+     */
     public function deleteOrganization(Request $request, Organization $organization)
     {
-        // Delete all related data
+        $probe = app(EmployeeHistoryProbe::class);
+
+        foreach ($organization->users()->cursor() as $member) {
+            if ($trace = $probe->firstTraceOf($member)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "{$organization->name} cannot be deleted: {$member->name} has {$trace} "
+                        . 'on file, and deleting the organization destroys every record in it. '
+                        . 'Cancel the subscription instead.',
+                    'error_code' => 'ORGANIZATION_HAS_HISTORY',
+                ], 422);
+            }
+        }
+
+        // `Organization` has no `subscription` relation and `stats` is a
+        // HasMany, so `$organization->subscription?->delete()` and
+        // `$organization->stats?->delete()` both raised BadMethodCallException
+        // — AFTER the users had already been destroyed. Every call to this
+        // route deleted every account in the tenant and then answered 500,
+        // leaving the organization row behind.
         $organization->users()->delete();
-        $organization->subscription?->delete();
-        $organization->stats?->delete();
+        $organization->stats()->delete();
         $organization->delete();
-        
+
         return response()->json([
             'success' => true,
             'message' => 'Organization deleted successfully'

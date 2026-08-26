@@ -9,6 +9,7 @@ use App\Services\Auth\ScimProvisioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * SCIM 2.0, as identity providers actually speak it.
@@ -112,6 +113,12 @@ class ScimController extends Controller
 
         try {
             $user = $this->scim->upsertUser($organization, $request->all());
+        } catch (HttpException $exception) {
+            // FIRST, because Symfony's HttpException extends RuntimeException:
+            // the other arm would otherwise swallow a seat refusal and report it
+            // to the IdP as an invalid payload, which an administrator would
+            // spend the afternoon trying to fix in Entra.
+            return $this->outOfSeats($exception);
         } catch (RuntimeException $exception) {
             return $this->error(400, 'invalidValue', $exception->getMessage());
         }
@@ -141,6 +148,9 @@ class ScimController extends Controller
             $payload['externalId'] = $payload['externalId'] ?? $user->scim_external_id;
 
             $updated = $this->scim->upsertUser($organization, $payload);
+        } catch (HttpException $exception) {
+            // Before the RuntimeException arm — see store().
+            return $this->outOfSeats($exception);
         } catch (RuntimeException $exception) {
             return $this->error(400, 'invalidValue', $exception->getMessage());
         }
@@ -176,6 +186,20 @@ class ScimController extends Controller
             return $this->error(400, 'invalidValue', 'A PATCH needs at least one operation.');
         }
 
+        try {
+            $this->applyPatchOperations($organization, $user, $operations);
+        } catch (HttpException $exception) {
+            return $this->outOfSeats($exception);
+        }
+
+        return $this->scimJson($this->scim->toScimUser($user->fresh()));
+    }
+
+    /**
+     * @param  array<int, mixed>  $operations
+     */
+    private function applyPatchOperations(Organization $organization, User $user, array $operations): void
+    {
         foreach ($operations as $operation) {
             $op = strtolower((string) ($operation['op'] ?? ''));
             $path = strtolower(trim((string) ($operation['path'] ?? '')));
@@ -206,7 +230,10 @@ class ScimController extends Controller
             }
 
             if ($active === true) {
-                $user->forceFill(['deactivated_at' => null, 'scim_synced_at' => now()])->save();
+                // Through the service, not inline: reactivation now claims a
+                // seat, and clearing the column here would be the one shape
+                // (Entra's) that walks past the check.
+                $this->scim->reactivate($user);
 
                 continue;
             }
@@ -218,8 +245,6 @@ class ScimController extends Controller
                 ));
             }
         }
-
-        return $this->scimJson($this->scim->toScimUser($user->fresh()));
     }
 
     /** DELETE means deactivate — see the class docblock. */
@@ -271,6 +296,18 @@ class ScimController extends Controller
     private function unauthorised(): JsonResponse
     {
         return $this->error(401, null, 'Invalid or missing bearer token.');
+    }
+
+    /**
+     * SeatGuard refuses with a 422 the web UI can act on. An IdP cannot: 403
+     * is what it understands as "the target will not accept this", and RFC 7644
+     * §3.12 has no `scimType` for running out of capacity. The guard's own
+     * wording carries the shortfall and is passed through, because `detail` is
+     * the only part of this an administrator ever sees in Entra or Okta.
+     */
+    private function outOfSeats(HttpException $exception): JsonResponse
+    {
+        return $this->error(403, null, $exception->getMessage());
     }
 
     private function error(int $status, ?string $scimType, string $detail): JsonResponse

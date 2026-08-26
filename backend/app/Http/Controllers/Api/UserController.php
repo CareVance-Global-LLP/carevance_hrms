@@ -20,11 +20,13 @@ use App\Models\User;
 use App\Models\OnboardingJourney;
 use App\Services\Authorization\OrganizationRoleService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Lifecycle\EmployeeHistoryProbe;
 use App\Services\Lifecycle\OnboardingService;
 use App\Services\Reports\TimeBreakdownService;
 use App\Services\Reports\UsageProcessingService;
 use App\Services\TimeEntries\TimeEntryDurationService;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -43,6 +45,7 @@ class UserController extends Controller
         private readonly UsageProcessingService $usageProcessingService,
         private readonly \App\Services\Monitoring\MonitoringSettingsResolver $monitoringSettingsResolver,
         private readonly OnboardingService $onboardingService,
+        private readonly EmployeeHistoryProbe $historyProbe,
     )
     {
     }
@@ -719,7 +722,48 @@ class UserController extends Controller
             return response()->json(['message' => 'You cannot delete your own account from user management.'], 422);
         }
 
+        // Order is load-bearing twice over. After canAccessUser, so a caller in
+        // another tenant still gets the same 403 and cannot learn what history
+        // a stranger has by reading which refusal comes back. Before the audit
+        // log, so a refused attempt never records `user.deleted` against a user
+        // who is still there.
+        if ($trace = $this->historyProbe->firstTraceOf($user)) {
+            return $this->refuseDeleteForHistory($user, $trace);
+        }
+
         $deletedUserSnapshot = $user->only(['name', 'email', 'role']);
+
+        try {
+            $user->delete();
+        } catch (QueryException $error) {
+            // Four foreign keys are ON DELETE NO ACTION —
+            // full_and_final_settlements.prepared_by, arrear_payments.requested_by,
+            // employee_variable_pay.created_by and leave_encashments.requested_by.
+            // The probe above covers what was done TO this person; this covers
+            // what they did to somebody else's records, which has 500'd on this
+            // endpoint since it was written.
+            //
+            // Only a real foreign-key violation gets that answer. Catching
+            // every QueryException told an admin "referenced on other people's
+            // payroll records" after a deadlock or a dropped connection — a
+            // business refusal the UI sends them to the Exits screen over,
+            // with the actual database fault swallowed and unlogged.
+            if (! $this->isForeignKeyViolation($error)) {
+                throw $error;
+            }
+
+            return response()->json([
+                'message' => "{$user->name} is referenced on other people's payroll records "
+                    . 'and cannot be deleted. Deactivate the account instead.',
+                'error_code' => 'REFERENCED_ELSEWHERE',
+            ], 422);
+        }
+
+        // AFTER the delete, never before. `AuditLogService::log` writes
+        // immediately and this method opens no transaction, so logging first
+        // left a `user.deleted` entry standing against a user the NO ACTION
+        // keys had just refused to delete — a false record in the one place
+        // that must not carry one.
         $this->auditLogService->log(
             action: 'user.deleted',
             actor: $request->user(),
@@ -728,7 +772,6 @@ class UserController extends Controller
             request: $request
         );
 
-        $user->delete();
         return response()->json(['message' => 'User deleted']);
     }
 
@@ -1098,6 +1141,52 @@ class UserController extends Controller
     }
 
     /**
+     * Shared by both delete routes so they cannot answer differently.
+     *
+     * `error_code` is what the UI branches on; the prose names the alternative
+     * because a refusal that only says "no" gets worked around. It names only
+     * this person's own history — never a count, a tenant or anybody else — so
+     * the refusal itself leaks nothing.
+     */
+    /**
+     * Whether a failed write was a foreign key refusing, and nothing else.
+     *
+     * Postgres raises SQLSTATE 23503 for it; SQLite reports the generic 23000
+     * with "FOREIGN KEY constraint failed" in the driver message, and MySQL
+     * uses 23000 with errno 1451/1452. Anything else — a deadlock, a dropped
+     * connection, a column that stopped existing — is a fault, not a business
+     * rule, and must surface as one.
+     */
+    private function isForeignKeyViolation(QueryException $error): bool
+    {
+        $sqlState = (string) ($error->errorInfo[0] ?? $error->getCode());
+
+        if ($sqlState === '23503') {
+            return true;
+        }
+
+        if ($sqlState !== '23000') {
+            return false;
+        }
+
+        $driverCode = (string) ($error->errorInfo[1] ?? '');
+
+        return in_array($driverCode, ['1451', '1452', '19'], true)
+            || str_contains(strtolower($error->getMessage()), 'foreign key constraint');
+    }
+
+    private function refuseDeleteForHistory(User $user, string $trace): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'message' => "{$user->name} has {$trace} on file and cannot be deleted — "
+                . 'those records are the organisation\'s to keep. Deactivate the account '
+                . 'instead, or run the exit process from People → Exits.',
+            'error_code' => 'HAS_HISTORY',
+            'history' => $trace,
+        ], 422);
+    }
+
+    /**
      * @param array<string, mixed> $settings
      * @return array<string, mixed>
      */
@@ -1329,6 +1418,14 @@ class UserController extends Controller
             return response()->json([
                 'message' => 'Cannot delete user with completed profile. Please contact support.',
             ], 400);
+        }
+
+        // The same probe destroy() uses, and for the same reason: two delete
+        // endpoints with two different rules is how the next person routes
+        // around the stricter one. The profile check above stays because it is
+        // this route's own, narrower rule — cleaning up a half-created account.
+        if ($trace = $this->historyProbe->firstTraceOf($user)) {
+            return $this->refuseDeleteForHistory($user, $trace);
         }
 
         // Delete orphan work_info records too

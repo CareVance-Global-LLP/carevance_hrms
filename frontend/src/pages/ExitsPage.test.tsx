@@ -19,6 +19,7 @@ const apiMocks = vi.hoisted(() => ({
   reopenItem: vi.fn().mockResolvedValue({ data: {} }),
   revokeAccess: vi.fn().mockResolvedValue({ data: {} }),
   saveInterview: vi.fn().mockResolvedValue({ data: {} }),
+  setRehireEligibility: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => authState.value }));
@@ -62,6 +63,11 @@ const exitRecord = (over: Record<string, unknown> = {}) => ({
   clearance_progress: { total: 4, done: 1, blocking_outstanding: 1 },
   clearance_completed_at: null,
   access_revoked_at: null,
+  rehire_eligibility: 'undecided',
+  rehire_note: null,
+  rehire_decided_at: null,
+  rejoined_at: null,
+  previous_joining_date: null,
   user: { id: 2, name: 'Zara Khan', email: 'zara@example.com' },
   checklist_items: [item()],
   interview: null,
@@ -74,6 +80,9 @@ describe('ExitsPage', () => {
     apiMocks.list.mockResolvedValue({ data: { data: [exitRecord()] } });
     apiMocks.show.mockResolvedValue({ data: { data: exitRecord() } });
     apiMocks.advance.mockResolvedValue({ data: { data: exitRecord({ stage: 'settlement' }) } });
+    apiMocks.setRehireEligibility.mockResolvedValue({
+      data: { data: exitRecord({ rehire_eligibility: 'not_eligible' }) },
+    });
   });
 
   it('groups exits by the stage they are actually in', async () => {
@@ -146,5 +155,102 @@ describe('ExitsPage', () => {
         comments: null,
       })
     );
+  });
+
+  it('lets HR record that somebody is not eligible for rehire', async () => {
+    renderWithProviders(<ExitsPage />);
+    fireEvent.click(await screen.findByText('Zara Khan'));
+
+    const control = await screen.findByLabelText('Rehire decision');
+    fireEvent.change(control, { target: { value: 'not_eligible' } });
+    fireEvent.change(screen.getByLabelText('Rehire note'), {
+      target: { value: 'Left mid-handover with the client account open.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save rehire decision' }));
+
+    await waitFor(() =>
+      expect(apiMocks.setRehireEligibility).toHaveBeenCalledWith(10, {
+        rehire_eligibility: 'not_eligible',
+        note: 'Left mid-handover with the client account open.',
+      })
+    );
+  });
+
+  it("keeps the employer's rehire decision distinct from the leaver's own answer", async () => {
+    apiMocks.show.mockResolvedValue({
+      data: {
+        data: exitRecord({
+          rehire_eligibility: 'not_eligible',
+          interview: {
+            id: 4,
+            primary_reason: 'compensation',
+            responses: null,
+            would_recommend: 8,
+            would_rejoin: true,
+            comments: null,
+            submitted_at: '2026-08-20T00:00:00Z',
+          },
+        }),
+      },
+    });
+
+    renderWithProviders(<ExitsPage />);
+    fireEvent.click(await screen.findByText('Zara Khan'));
+
+    /*
+     * The two answers disagree here on purpose: somebody can want to come back
+     * to an organisation that would not have them, and a single merged badge
+     * would let an HR user read one and act on the other.
+     */
+    expect(await screen.findByText('Rehire decision (ours)')).toBeInTheDocument();
+    // Twice over: the badge, and the selected option in the control beneath it.
+    expect(screen.getAllByText('Not eligible for rehire').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Rehire decision')).toHaveValue('not_eligible');
+    expect(screen.getByText(/Would they rejoin\? \(their answer\)/)).toBeInTheDocument();
+    expect(screen.getByText('Yes')).toBeInTheDocument();
+  });
+
+  it('shows the earlier service start on a rehired exit', async () => {
+    apiMocks.show.mockResolvedValue({
+      data: {
+        data: exitRecord({
+          stage: 'closed',
+          rehire_eligibility: 'eligible',
+          rejoined_at: '2026-08-25T00:00:00Z',
+          previous_joining_date: '2021-04-01',
+        }),
+      },
+    });
+
+    renderWithProviders(<ExitsPage />);
+    fireEvent.click(await screen.findByText('Zara Khan'));
+
+    /*
+     * The rejoin re-based employee_work_infos.joining_date so gratuity's
+     * five-year continuous-service clock restarts. The earlier period survives
+     * on this row and nowhere else, which is why it has to be readable here.
+     */
+    expect(await screen.findByText(/earlier service started Apr 1, 2021/)).toBeInTheDocument();
+  });
+
+  it('does not offer the rehire control to somebody who cannot record the decision', async () => {
+    authState.value = {
+      ...authState.value,
+      user: { ...authState.value.user, role: 'manager', hierarchy_level: 50 } as any,
+    };
+
+    try {
+      renderWithProviders(<ExitsPage />);
+      fireEvent.click(await screen.findByText('Zara Khan'));
+
+      // The badge still reads — a line manager may see the decision, not take it.
+      expect(await screen.findByText('Rehire decision (ours)')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Rehire decision')).not.toBeInTheDocument();
+    } finally {
+      authState.value = {
+        ...authState.value,
+        user: { id: 1, name: 'Admin', email: 'admin@example.com', role: 'admin', organization_id: 1 },
+      };
+    }
   });
 });

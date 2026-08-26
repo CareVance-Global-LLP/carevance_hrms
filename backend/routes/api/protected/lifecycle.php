@@ -27,6 +27,8 @@ Route::get('/exits/attrition', [EmployeeExitController::class, 'attritionReport'
 Route::get('/exits/{id}', [EmployeeExitController::class, 'show']);
 Route::post('/exits/{id}/advance', [EmployeeExitController::class, 'advance']);
 Route::post('/exits/{id}/revoke-access', [EmployeeExitController::class, 'revokeAccess']);
+Route::post('/exits/{id}/rehire-eligibility', [EmployeeExitController::class, 'setRehireEligibility']);
+Route::post('/exits/{id}/rejoin', [EmployeeExitController::class, 'rejoin']);
 Route::post('/exits/{id}/interview', [EmployeeExitController::class, 'saveInterview']);
 Route::post('/exits/{id}/items/{itemId}/complete', [EmployeeExitController::class, 'completeItem']);
 Route::post('/exits/{id}/items/{itemId}/reopen', [EmployeeExitController::class, 'reopenItem']);

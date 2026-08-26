@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class EmployeeExitController extends Controller
 {
@@ -158,6 +159,96 @@ class EmployeeExitController extends Controller
         return response()->json([
             'message' => 'Access revoked.',
             'data' => $this->exits->revokeAccess($exit, 'exit_manual'),
+        ]);
+    }
+
+    /**
+     * Record whether the organisation would take this person back.
+     *
+     * This is the EMPLOYER's decision. `saveInterview()` below collects
+     * `would_rejoin`, which is the departing person's own opinion and is a
+     * different fact — never let one write the other, or a confidential survey
+     * answer ends up deciding a hiring policy.
+     *
+     * Level <= 20 — admin, hr and payroll_manager. Deliberately neither
+     * neighbour: `store()` and `revokeAccess()` refuse anything above 10, which
+     * locks HR out of their own module (a pre-existing bug in this controller,
+     * not a rule to copy), while `denyIfNotManager()` would make it a line
+     * manager's call, and whether the organisation would rehire somebody is not.
+     */
+    public function setRehireEligibility(Request $request, int $id): JsonResponse
+    {
+        $actor = Auth::user();
+        if ($actor->getHierarchyLevel() > 20) {
+            return response()->json([
+                'message' => 'Only HR and admins can record a rehire decision.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'rehire_eligibility' => 'required|in:'.implode(',', EmployeeExit::REHIRE_DECISIONS),
+            'note' => 'nullable|string|max:2000',
+        ]);
+
+        // Bare findOrFail: BelongsToOrganization already scopes this, so another
+        // tenant's exit is a 404. Do not copy the hand-written
+        // where('organization_id', ...) the surrounding methods carry.
+        $exit = EmployeeExit::findOrFail($id);
+
+        try {
+            $updated = $this->exits->recordRehireDecision(
+                $exit,
+                $validated['rehire_eligibility'],
+                $validated['note'] ?? null,
+                $actor,
+            );
+        } catch (RuntimeException $error) {
+            return response()->json(['message' => $error->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Rehire decision recorded.',
+            'data' => $updated->load(['user:id,name,email', 'rehireDecidedBy:id,name']),
+        ]);
+    }
+
+    /**
+     * Bring a former employee back.
+     *
+     * Level <= 10 — admins only, and deliberately tighter than the rehire
+     * DECISION above. Recording an opinion costs nothing; this consumes a paid
+     * seat and hands somebody the whole product back, which is the same bar
+     * `store()` and `revokeAccess()` already set for taking it away.
+     */
+    public function rejoin(Request $request, int $id): JsonResponse
+    {
+        $actor = Auth::user();
+        if ($actor->getHierarchyLevel() > 10) {
+            return response()->json(['message' => 'Only admins can bring somebody back.'], 403);
+        }
+
+        $validated = $request->validate([
+            'joining_date' => 'required|date',
+        ]);
+
+        // Bare findOrFail — BelongsToOrganization scopes it, so another tenant's
+        // exit is a 404 and is never revealed to exist.
+        $exit = EmployeeExit::findOrFail($id);
+
+        try {
+            $updated = $this->exits->rejoin($exit, Carbon::parse($validated['joining_date']), $actor);
+        } catch (RuntimeException $error) {
+            return response()->json(['message' => $error->getMessage()], 422);
+        } catch (HttpException $error) {
+            // SeatGuard's own wording, passed through: it carries the shortfall
+            // so the UI can offer "add a seat" rather than a dead end. Do not
+            // reword it.
+            return response()->json(['message' => $error->getMessage()], $error->getStatusCode());
+        }
+
+        return response()->json([
+            'message' => $updated->user?->name.' is back. Their account is active again.',
+            'data' => $updated->load(['user:id,name,email']),
         ]);
     }
 

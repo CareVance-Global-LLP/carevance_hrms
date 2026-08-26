@@ -9,10 +9,17 @@ import {
   ShieldOff,
   X,
 } from 'lucide-react';
-import { exitApi, type ChecklistItem, type EmployeeExit, type ExitStage } from '@/services/api';
+import {
+  exitApi,
+  type ChecklistItem,
+  type EmployeeExit,
+  type ExitStage,
+  type RehireDecision,
+} from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { hasStrictAdminAccess } from '@/lib/permissions';
+import { hasPayrollAdminAccess, hasStrictAdminAccess } from '@/lib/permissions';
 import Button from '@/components/ui/Button';
+import StatusBadge from '@/components/ui/StatusBadge';
 import { PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import SlideOver from '@/features/employees/SlideOver';
 import ChecklistPanel from '@/features/lifecycle/ChecklistPanel';
@@ -29,6 +36,25 @@ const REASONS = [
   'compensation', 'career_growth', 'management', 'work_life_balance',
   'relocation', 'health', 'higher_studies', 'role_mismatch', 'culture', 'other',
 ] as const;
+
+/*
+ * The employer's decision. Kept in its own block, with its own wording, well
+ * away from the exit interview: `interview.would_rejoin` is the LEAVER's answer
+ * to a near-identical question, and two look-alike verdicts on one screen is
+ * how somebody reads one and acts on the other. Naming the owner of each
+ * answer is the whole point of the labels.
+ */
+const REHIRE_OPTIONS: Array<{ value: RehireDecision; label: string }> = [
+  { value: 'undecided', label: 'Not decided yet' },
+  { value: 'eligible', label: 'Eligible for rehire' },
+  { value: 'not_eligible', label: 'Not eligible for rehire' },
+];
+
+const REHIRE_TONE: Record<RehireDecision, 'neutral' | 'success' | 'danger'> = {
+  undecided: 'neutral',
+  eligible: 'success',
+  not_eligible: 'danger',
+};
 
 const initialsOf = (value: string): string => {
   const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
@@ -48,6 +74,14 @@ export default function ExitsPage() {
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [reason, setReason] = useState('');
   const [comments, setComments] = useState('');
+  /*
+   * Carries the exit it belongs to, so opening a different person's drawer
+   * falls back to THEIR recorded decision instead of showing the last one
+   * somebody typed.
+   */
+  const [rehireDraft, setRehireDraft] = useState<
+    { exitId: number; value: RehireDecision; note: string } | null
+  >(null);
 
   const exitsQuery = useQuery({
     queryKey: ['employee-exits'],
@@ -80,6 +114,22 @@ export default function ExitsPage() {
       setFeedback({
         tone: 'error',
         message: error?.response?.data?.message || 'Could not move this exit.',
+      });
+    },
+  });
+
+  const rehireMutation = useMutation({
+    mutationFn: async ({ id, value, note }: { id: number; value: RehireDecision; note: string }) =>
+      (await exitApi.setRehireEligibility(id, { rehire_eligibility: value, note: note || undefined })).data.data,
+    onSuccess: async () => {
+      setRehireDraft(null);
+      setFeedback({ tone: 'success', message: 'Rehire decision recorded.' });
+      await invalidate();
+    },
+    onError: (error: any) => {
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Could not record the rehire decision.',
       });
     },
   });
@@ -137,6 +187,19 @@ export default function ExitsPage() {
 
   const openExit = detailQuery.data ?? null;
   const canSettle = openExit ? openExit.clearance_progress.blocking_outstanding === 0 : false;
+
+  /* Level <= 20 — admin, HR and payroll_manager, matching the API's own gate. */
+  const canDecideRehire = hasPayrollAdminAccess(user);
+  const isDraftForOpenExit = openExit !== null && rehireDraft?.exitId === openExit.id;
+  const rehireValue: RehireDecision = isDraftForOpenExit
+    ? (rehireDraft as { value: RehireDecision }).value
+    : openExit?.rehire_eligibility ?? 'undecided';
+  const rehireNote = isDraftForOpenExit
+    ? (rehireDraft as { note: string }).note
+    : openExit?.rehire_note ?? '';
+  const rehireIsDirty =
+    openExit !== null &&
+    (rehireValue !== (openExit.rehire_eligibility ?? 'undecided') || rehireNote !== (openExit.rehire_note ?? ''));
 
   if (exitsQuery.isLoading) return <PageLoadingState label="Loading exits…" />;
   if (exitsQuery.isError) {
@@ -369,6 +432,73 @@ export default function ExitsPage() {
               </Button>
             ) : null}
 
+            {/* Would we take them back? — OUR answer. The leaver's own answer
+                lives with the exit interview below and is a different fact. */}
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Rehire decision (ours)
+                </p>
+                <StatusBadge tone={REHIRE_TONE[rehireValue]} className="px-2 py-0.5 tracking-[0.1em]">
+                  {REHIRE_OPTIONS.find((option) => option.value === rehireValue)?.label ?? rehireValue}
+                </StatusBadge>
+              </div>
+
+              {openExit.rejoined_at ? (
+                <p className="mt-2 text-xs text-slate-600">
+                  Rejoined {formatDate(openExit.rejoined_at)}
+                  {openExit.previous_joining_date
+                    ? ` · earlier service started ${formatDate(openExit.previous_joining_date)}`
+                    : ''}
+                </p>
+              ) : null}
+
+              {canDecideRehire ? (
+                <div className="mt-2 space-y-2">
+                  <select
+                    value={rehireValue}
+                    onChange={(event) =>
+                      setRehireDraft({
+                        exitId: openExit.id,
+                        value: event.target.value as RehireDecision,
+                        note: rehireNote,
+                      })
+                    }
+                    aria-label="Rehire decision"
+                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800"
+                  >
+                    {REHIRE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <textarea
+                    value={rehireNote}
+                    onChange={(event) =>
+                      setRehireDraft({ exitId: openExit.id, value: rehireValue, note: event.target.value })
+                    }
+                    rows={2}
+                    aria-label="Rehire note"
+                    placeholder="Why — for whoever reads this in two years"
+                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-500"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={!rehireIsDirty}
+                    loading={rehireMutation.isPending}
+                    onClick={() =>
+                      rehireMutation.mutate({ id: openExit.id, value: rehireValue, note: rehireNote })
+                    }
+                  >
+                    Save rehire decision
+                  </Button>
+                </div>
+              ) : openExit.rehire_note ? (
+                <p className="mt-2 text-xs leading-relaxed text-slate-600">{openExit.rehire_note}</p>
+              ) : null}
+            </div>
+
             <ChecklistPanel
               items={openExit.checklist_items ?? []}
               canEdit={openExit.stage !== 'closed'}
@@ -384,6 +514,14 @@ export default function ExitsPage() {
                   <p className="font-semibold capitalize text-slate-800">
                     {openExit.interview.primary_reason?.replace('_', ' ') ?? 'Recorded'}
                   </p>
+                  {openExit.interview.would_rejoin !== null ? (
+                    <p className="mt-1">
+                      Would they rejoin? (their answer):{' '}
+                      <span className="font-semibold text-slate-800">
+                        {openExit.interview.would_rejoin ? 'Yes' : 'No'}
+                      </span>
+                    </p>
+                  ) : null}
                   {openExit.interview.comments ? (
                     <p className="mt-1 leading-relaxed">{openExit.interview.comments}</p>
                   ) : null}

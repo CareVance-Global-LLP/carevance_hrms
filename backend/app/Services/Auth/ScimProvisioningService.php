@@ -6,6 +6,7 @@ use App\Events\SessionRevoked;
 use App\Models\Organization;
 use App\Models\ScimToken;
 use App\Models\User;
+use App\Services\Billing\SeatGuard;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -31,6 +32,11 @@ use RuntimeException;
  */
 class ScimProvisioningService
 {
+    public function __construct(
+        private readonly SeatGuard $seats,
+    ) {
+    }
+
     /**
      * Issue a token for an IdP.
      *
@@ -133,6 +139,11 @@ class ScimProvisioningService
             $active = array_key_exists('active', $payload) ? (bool) $payload['active'] : true;
 
             if (! $user) {
+                // An IdP must not be the way round the seat cap. Now that a
+                // deactivated leaver releases their seat, a provisioning run
+                // claims one exactly as hiring does.
+                $this->seats->assertCanAdd($organization, 1);
+
                 $user = new User([
                     'name' => $name,
                     'email' => $email,
@@ -168,10 +179,43 @@ class ScimProvisioningService
             // Reactivation is the ordinary case of somebody rejoining, and
             // must clear the deactivation rather than leaving a live account
             // that cannot log in.
-            $user->forceFill(['deactivated_at' => null])->save();
+            $user->save();
+            $this->reactivate($user);
 
             return $user->fresh();
         });
+    }
+
+    /**
+     * Give somebody their access back.
+     *
+     * CLAIMS A SEAT, because releasing one on deactivation is what makes that
+     * true — without the check here an IdP administrator flipping `active` back
+     * on is the documented way past a cap that hiring, invitations and rejoin
+     * all respect. Already-active accounts are left alone rather than
+     * re-asserted, or an ordinary sync of a full workspace would start failing.
+     *
+     * Deliberately NOT `ExitService::rejoin()`: an IdP has no exit record, no
+     * joining date and no opinion about gratuity. This reactivates and nothing
+     * more, so a SCIM-rehired person's continuous-service clock is not restarted.
+     */
+    public function reactivate(User $user): User
+    {
+        if ($user->deactivated_at === null) {
+            $user->forceFill(['scim_synced_at' => now()])->save();
+
+            return $user;
+        }
+
+        $organization = $user->organization;
+
+        if ($organization) {
+            $this->seats->assertCanAdd($organization, 1);
+        }
+
+        $user->forceFill(['deactivated_at' => null, 'scim_synced_at' => now()])->save();
+
+        return $user;
     }
 
     /**

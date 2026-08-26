@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Mail\PasswordResetMail;
 use App\Mail\VerifyEmailMail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -358,6 +359,17 @@ class User extends Authenticatable
     public function getIsActiveAttribute(): bool
     {
         return $this->deactivated_at === null;
+    }
+
+    /**
+     * Still holding access. `deactivated_at` is the release signal, not
+     * deletion — the accessor above answers the same question but cannot be
+     * used in a query, which is how three separate callers came to hand-write
+     * the filter.
+     */
+    public function scopeStillHoldingAccess(Builder $query): Builder
+    {
+        return $query->whereNull('deactivated_at');
     }
 
     /**

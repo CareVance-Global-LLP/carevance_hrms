@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import EmployeeManagementWorkspace from '@/pages/EmployeeManagementWorkspace';
+import { todayIso } from '@/lib/formatters';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
 const apiMocks = vi.hoisted(() => ({
@@ -9,7 +10,10 @@ const apiMocks = vi.hoisted(() => ({
   getMembers: vi.fn(),
   getProfile360: vi.fn(),
   updateUser: vi.fn().mockResolvedValue({ data: {} }),
+  deleteUser: vi.fn(),
   listRoles: vi.fn(),
+  listExits: vi.fn(),
+  rejoin: vi.fn(),
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -28,6 +32,12 @@ vi.mock('@/services/api', async () => {
       getAll: apiMocks.getAllUsers,
       getProfile360: apiMocks.getProfile360,
       update: apiMocks.updateUser,
+      delete: apiMocks.deleteUser,
+    },
+    exitApi: {
+      ...actual.exitApi,
+      list: apiMocks.listExits,
+      rejoin: apiMocks.rejoin,
     },
     roleApi: {
       ...actual.roleApi,
@@ -44,6 +54,36 @@ vi.mock('@/services/api', async () => {
   };
 });
 
+/** Rita's exit. `rehire_eligibility` is what decides whether she can come back. */
+const exitRecord = (over: Record<string, unknown> = {}) => ({
+  id: 21,
+  user_id: 14,
+  resignation_id: null,
+  exit_type: 'resignation',
+  exit_reason: null,
+  last_working_date: '2026-07-31',
+  notice_period_days: 30,
+  served_days: 30,
+  shortfall_days: 0,
+  stage: 'closed',
+  days_remaining: -20,
+  clearance_progress: { total: 3, done: 3, blocking_outstanding: 0 },
+  clearance_completed_at: null,
+  access_revoked_at: '2026-08-01T00:00:00Z',
+  rehire_eligibility: 'eligible',
+  rehire_note: null,
+  rehire_decided_at: '2026-08-02T00:00:00Z',
+  rejoined_at: null,
+  previous_joining_date: null,
+  user: { id: 14, name: 'Rita Former', email: 'rita@example.com' },
+  ...over,
+});
+
+const openExEmployees = async () => {
+  expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Ex-employees/ }));
+};
+
 describe('EmployeeManagementWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -53,6 +93,12 @@ describe('EmployeeManagementWorkspace', () => {
         { id: 11, name: 'Zara Khan', email: 'zara@example.com', role: 'employee', department: 'Design', is_working: false, total_duration: 600, groups: [{ id: 7, name: 'Design' }] },
         { id: 12, name: 'Ayush Temp', email: 'ayush@example.com', role: 'employee', department: 'Engineering', is_working: true, total_duration: 7200, groups: [{ id: 9, name: 'Engineering' }] },
         { id: 13, name: 'Mit Gujarati', email: 'mit@example.com', role: 'manager', department: 'Engineering', is_working: true, total_duration: 3600, groups: [{ id: 9, name: 'Engineering' }] },
+        /*
+         * A leaver. `/api/users` returns everybody — there is no is_active
+         * condition on it — so this row is what the page has always received
+         * and, until the Ex-employees segment, silently listed under Everyone.
+         */
+        { id: 14, name: 'Rita Former', email: 'rita@example.com', role: 'employee', department: 'Design', is_working: false, is_active: false, deactivated_at: '2026-08-01T00:00:00Z', groups: [{ id: 7, name: 'Design' }] },
       ],
     });
     apiMocks.listRoles.mockResolvedValue({
@@ -67,6 +113,9 @@ describe('EmployeeManagementWorkspace', () => {
       data: { data: [{ id: 9, name: 'Engineering', users: [] }, { id: 7, name: 'Design', users: [] }] },
     });
     apiMocks.getMembers.mockResolvedValue({ data: [] });
+    apiMocks.deleteUser.mockResolvedValue({ data: {} });
+    apiMocks.rejoin.mockResolvedValue({ data: { data: exitRecord() } });
+    apiMocks.listExits.mockResolvedValue({ data: { data: [exitRecord()] } });
     apiMocks.getProfile360.mockResolvedValue({
       data: {
         summary: {
@@ -235,5 +284,175 @@ describe('EmployeeManagementWorkspace', () => {
       expect(screen.getByText('Mit Gujarati')).toBeInTheDocument();
       expect(screen.queryByText('Zara Khan')).not.toBeInTheDocument();
     });
+  });
+
+  it('lists somebody who has left under Ex-employees, with the day they left and our rehire decision', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+    await openExEmployees();
+
+    const directoryTable = screen.getAllByRole('table')[0];
+    expect(await within(directoryTable).findByRole('link', { name: 'Rita Former' })).toBeInTheDocument();
+    expect(within(directoryTable).queryByRole('link', { name: 'Zara Khan' })).not.toBeInTheDocument();
+
+    // The three facts an admin needs before deciding anything about a leaver.
+    expect(await within(directoryTable).findByText(/Left Jul 31, 2026 · resignation/)).toBeInTheDocument();
+    expect(within(directoryTable).getByText('Rehire eligible')).toBeInTheDocument();
+    expect(within(directoryTable).getByText('Ex-employee')).toBeInTheDocument();
+  });
+
+  it('keeps ex-employees out of Everyone, so the tab and the roster cannot contradict each other', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+
+    const directoryTable = screen.getAllByRole('table')[0];
+    expect(within(directoryTable).getByRole('link', { name: 'Zara Khan' })).toBeInTheDocument();
+    expect(within(directoryTable).queryByRole('link', { name: 'Rita Former' })).not.toBeInTheDocument();
+
+    // Three of the four fixture people are still here; the pill must say so.
+    expect(screen.getByRole('button', { name: /Everyone/ }).textContent).toContain('3');
+  });
+
+  it('does not count somebody who has left as an incomplete profile to chase', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Incomplete profiles/ }).textContent).toContain('3');
+
+    fireEvent.click(screen.getByRole('button', { name: /Incomplete profiles/ }));
+
+    await waitFor(() => {
+      const directoryTable = screen.getAllByRole('table')[0];
+      expect(within(directoryTable).getByRole('link', { name: 'Zara Khan' })).toBeInTheDocument();
+      expect(within(directoryTable).queryByRole('link', { name: 'Rita Former' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('offers to bring an eligible ex-employee back, and confirms before doing it', async () => {
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+    await openExEmployees();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rita Former' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Bring back/ }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/takes a seat, exactly like a new hire/)).toBeInTheDocument();
+    // The re-based joining date is the consequence worth stating up front.
+    expect(within(dialog).getByText(/continuous-service clock/)).toBeInTheDocument();
+    expect(apiMocks.rejoin).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Bring them back' }));
+
+    await waitFor(() => expect(apiMocks.rejoin).toHaveBeenCalledWith(21, { joining_date: todayIso() }));
+  });
+
+  it('hides the rejoin action when the exit says they are not eligible for rehire', async () => {
+    apiMocks.listExits.mockResolvedValue({
+      data: { data: [exitRecord({ rehire_eligibility: 'not_eligible' })] },
+    });
+
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+    await openExEmployees();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rita Former' }));
+
+    // The menu really opened — the absence below is the gate, not a dead click.
+    expect(await screen.findByRole('button', { name: /Settings/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Bring back/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the server's seat refusal verbatim when there is no seat free", async () => {
+    apiMocks.rejoin.mockRejectedValue({
+      response: { data: { message: '2 of 2 seats are in use. Add at least 1 more seat to bring somebody back.' } },
+    });
+
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+    await openExEmployees();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Actions for Rita Former' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Bring back/ }));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Bring them back' }));
+
+    /*
+     * SeatGuard's own wording carries the shortfall, which is what tells the
+     * admin that buying a seat is the fix. A generic "could not bring this
+     * person back" would leave them with a button that failed and no next step.
+     */
+    expect(
+      await screen.findByText('2 of 2 seats are in use. Add at least 1 more seat to bring somebody back.')
+    ).toBeInTheDocument();
+  });
+
+  it('explains that history is archived rather than deleted, and shows the refusal from the server', async () => {
+    apiMocks.deleteUser.mockRejectedValue({
+      response: { data: { message: 'Zara Khan has payroll records on file and cannot be deleted.' } },
+    });
+
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Zara Khan' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Remove employee/ }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/archived rather than deleted/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/People → Exits/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete account' }));
+
+    expect(
+      await screen.findByText('Zara Khan has payroll records on file and cannot be deleted.')
+    ).toBeInTheDocument();
+  });
+
+  it('names the people a bulk remove could not delete instead of reporting plain success', async () => {
+    apiMocks.deleteUser.mockImplementation((userId: number) =>
+      userId === 12
+        ? Promise.reject({ response: { data: { message: 'Ayush Temp has attendance records on file.' } } })
+        : Promise.resolve({ data: {} })
+    );
+
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Select Zara Khan'));
+    fireEvent.click(screen.getByLabelText('Select Ayush Temp'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete accounts' }));
+
+    /*
+     * The bug this pins: runBulk reported a success count only, so a mixed
+     * selection said "Removed 1 employee" and the seven refusals vanished.
+     *
+     * The reason shown is the SERVER's, per person. Narrating every failure as
+     * a history refusal — the first fix — sent an admin chasing a 403 or a
+     * dropped connection to the Exits screen, where there is nothing to do.
+     */
+    expect(
+      await screen.findByText(
+        /1 could not be deleted\. Ayush Temp — Ayush Temp has attendance records on file\./
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('quotes a non-history failure as itself rather than sending the admin to Exits', async () => {
+    apiMocks.deleteUser.mockImplementation((userId: number) =>
+      userId === 12
+        ? Promise.reject({ response: { status: 500, data: { message: 'Server error.' } } })
+        : Promise.resolve({ data: {} })
+    );
+
+    renderWithProviders(<EmployeeManagementWorkspace mode="employees" />, { route: '/employees' });
+
+    expect(await screen.findByRole('heading', { name: 'Employees' })).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Select Ayush Temp'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete accounts' }));
+
+    expect(
+      await screen.findByText(/1 could not be deleted\. Ayush Temp — Server error\./)
+    ).toBeInTheDocument();
   });
 });

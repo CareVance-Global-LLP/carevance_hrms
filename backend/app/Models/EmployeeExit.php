@@ -22,6 +22,30 @@ class EmployeeExit extends Model
 
     public const TYPES = ['resignation', 'termination', 'retirement', 'death', 'layoff'];
 
+    /**
+     * The EMPLOYER's view on taking this person back.
+     *
+     * Deliberately separate from `exit_interviews.would_rejoin`, which is the
+     * departing person's own answer on the way out — given in confidence, to a
+     * different question, and pointing the other way. Collapsing the two would
+     * let a survey answer decide a hiring policy: somebody dismissed for cause
+     * can still tick "yes, I'd come back", and somebody the organisation would
+     * rehire tomorrow may say they would not. Only this column gates a rehire.
+     *
+     * The vocabulary lives here rather than in a database enum because the two
+     * enum() columns already on this table became Postgres CHECK constraints
+     * that no later change can alter without a second migration.
+     */
+    public const REHIRE_UNDECIDED = 'undecided';
+    public const REHIRE_ELIGIBLE = 'eligible';
+    public const REHIRE_NOT_ELIGIBLE = 'not_eligible';
+
+    public const REHIRE_DECISIONS = [
+        self::REHIRE_UNDECIDED,
+        self::REHIRE_ELIGIBLE,
+        self::REHIRE_NOT_ELIGIBLE,
+    ];
+
     protected $table = 'employee_exits';
 
     protected $fillable = [
@@ -40,6 +64,12 @@ class EmployeeExit extends Model
         'access_revoked_at',
         'closed_at',
         'initiated_by',
+        'rehire_eligibility',
+        'rehire_note',
+        'rehire_decided_by',
+        'rehire_decided_at',
+        'rejoined_at',
+        'previous_joining_date',
     ];
 
     protected $casts = [
@@ -51,6 +81,12 @@ class EmployeeExit extends Model
         'clearance_completed_at' => 'datetime',
         'access_revoked_at' => 'datetime',
         'closed_at' => 'datetime',
+        'rehire_decided_at' => 'datetime',
+        'rejoined_at' => 'datetime',
+        // Date-only, so 'date:Y-m-d'. A plain 'date' serialises as a UTC
+        // datetime and reaches the client a day early in IST — here that would
+        // shift the service start the five-year gratuity test is measured from.
+        'previous_joining_date' => 'date:Y-m-d',
     ];
 
     protected $appends = ['days_remaining', 'clearance_progress'];
@@ -73,6 +109,11 @@ class EmployeeExit extends Model
     public function initiatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'initiated_by');
+    }
+
+    public function rehireDecidedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rehire_decided_by');
     }
 
     public function interview(): HasOne

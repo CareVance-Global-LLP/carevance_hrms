@@ -14,19 +14,50 @@ import {
   X,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import StatusBadge from '@/components/ui/StatusBadge';
 import useAnchoredMenu from '@/components/ui/useAnchoredMenu';
+import { formatDate } from '@/lib/dateTime';
 
 export type DirectorySort = 'default' | 'name_asc' | 'working_first';
-export type Segment = 'all' | 'working' | 'incomplete';
+export type Segment = 'all' | 'working' | 'incomplete' | 'former';
 
 export interface RosterUser {
   id: number;
   name: string;
   email?: string | null;
+  /** Server accessor over `deactivated_at`. False means they have left. */
+  is_active?: boolean;
+  deactivated_at?: string | null;
   is_working?: boolean;
   total_duration?: number;
   total_elapsed_duration?: number;
 }
+
+/**
+ * What the exit record says about a former employee.
+ *
+ * One callback rather than three, because all three facts come off the same
+ * exit row: resolving them separately means three lookups that can disagree
+ * about WHICH exit they read, and somebody rehired once has more than one.
+ */
+export interface RosterExit {
+  id: number;
+  lastWorkingDate: string;
+  exitType: string;
+  rehireEligibility: 'undecided' | 'eligible' | 'not_eligible';
+}
+
+const REHIRE_LABEL: Record<RosterExit['rehireEligibility'], string> = {
+  undecided: 'Rehire undecided',
+  eligible: 'Rehire eligible',
+  not_eligible: 'Not eligible',
+};
+
+const REHIRE_TONE: Record<RosterExit['rehireEligibility'], 'neutral' | 'success' | 'danger'> = {
+  undecided: 'neutral',
+  eligible: 'success',
+  not_eligible: 'danger',
+};
 
 /** Fixed so the menu can be placed on its first paint, before it is measured. */
 const ROW_MENU_WIDTH = 192;
@@ -213,8 +244,10 @@ interface RowProps {
   timezone: string;
   href: string;
   incomplete: boolean;
+  exit: RosterExit | null;
   selected: boolean;
   canRemove: boolean;
+  rehireAction: ReactNode;
   onToggleSelect: () => void;
   onOpenSettings: () => void;
   onRemove: () => void;
@@ -228,8 +261,10 @@ function RosterRowBase({
   timezone,
   href,
   incomplete,
+  exit,
   selected,
   canRemove,
+  rehireAction,
   onToggleSelect,
   onOpenSettings,
   onRemove,
@@ -239,6 +274,7 @@ function RosterRowBase({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const { menuRef: panelRef, style: menuStyle } = useAnchoredMenu(triggerRef, menuOpen, { width: ROW_MENU_WIDTH, onDismiss: () => setMenuOpen(false) });
   const working = Boolean(user.is_working);
+  const hasLeft = user.is_active === false;
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -309,6 +345,30 @@ function RosterRowBase({
               ) : null}
             </div>
             <p className="truncate text-[11px] text-slate-500">{user.email}</p>
+
+            {/* Only a leaver carries this block, and only the Ex-employees
+                segment carries leavers — but the badge stays row-level so a row
+                is never ambiguous about which of the two it is. */}
+            {hasLeft ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <StatusBadge tone="neutral" className="px-2 py-0.5 tracking-[0.1em]">
+                  Ex-employee
+                </StatusBadge>
+                {exit ? (
+                  <StatusBadge
+                    tone={REHIRE_TONE[exit.rehireEligibility]}
+                    className="px-2 py-0.5 tracking-[0.1em]"
+                  >
+                    {REHIRE_LABEL[exit.rehireEligibility]}
+                  </StatusBadge>
+                ) : null}
+                <span className="text-[11px] text-slate-600">
+                  {exit
+                    ? `Left ${formatDate(exit.lastWorkingDate)} · ${exit.exitType.replace(/_/g, ' ')}`
+                    : 'No exit record'}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </td>
@@ -365,6 +425,12 @@ function RosterRowBase({
               >
                 <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" /> Settings
               </button>
+              {/* Bringing somebody back is not destructive, so it sits above the
+                  divider. The wrapper closes the menu on the way out of the
+                  slot's own click, which the slot itself cannot reach. */}
+              {rehireAction ? (
+                <div onClick={() => setMenuOpen(false)}>{rehireAction}</div>
+              ) : null}
               {canRemove ? (
                 <>
                   <div className="my-1 h-px bg-slate-100" />
@@ -412,8 +478,11 @@ export interface EmployeeRosterProps {
   setSort: (next: DirectorySort) => void;
   workingCount: number;
   incompleteCount: number;
+  formerCount: number;
   canManage: boolean;
   isExporting: boolean;
+  resolveExit?: (user: RosterUser) => RosterExit | null;
+  rehireSlot?: (user: RosterUser) => ReactNode;
   resolveCode: (user: RosterUser) => string;
   resolveRole: (user: RosterUser) => string;
   resolveDepartment: (user: RosterUser) => string;
@@ -463,8 +532,11 @@ export default function EmployeeRoster({
   setSort,
   workingCount,
   incompleteCount,
+  formerCount,
   canManage,
   isExporting,
+  resolveExit,
+  rehireSlot,
   resolveCode,
   resolveRole,
   resolveDepartment,
@@ -498,6 +570,10 @@ export default function EmployeeRoster({
     { key: 'all', label: 'Everyone', count: users.length },
     { key: 'working', label: 'Working now', count: workingCount },
     { key: 'incomplete', label: 'Incomplete profiles', count: incompleteCount, warn: true },
+    // No `warn`: somebody who has left is a record to keep, not a problem to
+    // chase. The other three segments exclude them, so this is the only place
+    // they appear and the counts do not double up.
+    { key: 'former', label: 'Ex-employees', count: formerCount },
   ];
 
   return (
@@ -702,9 +778,13 @@ export default function EmployeeRoster({
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-16 text-center">
-                    <p className="text-sm font-semibold text-slate-900">No employees match</p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {segment === 'former' && formerCount === 0 ? 'Nobody has left yet' : 'No employees match'}
+                    </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Try clearing the search or filters above.
+                      {segment === 'former' && formerCount === 0
+                        ? 'People appear here once their exit revokes access on their last working day.'
+                        : 'Try clearing the search or filters above.'}
                     </p>
                   </td>
                 </tr>
@@ -719,6 +799,8 @@ export default function EmployeeRoster({
                     timezone={resolveTimezone(user)}
                     href={resolveHref(user)}
                     incomplete={isIncomplete(user)}
+                    exit={resolveExit?.(user) ?? null}
+                    rehireAction={rehireSlot?.(user) ?? null}
                     selected={selected.has(user.id)}
                     canRemove={canManage}
                     onToggleSelect={() => toggleOne(user.id)}
