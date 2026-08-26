@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Auth\ApiTokenService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Billing\PlanService;
+use App\Services\Lifecycle\EmployeeHistoryProbe;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -73,8 +74,35 @@ class AuthController extends Controller
             $existingUser = User::whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->first();
 
             if ($existingUser && $existingUser->organization && $existingUser->organization->subscription_status === 'inactive') {
-                $orgId = $existingUser->organization->id;
-                $existingUser->organization->delete();
+                // Reclaiming an abandoned paid signup: the workspace was created,
+                // the payment never landed, and the same person is trying again.
+                //
+                // This is an UNAUTHENTICATED route that hard-deletes an
+                // organization, and `users.organization_id` is ON DELETE
+                // CASCADE with no SoftDeletes anywhere — so the two guards
+                // below are what stop it taking colleagues and their payroll
+                // with it. `inactive` bounds this to workspaces that never
+                // completed a first payment, but such a workspace can already
+                // have onboarded staff.
+                $organizationToReclaim = $existingUser->organization;
+                $otherMembers = User::where('organization_id', $organizationToReclaim->id)
+                    ->where('id', '!=', $existingUser->id)
+                    ->exists();
+
+                if ($otherMembers) {
+                    throw ValidationException::withMessages([
+                        'email' => ['This email is already registered. Please sign in or use a different email.'],
+                    ]);
+                }
+
+                if (app(EmployeeHistoryProbe::class)->hasHistory($existingUser)) {
+                    throw ValidationException::withMessages([
+                        'email' => ['This email is already registered. Please sign in or use a different email.'],
+                    ]);
+                }
+
+                $orgId = $organizationToReclaim->id;
+                $organizationToReclaim->delete();
                 $existingUser->delete();
 
                 DB::table('personal_access_tokens')->where('tokenable_id', $existingUser->id)->delete();
@@ -276,7 +304,8 @@ class AuthController extends Controller
         $token = $this->apiTokenService->issue(
             $user,
             'auth-token',
-            $this->getApiAuthTokenMinutes($remember)
+            $this->getApiAuthTokenMinutes($remember),
+            request: $request,
         );
         $user->load(['organization', 'groups', 'employeeProfile']);
 
@@ -412,10 +441,23 @@ class AuthController extends Controller
         // Do not cleanup 'trial' or 'active' statuses
         if ($organization && $organization->subscription_status === 'inactive') {
             $orgId = $organization->id;
-            
+
+            // Abandoning a signup deletes the account outright, so it needs the
+            // same guard `DELETE /api/users/{id}` has: anything already on file
+            // is the organisation's to keep, and there is no undo. Nothing is
+            // torn down in that case — the workspace stays exactly as it is and
+            // the caller keeps their session.
+            if (app(EmployeeHistoryProbe::class)->hasHistory($user)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This account already has records on file and cannot be discarded.',
+                    'error_code' => 'HAS_HISTORY',
+                ], 422);
+            }
+
             // Delete user
             $user->delete();
-            
+
             // Delete organization if no other users remain
             if (!User::where('organization_id', $orgId)->exists()) {
                 $organization->delete();
@@ -443,7 +485,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $token = $this->apiTokenService->issue($user, 'web-handoff-token');
+        $token = $this->apiTokenService->issue($user, 'web-handoff-token', request: $request);
         $user->load(['organization', 'groups', 'employeeProfile']);
 
         return $this->successResponse([
@@ -473,7 +515,7 @@ class AuthController extends Controller
             ], 401);
         }
 
-        $token = $this->apiTokenService->issue($user, 'desktop-web-token');
+        $token = $this->apiTokenService->issue($user, 'desktop-web-token', request: $request);
 
         return $this->successResponse([
             'token' => $token,
@@ -609,7 +651,8 @@ class AuthController extends Controller
         $token = $this->apiTokenService->issue(
             $user,
             'auth-token',
-            $this->getApiAuthTokenMinutes($remember)
+            $this->getApiAuthTokenMinutes($remember),
+            request: $request,
         );
 
         $user->load(['organization', 'groups', 'employeeProfile']);

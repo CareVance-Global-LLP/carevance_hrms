@@ -399,6 +399,45 @@ export type BreakGlassSession = {
   requested_by: { id: number | null; name: string | null };
 };
 
+/**
+ * One live sign-in on your own account.
+ *
+ * Every field is something the server recorded, never something it inferred.
+ * `device` is parsed from the stored user agent and is the literal string
+ * "Unknown device" when the user agent says nothing — there is no geolocation
+ * and no guessed device name, because resolving an IP to a place would mean
+ * posting our users' addresses to a third party.
+ */
+export type SignedInSession = {
+  id: number;
+  device: string;
+  /** Where it is answering from now, falling back to where it signed in. */
+  ip: string | null;
+  signed_in_ip: string | null;
+  last_used_at: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  is_current: boolean;
+};
+
+/**
+ * The list plus the answer to "is another machine on this account right now".
+ *
+ * `active_device_count` counts distinct devices used inside
+ * `concurrent_window_minutes`, so the UI never has to hardcode the window the
+ * server actually measured.
+ */
+export type SignedInSessionList = {
+  data: SignedInSession[];
+  concurrent_use: boolean;
+  active_device_count: number;
+  concurrent_window_minutes: number;
+  /** Live sessions on the account. `data` is capped, this never is. */
+  total_count: number;
+  /** How many rows `data` actually holds. */
+  listed_count: number;
+};
+
 /** What the employee-facing privacy screen renders, all read from the server. */
 export type MonitoringDisclosure = {
   monitoring_enabled: boolean;
@@ -586,6 +625,52 @@ export const authApi = {
 
   mfaDisable: (payload: { password: string; code: string }) =>
     api.delete('/auth/mfa', { data: payload }),
+
+  // ===== Where you are signed in: your own devices, nobody else's =====
+  /**
+   * Scoped to the acting user by the server; there is no id to widen it with.
+   * Defaults are applied here so a truncated or older response renders as one
+   * device rather than throwing on a missing count.
+   */
+  sessions: async (): Promise<SignedInSessionList> => {
+    const { data } = await api.get<Partial<SignedInSessionList>>('/auth/sessions');
+    const sessions = data.data ?? [];
+
+    return {
+      data: sessions,
+      concurrent_use: Boolean(data.concurrent_use),
+      active_device_count: data.active_device_count ?? 0,
+      concurrent_window_minutes: data.concurrent_window_minutes ?? 15,
+      // Defaulted to what we can see rather than to zero: an older or
+      // truncated response must not make the screen claim there are no
+      // sessions while it is rendering some.
+      total_count: data.total_count ?? sessions.length,
+      listed_count: data.listed_count ?? sessions.length,
+    };
+  },
+
+  /**
+   * End one session. The reply says whether it was this one, so a caller that
+   * has just signed itself out can clear its own credentials instead of firing
+   * the next request into a 401.
+   */
+  revokeSession: async (id: number): Promise<{ was_current_session: boolean }> => {
+    const { data } = await api.delete<{ was_current_session?: boolean }>(`/auth/sessions/${id}`);
+    return { was_current_session: Boolean(data?.was_current_session) };
+  },
+
+  /**
+   * End every session except this one.
+   *
+   * The only action that scales. A seven-day token lifetime plus one token per
+   * sign-in leaves real accounts holding dozens of live sessions, and clearing
+   * those one confirmation at a time is something nobody finishes — so the
+   * list stays unreadable and stops answering the question it exists for.
+   */
+  revokeOtherSessions: async (): Promise<{ revoked_count: number }> => {
+    const { data } = await api.delete<{ revoked_count?: number }>('/auth/sessions');
+    return { revoked_count: data?.revoked_count ?? 0 };
+  },
 
   // ===== Break-glass: vendor support access to this organisation =====
   breakGlassSessions: async (): Promise<BreakGlassSession[]> => {
@@ -1119,6 +1204,13 @@ export interface OnboardingJourney {
 export type ExitStage = 'notice' | 'clearance' | 'settlement' | 'closed';
 export type ExitType = 'resignation' | 'termination' | 'retirement' | 'death' | 'layoff';
 
+/**
+ * The EMPLOYER's view on taking this person back. Deliberately not
+ * `ExitInterview.would_rejoin`, which is the departing employee's own answer —
+ * the two disagree often and mean different things.
+ */
+export type RehireDecision = 'undecided' | 'eligible' | 'not_eligible';
+
 export interface ClearanceProgress {
   total: number;
   done: number;
@@ -1140,7 +1232,19 @@ export interface EmployeeExit {
   clearance_progress: ClearanceProgress;
   clearance_completed_at: string | null;
   access_revoked_at: string | null;
+  rehire_eligibility: RehireDecision;
+  rehire_note: string | null;
+  rehire_decided_at: string | null;
+  /** Stamped when this exit's person actually came back; the row stays closed. */
+  rejoined_at: string | null;
+  /**
+   * The service start of the period THIS exit ended. A rejoin re-bases the work
+   * info's joining date so gratuity's five-year continuous-service clock
+   * restarts, and the earlier period survives only here.
+   */
+  previous_joining_date: string | null;
   user?: { id: number; name: string; email: string } | null;
+  rehire_decided_by?: { id: number; name: string } | null;
   checklist_items?: ChecklistItem[];
   interview?: ExitInterview | null;
 }
@@ -1219,6 +1323,16 @@ export const exitApi = {
     api.post<{ data: EmployeeExit }>(`/exits/${id}/advance`, { stage }),
 
   revokeAccess: (id: number) => api.post<{ data: EmployeeExit }>(`/exits/${id}/revoke-access`),
+
+  setRehireEligibility: (id: number, data: { rehire_eligibility: RehireDecision; note?: string }) =>
+    api.post<{ data: EmployeeExit }>(`/exits/${id}/rehire-eligibility`, data),
+
+  /**
+   * Bring somebody back. Consumes a seat, so a full workspace is refused with a
+   * 422 carrying the shortfall — surface that message rather than a generic one.
+   */
+  rejoin: (id: number, data: { joining_date: string }) =>
+    api.post<{ data: EmployeeExit }>(`/exits/${id}/rejoin`, data),
 
   saveInterview: (id: number, data: Record<string, unknown>) =>
     api.post<{ data: ExitInterview }>(`/exits/${id}/interview`, data),

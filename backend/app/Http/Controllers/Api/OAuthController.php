@@ -132,7 +132,7 @@ class OAuthController extends Controller
                 $hasWorkspace = false;
             }
 
-            $token = $this->apiTokenService->issue($user, 'google-auth-token');
+            $token = $this->apiTokenService->issue($user, 'google-auth-token', request: $request);
 
             $user->load(['organization']);
 
@@ -359,7 +359,7 @@ class OAuthController extends Controller
                 }
 
                 // Get fresh token
-                $token = $this->apiTokenService->issue($user, 'google-auth-completed');
+                $token = $this->apiTokenService->issue($user, 'google-auth-completed', request: $request);
 
                 $user->load('organization');
 

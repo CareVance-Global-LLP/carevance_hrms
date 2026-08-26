@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SamlConnection;
 use App\Models\User;
+use App\Services\Auth\ApiTokenService;
 use App\Services\Auth\SamlAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -26,6 +26,7 @@ class SamlAuthController extends Controller
 {
     public function __construct(
         private readonly SamlAuthService $saml,
+        private readonly ApiTokenService $tokens,
     ) {
     }
 
@@ -111,7 +112,7 @@ class SamlAuthController extends Controller
             return $this->failure('error');
         }
 
-        $token = $this->issueToken($user);
+        $token = $this->issueToken($user, $request);
 
         return redirect()->away(rtrim(config('app.frontend_url', config('app.url')), '/').'/auth/sso#token='.$token);
     }
@@ -136,31 +137,23 @@ class SamlAuthController extends Controller
     }
 
     /**
-     * A Sanctum-shaped token, issued the same way the password path issues one.
+     * A token issued exactly the way the password path issues one.
      *
-     * Written directly rather than through createToken so the hashing and
-     * expiry match the rest of the API exactly — two token formats would mean
-     * one of them eventually drifts out of whatever the middleware expects.
+     * This used to be a second, hand-written INSERT into
+     * personal_access_tokens, on the reasoning that writing it directly kept
+     * the hashing and expiry identical. It did not: the moment the table grew
+     * the columns that say what device a session belongs to, the duplicate
+     * silently wrote NULL into all three, so every SSO sign-in appeared in the
+     * user's own session list as "Unknown device" while every password sign-in
+     * was named. That is precisely the drift the duplicate was supposed to
+     * prevent, arriving through the duplicate itself.
+     *
+     * The Request is threaded down from callback() so the capture happens for
+     * SSO too. Nothing else about the token changes.
      */
-    private function issueToken(User $user): string
+    private function issueToken(User $user, Request $request): string
     {
-        $plainToken = bin2hex(random_bytes(40));
-
-        DB::table('personal_access_tokens')->insert([
-            'tokenable_type' => User::class,
-            'tokenable_id' => $user->id,
-            'name' => 'saml-sso',
-            'token' => hash('sha256', $plainToken),
-            'abilities' => json_encode(['*']),
-            'last_used_at' => null,
-            'expires_at' => config('auth.api_tokens.ttl_minutes') > 0
-                ? now()->addMinutes((int) config('auth.api_tokens.ttl_minutes'))
-                : null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        return $plainToken;
+        return $this->tokens->issue($user, 'saml-sso', request: $request);
     }
 
     /**

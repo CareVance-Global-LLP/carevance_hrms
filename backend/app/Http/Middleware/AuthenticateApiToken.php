@@ -110,7 +110,7 @@ class AuthenticateApiToken
         $request->setUserResolver(fn () => $user);
         $request->attributes->set('access_token', $tokenRecord);
 
-        $this->touchActivity($tokenRecord, $user);
+        $this->touchActivity($tokenRecord, $user, $request);
 
         return $next($request);
     }
@@ -158,8 +158,21 @@ class AuthenticateApiToken
      * read-only API call still cost two row updates. At any real request rate
      * that is the first thing to saturate the primary. Minute granularity is
      * all `last_used_at` / `last_seen_at` are ever displayed at.
+     *
+     * `last_ip` rides INSIDE that same conditional update rather than being a
+     * write of its own. A moved session becomes visible within the minute at
+     * exactly the write load the throttle already permits — the column is free,
+     * the UPDATE was happening anyway. Writing it whenever the address changes,
+     * outside the throttle, would reintroduce the incident this docblock
+     * records: the cheapest way to make every request write again is to find a
+     * second reason to.
+     *
+     * The cost is that the address shown is accurate to the minute, and a
+     * session that moves and then goes quiet keeps the address it last
+     * reported from. That is the correct trade for a column read by a human
+     * once a month.
      */
-    private function touchActivity(object $tokenRecord, User $user): void
+    private function touchActivity(object $tokenRecord, User $user, Request $request): void
     {
         $now = now();
         $staleAfter = $now->copy()->subMinute();
@@ -171,6 +184,10 @@ class AuthenticateApiToken
                 ->where('id', $tokenRecord->id)
                 ->update([
                     'last_used_at' => $now,
+                    // Never overwrite a known address with nothing. A request
+                    // that arrives with no resolvable IP is not evidence the
+                    // session moved somewhere unknown.
+                    'last_ip' => $request->ip() ?? $tokenRecord->last_ip ?? null,
                     'updated_at' => $now,
                 ]);
         }

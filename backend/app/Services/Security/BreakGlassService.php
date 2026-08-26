@@ -161,7 +161,7 @@ class BreakGlassService
      * default seven days, and its ability names the session so the middleware
      * can resolve it and the audit observer can stamp it.
      */
-    public function issueToken(BreakGlassSession $session, User $vendor): string
+    public function issueToken(BreakGlassSession $session, User $vendor, ?Request $request = null): string
     {
         if ((int) $session->requested_by_user_id !== (int) $vendor->id) {
             throw new \InvalidArgumentException('Only the engineer who requested this session may use it.');
@@ -173,11 +173,21 @@ class BreakGlassService
 
         $target = User::withoutGlobalScopes()->findOrFail($session->target_user_id);
 
+        /*
+         * The captured device is the ENGINEER'S, not the employee's — this
+         * token is minted for the customer's user but will only ever be used
+         * from the vendor's machine. That is the honest record, and it is what
+         * makes the row explicable when the employee sees it in their own
+         * session list. The list labels it "CareVance support access" from the
+         * token's abilities rather than from the user agent, so the row says
+         * what it is instead of naming a browser the employee does not own.
+         */
         $token = $this->tokens->issue(
             user: $target,
             name: "break-glass:{$session->id}",
             ttlMinutes: max(1, $session->remainingMinutes()),
             abilities: ["break_glass:{$session->id}"],
+            request: $request,
         );
 
         $session->forceFill(['token_issued_at' => now()])->saveQuietly();

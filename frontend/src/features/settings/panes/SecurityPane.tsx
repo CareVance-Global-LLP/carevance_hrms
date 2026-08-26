@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Eye, EyeOff, Lock, Monitor } from 'lucide-react';
+import { Eye, EyeOff, Lock } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
-import StatusBadge from '@/components/ui/StatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
 import { hasAdminAccess, resolveUserRoleLabel } from '@/lib/permissions';
 import SettingsCard from '../components/SettingsCard';
@@ -10,6 +9,7 @@ import SettingRow from '../components/SettingRow';
 import PasswordStrength, { evaluatePassword } from '../components/PasswordStrength';
 import TwoFactorSection from '../components/TwoFactorSection';
 import BreakGlassSection from '../components/BreakGlassSection';
+import SignedInDevicesSection from '../components/SignedInDevicesSection';
 import type { SettingsController } from '../useSettingsController';
 
 /** Best-effort read of the current browser. Nothing here is invented — if the
@@ -161,13 +161,16 @@ export default function SecurityPane({ controller }: { controller: SettingsContr
         </div>
       </SettingsCard>
 
-      <SettingsCard title="This session" description="What the app can actually tell you about how you are signed in.">
-        <SettingRow
-          icon={Monitor}
-          title={describeBrowser()}
-          description="The browser you are reading this in."
-          control={<StatusBadge tone="success">This device</StatusBadge>}
-        />
+      {/*
+        Was "This session", which could only ever describe the browser it was
+        rendered in — the one place a second machine can never show up. The
+        block is the same block, grown to list what the server actually knows.
+      */}
+      <SettingsCard
+        title="Where you're signed in"
+        description="Every device currently signed in to your account. Sign out any you do not recognise."
+      >
+        <SignedInDevicesSection fallbackDeviceLabel={describeBrowser()} />
         <SettingRow
           icon={Lock}
           title={`Signed in as ${resolveUserRoleLabel(user)}`}
