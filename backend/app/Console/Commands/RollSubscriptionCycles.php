@@ -118,7 +118,7 @@ class RollSubscriptionCycles extends Command
     {
         $recipients = $organization->users()
             ->where('role', 'admin')
-            ->whereNull('deactivated_at')
+            ->stillHoldingAccess()
             ->pluck('email')
             ->filter()
             ->unique()

@@ -86,7 +86,15 @@ class BillingController extends Controller
         $isTrial = $organization->subscription_status === 'trial';
         $isNewPaidSignup = $organization->subscription_status === 'inactive' && $organization->subscription_intent === 'paid';
         $isFreeChange = $isTrial || $isNewPaidSignup;
-        $usedSeats = $organization->users()->count();
+        // The seat floor, and the SAME number the billing page displays. It was
+        // briefly the headcount on record — every row the organization had ever
+        // had — which quoted a workspace of 5 active people and 30 leavers at 35
+        // seats beside a meter reading "5 of 10", with nothing on screen naming
+        // the 35. A quote a customer cannot check against the page they are
+        // looking at is not a quote. People who have left hold no access and are
+        // not charged for; the plan floor below is what stops the number going
+        // implausibly low.
+        $usedSeats = $this->seatGuard->usedSeats($organization);
         $minSeats = $isTrial ? 5 : 10;
 
         if ($isFreeChange) {
@@ -99,7 +107,20 @@ class BillingController extends Controller
                 ? max($requestedSeats, $minSeats, $usedSeats)
                 : $this->companyProfile->suggestedSeats($organization, $minSeats, $usedSeats);
         } else {
-            $seats = max($requestedSeats > 0 ? $requestedSeats : $organization->max_seats, $minSeats, $usedSeats);
+            // A paid workspace's current cap is a FLOOR here, not a default.
+            //
+            // Without it this endpoint was an unguarded, free, immediate seat
+            // REDUCTION path: `confirmUpgrade` writes whatever this quotes
+            // straight into `max_seats`, so a 40-seat workspace could post
+            // `{target_plan_code: <its own plan>, seats: 10}`, be quoted ₹0
+            // (same plan, so the per-user difference is zero), confirm, and
+            // land on a 10-seat cap mid-cycle — while `POST /billing/
+            // reduce-seats` refused the identical request and promised "next
+            // billing cycle, no refund". Reducing seats is that endpoint's
+            // job, with that endpoint's floor and its scheduling; changing
+            // plan must not be a second way to do it that skips both.
+            $currentCap = (int) ($organization->max_seats ?? 0);
+            $seats = max($requestedSeats, $minSeats, $usedSeats, $currentCap);
         }
 
         $currentPricePerUser = (int) ($currentPlanConfig[$billingCycle === 'yearly' ? 'yearly_price' : 'monthly_price'] ?? 0);
@@ -206,7 +227,21 @@ class BillingController extends Controller
 
         $targetPlanCode = $organization->pending_plan_code;
         $billingCycle = $organization->pending_billing_cycle ?? $organization->billing_cycle;
-        $seats = $organization->pending_seats ?? $organization->max_seats;
+        // Re-read the headcount rather than trusting the quote.
+        //
+        // The quote was priced minutes or days ago and `SeatGuard::assertCanAdd`
+        // — which `ExitService::rejoin`, `ScimProvisioningService::reactivate`
+        // and `InvitationService` all call — checks against the cap in force at
+        // that moment, not against `pending_seats`. Somebody brought back
+        // between quote and payment therefore fitted, and writing the quoted
+        // number here left the workspace permanently above its own cap: seat
+        // enforcement is forward-only, so it never has to buy the difference
+        // and the renewal recurs on the smaller number for ever. The cap may
+        // never be written below the people actually holding access.
+        $seats = max(
+            (int) ($organization->pending_seats ?? $organization->max_seats),
+            $this->seatGuard->usedSeats($organization)
+        );
 
         if (!$targetPlanCode) {
             return $this->errorResponse('No target plan selected. Please go back and choose a plan.', 400);
@@ -314,7 +349,12 @@ class BillingController extends Controller
             return $this->errorResponse('No pending seat addition found. Please add seats first.', 400);
         }
 
-        $seats = $organization->pending_seats ?? $organization->max_seats;
+        // Same rule as confirmUpgrade: the cap that gets written may never be
+        // below the people already holding access.
+        $seats = max(
+            (int) ($organization->pending_seats ?? $organization->max_seats),
+            $this->seatGuard->usedSeats($organization)
+        );
         $billingCycle = $organization->pending_billing_cycle ?? $organization->billing_cycle;
 
         $organization->update([

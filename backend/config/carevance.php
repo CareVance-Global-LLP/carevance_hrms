@@ -49,6 +49,25 @@ return [
         ],
     ],
 
+    // `min_seats` is the lowest cap a workspace on the plan may REDUCE to, and
+    // is read by SeatGuard::minimumAllowedSeats(). It was absent from every
+    // plan, so that method fell through to invented defaults of 50 (payroll)
+    // and 10 (tracking) written inside the class — a floor nobody could find
+    // by reading this file. The values below are those defaults, unchanged, so
+    // nothing a customer can do costs a different amount today.
+    //
+    // TWO THINGS HERE STILL NEED A HUMAN, and neither is safe to guess at:
+    //
+    //  - BillingController::upgradePlan floors a *purchase* at a hardcoded 5
+    //    (converting trial) or 10 (paid), which is not this number. Since an
+    //    upgrade can no longer lower a cap, the two now govern different acts
+    //    — the least you may buy, and the least you may shrink to — but 50 and
+    //    10 disagreeing on the same payroll plan is still a pricing decision
+    //    somebody has to make deliberately.
+    //  - `max_seats: 50` plus `extra_seat_price` on the payroll plans reads as
+    //    a bundle (₹3999 for up to 50 people, then ₹79 each), while every code
+    //    path prices `monthly_price × seats`. `extra_seat_price` has no reader
+    //    at all. One of the two is wrong and it is worth real money.
     'plans' => [
         // Tracking Plans
         'basic_tracking' => [
@@ -59,6 +78,7 @@ return [
             'trial_available' => true,
             'contact_sales_only' => false,
             'max_seats' => -1, // Unlimited
+            'min_seats' => 10,
             'type' => 'tracking',
         ],
         'advance_tracking' => [
@@ -69,6 +89,7 @@ return [
             'trial_available' => false,
             'contact_sales_only' => false,
             'max_seats' => -1, // Unlimited
+            'min_seats' => 10,
             'type' => 'tracking',
         ],
         
@@ -82,6 +103,7 @@ return [
             'contact_sales_only' => false,
             'max_seats' => 50,
             'extra_seat_price' => 79,
+            'min_seats' => 50,
             'type' => 'payroll',
         ],
         'professional_payroll' => [
@@ -93,6 +115,7 @@ return [
             'contact_sales_only' => false,
             'max_seats' => 50,
             'extra_seat_price' => 119,
+            'min_seats' => 50,
             'type' => 'payroll',
         ],
         
@@ -105,6 +128,9 @@ return [
             'trial_available' => false,
             'contact_sales_only' => true,
             'max_seats' => -1, // Unlimited
+            // `type: payroll`, so this was already 50 through the class-level
+            // fallback. Written down rather than changed.
+            'min_seats' => 50,
             'type' => 'payroll',
         ],
     ],

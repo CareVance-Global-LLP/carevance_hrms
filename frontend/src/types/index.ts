@@ -13,6 +13,13 @@ export interface User {
   avatar?: string | null;
   hourly_rate?: number;
   is_active: boolean;
+  /**
+   * The release signal, not deletion. `User` has no soft deletes: a leaver's
+   * row survives so their payroll and attendance survive with it, and the exit
+   * sweep stamps this instead. `is_active` is the server's accessor over it.
+   */
+  deactivated_at?: string | null;
+  deactivation_reason?: string | null;
   is_working?: boolean;
   current_duration?: number;
   current_project?: string | null;
@@ -547,6 +554,11 @@ export interface BillingSnapshot {
    * win the denominator on the billing page.
    */
   seats?: {
+    /**
+     * People still holding access. A leaver releases their seat on
+     * deactivation, and this is also the number every quote is priced on — the
+     * meter and the invoice must never be able to disagree.
+     */
     used: number;
     max: number;
     remaining: number;
