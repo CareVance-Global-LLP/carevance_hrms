@@ -5,6 +5,7 @@ import { ArrowRight } from 'lucide-react';
 import { analytics } from '@/lib/analytics';
 import MagneticButton from './MagneticButton';
 import GradientOrb from './GradientOrb';
+import WordRise from './WordRise';
 
 /**
  * Trial length, scoped to this component.
@@ -39,28 +40,26 @@ export default function CTA() {
           Get started today
         </motion.span>
 
-        {/* Heading — word-by-word reveal */}
-        <motion.h2
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.3 }}
-          className="mt-6 text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl"
-        >
-          {'Ready to transform your workforce?'.split(' ').map((word, i) => (
-            <motion.span
-              key={i}
-              className="inline-block"
-              initial={{ opacity: 0, y: 20, filter: 'blur(4px)' }}
-              whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: 0.1 + i * 0.04, ease: [0.22, 1, 0.36, 1] }}
-              style={{ marginRight: '0.3em' }}
-            >
-              {word}
-            </motion.span>
-          ))}
-        </motion.h2>
+        {/*
+          Heading — word-by-word reveal, via the shared WordRise.
+          ────────────────────────────────────────────────────────────────
+          This was an inline split that spaced the words with
+          `marginRight: '0.3em'` and emitted NO actual space character. It
+          looked right and was broken everywhere else: `innerText` returned
+          "Readytotransformyourworkforce?", so copy-paste lost the spaces,
+          assistive technology had no word boundaries, and search engines
+          indexed one run-on token — on an <h2> that renders on both the
+          landing page and /pricing.
+
+          It is the identical fault TextReveal had. Two hand-rolled word
+          splitters is two places to get the same thing wrong, so this now uses
+          the one component that renders real spaces between the words — which
+          is all assistive technology needs to read them continuously — and
+          drops to plain text under prefers-reduced-motion.
+        */}
+        <h2 className="mt-6 text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
+          <WordRise text="Ready to transform your workforce?" />
+        </h2>
 
         <motion.p
           initial={{ opacity: 0, y: 16 }}

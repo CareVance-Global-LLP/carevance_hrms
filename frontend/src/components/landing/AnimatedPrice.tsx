@@ -75,10 +75,20 @@ export default function AnimatedPrice({
     };
   }, [value, format, reduced, duration]);
 
+  /*
+   * ONE span, not a visually-hidden copy plus an aria-hidden one.
+   *
+   * The duplicate pattern made `innerText` contain the figure twice, so a
+   * reader copying a price got "₹399₹399". The reason it existed — that the
+   * animated node briefly holds an intermediate number — does not justify
+   * that: this is not a live region, so assistive technology announces it when
+   * the reader reaches it rather than as it changes, and the count settles in
+   * 420ms on the exact authored value. The final figure is also what renders
+   * server-side and on first paint, so a crawler never sees a partial one.
+   */
   return (
     <span className={className}>
-      <span className="sr-only">{format(value)}</span>
-      <span ref={ref} aria-hidden="true" className="tabular-nums">
+      <span ref={ref} className="tabular-nums">
         {format(value)}
       </span>
     </span>

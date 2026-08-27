@@ -138,8 +138,17 @@ export default function HonestProof() {
                 ))}
               </ul>
 
+              {/*
+                `/contact-sales`, not `/contact`. There is no `/contact` route,
+                and App.tsx sends unknown paths to `<Navigate to="/" replace/>`
+                — so this button silently returned the reader to the homepage
+                instead of 404ing. A dead link on the one conversion this
+                section exists for, invisible because the catch-all swallowed
+                it. check-public-pages.mjs now crawls every internal link and
+                fails when a path lands somewhere it did not ask for.
+              */}
               <Link
-                to="/contact"
+                to="/contact-sales"
                 className="mt-6 inline-flex h-11 items-center gap-2 rounded-lg bg-blue-700 px-5 text-sm font-semibold text-white transition-colors hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
               >
                 Apply to be a design partner

@@ -6,11 +6,29 @@ import FeatureComparison from '@/components/landing/FeatureComparison';
 import FAQSection from '@/components/landing/FAQSection';
 import LandingPageChatBubble from '@/components/LandingPageChatBubble';
 
+/**
+ * COUNTED FROM THE CODEBASE, NOT INVENTED.
+ *
+ * This block carried "10,000+ active users", "500+ workspaces onboarded", a
+ * "32% avg productivity lift" and a "4.8/5 avg rating". None of them existed —
+ * there are no users to count, no workspaces to count, no study behind a
+ * productivity figure and no platform issuing a rating.
+ *
+ * They were removed from the landing hero in the first pass of this work and
+ * SURVIVED HERE, because this page keeps its own copy of the same four
+ * numbers. That is the lesson worth keeping: a claim deleted in one component
+ * is not deleted from the product. `scripts/check-public-pages.mjs` now sweeps
+ * every public route for exactly these strings so the next copy cannot hide.
+ *
+ * The replacements are audited in PRODUCT_TRUTH.md under the ids beside them,
+ * and each names the file it was counted from. What a company with no customers
+ * honestly has is scope, and scope is checkable.
+ */
 const trustMetrics = [
-  { label: 'Active users', value: '10,000+' },
-  { label: 'Workspaces onboarded', value: '500+' },
-  { label: 'Avg productivity lift', value: '32%' },
-  { label: 'Avg rating', value: '4.8/5' },
+  { label: 'States & UTs with PT resolved', value: '37' }, // STA-04
+  { label: 'Statutory documents generated', value: '23' }, // FIL-01
+  { label: 'Apps in the suite', value: '4' }, // NUM-05
+  { label: 'Days of free trial, no card', value: '14' }, // PRC-01
 ];
 
 const planTypes = [

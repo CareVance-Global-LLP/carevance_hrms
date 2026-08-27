@@ -78,19 +78,20 @@ export default function AnimatedCounter({
     };
   }, [isInView, reduced, target, prefix, suffix, duration, final]);
 
+  /*
+   * ONE span. Not `aria-label` (a bare <span> is role=generic, which prohibits
+   * naming — Lighthouse reports that as a prohibited ARIA attribute), and not
+   * an sr-only duplicate either: that put the figure in `innerText` twice, so
+   * the hero stats copied as "3737" and prices as "₹399₹399".
+   *
+   * The final value is what renders first and what remains after ~1.6s, so a
+   * crawler and a screen reader both meet the real number; only a reader who
+   * arrives mid-count sees an intermediate one, and this is not a live region
+   * so nothing is announced as it changes.
+   */
   return (
     <span ref={wrapRef} className={className}>
-      {/*
-        A VISUALLY-HIDDEN REAL TEXT NODE, not `aria-label` on this span.
-        `aria-label` is only permitted on elements whose role supports naming; a
-        bare <span> has role=generic, which prohibits it. Browsers and screen
-        readers are entitled to ignore it — and since the animated span beside
-        it is `aria-hidden`, the number would have been announced as NOTHING.
-        Lighthouse flags this as "elements use prohibited ARIA attributes"; the
-        sr-only text node is the pattern that actually works.
-      */}
-      <span className="sr-only">{final}</span>
-      <span ref={valueRef} aria-hidden="true" className="tabular-nums">
+      <span ref={valueRef} className="tabular-nums">
         {final}
       </span>
     </span>

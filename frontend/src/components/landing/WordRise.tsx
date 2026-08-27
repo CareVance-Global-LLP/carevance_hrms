@@ -44,17 +44,25 @@ export default function WordRise({
   return (
     <span className={className}>
       {/*
-        The sentence as a real, visually-hidden text node — NOT `aria-label` on
-        this span. `aria-label` is only allowed where the element's role
-        supports naming, and a bare <span> is role=generic, which prohibits it;
-        assistive technology may ignore it entirely, and every visible word
-        below is `aria-hidden`, so the headline would have announced as nothing.
+        NO sr-only DUPLICATE AND NO aria-hidden, BECAUSE THE SPACES ARE REAL.
+        ──────────────────────────────────────────────────────────────────────
+        An earlier version hid these spans from assistive technology and carried
+        a second, visually-hidden copy of the sentence for it to read. That was
+        only ever a workaround for words separated by `margin` with no space
+        character, and it cost a real defect: `innerText` held the sentence
+        TWICE, so copying a headline pasted it twice and prices rendered as
+        "₹399₹399".
+
+        (`aria-label` on this span is not the alternative — a bare <span> is
+        role=generic, which prohibits naming.)
+
+        With a genuine space between the spans none of that is needed: inline
+        elements separated by whitespace are announced as continuous text, so
+        the markup is simply correct rather than corrected.
       */}
-      <span className="sr-only">{text}</span>
       {words.map((word, i) => (
         <span
           key={`${word}-${i}`}
-          aria-hidden="true"
           // The mask each word rises out of. Without `overflow-hidden` the word
           // slides over the line above it instead of emerging from its own.
           className="inline-block overflow-hidden pb-[0.08em] align-bottom"
