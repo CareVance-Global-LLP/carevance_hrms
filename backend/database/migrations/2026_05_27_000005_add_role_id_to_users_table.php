@@ -39,7 +39,7 @@ return new class extends Migration
                         'is_active' => true,
                     ]);
 
-                    $permKeys = Organization::SYSTEM_ROLE_PERMISSION_DEFAULTS[$slug] ?? Permission::pluck('key')->all();
+                    $permKeys = Organization::systemRolePermissionDefaults()[$slug] ?? [];
                     $permIds = Permission::whereIn('key', $permKeys)->pluck('id');
                     DB::table('role_permissions')->insert(
                         $permIds->map(fn($pid) => [

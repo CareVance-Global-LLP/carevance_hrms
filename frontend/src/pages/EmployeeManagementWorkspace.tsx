@@ -2,13 +2,18 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { invitationApi, organizationApi, reportGroupApi, roleApi, userApi } from '@/services/api';
+import { exitApi, invitationApi, organizationApi, reportGroupApi, roleApi, userApi } from '@/services/api';
 import DepartmentWorkspace from '@/features/departments/DepartmentWorkspace';
 import RoleAssignmentBoard from '@/features/roles/RoleAssignmentBoard';
-import EmployeeRoster, { type Segment as RosterSegment } from '@/features/employees/EmployeeRoster';
+import EmployeeRoster, {
+  type RosterExit,
+  type RosterUser,
+  type Segment as RosterSegment,
+} from '@/features/employees/EmployeeRoster';
 import SlideOver from '@/features/employees/SlideOver';
 import QuickCreateGroupDialog from '@/components/groups/QuickCreateGroupDialog';
 import Button from '@/components/ui/Button';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { FeedbackBanner, PageEmptyState, PageErrorState, PageLoadingState } from '@/components/ui/PageState';
 import { FieldLabel, SelectInput, TextInput, ToggleInput } from '@/components/ui/FormField';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,10 +24,23 @@ import SettingRow from '@/features/settings/components/SettingRow';
 import { CalendarCheck, Clock, Download, ListChecks, MailPlus, SlidersHorizontal, UserPlus, Users, Wallet } from 'lucide-react';
 import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
+import { todayIso } from '@/lib/formatters';
 import { LIST_MAX_BODY_HEIGHT } from '@/lib/pagination';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'working_first';
+
+/**
+ * The one decision on this page worth interrupting for.
+ *
+ * It uses ConfirmDialog rather than a native `confirm()` because the copy is a
+ * paragraph, not a sentence: bringing somebody back takes a seat and re-bases
+ * their joining date, and neither is obvious from the button.
+ *
+ * Deleting an employee used to live here too. It is gone — offboarding is an
+ * exit, which the row menu now links to directly.
+ */
+type PendingConfirm = { kind: 'rejoin'; user: any; exitId: number };
 
 type TableColumn<T> = {
   key: string;
@@ -229,6 +247,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const isStrictAdmin = hasStrictAdminAccess(user);
   const canManageDirectoryRoles = isStrictAdmin;
   const allowedRoles = useMemo(() => getAssignableRoles(user, organization), [organization, user]);
@@ -306,6 +325,49 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   };
 
   const currentUserLevel = useMemo(() => getHierarchyLevel(user), [user, customRolesQuery.data]);
+
+  /*
+   * Only fetched for the Ex-employees segment, and only for people the exits
+   * API will answer at all — it refuses hierarchy >= 100, so asking on every
+   * page load would put a 403 in front of every employee for a tab they are
+   * not looking at. Deliberately NOT part of the page's isLoading gate: the
+   * other three segments must not wait on it.
+   */
+  const exitsQuery = useQuery({
+    queryKey: ['employee-workspace-exits'],
+    queryFn: async () => (await exitApi.list()).data.data,
+    enabled: mode === 'employees' && directorySegment === 'former' && currentUserLevel < 100,
+  });
+
+  /**
+   * The exit that speaks for each former employee: the LATEST one.
+   *
+   * Somebody rehired once and gone again has two, and the server's rejoin
+   * refuses any but the most recent — offering the older, friendlier one would
+   * be a button that always fails.
+   */
+  const exitByUserId = useMemo(() => {
+    const map = new Map<number, RosterExit>();
+
+    (exitsQuery.data ?? []).forEach((exit) => {
+      const current = map.get(exit.user_id);
+      const isNewer =
+        !current ||
+        exit.last_working_date > current.lastWorkingDate ||
+        (exit.last_working_date === current.lastWorkingDate && exit.id > current.id);
+
+      if (isNewer) {
+        map.set(exit.user_id, {
+          id: exit.id,
+          lastWorkingDate: exit.last_working_date,
+          exitType: exit.exit_type,
+          rehireEligibility: exit.rehire_eligibility,
+        });
+      }
+    });
+
+    return map;
+  }, [exitsQuery.data]);
 
   const managerManagedDepartment = useMemo(() => {
     if (currentUserLevel > 50) {
@@ -499,21 +561,27 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     },
   });
 
-  const deleteUserMutation = useMutation({
-    mutationFn: async ({ userId }: { userId: number }) => {
-      await userApi.delete(userId);
-    },
+  const rejoinMutation = useMutation({
+    mutationFn: async ({ exitId, joiningDate }: { exitId: number; joiningDate: string; name: string }) =>
+      (await exitApi.rejoin(exitId, { joining_date: joiningDate })).data.data,
     onSuccess: async (_data, variables) => {
-      const remainingUsers = users.filter((item: any) => item.id !== variables.userId);
-      setSelectedUserId(remainingUsers[0]?.id || null);
-      setFeedback({ tone: 'success', message: 'Employee removed successfully.' });
+      setFeedback({ tone: 'success', message: `${variables.name} is back. Their account is active again.` });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['employee-workspace-users'] }),
-        queryClient.invalidateQueries({ queryKey: ['employee-workspace-members', organization?.id] }),
+        queryClient.invalidateQueries({ queryKey: ['employee-workspace-exits'] }),
       ]);
     },
     onError: (error: any) => {
-      setFeedback({ tone: 'error', message: error?.response?.data?.message || 'Failed to remove employee.' });
+      /*
+       * A seat refusal is a NORMAL outcome, and the server's message carries the
+       * shortfall — "2 of 2 seats in use, add at least 1 more". Replacing it
+       * with something generic leaves the admin with a button that failed and
+       * no idea that buying a seat is the fix.
+       */
+      setFeedback({
+        tone: 'error',
+        message: error?.response?.data?.message || 'Could not bring this person back.',
+      });
     },
   });
 
@@ -562,14 +630,27 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       ? departmentFilteredRows
       : departmentFilteredRows.filter((item: any) => resolveEmployeeTimezone(item) === directoryTimezoneFilter);
 
+    /*
+     * Ex-employees are their own segment and appear in no other.
+     *
+     * Nothing filtered them out before — /api/users returns everyone — so
+     * "Everyone" already listed leavers, and "Incomplete profiles" was telling
+     * an admin to chase a PAN for somebody who left in June. An Ex-employees
+     * tab beside an Everyone that still contained them would contradict itself
+     * on one screen. This visibly reduces the headcount admins are used to.
+     */
+    const activeRows = timezoneFilteredRows.filter((item: any) => item.is_active !== false);
+
     // The segment is the coarse view; `showIncompleteOnly` is still honoured so
     // the deep link from the payroll dashboard keeps working.
     const segmentedRows =
       directorySegment === 'working'
-        ? timezoneFilteredRows.filter((item: any) => Boolean(item.is_working))
+        ? activeRows.filter((item: any) => Boolean(item.is_working))
         : directorySegment === 'incomplete'
-          ? timezoneFilteredRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
-          : timezoneFilteredRows;
+          ? activeRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
+          : directorySegment === 'former'
+            ? timezoneFilteredRows.filter((item: any) => item.is_active === false)
+            : activeRows;
 
     const incompleteFilteredRows = showIncompleteOnly && directorySegment !== 'incomplete'
       ? segmentedRows.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType))
@@ -594,13 +675,24 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [directoryDepartmentFilter, directoryTimezoneFilter, directorySort, users, showIncompleteOnly, incompleteFilterType, directoryQuery, directorySegment]);
 
+  /*
+   * All three counts are taken over the same population as the rows they label.
+   * Counting leavers in "working now" or "incomplete profiles" would put a pill
+   * on a tab that then shows fewer rows than it promised.
+   */
+  const activeUsers = useMemo(() => users.filter((item: any) => item.is_active !== false), [users]);
+
   const workingNowCount = useMemo(
-    () => users.filter((item: any) => Boolean(item.is_working)).length,
-    [users]
+    () => activeUsers.filter((item: any) => Boolean(item.is_working)).length,
+    [activeUsers]
   );
   const incompleteProfileCount = useMemo(
-    () => users.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType)).length,
-    [users, incompleteFilterType]
+    () => activeUsers.filter((item: any) => hasIncompleteProfile(item, incompleteFilterType)).length,
+    [activeUsers, incompleteFilterType]
+  );
+  const formerEmployeeCount = useMemo(
+    () => users.filter((item: any) => item.is_active === false).length,
+    [users]
   );
 
   const handleExportCsv = async () => {
@@ -641,19 +733,26 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
   const runBulk = async (
     userIds: number[],
     write: (userId: number) => Promise<unknown>,
-    describe: (okCount: number) => string
+    describe: (okCount: number) => string,
+    /*
+     * Only bulk delete supplies this. A count is enough when a write was
+     * refused for a reason the admin can guess; it is not enough when the
+     * server refused specific PEOPLE for a rule they have never met, which is
+     * exactly what the delete guard now does.
+     */
+    describeFailures?: (failures: Array<{ userId: number; message: string }>) => string
   ) => {
     setIsBulkRunning(true);
     setFeedback(null);
     let ok = 0;
-    let failed = 0;
+    const failures: Array<{ userId: number; message: string }> = [];
 
     for (const userId of userIds) {
       try {
         await write(userId);
         ok += 1;
-      } catch {
-        failed += 1;
+      } catch (error: any) {
+        failures.push({ userId, message: String(error?.response?.data?.message || '') });
       }
     }
 
@@ -664,9 +763,14 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     ]);
 
     setFeedback(
-      failed === 0
+      failures.length === 0
         ? { tone: 'success', message: describe(ok) }
-        : { tone: 'error', message: `${describe(ok)} ${failed} could not be updated.` }
+        : {
+            tone: 'error',
+            message: describeFailures
+              ? describeFailures(failures)
+              : `${describe(ok)} ${failures.length} could not be updated.`,
+          }
     );
     setIsBulkRunning(false);
   };
@@ -700,23 +804,6 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
         }
       },
       (ok) => `Assigned ${roleName} to ${ok} ${ok === 1 ? 'person' : 'people'}.`
-    );
-  };
-
-  const handleBulkRemove = (userIds: number[]) => {
-    const removable = userIds.filter((id) => Number(id) !== Number(user.id));
-    if (removable.length === 0) {
-      setFeedback({ tone: 'error', message: 'You cannot remove your own account.' });
-      return;
-    }
-    if (!confirm(`Remove ${removable.length} ${removable.length === 1 ? 'employee' : 'employees'}? Their accounts are deleted.`)) {
-      return;
-    }
-
-    void runBulk(
-      removable,
-      (userId) => userApi.delete(userId),
-      (ok) => `Removed ${ok} ${ok === 1 ? 'employee' : 'employees'}.`
     );
   };
 
@@ -903,17 +990,48 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
     }
   }, [timezoneOptions, directoryTimezoneFilter]);
 
-  const handleDeleteUser = (targetUser: any) => {
-    if (!isStrictAdmin || !targetUser?.id) {
+  const handleRejoin = (targetUser: any) => {
+    const exit = exitByUserId.get(Number(targetUser?.id));
+    if (!exit) {
       return;
     }
 
-    const targetName = targetUser.name || 'this employee';
-    if (!confirm(`Remove ${targetName} from this workspace? This will delete the employee account.`)) {
-      return;
+    setPendingConfirm({ kind: 'rejoin', user: targetUser, exitId: exit.id });
+  };
+
+  /*
+   * Wording, not just plumbing. "This will delete the employee account" stopped
+   * being true for almost everybody the day the server started refusing a
+   * delete for anyone with history, and a confirm that promises something the
+   * next request refuses is worse than no confirm at all.
+   */
+  const confirmCopy = ((): { title: string; message: string; label: string; tone: 'danger' | 'default' } | null => {
+    if (!pendingConfirm) return null;
+
+    const name = pendingConfirm.user?.name || 'this person';
+    return {
+      title: `Bring ${name} back?`,
+      message:
+        `Their account is reactivated today and takes a seat, exactly like a new hire. Their joining date ` +
+        `becomes ${todayIso()}, because a break in service restarts the five-year continuous-service clock ` +
+        `gratuity is measured against; the earlier period stays on their exit record.`,
+      label: 'Bring them back',
+      tone: 'default',
+    };
+  })();
+
+  const handleConfirm = () => {
+    if (!pendingConfirm) return;
+
+    {
+      rejoinMutation.mutate({
+        exitId: pendingConfirm.exitId,
+        joiningDate: todayIso(),
+        name: pendingConfirm.user?.name || 'They',
+      });
     }
 
-    deleteUserMutation.mutate({ userId: targetUser.id });
+    setPendingConfirm(null);
   };
 
   const handleOpenSettings = (targetUser: any) => {
@@ -992,7 +1110,8 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
       {mode === 'employees' && (
         <>
           <EmployeeRoster
-            users={users}
+            // Active people only: the Everyone pill counts what Everyone shows.
+            users={activeUsers}
             rows={employeeDirectoryRows}
             segment={directorySegment}
             setSegment={setDirectorySegment}
@@ -1008,8 +1127,33 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             setSort={setDirectorySort}
             workingCount={workingNowCount}
             incompleteCount={incompleteProfileCount}
+            formerCount={formerEmployeeCount}
             canManage={isStrictAdmin}
             isExporting={isExporting}
+            resolveExit={(row: RosterUser) => exitByUserId.get(Number(row.id)) ?? null}
+            /*
+             * Only offered when the EMPLOYER recorded 'eligible'. 'undecided' is
+             * the default on every exit and the server does accept it, but a
+             * rehire nobody has decided on is a conversation to have in Exits
+             * first — and 'not_eligible' would be a button that always 422s.
+             * Returns null for everyone else so the memoised rows keep their
+             * identity instead of re-rendering on every keystroke.
+             */
+            rehireSlot={(row: RosterUser) => {
+              if (!isStrictAdmin || row.is_active !== false) return null;
+              const exit = exitByUserId.get(Number(row.id));
+              if (!exit || exit.rehireEligibility !== 'eligible') return null;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleRejoin(row)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-blue-800 transition hover:bg-blue-50"
+                >
+                  <UserPlus className="h-3.5 w-3.5" /> Bring back
+                </button>
+              );
+            }}
             resolveCode={(row: any) => employeeCodeOf(row) || String(row.id)}
             resolveRole={(row: any) => resolveUserRoleLabel(row, customRolesQuery.data || [])}
             resolveDepartment={(row: any) => resolveEmployeeDepartment(row)}
@@ -1017,19 +1161,16 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             resolveHref={(row: any) => `/employees/${employeeCodeOf(row) || row.id}`}
             isIncomplete={(row: any) => hasIncompleteProfile(row, incompleteFilterType)}
             onOpenSettings={(row: any) => handleOpenSettings(row)}
-            onRemove={(row: any) => handleDeleteUser(row)}
             onExport={() => void handleExportCsv()}
             bulk={{
               departments: groups.map((group: any) => ({ id: Number(group.id), name: group.name })),
               roles: (customRolesQuery.data || []).map((role: any) => ({ id: role.id, name: role.name })),
               canMoveDepartment: canManageDepartments,
               canAssignRole: isStrictAdmin,
-              canRemove: isStrictAdmin,
               isBusy: isBulkRunning,
               onAddToDepartment: handleBulkAddToDepartment,
               onAssignRole: handleBulkAssignRole,
               onExportSelected: handleExportSelected,
-              onRemove: handleBulkRemove,
             }}
             addEmployeeSlot={isStrictAdmin ? (
               <Link
@@ -1041,6 +1182,18 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
             ) : null}
           />
 
+          {confirmCopy ? (
+            <ConfirmDialog
+              isOpen
+              title={confirmCopy.title}
+              message={confirmCopy.message}
+              confirmLabel={confirmCopy.label}
+              tone={confirmCopy.tone}
+              isLoading={rejoinMutation.isPending || isBulkRunning}
+              onConfirm={handleConfirm}
+              onClose={() => setPendingConfirm(null)}
+            />
+          ) : null}
 
           <SlideOver
             open={Boolean(settingsTargetUser && settingsDraft)}

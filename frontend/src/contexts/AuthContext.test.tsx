@@ -301,4 +301,84 @@ describe('AuthProvider', () => {
     expect(confirmCloseReady).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem('token')).toBe('desktop-token');
   });
+
+  it('queues the stop offline when the connection fails on close', async () => {
+    /*
+     * The one stop nobody can retry by hand. This used to call
+     * timeEntryApi.stop() raw and log the failure to a console nobody reads —
+     * the shell gives this handler ten seconds and then closes regardless, so
+     * a stop that failed on a poor connection simply never happened. The timer
+     * kept running server-side and the idle sweep later recorded a deliberate
+     * close as an idle auto-stop.
+     */
+    let prepareForCloseHandler: (() => void | Promise<void>) | null = null;
+    const confirmCloseReady = vi.fn().mockResolvedValue(true);
+
+    window.desktopTracker = {
+      captureScreenshot: vi.fn(),
+      getSystemIdleSeconds: vi.fn(),
+      getActiveWindowContext: vi.fn(),
+      revealWindow: vi.fn(),
+      onPrepareForClose: (callback) => {
+        prepareForCloseHandler = callback;
+      },
+      clearPrepareForCloseListeners: vi.fn(),
+      confirmCloseReady,
+    };
+
+    localStorage.setItem('token', 'desktop-token');
+    localStorage.setItem('user', JSON.stringify({
+      id: 7,
+      name: 'Desktop Employee',
+      email: 'employee@example.com',
+      role: 'employee',
+      organization_id: 2,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+
+    vi.mocked(authApi.me).mockResolvedValue({
+      data: {
+        success: true,
+        id: 7,
+        name: 'Desktop Employee',
+        email: 'employee@example.com',
+        role: 'employee',
+        organization_id: 2,
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    } as any);
+
+    // The network is gone. The raw call rejects; the offline-aware wrapper is
+    // what turns that into a queued stop rather than a lost one.
+    vi.mocked(timeEntryApi.stop).mockRejectedValue(
+      Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' })
+    );
+
+    renderWithProviders(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+    });
+
+    // Must not throw: a failed stop cannot be allowed to block the close, or
+    // the app hangs on exit.
+    await expect(prepareForCloseHandler?.()).resolves.not.toThrow();
+
+    // The shell is still told it may close — a stuck handler is worse than a
+    // late stop, and the queued write survives the process exiting.
+    expect(confirmCloseReady).toHaveBeenCalled();
+
+    // And the session survives: closing the app is not signing out.
+    expect(authApi.logout).not.toHaveBeenCalled();
+    expect(screen.getByTestId('authenticated')).toHaveTextContent('true');
+  });
+
 });

@@ -825,6 +825,17 @@ const setUpdateState = (patch) => {
   broadcastUpdateState();
 };
 
+/*
+ * The quit handshake, mirroring closePreparationInProgress for the window.
+ *
+ * `quitConfirmHandler` is set only while a quit is waiting on the renderer, so
+ * `confirm-close-ready` can tell the two cases apart: closing a window should
+ * close the window, quitting should finish the quit.
+ */
+let quitPreparationDone = false;
+let quitPreparationTimeout = null;
+let quitConfirmHandler = null;
+
 const proceedToCloseWindow = () => {
   if (closePreparationTimeout) {
     clearTimeout(closePreparationTimeout);
@@ -1226,6 +1237,40 @@ const createWindow = async () => {
     mainWindow.loadURL(APP_URL).catch(() => {});
   };
 
+  /*
+   * Ctrl+R / F5, put back by hand.
+   *
+   * `Menu.setApplicationMenu(null)` removes Electron's stock menu bar to take
+   * View -> Toggle Developer Tools away from a tracker's renderer. Reload and
+   * Force Reload live on that same menu, so removing it silently removed the
+   * one shortcut everybody reaches for when a page is stuck — and the app looks
+   * frozen rather than reloadable. Reported by a user whose Ctrl+R did nothing.
+   *
+   * `before-input-event` rather than `globalShortcut`: a global accelerator
+   * would swallow Ctrl+R system-wide, breaking refresh in every other app while
+   * the tracker merely runs. This fires only while this window has focus.
+   *
+   * It calls reloadRemoteUrl() rather than webContents.reload(), because a
+   * plain reload on the offline fallback page reloads the FALLBACK — the very
+   * screen the person is trying to escape. This clears the fallback state and
+   * asks for the real app.
+   *
+   * DevTools stays gone. Reload is a recovery affordance; a console on a page
+   * that records attendance is not.
+   */
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+
+    const key = String(input.key || '').toLowerCase();
+    const isReload = key === 'f5' || (key === 'r' && (input.control || input.meta));
+
+    if (!isReload) return;
+
+    // Swallowed so the page cannot also handle it and reload twice.
+    event.preventDefault();
+    reloadRemoteUrl();
+  });
+
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame || String(validatedURL || '').startsWith('data:text/html')) {
       return;
@@ -1466,6 +1511,11 @@ const createWindow = async () => {
     lastForegroundWindowSignature = null;
 
     showMainWindow();
+
+    // A notification clicked while the app was closed has been waiting for a
+    // renderer to listen. This is that moment.
+    flushPendingNotificationClick();
+
     broadcastUpdateState();
     broadcastBrowserTrackingState();
     startForegroundWindowWatcher();
@@ -1591,9 +1641,25 @@ const createWindow = async () => {
 };
 
 const revealMainWindow = () => {
-  const targetWindow = mainWindow && !mainWindow.isDestroyed()
-    ? mainWindow
-    : BrowserWindow.getAllWindows()[0];
+  /*
+   * THE MAIN WINDOW, OR NOTHING.
+   *
+   * This used to fall back to `BrowserWindow.getAllWindows()[0]`, which is not
+   * a synonym for "the app". The shell owns auxiliary windows — the quick-reply
+   * box and the idle popup — and they outlive the main window: closing it on
+   * Windows destroys it while the app stays in the tray, and a reply popup
+   * created by an earlier chat notification is still there, hidden.
+   *
+   * So reopening the app picked up the REPLY BOX, showed and focused it, and
+   * returned true — which told openOrRevealMainWindow the job was done, so the
+   * tracker was never built. The reply box opened and the app appeared not to
+   * start. Reported twice: from a notification click, and from a plain relaunch
+   * after quitting from the tray.
+   *
+   * Returning false when the main window is gone is the correct answer, and it
+   * is what makes the caller create one.
+   */
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
 
   if (!targetWindow) {
     return false;
@@ -1651,6 +1717,51 @@ const revealMainWindow = () => {
  * is genuinely gone the only correct move is to build a new one. Callers that
  * open the app on the user's behalf want that whole behaviour, not the half.
  */
+/*
+ * A notification click that arrived while the app had no window.
+ *
+ * Held here until the renderer is listening, then delivered once. Without it
+ * the click was simply dropped: both callers did `revealMainWindow()` and then
+ * `if (mainWindow) send(...)`, and with the app closed the first returns false
+ * and the second is skipped — so clicking a chat notification opened the reply
+ * box and NOTHING ELSE. The tracker appeared not to start.
+ */
+let pendingNotificationClick = null;
+
+/**
+ * Open the app at a notification, whether or not it is currently running.
+ *
+ * `revealMainWindow()` can only act on a window that still exists. On Windows
+ * closing the window destroys it while the app stays alive in the tray, which
+ * is exactly the state somebody is in when a chat notification arrives — so
+ * the path that needs this most is the one that had it least.
+ */
+const deliverNotificationClick = (payload) => {
+  const ready = mainWindow
+    && !mainWindow.isDestroyed()
+    && !mainWindow.webContents.isLoading();
+
+  if (ready) {
+    revealMainWindow();
+    mainWindow.webContents.send('desktop:notification-clicked', payload);
+    return;
+  }
+
+  // Only the most recent click is kept. Two notifications clicked before the
+  // window is up should land on the second one, not replay the first.
+  pendingNotificationClick = payload;
+  openOrRevealMainWindow();
+};
+
+const flushPendingNotificationClick = () => {
+  if (!pendingNotificationClick) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const payload = pendingNotificationClick;
+  pendingNotificationClick = null;
+  mainWindow.webContents.send('desktop:notification-clicked', payload);
+};
+
 const openOrRevealMainWindow = () => {
   if (revealMainWindow()) {
     return;
@@ -2051,14 +2162,11 @@ quickReplyPopup.onQuickReplySubmit((reply) => forwardQuickReply(reply));
 // rather than a one-line reply. On Windows the toast click is the only
 // interaction the OS gives us, so this is where that choice lives.
 quickReplyPopup.onQuickReplyOpen((state) => {
-  revealMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('desktop:notification-clicked', {
-      id: state.id,
-      route: state.route,
-      type: state.type,
-    });
-  }
+  deliverNotificationClick({
+    id: state.id,
+    route: state.route,
+    type: state.type,
+  });
 });
 
 ipcMain.on('desktop:quick-reply-result', (_event, result = {}) => {
@@ -2222,14 +2330,7 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
       return;
     }
 
-    revealMainWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('desktop:notification-clicked', {
-        id,
-        route,
-        type,
-      });
-    }
+    deliverNotificationClick({ id, route, type });
   });
 
   /*
@@ -2256,6 +2357,18 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
 });
 
 ipcMain.handle('desktop:confirm-close-ready', async () => {
+  /*
+   * The renderer has finished flushing and stopping the timer. Which act it was
+   * preparing for decides what happens now — quitting must not merely close the
+   * window and leave the app running in the tray.
+   */
+  if (quitConfirmHandler) {
+    const finish = quitConfirmHandler;
+    quitConfirmHandler = null;
+    finish();
+    return true;
+  }
+
   return proceedToCloseWindow();
 });
 
@@ -2717,7 +2830,13 @@ app.whenReady().then(async () => {
   initializeAutoUpdater();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    /*
+     * Counting windows is the same mistake revealMainWindow made: a hidden
+     * quick-reply box or idle popup makes the count non-zero while the tracker
+     * itself is gone, so the dock icon would do nothing. Ask for the main
+     * window specifically.
+     */
+    openOrRevealMainWindow();
   });
 
   // Spawns schtasks.exe and reg.exe synchronously to register the login item.
@@ -2847,7 +2966,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
   // Electron releases these on exit anyway, but an explicit unregister keeps
   // the combination free if the app is restarted before the OS has caught up.
   globalShortcut.unregisterAll();
@@ -2874,12 +2993,53 @@ app.on('before-quit', () => {
     osConnectivityWatchTimer = null;
   }
 
-  if (mainWindow && !mainWindow.isDestroyed() && !allowWindowClose) {
-    try {
-      mainWindow.webContents.send('desktop:prepare-close');
-    } catch {
-      // Renderer may not be ready
+  /*
+   * QUITTING HAS TO WAIT FOR THE TIMER TO ACTUALLY STOP.
+   *
+   * This used to send `prepare-close` and quit in the same breath. The
+   * renderer's handler is async — it flushes pending activity, then awaits
+   * `timeEntryApi.stop()` — so the process was gone before either finished and
+   * the running timer was never stopped.
+   *
+   * What the person saw: quit from the tray, and later a "you were idle"
+   * notification. The timer had kept running server-side with no activity
+   * arriving, and the idle sweep closed it as abandoned. Their work was billed
+   * to the last activity, so no time was stolen — but the stop was recorded as
+   * idle rather than as the deliberate quit it was, and they were told they had
+   * been away when they had not.
+   *
+   * Closing the WINDOW already did this correctly: preventDefault, wait for the
+   * renderer to confirm, fall through on a timeout. Quitting had none of it.
+   * The two paths now behave the same way, because they mean the same thing.
+   *
+   * The timeout is what stops a hung or offline renderer holding the app open
+   * forever. Six seconds: long enough for a slow stop request on a poor
+   * connection, short enough that quit still feels like quit.
+   */
+  if (quitPreparationDone || !mainWindow || mainWindow.isDestroyed() || allowWindowClose) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const finishQuit = () => {
+    if (quitPreparationDone) return;
+    quitPreparationDone = true;
+    if (quitPreparationTimeout) {
+      clearTimeout(quitPreparationTimeout);
+      quitPreparationTimeout = null;
     }
+    app.quit();
+  };
+
+  quitConfirmHandler = finishQuit;
+  quitPreparationTimeout = setTimeout(finishQuit, 6000);
+
+  try {
+    mainWindow.webContents.send('desktop:prepare-close');
+  } catch {
+    // Renderer never got the message, so nothing is coming. Do not wait for it.
+    finishQuit();
   }
 
   // A live always-on-top window counts as an open window, so leaving it would

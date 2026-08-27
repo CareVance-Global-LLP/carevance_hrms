@@ -20,6 +20,7 @@ import {
   isDesktopApp,
 } from '@/services/offlineService';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { stopTimerOfflineAware } from '@/services/offlineApiWrapper';
 
 interface GoogleAuthResponse {
   token: string;
@@ -441,7 +442,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           try {
-            await timeEntryApi.stop({ timer_slot: 'primary' });
+            /*
+             * OFFLINE-AWARE, BECAUSE THIS IS THE ONE STOP THAT CANNOT BE RETRIED
+             * BY THE PERSON.
+             *
+             * The raw `timeEntryApi.stop()` was used here, and its failure was
+             * logged to a console nobody reads. On a poor connection the stop
+             * never landed, the app closed anyway — the shell gives this handler
+             * ten seconds and then closes regardless — and the timer kept
+             * running server-side with no client left to stop it. The idle
+             * sweep eventually closed it and recorded a deliberate close as an
+             * idle auto-stop.
+             *
+             * `stopTimerOfflineAware` writes the stop to the offline queue
+             * instead, which is disk-backed and survives the app exiting, so
+             * the next launch syncs it. That is the difference between a stop
+             * that is late and a stop that never happened.
+             */
+            await stopTimerOfflineAware({ timer_slot: 'primary' });
           } catch (error) {
             const status = getResponseStatus(error);
             if (status !== 404 && status !== 401 && status !== 403) {

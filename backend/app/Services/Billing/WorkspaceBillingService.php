@@ -81,6 +81,13 @@ class WorkspaceBillingService
             'company_profile' => $this->companyProfile->summary(
                 $organization,
                 $isTrial ? 5 : 10,
+                // `suggested_seats` prefills the seat box at conversion and is
+                // posted straight back to be priced, so it is floored on the
+                // people who still hold access — the same number `seats.used`
+                // above reports and BillingController::upgradePlan prices on.
+                // It was floored on every row ever, leavers included, which put
+                // a seat count in the box that appeared nowhere else on the
+                // screen and was billed anyway.
                 $seats['used'],
             ),
             'workspace' => [

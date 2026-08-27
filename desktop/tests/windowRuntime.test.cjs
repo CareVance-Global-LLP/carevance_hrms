@@ -253,3 +253,227 @@ test('the reader resolves the helper to the unpacked path', () => {
     'browser-url-reader.cjs must rewrite app.asar -> app.asar.unpacked when resolving the helper.'
   );
 });
+
+/*
+ * Removing the menu bar to hide DevTools also removed Reload, which lives on
+ * the same View menu. The symptom was Ctrl+R doing nothing on a stuck page —
+ * the app looked frozen rather than reloadable.
+ */
+test('reload is reachable by keyboard even with no application menu', () => {
+  assert.match(
+    mainSource,
+    /Menu\.setApplicationMenu\(null\)/,
+    'The stock menu bar must stay off — it carries Toggle Developer Tools.'
+  );
+
+  assert.match(
+    mainSource,
+    /before-input-event[\s\S]{0,900}f5[\s\S]{0,200}input\.control/i,
+    'Ctrl+R and F5 must be handled directly, since the menu that used to carry them is gone.'
+  );
+});
+
+test('the reload shortcut escapes the offline fallback rather than reloading it', () => {
+  /*
+   * webContents.reload() on the offline fallback page reloads the FALLBACK —
+   * the very screen somebody is pressing Ctrl+R to get out of. reloadRemoteUrl
+   * clears that state and asks for the real app.
+   */
+  const start = mainSource.indexOf("before-input-event");
+  assert.ok(start > -1, 'the before-input-event handler must exist');
+
+  // A window of the handler body, taken by offset rather than by regex: the
+  // block spans newlines and a multiline pattern here is more fragile than the
+  // thing it is checking.
+  const handler = mainSource.slice(start, start + 1200);
+
+  assert.match(
+    handler,
+    /reloadRemoteUrl\(\)/,
+    'the shortcut must call reloadRemoteUrl(), not webContents.reload().'
+  );
+  assert.doesNotMatch(
+    handler,
+    /openDevTools/,
+    'restoring reload must not restore a devtools route.'
+  );
+});
+
+test('the reload shortcut is window-scoped, not a global accelerator', () => {
+  // A globalShortcut for Ctrl+R would swallow refresh in every other
+  // application for as long as the tracker is running.
+  assert.doesNotMatch(
+    mainSource,
+    /globalShortcut\.register\(\s*['"`]CommandOrControl\+R/i,
+    'Ctrl+R must not be registered globally.'
+  );
+});
+
+/*
+ * Clicking a chat notification with the app closed opened the reply box and
+ * nothing else — the tracker appeared not to start. Both click paths did
+ * `revealMainWindow()` and then `if (mainWindow) send(...)`; with no window the
+ * first returns false and the second is skipped, so the click was dropped.
+ */
+test('a notification click opens the app when no window exists', () => {
+  assert.match(
+    mainSource,
+    /const deliverNotificationClick = \(/,
+    'notification clicks must go through one delivery path.'
+  );
+
+  const start = mainSource.indexOf('const deliverNotificationClick');
+  const body = mainSource.slice(start, start + 900);
+
+  assert.match(
+    body,
+    /openOrRevealMainWindow\(\)/,
+    'delivery must CREATE a window when none exists, not merely reveal one.'
+  );
+  assert.match(
+    body,
+    /pendingNotificationClick = payload/,
+    'a click that arrives before the renderer is listening must be held, not dropped.'
+  );
+});
+
+test('neither click path reveals-and-hopes any more', () => {
+  // The old shape: revealMainWindow() followed by a guarded send. Both callers
+  // are now one line, so the pattern should not appear near either of them.
+  const quickReply = mainSource.indexOf('onQuickReplyOpen');
+  assert.ok(quickReply > -1, 'the quick-reply open handler must exist');
+
+  assert.match(
+    mainSource.slice(quickReply, quickReply + 300),
+    /deliverNotificationClick\(/,
+    'the quick-reply "Open chat" route must use the shared delivery.'
+  );
+});
+
+test('a held click is flushed once the renderer is listening', () => {
+  assert.match(
+    mainSource,
+    /flushPendingNotificationClick\(\);/,
+    'the queued click must be delivered when the renderer becomes ready.'
+  );
+
+  const flush = mainSource.indexOf('const flushPendingNotificationClick');
+  const body = mainSource.slice(flush, flush + 500);
+
+  assert.match(
+    body,
+    /pendingNotificationClick = null;/,
+    'the held click must be cleared when delivered, so it fires once and not on every load.'
+  );
+});
+
+/*
+ * The shell owns auxiliary windows — the quick-reply box and the idle popup —
+ * and they outlive the main window. Reaching for "some window" therefore
+ * reaches for one of THOSE once the tracker is closed, which is how reopening
+ * the app surfaced the reply box and never built the tracker.
+ */
+test('revealing the app targets the main window and nothing else', () => {
+  const start = mainSource.indexOf('const revealMainWindow = () => {');
+  assert.ok(start > -1, 'revealMainWindow must exist');
+  // A fixed window rather than scanning for a closing brace: the function is
+  // well under this, and a newline-bearing search string is more fragile than
+  // the thing it is checking.
+  const body = mainSource.slice(start, start + 1600);
+
+  // The assignment itself, not the prose around it — the comment above it
+  // names getAllWindows() precisely because that is what went wrong.
+  const assignment = body.match(/const targetWindow = .*/);
+  assert.ok(assignment, 'revealMainWindow must resolve a target window');
+
+  assert.doesNotMatch(
+    assignment[0],
+    /getAllWindows\(\)/,
+    'a hidden reply popup would be picked up as "the app" and shown instead of the tracker.'
+  );
+  assert.match(
+    assignment[0],
+    /mainWindow && !mainWindow\.isDestroyed\(\)/,
+    'it must check the main window specifically.'
+  );
+  assert.match(
+    body,
+    /return false;/,
+    'with no main window it must report failure, which is what makes the caller build one.'
+  );
+});
+
+test('reopening never decides the app is running by counting windows', () => {
+  // `getAllWindows().length === 0` has the same flaw: a hidden popup makes the
+  // count non-zero while the tracker itself is gone.
+  assert.doesNotMatch(
+    mainSource,
+    /getAllWindows\(\)\.length === 0\)\s*createWindow\(\)/,
+    'window-count checks must not stand in for "is the tracker open".'
+  );
+  assert.match(
+    mainSource,
+    /app\.on\('activate',[\s\S]{0,600}?openOrRevealMainWindow\(\)/,
+    'activate must route through the helper that knows what the main window is.'
+  );
+});
+
+/*
+ * Quitting used to send `desktop:prepare-close` and quit in the same breath.
+ * The renderer's handler is async — it flushes activity, then awaits
+ * timeEntryApi.stop() — so the process was gone before either finished and the
+ * running timer was never stopped. It kept running server-side with no activity
+ * arriving, and the idle sweep closed it as abandoned: the person quit from the
+ * tray and was later told they had been idle.
+ *
+ * Closing the window already waited properly. Quitting means the same thing and
+ * must wait the same way.
+ */
+test('quitting waits for the renderer to stop the timer', () => {
+  const start = mainSource.lastIndexOf("app.on('before-quit'");
+  assert.ok(start > -1, 'a before-quit handler must exist');
+  const body = mainSource.slice(start, start + 2600);
+
+  assert.match(
+    body,
+    /event\.preventDefault\(\)/,
+    'quit must be deferred until the timer has actually been stopped.'
+  );
+  assert.match(
+    body,
+    /desktop:prepare-close/,
+    'the renderer still has to be asked to flush and stop.'
+  );
+  assert.match(
+    body,
+    /setTimeout\(/,
+    'a hung or offline renderer must not hold the app open forever.'
+  );
+});
+
+test('the quit handler actually receives the event it defers', () => {
+  // `app.on('before-quit', () => {...})` with a preventDefault inside is a
+  // ReferenceError at quit time — the one moment nobody is watching the console.
+  const start = mainSource.lastIndexOf("app.on('before-quit'");
+  const signature = mainSource.slice(start, start + 40);
+
+  assert.match(
+    signature,
+    /before-quit',\s*\(event\)/,
+    'the handler must declare the event parameter it calls preventDefault on.'
+  );
+});
+
+test('close and quit are told apart when the renderer confirms', () => {
+  // Both paths answer on the same channel. Quitting must finish the quit, not
+  // merely close the window and leave the app alive in the tray.
+  const start = mainSource.indexOf("desktop:confirm-close-ready");
+  assert.ok(start > -1, 'the confirmation channel must exist');
+  const body = mainSource.slice(start, start + 900);
+
+  assert.match(
+    body,
+    /quitConfirmHandler/,
+    'the confirmation must know whether a quit or a window close is waiting on it.'
+  );
+});

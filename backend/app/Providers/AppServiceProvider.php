@@ -261,6 +261,13 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute((int) env('RATE_LIMIT_HANDOFF_PER_MINUTE', 10))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);
 
+        // Reading your own device list writes an audit row every time, so it
+        // is rate-limited like a write. Sixty a minute is far above opening a
+        // settings screen and far below burying the audit trail in polling.
+        RateLimiter::for('auth.sessions', fn (Request $request) => [
+            Limit::perMinute((int) env('RATE_LIMIT_SESSIONS_PER_MINUTE', 60))->by((string) optional($request->user())->getAuthIdentifier()),
+        ]);
+
         RateLimiter::for('settings.password', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_PASSWORD_PER_MINUTE', 5))->by((string) optional($request->user())->getAuthIdentifier()),
         ]);

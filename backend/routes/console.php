@@ -357,6 +357,27 @@ Artisan::command('schedule:screenshots-purge', function () {
 })->dailyAt('02:30');
 
 /*
+ * Expired bearer tokens. Nothing removed one before this: logout deletes the
+ * token in the caller's hand and every other session a person ever opened
+ * stayed in the table for good — 272 rows for 7 people in production, one
+ * account holding 90.
+ *
+ * Nightly and off-peak, matching the screenshot purge rather than the hourly
+ * upload sweep. The upload sweep is hourly because an abandoned chunk
+ * directory costs gigabytes within the day; a lapsed token row costs bytes,
+ * and it has already stopped working — AuthenticateApiToken filters on
+ * expires_at at lookup, so this deletes nothing that could still sign anybody
+ * in. It is housekeeping, not revocation, which is what makes it safe to run
+ * unattended.
+ *
+ * 02:45 rather than 02:30 so it does not start while the screenshot purge is
+ * still deleting image files.
+ */
+Artisan::command('schedule:tokens-purge', function () {
+    $this->call('tokens:purge-expired');
+})->dailyAt('02:45');
+
+/*
  * Biometric punches into attendance.
  *
  * Every five minutes rather than daily. A punch that has not become attendance

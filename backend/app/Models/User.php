@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Mail\PasswordResetMail;
 use App\Mail\VerifyEmailMail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -361,6 +362,17 @@ class User extends Authenticatable
     }
 
     /**
+     * Still holding access. `deactivated_at` is the release signal, not
+     * deletion — the accessor above answers the same question but cannot be
+     * used in a query, which is how three separate callers came to hand-write
+     * the filter.
+     */
+    public function scopeStillHoldingAccess(Builder $query): Builder
+    {
+        return $query->whereNull('deactivated_at');
+    }
+
+    /**
      * Check if this user has already consumed their free trial.
      */
     public function hasConsumedTrial(): bool
@@ -514,7 +526,7 @@ class User extends Authenticatable
         return $this->belongsTo(Role::class, 'role_id');
     }
 
-    private const PERMISSIONS_ADMIN = [
+    public const PERMISSIONS_ADMIN = [
         'dashboard.view', 'attendance.view', 'selfies.view',
         'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
         'reports.view', 'monitoring.view', 'screenshots.view',
@@ -526,7 +538,7 @@ class User extends Authenticatable
         'assets.view', 'assets.manage',
     ];
 
-    private const PERMISSIONS_MANAGER = [
+    public const PERMISSIONS_MANAGER = [
         'dashboard.view', 'attendance.view', 'selfies.view',
         'employees.view', 'employees.manage', 'groups.view', 'groups.manage',
         'reports.view', 'monitoring.view', 'screenshots.view',
@@ -537,7 +549,7 @@ class User extends Authenticatable
         'assets.view', 'assets.manage',
     ];
 
-    private const PERMISSIONS_EMPLOYEE = [
+    public const PERMISSIONS_EMPLOYEE = [
         'dashboard.view', 'timer.use', 'chat.use',
     ];
 

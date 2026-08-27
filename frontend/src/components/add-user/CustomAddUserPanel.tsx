@@ -232,7 +232,10 @@ export default function CustomAddUserPanel({ organizationId, allowedRoles, onSuc
 
   const seats = billing?.seats ?? null;
   // Mirrors SeatGuard::canAdd — a cap of zero or less was never configured, and
-  // must not be read as "nobody may join".
+  // must not be read as "nobody may join". `used` now means "people still
+  // holding access", so somebody deactivated on their last working day has
+  // already released their seat and this stops warning about them. It is the
+  // only seat count the API reports, and the one every quote is priced on.
   const seatsExhausted = Boolean(seats && seats.max > 0 && seats.used + 1 > seats.max);
 
   /*

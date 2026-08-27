@@ -14,6 +14,7 @@ use App\Services\Monitoring\IdleResolutionService;
 use App\Services\Monitoring\TrackerPolicyResolver;
 use App\Services\Reports\UsageProcessingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -199,13 +200,48 @@ class ActivityController extends Controller
                 ]);
 
             if ($request->boolean('processed') || $request->boolean('normalized')) {
-                $processedRows = $this->filterProcessedTimelineRows(
-                    $this->buildProcessedTimelineRows(
-                        $this->activityFeedService->forUsersInRange($scopedUserIds, $startDate, $endDate),
-                        $usersById,
-                    ),
-                    $request,
-                )->values();
+                /*
+                 * THE WHOLE DAY IS BUILT ONCE PER PAGE, NOT ONCE PER REQUEST.
+                 *
+                 * Pagination here is a `slice()` over a fully-built collection,
+                 * so every page rebuilt the entire day and threw away all but
+                 * 200 rows. Measured on production: 13.4s per page over 1,166
+                 * rows — and the timeline fetches every page, so six requests
+                 * took ~80 seconds and the screen sat on "Loading timeline…".
+                 *
+                 * The cost is not the database. Three queries return 4,683 rows
+                 * in 1.9s; the remaining ~11.5s is `formatApiTimestamp`, which
+                 * runs THREE times per row (recorded_at, start_at, end_at) and
+                 * is a Carbon parse plus a timezone conversion each time —
+                 * about 14,000 of them. That work is correct and load-bearing:
+                 * an offset is not a zone, and this is what stops a row landing
+                 * on the wrong calendar day for anyone not in the app's zone. So
+                 * it is cached rather than trimmed.
+                 *
+                 * Keyed on exactly what the build depends on — the scoped users
+                 * and the range — and NOT on the request's filters, which are
+                 * applied after. Two admins looking at the same day share the
+                 * work; one filtering by classification does not get the
+                 * other's filtered rows.
+                 *
+                 * 60s matches ActivityFeedService::CACHE_TTL_SECONDS. The
+                 * timeline polls every 60s, so a stale-by-a-minute answer is
+                 * what it would have shown anyway, and live tracking data is
+                 * append-only — a row appearing a minute late is invisible
+                 * against a 24-hour strip.
+                 */
+                $cacheKey = 'timeline_processed_' . md5(implode(',', [
+                    $scopedUserIds->sort()->implode(','),
+                    $startDate?->toIso8601String() ?? '',
+                    $endDate?->toIso8601String() ?? '',
+                ]));
+
+                $builtRows = Cache::remember($cacheKey, 60, fn () => $this->buildProcessedTimelineRows(
+                    $this->activityFeedService->forUsersInRange($scopedUserIds, $startDate, $endDate),
+                    $usersById,
+                ));
+
+                $processedRows = $this->filterProcessedTimelineRows($builtRows, $request)->values();
                 $total = $processedRows->count();
                 $offset = ($page - 1) * $perPage;
                 $pageRows = $processedRows->slice($offset, $perPage)->values();
@@ -446,6 +482,76 @@ class ActivityController extends Controller
      * A null/0 $userId means no user is in scope and falls back to the app
      * timezone through UserTimezoneResolver.
      */
+    /**
+     * An activity cannot last longer than the window it happened in.
+     *
+     * THE OS IDLE CLOCK COUNTS THROUGH A SUSPEND. `powerMonitor.getSystemIdleTime()`
+     * reports seconds since the last input, and a sleeping laptop receives none —
+     * so a machine closed at 18:00 and reopened at 09:00 wakes up reporting
+     * fifteen hours of idle, and the tracker writes it as ONE idle activity
+     * stamped with the moment of waking.
+     *
+     * Found on production 25 Aug 2026: a single row, 54,522 seconds, recorded at
+     * 09:54 on a day that was eight hours old. That one row then dominated every
+     * idle figure the person had — TimeBreakdownService clamps idle to tracked
+     * time, so it pinned the monitoring badge to "idle 100%" beside a bar
+     * showing four hours of productive work. Both numbers came from the same
+     * screen and could not both be true.
+     *
+     * Bounded here rather than at read time because the readers disagree: the
+     * timeline already caps a row at four hours through
+     * `usage_processing.normalization.max_log_duration_seconds`, and the
+     * productivity metrics do not. One bound at the write is the only place
+     * every reader inherits it.
+     *
+     * The timer's own span is the real limit — you cannot be idle for longer
+     * than the session you were idle during. With no session to measure
+     * against, the configured ceiling applies, which is what stops an
+     * unattached idle report being unbounded.
+     *
+     * Only idle is bounded by the session. An app or url row legitimately
+     * carries a duration measured before its timer started, and clamping those
+     * would erase real work.
+     */
+    private function boundedActivityDuration(
+        string $type,
+        int $duration,
+        mixed $recordedAt,
+        mixed $timeEntryId,
+    ): int {
+        $ceiling = max(60, (int) config('usage_processing.normalization.max_log_duration_seconds', 14400));
+
+        if ($type !== 'idle') {
+            return $duration;
+        }
+
+        if ($duration <= 0) {
+            return 0;
+        }
+
+        $limit = $ceiling;
+
+        if (! empty($timeEntryId) && $recordedAt instanceof \Illuminate\Support\Carbon) {
+            $entry = TimeEntry::query()->find($timeEntryId, ['id', 'start_time']);
+
+            if ($entry && $entry->start_time) {
+                $span = (int) Carbon::parse($entry->start_time)->diffInSeconds($recordedAt, absolute: true);
+                // The session's own length, never longer than the global ceiling.
+                $limit = max(0, min($ceiling, $span));
+            }
+        }
+
+        if ($duration > $limit) {
+            Log::info('Idle activity duration bounded to its session', [
+                'reported_seconds' => $duration,
+                'stored_seconds' => $limit,
+                'time_entry_id' => $timeEntryId,
+            ]);
+        }
+
+        return min($duration, $limit);
+    }
+
     private function formatApiTimestamp(mixed $value, ?int $userId = null): ?string
     {
         if ($value === null || $value === '') {
@@ -555,6 +661,13 @@ class ActivityController extends Controller
         $validated['recorded_at'] = isset($validated['recorded_at'])
             ? ExternalTimestamp::parseToAppTimezone($validated['recorded_at'])
             : now();
+
+        $validated['duration'] = $this->boundedActivityDuration(
+            (string) $validated['type'],
+            (int) $validated['duration'],
+            $validated['recorded_at'],
+            $validated['time_entry_id'] ?? null,
+        );
         $validated['started_at'] = isset($validated['started_at'])
             ? ExternalTimestamp::parseToAppTimezone($validated['started_at'])?->startOfSecond()
             : null;

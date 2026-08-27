@@ -201,8 +201,26 @@ class OnboardingService
     }
 
     /**
-     * Advance stages by date, and close journeys that have run their 90 days.
-     * Returns how many rows moved.
+     * Advance stages by date, and close journeys that have run their 90 days
+     * AND have no blocking work left. Returns how many rows moved.
+     *
+     * TIME PASSING IS NOT THE SAME AS WORK BEING DONE.
+     *
+     * This used to complete a journey on day 91 regardless of its checklist.
+     * Found 25 Aug 2026: a joiner from 25 May was marked `completed` with three
+     * BLOCKING items outstanding — no signed contract, no email account, no
+     * laptop — and vanished from New Hires. Nobody was told. The person who
+     * noticed assumed uploading a document had deleted her.
+     *
+     * "Completed" against outstanding blocking work is a false statement, in
+     * exactly the sense that ticking "Add PAN details" for somebody with no PAN
+     * is: the status claims something nobody did, and payroll is what finds out.
+     *
+     * So a journey with blocking work left STAYS OPEN and stays visible. Its
+     * stage still advances, so it reads as onboarding-in-progress and overdue —
+     * which is true, and which is the only state that gets it finished. An
+     * unfinished journey nobody can see is the one outcome worse than a late
+     * one.
      */
     public function sweep(?CarbonInterface $today = null): int
     {
@@ -212,7 +230,7 @@ class OnboardingService
         OnboardingJourney::open()->cursor()->each(function (OnboardingJourney $journey) use ($now, &$moved) {
             $joining = Carbon::parse($journey->joining_date)->startOfDay();
 
-            if ($joining->copy()->addDays(90)->lt($now)) {
+            if ($joining->copy()->addDays(90)->lt($now) && ! $this->hasOutstandingBlockingWork($journey)) {
                 $journey->update(['stage' => OnboardingJourney::STAGE_COMPLETED, 'completed_at' => now()]);
                 $moved++;
 
@@ -227,5 +245,25 @@ class OnboardingService
         });
 
         return $moved;
+    }
+
+    /**
+     * Whether anything BLOCKING is still outstanding on this journey.
+     *
+     * Blocking only. A pending "60-day review" should not hold a journey open
+     * forever — it is a reminder, not a gate. The five gates are the ones
+     * somebody is actually stuck without: PAN, bank details, a signed contract,
+     * an email account and a laptop.
+     *
+     * `isSettled()` rather than `status === done`, so an item deliberately
+     * SKIPPED counts as settled. Skipping is a decision somebody made; pending
+     * is one nobody has.
+     */
+    private function hasOutstandingBlockingWork(OnboardingJourney $journey): bool
+    {
+        return \App\Models\ChecklistItem::forSubject($journey)
+            ->where('is_blocking', true)
+            ->outstanding()
+            ->exists();
     }
 }

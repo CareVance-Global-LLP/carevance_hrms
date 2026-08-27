@@ -2,9 +2,6 @@
 
 namespace App\Services\Ai;
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-
 /**
  * Turns a question into a query plan.
  *
@@ -13,6 +10,12 @@ use Illuminate\Support\Facades\Log;
  * on `stealth/ox-alpha`, a cloaked pre-release model whose traffic reaches the
  * originating lab. Rows never come here; they go to the summariser, which runs
  * on the primary provider.
+ *
+ * The provider loop, the fallback order and the JSON extraction moved to
+ * `PlanningClient` when `ActionPlanner` appeared and needed the same three
+ * settings. Nothing about the behaviour changed; what changed is that there is
+ * one copy of it, so a new fallback model or a changed timeout cannot reach the
+ * read path and miss the write path.
  *
  * Since §13's retrieval was wired in it no longer sees the whole schema
  * either, only the handful of entities a question is about — `catalogueFor()`
@@ -26,11 +29,24 @@ use Illuminate\Support\Facades\Log;
  */
 class QueryPlanner
 {
+    /**
+     * A v1 plan was one entity, one metric and one group_by, and 700 tokens
+     * covered it several times over. A v2 plan carries up to four metrics or
+     * eight columns, two group_by fields, a filter list, a having and a sort.
+     * Truncated mid-object it is unparseable, and unparseable is a refusal —
+     * the question would fail for want of output budget rather than for
+     * anything about the question. Reasoning is pinned low, so this is the
+     * answer budget almost entirely.
+     */
+    private const MAX_TOKENS = 1200;
+
+    public function __construct(private readonly PlanningClient $client)
+    {
+    }
+
     public function plan(string $question): array
     {
-        $providers = $this->providers();
-
-        if (empty($providers)) {
+        if (! $this->client->configured()) {
             // A configuration fault, checked first: it is true of every
             // question, and telling somebody to rephrase would be a lie.
             throw new UnsupportedQuestionException('The AI service is not configured.');
@@ -40,23 +56,18 @@ class QueryPlanner
 
         $catalogue = $this->catalogueFor($question);
 
-        foreach ($providers as $provider) {
-            foreach ($provider['models'] as $model) {
-                $content = $this->attempt($provider, $model, $question, $catalogue);
+        $plan = $this->client->json(
+            $this->systemPrompt($catalogue),
+            $question,
+            self::MAX_TOKENS,
+            'planner',
+        );
 
-                if ($content === null) {
-                    continue;
-                }
-
-                $parsed = $this->extractJson($content);
-
-                if ($parsed !== null) {
-                    return $parsed;
-                }
-            }
+        if ($plan === null) {
+            throw new UnsupportedQuestionException("I couldn't turn that into a data question.");
         }
 
-        throw new UnsupportedQuestionException("I couldn't turn that into a data question.");
+        return $plan;
     }
 
     /**
@@ -96,51 +107,6 @@ class QueryPlanner
         }
 
         return SemanticLayer::catalogueFor(array_keys($retrieved));
-    }
-
-    private function attempt(array $provider, string $model, string $question, string $catalogue): ?string
-    {
-        try {
-            $response = Http::withToken($provider['api_key'])
-                ->withHeaders([
-                    'HTTP-Referer' => config('services.ai.site_url'),
-                    'X-Title' => config('services.ai.app_name'),
-                ])
-                ->timeout(20)
-                ->post(rtrim($provider['base_url'], '/') . '/chat/completions', [
-                    'model' => $model,
-                    'temperature' => 0,
-                    /*
-                     * A v1 plan was one entity, one metric and one group_by,
-                     * and 700 tokens covered it several times over. A v2 plan
-                     * carries up to four metrics or eight columns, two
-                     * group_by fields, a filter list, a having and a sort.
-                     * Truncated mid-object it is unparseable, and unparseable
-                     * is a refusal — the question would fail for want of
-                     * output budget rather than for anything about the
-                     * question. Reasoning is pinned low, so this is the answer
-                     * budget almost entirely.
-                     */
-                    'max_tokens' => 1200,
-                    // ox-alpha's reasoning is mandatory and defaults to "max",
-                    // which costs 6.6s. Pinned to low it answers in ~3s.
-                    'reasoning' => ['effort' => 'low'],
-                    'messages' => [
-                        ['role' => 'system', 'content' => $this->systemPrompt($catalogue)],
-                        ['role' => 'user', 'content' => $question],
-                    ],
-                ]);
-
-            if (! $response->successful()) {
-                return null;
-            }
-
-            return data_get($response->json(), 'choices.0.message.content');
-        } catch (\Throwable $e) {
-            Log::warning('AI mode planner attempt failed', ['model' => $model, 'error' => $e->getMessage()]);
-
-            return null;
-        }
     }
 
     /**
@@ -234,66 +200,6 @@ class QueryPlanner
     private function today(): string
     {
         return now()->toDateString();
-    }
-
-    /**
-     * ox-alpha returns raw JSON when told to, but `response_format:
-     * json_schema` is advertised and NOT honoured — a strict run came back
-     * fenced with keys absent from the schema. So parse, then fall back.
-     */
-    private function extractJson(string $content): ?array
-    {
-        $content = trim($content);
-
-        $direct = json_decode($content, true);
-        if (is_array($direct)) {
-            return $direct;
-        }
-
-        if (preg_match('/```(?:json)?\s*([\s\S]*?)```/', $content, $matches)) {
-            $fenced = json_decode(trim($matches[1]), true);
-            if (is_array($fenced)) {
-                return $fenced;
-            }
-        }
-
-        if (preg_match('/(\{[\s\S]*\})/', $content, $matches)) {
-            $loose = json_decode($matches[1], true);
-            if (is_array($loose)) {
-                return $loose;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Secondary first: the planner sees no employee data, so the free cloaked
-     * model is the right default here and the paid primary is the fallback.
-     */
-    private function providers(): array
-    {
-        $providers = [];
-
-        $secondaryKey = config('services.ai.secondary_api_key');
-        if (! empty($secondaryKey)) {
-            $providers[] = [
-                'base_url' => config('services.ai.secondary_base_url'),
-                'api_key' => $secondaryKey,
-                'models' => array_filter(array_map('trim', explode(',', (string) config('services.ai.secondary_models')))),
-            ];
-        }
-
-        $primaryKey = config('services.ai.api_key');
-        if (! empty($primaryKey)) {
-            $providers[] = [
-                'base_url' => config('services.ai.base_url'),
-                'api_key' => $primaryKey,
-                'models' => [config('services.ai.model')],
-            ];
-        }
-
-        return $providers;
     }
 
     /**

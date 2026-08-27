@@ -6,27 +6,58 @@ import {
   Check,
   ChevronDown,
   Download,
+  LogOut,
   MoreVertical,
   Search,
   SlidersHorizontal,
-  Trash2,
   UserRound,
   X,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import StatusBadge from '@/components/ui/StatusBadge';
 import useAnchoredMenu from '@/components/ui/useAnchoredMenu';
+import { formatDate } from '@/lib/dateTime';
 
 export type DirectorySort = 'default' | 'name_asc' | 'working_first';
-export type Segment = 'all' | 'working' | 'incomplete';
+export type Segment = 'all' | 'working' | 'incomplete' | 'former';
 
 export interface RosterUser {
   id: number;
   name: string;
   email?: string | null;
+  /** Server accessor over `deactivated_at`. False means they have left. */
+  is_active?: boolean;
+  deactivated_at?: string | null;
   is_working?: boolean;
   total_duration?: number;
   total_elapsed_duration?: number;
 }
+
+/**
+ * What the exit record says about a former employee.
+ *
+ * One callback rather than three, because all three facts come off the same
+ * exit row: resolving them separately means three lookups that can disagree
+ * about WHICH exit they read, and somebody rehired once has more than one.
+ */
+export interface RosterExit {
+  id: number;
+  lastWorkingDate: string;
+  exitType: string;
+  rehireEligibility: 'undecided' | 'eligible' | 'not_eligible';
+}
+
+const REHIRE_LABEL: Record<RosterExit['rehireEligibility'], string> = {
+  undecided: 'Rehire undecided',
+  eligible: 'Rehire eligible',
+  not_eligible: 'Not eligible',
+};
+
+const REHIRE_TONE: Record<RosterExit['rehireEligibility'], 'neutral' | 'success' | 'danger'> = {
+  undecided: 'neutral',
+  eligible: 'success',
+  not_eligible: 'danger',
+};
 
 /** Fixed so the menu can be placed on its first paint, before it is measured. */
 const ROW_MENU_WIDTH = 192;
@@ -213,11 +244,12 @@ interface RowProps {
   timezone: string;
   href: string;
   incomplete: boolean;
+  exit: RosterExit | null;
   selected: boolean;
-  canRemove: boolean;
+  canStartExit: boolean;
+  rehireAction: ReactNode;
   onToggleSelect: () => void;
   onOpenSettings: () => void;
-  onRemove: () => void;
 }
 
 function RosterRowBase({
@@ -228,17 +260,19 @@ function RosterRowBase({
   timezone,
   href,
   incomplete,
+  exit,
   selected,
-  canRemove,
+  canStartExit,
+  rehireAction,
   onToggleSelect,
   onOpenSettings,
-  onRemove,
 }: RowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const { menuRef: panelRef, style: menuStyle } = useAnchoredMenu(triggerRef, menuOpen, { width: ROW_MENU_WIDTH, onDismiss: () => setMenuOpen(false) });
   const working = Boolean(user.is_working);
+  const hasLeft = user.is_active === false;
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -309,6 +343,30 @@ function RosterRowBase({
               ) : null}
             </div>
             <p className="truncate text-[11px] text-slate-500">{user.email}</p>
+
+            {/* Only a leaver carries this block, and only the Ex-employees
+                segment carries leavers — but the badge stays row-level so a row
+                is never ambiguous about which of the two it is. */}
+            {hasLeft ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <StatusBadge tone="neutral" className="px-2 py-0.5 tracking-[0.1em]">
+                  Ex-employee
+                </StatusBadge>
+                {exit ? (
+                  <StatusBadge
+                    tone={REHIRE_TONE[exit.rehireEligibility]}
+                    className="px-2 py-0.5 tracking-[0.1em]"
+                  >
+                    {REHIRE_LABEL[exit.rehireEligibility]}
+                  </StatusBadge>
+                ) : null}
+                <span className="text-[11px] text-slate-600">
+                  {exit
+                    ? `Left ${formatDate(exit.lastWorkingDate)} · ${exit.exitType.replace(/_/g, ' ')}`
+                    : 'No exit record'}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </td>
@@ -365,19 +423,38 @@ function RosterRowBase({
               >
                 <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500" /> Settings
               </button>
-              {canRemove ? (
+              {/* Bringing somebody back is not destructive, so it sits above the
+                  divider. The wrapper closes the menu on the way out of the
+                  slot's own click, which the slot itself cannot reach. */}
+              {rehireAction ? (
+                <div onClick={() => setMenuOpen(false)}>{rehireAction}</div>
+              ) : null}
+              {/*
+                * OFFBOARDING IS AN EXIT, NOT A DELETE.
+                *
+                * This was "Remove employee", and it called DELETE /users/{id} —
+                * a hard delete with 101 tables cascading off a users row,
+                * payslips and bank-transfer lines among them. The API refuses it
+                * now for anyone with history, which left a menu item that could
+                * only ever fail: worse than absent, because a button that always
+                * errors teaches people the product is broken.
+                *
+                * Keka answers "how do I remove an employee" with Initiate Exit
+                * and nothing else. So does this. The admin opening this menu
+                * wants to offboard somebody, and the exit is what gives them a
+                * notice period, a clearance checklist, a settlement, and the
+                * seat back on the last working day.
+                */}
+              {canStartExit ? (
                 <>
                   <div className="my-1 h-px bg-slate-100" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onRemove();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-danger-700 transition hover:bg-danger-50"
+                  <Link
+                    to="/exits"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50"
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Remove employee
-                  </button>
+                    <LogOut className="h-3.5 w-3.5 text-slate-500" /> Start exit
+                  </Link>
                 </>
               ) : null}
             </div>,
@@ -412,8 +489,11 @@ export interface EmployeeRosterProps {
   setSort: (next: DirectorySort) => void;
   workingCount: number;
   incompleteCount: number;
+  formerCount: number;
   canManage: boolean;
   isExporting: boolean;
+  resolveExit?: (user: RosterUser) => RosterExit | null;
+  rehireSlot?: (user: RosterUser) => ReactNode;
   resolveCode: (user: RosterUser) => string;
   resolveRole: (user: RosterUser) => string;
   resolveDepartment: (user: RosterUser) => string;
@@ -421,7 +501,6 @@ export interface EmployeeRosterProps {
   resolveHref: (user: RosterUser) => string;
   isIncomplete: (user: RosterUser) => boolean;
   onOpenSettings: (user: RosterUser) => void;
-  onRemove: (user: RosterUser) => void;
   onExport: () => void;
   bulk: BulkActions;
   addEmployeeSlot?: ReactNode;
@@ -432,12 +511,10 @@ export interface BulkActions {
   roles: Array<{ id: number; name: string }>;
   canMoveDepartment: boolean;
   canAssignRole: boolean;
-  canRemove: boolean;
   isBusy: boolean;
   onAddToDepartment: (userIds: number[], departmentId: number, departmentName: string) => void;
   onAssignRole: (userIds: number[], roleId: number, roleName: string) => void;
   onExportSelected: (selectedUsers: RosterUser[]) => void;
-  onRemove: (userIds: number[]) => void;
 }
 
 const SORT_LABEL: Record<DirectorySort, string> = {
@@ -463,8 +540,11 @@ export default function EmployeeRoster({
   setSort,
   workingCount,
   incompleteCount,
+  formerCount,
   canManage,
   isExporting,
+  resolveExit,
+  rehireSlot,
   resolveCode,
   resolveRole,
   resolveDepartment,
@@ -472,7 +552,6 @@ export default function EmployeeRoster({
   resolveHref,
   isIncomplete,
   onOpenSettings,
-  onRemove,
   onExport,
   bulk,
   addEmployeeSlot,
@@ -498,6 +577,10 @@ export default function EmployeeRoster({
     { key: 'all', label: 'Everyone', count: users.length },
     { key: 'working', label: 'Working now', count: workingCount },
     { key: 'incomplete', label: 'Incomplete profiles', count: incompleteCount, warn: true },
+    // No `warn`: somebody who has left is a record to keep, not a problem to
+    // chase. The other three segments exclude them, so this is the only place
+    // they appear and the counts do not double up.
+    { key: 'former', label: 'Ex-employees', count: formerCount },
   ];
 
   return (
@@ -641,20 +724,14 @@ export default function EmployeeRoster({
               <Download className="h-3.5 w-3.5" /> Export selected
             </Button>
 
-            {bulk.canRemove ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={bulk.isBusy}
-                className="text-danger-700 hover:bg-danger-50"
-                onClick={() => {
-                  bulk.onRemove(selectedIds);
-                  setSelected(new Set());
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Remove
-              </Button>
-            ) : null}
+            {/*
+              * There is no bulk offboarding, deliberately. An exit is a dated,
+              * per-person decision — a notice period, a last working day, a
+              * clearance list, a settlement — and none of that has a sensible
+              * batch form. The old bulk Remove fired one DELETE per selected
+              * person and reported only the successes, so a mixed selection said
+              * "Removed 3" while silently dropping seven refusals.
+              */}
 
             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setSelected(new Set())}>
               Clear
@@ -702,9 +779,13 @@ export default function EmployeeRoster({
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-16 text-center">
-                    <p className="text-sm font-semibold text-slate-900">No employees match</p>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {segment === 'former' && formerCount === 0 ? 'Nobody has left yet' : 'No employees match'}
+                    </p>
                     <p className="mt-1 text-sm text-slate-500">
-                      Try clearing the search or filters above.
+                      {segment === 'former' && formerCount === 0
+                        ? 'People appear here once their exit revokes access on their last working day.'
+                        : 'Try clearing the search or filters above.'}
                     </p>
                   </td>
                 </tr>
@@ -719,11 +800,12 @@ export default function EmployeeRoster({
                     timezone={resolveTimezone(user)}
                     href={resolveHref(user)}
                     incomplete={isIncomplete(user)}
+                    exit={resolveExit?.(user) ?? null}
+                    rehireAction={rehireSlot?.(user) ?? null}
                     selected={selected.has(user.id)}
-                    canRemove={canManage}
+                    canStartExit={canManage}
                     onToggleSelect={() => toggleOne(user.id)}
                     onOpenSettings={() => onOpenSettings(user)}
-                    onRemove={() => onRemove(user)}
                   />
                 ))
               )}

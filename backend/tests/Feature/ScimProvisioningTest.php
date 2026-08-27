@@ -258,6 +258,60 @@ class ScimProvisioningTest extends TestCase
         $this->assertNull($user->fresh()->deactivated_at);
     }
 
+    public function test_scim_refuses_to_provision_past_the_seat_cap_with_a_scim_error_envelope(): void
+    {
+        // The admin from setUp already fills the only seat.
+        $this->organization->forceFill(['max_seats' => 1])->save();
+
+        $response = $this->scim('POST', '/Users', $this->userPayload())->assertStatus(403);
+
+        /*
+         * Now that a deactivated leaver releases their seat, an IdP flipping
+         * somebody back on is the one path that could claim a seat with nothing
+         * checking — which would make Entra the documented way round the cap.
+         *
+         * 403, not the guard's own 422: RFC 7644 §3.12 has no `scimType` for
+         * running out of capacity, and `detail` is the only part of this an
+         * administrator ever sees in Entra or Okta, so the guard's wording —
+         * shortfall included — is passed through unchanged.
+         */
+        $this->assertSame(['urn:ietf:params:scim:api:messages:2.0:Error'], $response->json('schemas'));
+        $this->assertSame('403', $response->json('status'));
+        $this->assertStringContainsString('seat', strtolower((string) $response->json('detail')));
+
+        $this->assertNull(User::query()
+            ->where('organization_id', $this->organization->id)
+            ->where('email', 'priya@carevance.test')
+            ->first());
+    }
+
+    public function test_scim_reactivation_is_refused_when_no_seat_is_free(): void
+    {
+        $this->organization->forceFill(['max_seats' => 2])->save();
+
+        $leaver = $this->provision();
+        $this->scim('DELETE', "/Users/{$leaver->id}")->assertStatus(204);
+
+        // Their seat went to somebody else while they were gone.
+        User::create([
+            'name' => 'Replacement',
+            'email' => 'replacement@carevance.test',
+            'password' => Hash::make('password123'),
+            'role' => 'employee',
+            'organization_id' => $this->organization->id,
+        ]);
+
+        $response = $this->scim('PATCH', "/Users/{$leaver->id}", [
+            'schemas' => ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+            // Entra's shape, which is the one that used to clear the column
+            // inline in the controller and so bypassed the check entirely.
+            'Operations' => [['op' => 'replace', 'value' => ['active' => true]]],
+        ])->assertStatus(403);
+
+        $this->assertSame('403', $response->json('status'));
+        $this->assertNotNull($leaver->fresh()->deactivated_at);
+    }
+
     public function test_a_token_cannot_see_another_workspace(): void
     {
         $other = Organization::create(['name' => 'Other', 'slug' => 'other-scim']);

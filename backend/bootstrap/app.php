@@ -47,6 +47,30 @@ return Application::configure(basePath: dirname(__DIR__))
         attributes: ['prefix' => 'api', 'middleware' => ['api.token', 'mfa.enrolled']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        /*
+         * WHICH forwarded headers are trusted. WHICH proxies are trusted is
+         * config/trustedproxy.php — that half has to be config, because it is
+         * per-deployment and because this closure runs while the HTTP kernel
+         * is being resolved, before configuration is loaded, so an env() read
+         * here would be null on any box running `config:cache`.
+         *
+         * Deliberately NOT the framework default set. X-Forwarded-For, Port
+         * and Proto are what our edges send and what the application needs:
+         * the real client address (recorded against every session and every
+         * audit row) and the real scheme (so generated links are https behind
+         * a TLS-terminating proxy).
+         *
+         * X-Forwarded-Host, X-Forwarded-Prefix and the AWS ELB header are
+         * excluded. Trusting a forwarded host lets a caller decide the
+         * hostname the application believes it is serving, which is how a
+         * password-reset link ends up pointing at somebody else's domain, and
+         * nothing in this stack needs it — every nginx and Caddy block here
+         * already passes the real Host through.
+         */
+        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR
+            | Request::HEADER_X_FORWARDED_PORT
+            | Request::HEADER_X_FORWARDED_PROTO);
+
         $middleware->alias([
             'api.token' => \App\Http\Middleware\AuthenticateApiToken::class,
             'api.token.optional' => \App\Http\Middleware\OptionalApiToken::class,

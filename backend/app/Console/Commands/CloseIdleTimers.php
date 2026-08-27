@@ -16,11 +16,37 @@ class CloseIdleTimers extends Command
 
     protected $description = 'Auto-stop running timers where no non-idle activity was detected for the idle threshold';
 
+    /**
+     * How much longer than the CLIENT's own threshold this waits before acting.
+     *
+     * This is a backstop for a tracker that could not act — closed, asleep,
+     * crashed, offline. It is not a second opinion on whether somebody is idle,
+     * and it holds worse information than the client does: the client watches
+     * the OS input clock, while this can only see how long ago the last
+     * activity row reached the server.
+     *
+     * Without a margin it PRE-EMPTS the app. Found 25 Aug 2026, within two
+     * hours of this sweep first being enabled: three timers closed at 301s,
+     * 342s and 357s of trailing idle, because the server read
+     * IDLE_AUTO_STOP_THRESHOLD_SECONDS=300 from .env while the desktop app was
+     * on its organization's policy of 900s. Somebody filling in his profile in
+     * the app had his timer stopped and marked idle underneath him.
+     *
+     * Five minutes on top of the client's own threshold. Long enough that a
+     * running tracker always wins the race; short enough that a machine that
+     * went to sleep at lunch is not still billing at five past.
+     */
+    private const CLIENT_GRACE_SECONDS = 300;
+
     public function handle(): int
     {
-        $idleThresholdSeconds = max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
+        /*
+         * The FLOOR, not the threshold. The real threshold is per user, because
+         * the policy the client obeys is per organization — resolved below.
+         */
+        $configuredSeconds = max(60, (int) config('time_tracking.idle_auto_stop_threshold_seconds', 300));
         $idleMinutes = (int) ($this->option('idle-minutes')
-            ?: max(1, (int) round($idleThresholdSeconds / 60)));
+            ?: max(1, (int) round($configuredSeconds / 60)));
 
         $dryRun = (bool) $this->option('dry-run');
         $cutoff = now()->subMinutes($idleMinutes);
@@ -92,6 +118,33 @@ class CloseIdleTimers extends Command
             ->get()
             ->keyBy('user_id');
 
+        /*
+         * The threshold each user's own tracker is obeying.
+         *
+         * Resolved per user because the policy is per organization, and read
+         * from the SAME resolver the client reads through `/tracker-policy`.
+         * The previous code used one global number from .env, which on
+         * production was 300 while every client was on 900 — so this sweep
+         * stopped timers three times sooner than the app it exists to back up.
+         */
+        $policyResolver = app(\App\Services\Monitoring\TrackerPolicyResolver::class);
+        $usersById = \App\Models\User::withoutGlobalScopes()
+            ->whereIn('id', $userIds)
+            ->get()
+            ->keyBy('id');
+
+        $thresholdForUser = function (int $userId) use ($policyResolver, $usersById, $configuredSeconds): int {
+            $user = $usersById->get($userId);
+
+            $clientThreshold = $user
+                ? (int) ($policyResolver->resolveForUser($user)['idle_auto_stop_threshold_seconds'] ?? $configuredSeconds)
+                : $configuredSeconds;
+
+            // Never below the configured floor, and always the client's own
+            // threshold plus the grace — whichever is later.
+            return max($configuredSeconds, $clientThreshold) + self::CLIENT_GRACE_SECONDS;
+        };
+
         $now = now();
         $closed = 0;
 
@@ -106,8 +159,9 @@ class CloseIdleTimers extends Command
             }
 
             $idleSeconds = (int) $lastActiveAt->diffInSeconds($now);
+            $idleThresholdSeconds = $thresholdForUser((int) $entry->user_id);
 
-            // Skip if there's been recent activity within the threshold
+            // Skip if there's been recent activity within this user's threshold
             if ($idleSeconds < $idleThresholdSeconds) {
                 continue;
             }

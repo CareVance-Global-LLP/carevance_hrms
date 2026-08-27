@@ -19,10 +19,32 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  */
 class SeatGuard
 {
-    /** People currently holding a seat. Every login counts, admins included. */
+    /**
+     * People still holding access. Every login counts, admins included.
+     *
+     * This is the ONLY seat count in the product. The cap reads it, the billing
+     * page displays it, and every price is quoted on it — so the number a
+     * customer is charged for is the number they can see, and a quote they
+     * cannot reconcile against the seat meter is a bug rather than a footnote.
+     *
+     * A leaver's row survives — `User` has no SoftDeletes and is deliberately
+     * not gaining any — so the seat is released by `deactivated_at`, which
+     * `ExitService::revokeAccess` stamps on the day after the last working day.
+     * It used to be every row, which meant a leaver held a paid seat forever
+     * and deleting the person was the only way to free one: that destroys their
+     * payslips, attendance and leave ledger, which the organization is obliged
+     * to keep.
+     *
+     * There was briefly a second count here — `billableHeadcount()`, every row
+     * the organization had ever had — kept so no invoice moved when the release
+     * landed. It priced a workspace of five active people with thirty leavers
+     * at thirty-five seats while the same page read "5 of 10", and the customer
+     * had nothing on screen to argue with. Charging for people who left is an
+     * overcharge; it is gone, and nothing may reintroduce it.
+     */
     public function usedSeats(Organization $organization): int
     {
-        return $organization->users()->count();
+        return $organization->users()->stillHoldingAccess()->count();
     }
 
     public function maxSeats(Organization $organization): int
@@ -31,8 +53,14 @@ class SeatGuard
     }
 
     /**
-     * The lowest cap this organization may set. Reducing below the people
+     * The lowest cap this organization may REDUCE to. Going below the people
      * already in the workspace is not a saving, it is an inconsistency.
+     *
+     * The plan floor now lives in `config/carevance.php` under `min_seats`.
+     * The key was absent from every plan, so the `?? 50` / `?? 10` below were
+     * the real numbers and nobody reading the config could find them. They are
+     * unchanged — see the note above `plans` for the two commercial
+     * disagreements in this area that still need a human to settle.
      */
     public function minimumAllowedSeats(Organization $organization): int
     {
@@ -46,27 +74,43 @@ class SeatGuard
         return max($planFloor, $this->usedSeats($organization));
     }
 
-    public function remaining(Organization $organization): int
+    /**
+     * The cap a NEW person is admitted against.
+     *
+     * Normally the paid cap. When a smaller one has already been agreed and is
+     * waiting to land — a scheduled seat reduction, or an upgrade quote the
+     * customer is about to pay — it is that smaller number instead, because
+     * seat enforcement is forward-only: anybody let in above the incoming cap
+     * stays there and the workspace never has to buy the seat. A rejoin, a
+     * SCIM reactivation and an accepted invitation all arrive through
+     * `assertCanAdd`, and all three used to be waved through on a cap that was
+     * minutes away from being replaced.
+     *
+     * A LARGER pending number is ignored: seats being bought are not seats
+     * paid for, and admitting against them would let a workspace fill a cap it
+     * then abandons at checkout.
+     */
+    public function admissionCap(Organization $organization): int
     {
-        return $this->maxSeats($organization) - $this->usedSeats($organization);
-    }
+        $max = $this->maxSeats($organization);
+        $pending = (int) ($organization->pending_seats ?? 0);
 
-    public function isOverCap(Organization $organization): bool
-    {
-        return $this->remaining($organization) < 0;
+        return ($pending > 0 && $max > 0 && $pending < $max) ? $pending : $max;
     }
 
     /** True when `$count` more people would fit inside the cap. */
     public function canAdd(Organization $organization, int $count = 1): bool
     {
+        $cap = $this->admissionCap($organization);
+
         // A cap of zero or less has never been configured for this workspace;
         // treat it as unset rather than as "nobody may join", which would lock
         // out organizations created before seats existed.
-        if ($this->maxSeats($organization) <= 0) {
+        if ($cap <= 0) {
             return true;
         }
 
-        return $this->usedSeats($organization) + $count <= $this->maxSeats($organization);
+        return $this->usedSeats($organization) + $count <= $cap;
     }
 
     /**
@@ -80,7 +124,7 @@ class SeatGuard
         }
 
         $used = $this->usedSeats($organization);
-        $max = $this->maxSeats($organization);
+        $max = $this->admissionCap($organization);
         $shortfall = ($used + $count) - $max;
 
         throw new HttpException(
@@ -98,6 +142,9 @@ class SeatGuard
         $max = $this->maxSeats($organization);
 
         return [
+            // `used` is also what every quote is priced on. There is no second
+            // figure beside it any more: two seat numbers on one screen is what
+            // let a 35-seat invoice sit next to a meter reading 5.
             'used' => $used,
             'max' => $max,
             'remaining' => $max - $used,

@@ -149,19 +149,6 @@ class PlanService
         return in_array($feature, $features, true);
     }
 
-    public static function seatsRemaining(Organization $organization): int
-    {
-        $maxSeats = $organization->max_seats ?? 5;
-        $usedSeats = $organization->users()->count();
-
-        return max(0, $maxSeats - $usedSeats);
-    }
-
-    public static function seatsAvailable(Organization $organization): int
-    {
-        return $organization->max_seats ?? 5;
-    }
-
     public static function calculateWorkspacePrice(string $planCode, int $seats, string $billingCycle): array
     {
         $config = config("carevance.plans.{$planCode}");

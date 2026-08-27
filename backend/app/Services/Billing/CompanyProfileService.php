@@ -114,6 +114,11 @@ class CompanyProfileService
      * Never below the plan floor and never below the people already in the
      * workspace — converting on a number smaller than the current headcount
      * would buy a plan that cannot hold the team it is being bought for.
+     *
+     * `$usedSeats` means people still holding access, the figure the billing
+     * page shows. Never pass a count that includes leavers: this number is
+     * prefilled into the seat box and posted straight back to be priced, so
+     * anything the customer cannot see on the page gets charged for silently.
      */
     public function suggestedSeats(Organization $organization, int $floor, int $usedSeats): int
     {

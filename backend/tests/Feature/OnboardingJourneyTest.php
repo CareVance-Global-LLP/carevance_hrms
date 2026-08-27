@@ -177,7 +177,19 @@ class OnboardingJourneyTest extends TestCase
         $this->assertSame(OnboardingJourney::STAGE_ONBOARDING, $journey->fresh()->stage);
     }
 
-    public function test_the_sweep_closes_a_journey_after_ninety_days(): void
+    /**
+     * This used to assert that ninety days ALONE closed a journey, with every
+     * blocking item still pending. That is the bug, not the contract: on
+     * production a joiner from 25 May was marked `completed` with no signed
+     * contract, no email account and no laptop, and vanished from New Hires
+     * with nobody told.
+     *
+     * Time passing is not the same as work being done, so the fixture now
+     * settles the blocking items — which is what "done" is supposed to mean.
+     * `OnboardingSweepBlockingWorkTest` covers the other half: outstanding
+     * blocking work keeps the journey open and visible.
+     */
+    public function test_the_sweep_closes_a_finished_journey_after_ninety_days(): void
     {
         $journey = $this->onboarding()->open(
             organizationId: $this->organization->id,
@@ -186,6 +198,10 @@ class OnboardingJourneyTest extends TestCase
             joiningDate: now()->subDays(120),
             creator: $this->admin,
         );
+
+        ChecklistItem::forSubject($journey)
+            ->where('is_blocking', true)
+            ->update(['status' => ChecklistItem::STATUS_DONE, 'completed_at' => now()]);
 
         $this->onboarding()->sweep();
 

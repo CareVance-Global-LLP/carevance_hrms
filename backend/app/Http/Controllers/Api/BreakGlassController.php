@@ -79,7 +79,7 @@ class BreakGlassController extends Controller
         }
 
         try {
-            $token = $this->service->issueToken($session, $request->user());
+            $token = $this->service->issueToken($session, $request->user(), $request);
         } catch (\InvalidArgumentException $e) {
             return response()->json([
                 'success' => false,

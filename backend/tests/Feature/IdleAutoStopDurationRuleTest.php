@@ -143,8 +143,21 @@ class IdleAutoStopDurationRuleTest extends TestCase
     {
         $user = $this->makeUser('idle-spec-cron@example.com');
 
-        $start = now()->subMinutes(60);
-        $lastKeypress = now()->subMinutes(5);
+        /*
+         * Twenty-five minutes idle, not five.
+         *
+         * The sweep is a backstop and now waits for the CLIENT's own threshold
+         * plus five minutes of grace before acting — a five-minute fixture no
+         * longer reaches it, and should not: on production the old five-minute
+         * rule stopped a timer under somebody who was actively filling in a
+         * form. See IdleBackstopRespectsClientPolicyTest.
+         *
+         * What this test is actually about is unchanged: however long it waits,
+         * the cron must produce the SAME duration as the client path — billing
+         * to the last real activity and recording the tail separately.
+         */
+        $start = now()->subMinutes(80);
+        $lastKeypress = now()->subMinutes(25);
 
         $entry = TimeEntry::create([
             'user_id' => $user->id,
@@ -167,8 +180,10 @@ class IdleAutoStopDurationRuleTest extends TestCase
         $entry->refresh();
 
         // The cron used to bill start -> now, charging the whole idle tail.
+        // 80 minutes running, last keypress at 25 minutes ago: 55 minutes
+        // billed, 25 minutes recorded as idle and NOT billed.
         $this->assertSame(3300, (int) $entry->duration);
-        $this->assertSame(300, (int) $entry->trailing_idle_seconds);
+        $this->assertSame(1500, (int) $entry->trailing_idle_seconds);
         $this->assertSame(TimeEntry::STOP_IDLE_CRON, $entry->stop_reason);
     }
 
