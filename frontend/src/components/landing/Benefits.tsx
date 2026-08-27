@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Clock, Shield, BarChart3, Headphones, Zap, Globe } from 'lucide-react';
-import { viewportOptions, cardHoverEnhanced } from './animations';
+import { viewportOptions } from './animations';
 import SectionNumber from './SectionNumber';
 
 const benefits = [
@@ -14,7 +14,12 @@ const benefits = [
   {
     icon: Shield,
     title: 'Enterprise-grade security',
-    description: 'SOC 2 compliant, GDPR ready, role-based access control. Your data is encrypted at rest and in transit.',
+    // Was "SOC 2 compliant, GDPR ready". We hold neither certification — see
+    // the note on trustBadges in Hero.tsx. What is below is enforced in code:
+    // 97 models carry an organisation scope at the ORM layer and a test fails
+    // the build if one lapses (SEC-01, SEC-02), and payroll route gating is
+    // asserted by PayrollRouteAuthorizationTest (SEC-04).
+    description: 'Tenant isolation applied at the ORM layer and enforced by a test that fails the build. Role-based access, with payroll routes gated and asserted.',
     span: 'col-span-1',
     variant: 'from-blue' as const,
   },

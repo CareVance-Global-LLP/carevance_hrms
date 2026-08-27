@@ -1,32 +1,76 @@
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BarChart3, CalendarCheck, Clock4, Download, TrendingUp, Shield, Zap } from 'lucide-react';
 import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
-import { staggerContainer, fadeSlideUp, easeOut, perspectiveRotateIn } from './animations';
+import { staggerContainer, fadeSlideUp, easeOut } from './animations';
 import MagneticButton from './MagneticButton';
 import AnimatedCounter from './AnimatedCounter';
-import TextReveal from './TextReveal';
-import TypeWriter from './TypeWriter';
+import WordRise from './WordRise';
 import GradientOrb from './GradientOrb';
 import Marquee from './Marquee';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 
+/**
+ * COUNTED FROM THE CODEBASE, NOT INVENTED.
+ *
+ * These three replaced "10,000+ active users", "500+ workspaces" and a "32%
+ * productivity lift" — none of which existed. There are no users to count yet,
+ * and a productivity figure with no study behind it is not a rounding error, it
+ * is a fabricated statistic on a page selling payroll software.
+ *
+ * Each number below is audited in PRODUCT_TRUTH.md at the repo root under the
+ * claim ID beside it, which names the file it was counted from. If you change
+ * one, change it there first. What a company with no customers honestly has is
+ * scope, and scope is checkable.
+ */
 const stats = [
-  { value: 10000, suffix: '+', label: 'Active users', icon: TrendingUp },
-  { value: 500, suffix: '+', label: 'Workspaces', icon: CalendarCheck },
-  { value: 32, suffix: '%', label: 'Productivity lift', icon: BarChart3 },
+  { value: 37, suffix: '', label: 'States & UTs with PT resolved', icon: BarChart3 }, // STA-04
+  { value: 23, suffix: '', label: 'Statutory documents generated', icon: CalendarCheck }, // FIL-01
+  { value: 4, suffix: '', label: 'Apps in the suite', icon: TrendingUp }, // NUM-05
 ];
 
+/**
+ * DO NOT PUT A CERTIFICATION HERE THAT WE DO NOT HOLD.
+ *
+ * This carried "SOC 2 Compliant", "99.9% Uptime" and "GDPR Ready". We hold no
+ * SOC 2 report and no ISO 27001 certificate — /security says so in as many
+ * words — and there is no measured uptime figure to publish. A buyer's
+ * procurement team asks for the report, and the answer being "there isn't one"
+ * after the badge said otherwise ends the evaluation.
+ *
+ * What replaced them is enforced in code and stated identically on the
+ * marketing site's security page, so the two properties cannot drift apart.
+ */
 const trustBadges = [
-  { icon: Shield, text: 'SOC 2 Compliant' },
-  { icon: Zap, text: '99.9% Uptime' },
-  { icon: Shield, text: 'GDPR Ready' },
+  { icon: Shield, text: 'Tenant isolation, test-enforced' }, // SEC-01, SEC-02
+  { icon: Zap, text: 'Two-factor auth, enforceable per org' }, // SEC-03
+  { icon: Shield, text: 'Consent-gated monitoring' }, // CON-01
 ];
 
 export default function Hero() {
   const { scrollYProgress } = useScroll();
   const dashboardY = useTransform(scrollYProgress, [0, 0.3], [0, -40]);
   const dashboardRotate = useTransform(scrollYProgress, [0, 0.3], [-2, 0]);
+
+  /*
+   * Mouse-tilt parallax on the dashboard mock (±4°).
+   *
+   * Springs rather than raw pointer values: a mock that tracks the cursor
+   * exactly reads as a bug, because real objects have inertia. Inert on touch —
+   * `pointermove` only fires mid-gesture there, and there is no touch
+   * equivalent worth inventing.
+   */
+  const reducedMotion = usePrefersReducedMotion();
+  const tiltX = useMotionValue(0);
+  const tiltY = useMotionValue(0);
+  const tiltSpring = { stiffness: 150, damping: 20, mass: 0.6 };
+  const tiltRotateX = useSpring(useTransform(tiltY, [-0.5, 0.5], [4, -4]), tiltSpring);
+  const tiltRotateY = useSpring(useTransform(tiltX, [-0.5, 0.5], [-4, 4]), tiltSpring);
+  const combinedRotateY = useTransform(
+    [dashboardRotate, tiltRotateY] as const,
+    ([scroll, tilt]: number[]) => (reducedMotion ? 0 : scroll + tilt)
+  );
   const blurY1 = useTransform(scrollYProgress, [0, 0.3], [0, -60]);
   const blurY2 = useTransform(scrollYProgress, [0, 0.3], [0, -25]);
   const textY = useTransform(scrollYProgress, [0, 0.3], [0, 20]);
@@ -49,9 +93,7 @@ export default function Hero() {
 
             <motion.h1 variants={fadeSlideUp} className="mt-6 text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl lg:text-[3.5rem] lg:leading-[1.1]">
               Know exactly what your{' '}
-              <span className="text-blue-600">
-                <TypeWriter text="team is working on" speed={55} cursor={true} delay={800} />
-              </span>
+              <WordRise text="team is working on" className="text-blue-600" delay={0.25} />
             </motion.h1>
 
             <motion.p variants={fadeSlideUp} className="mt-5 max-w-xl text-base leading-7 text-slate-500">
@@ -127,9 +169,33 @@ export default function Hero() {
             transition={{ duration: 0.8, delay: 0.2, ease: easeOut }}
             className="relative"
             style={{ perspective: '1200px' }}
+            onPointerMove={(e) => {
+              // Coarse pointers report movement only mid-gesture; tilting the
+              // hero because somebody started a scroll is not an interaction.
+              if (e.pointerType !== 'mouse') return;
+              const r = e.currentTarget.getBoundingClientRect();
+              tiltX.set((e.clientX - r.left) / r.width - 0.5);
+              tiltY.set((e.clientY - r.top) / r.height - 0.5);
+            }}
+            onPointerLeave={() => {
+              tiltX.set(0);
+              tiltY.set(0);
+            }}
           >
+            {/*
+              Two rotations are combined here on purpose. `dashboardRotate` is
+              the scroll-linked settle that was already present; `tiltRotateY`
+              is the pointer parallax. They are summed into one motion value
+              rather than applied to nested elements, because two transforms
+              fighting over the same property is how a tilt starts to jitter.
+            */}
             <motion.div
-              style={{ y: dashboardY, rotateY: dashboardRotate }}
+              style={{
+                y: dashboardY,
+                rotateX: tiltRotateX,
+                rotateY: combinedRotateY,
+                transformStyle: 'preserve-3d',
+              }}
               className="rounded-xl border border-slate-200 bg-white shadow-xl"
             >
               <div className="border-b border-slate-100 px-5 py-4">
@@ -213,14 +279,37 @@ export default function Hero() {
 
       {/* Trust logos marquee */}
       <div className="mx-auto mt-10 max-w-7xl">
+        {/*
+          THIS WAS A LOGO WALL OF COMPANIES THAT DO NOT EXIST — Acme Corp,
+          TechFlow, GlobalSync and five more, under the words "Trusted by
+          forward-thinking teams". Placeholder logos left in a template are one
+          thing; shipped to production on a payroll product they are a claim to
+          customers we do not have, and the kind a prospect checks.
+
+          There is no logo wall to put here yet, and the honest substitute is
+          scope rather than borrowed credibility: the modules that actually
+          ship. When there are customers willing to be named, they replace this
+          — with a date.
+        */}
         <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-          Trusted by forward-thinking teams
+          One system, ten modules
         </p>
-        <Marquee speed={40} className="opacity-40">
-          {['Acme Corp', 'TechFlow', 'GlobalSync', 'DataPrime', 'CloudNine', 'InnoVate', 'BrightPath', 'NextLevel'].map((name) => (
+        <Marquee speed={40} className="opacity-60">
+          {[
+            'Evidence of work',
+            'Attendance, shifts & rostering',
+            'Leave',
+            'Payroll',
+            'Statutory & filings',
+            'Money movement & finance',
+            'Hiring',
+            'Core HR',
+            'Reports & controls',
+            'Platform & security',
+          ].map((name) => (
             <div key={name} className="flex items-center gap-2 px-8">
-              <div className="h-6 w-6 rounded bg-slate-200" />
-              <span className="text-sm font-semibold text-slate-500">{name}</span>
+              <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              <span className="text-sm font-semibold whitespace-nowrap text-slate-500">{name}</span>
             </div>
           ))}
         </Marquee>

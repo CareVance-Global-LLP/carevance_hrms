@@ -39,7 +39,7 @@ const groups = [
   },
 ];
 
-function FeatureCard({ item, index, groupIndex }: { item: typeof groups[0]['items'][0]; index: number; groupIndex: number }) {
+function FeatureCard({ item, groupIndex }: { item: typeof groups[0]['items'][0]; groupIndex: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
@@ -129,8 +129,8 @@ export default function Features() {
 
                 {/* Asymmetric grid */}
                 <div className={`grid gap-4 ${gi % 2 === 0 ? 'sm:grid-cols-[1.2fr_1fr_1fr]' : 'sm:grid-cols-[1fr_1fr_1.2fr]'}`}>
-                  {group.items.map((item, fi) => (
-                    <FeatureCard key={item.title} item={item} index={fi} groupIndex={gi} />
+                  {group.items.map((item) => (
+                    <FeatureCard key={item.title} item={item} groupIndex={gi} />
                   ))}
                 </div>
               </motion.div>

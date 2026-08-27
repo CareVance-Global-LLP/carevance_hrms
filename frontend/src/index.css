@@ -1,4 +1,17 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+/*
+ * THE GOOGLE FONTS IMPORT MOVED TO index.html. Do not put it back here.
+ *
+ * As an `@import` at the top of this file it was the single most expensive
+ * thing on the landing page: measured at 903ms of render-blocking time. An
+ * `@import` cannot be discovered until this stylesheet has itself been
+ * downloaded and parsed, so the browser serialises three round trips — bundle,
+ * then font CSS, then the font files — before any text can paint in the right
+ * face.
+ *
+ * index.html now carries a `preconnect` pair and the stylesheet `<link>`
+ * directly, so the font CSS is discovered in the initial HTML parse and fetched
+ * in parallel with this bundle rather than after it.
+ */
 @import './styles/theme.css';
 
 @tailwind base;

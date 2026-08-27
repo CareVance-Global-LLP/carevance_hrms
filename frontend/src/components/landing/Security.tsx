@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 import { KeyRound, Lock, Server, ShieldCheck, UserCheck } from 'lucide-react';
 import { viewportOptions, cardHoverEnhanced } from './animations';
 
@@ -17,7 +18,20 @@ function ShieldSVG() {
     target: ref,
     offset: ['start 0.8', 'start 0.3'],
   });
-  const pathLength = useTransform(scrollYProgress, [0, 1], [0, 1]);
+  const scrubbedPath = useTransform(scrollYProgress, [0, 1], [0, 1]);
+
+  /*
+   * The shield draws itself as the section arrives; under reduced motion it is
+   * simply already drawn.
+   *
+   * `pathLength` is a motion value bound through `style`, so the page-level
+   * `MotionConfig reducedMotion="user"` does not reach it — that switches
+   * transform animations off, and a bound value is not an animation. Leaving
+   * the scrub in place would pin the icon at `pathLength: 0` — an invisible
+   * shield — because nothing would ever advance it.
+   */
+  const reduced = usePrefersReducedMotion();
+  const pathLength = reduced ? 1 : scrubbedPath;
 
   return (
     <div ref={ref} className="relative mx-auto mb-8 flex h-32 w-32 items-center justify-center lg:mx-0 lg:mb-10">

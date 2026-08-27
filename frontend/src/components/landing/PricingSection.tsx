@@ -1,5 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import AnimatedPrice from './AnimatedPrice';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 import {
   Check,
   ChevronRight,
@@ -119,13 +122,47 @@ function SeatCounter({ value, onChange, min }: { value: number; onChange: (v: nu
   );
 }
 
+/**
+ * Indian digit grouping, always, with the currency symbol attached.
+ *
+ * `en-IN` matters: `en-US` renders ₹1,07,187 as ₹107,187, which reads as a
+ * foreign product to the only market this sells into. Rounded to whole rupees
+ * because a counting animation through paise is noise, and the figures here are
+ * whole rupees anyway.
+ */
+const formatRupees = (n: number) => `${PRICE_CURRENCY}${Math.round(n).toLocaleString('en-IN')}`;
+
 export default function PricingSection({ standalone = false }: { standalone?: boolean }) {
   const [planType, setPlanType] = useState<PlanType>('tracking');
   const [billingCycle, setBillingCycle] = useState<PricingBillingCycle>('monthly');
   const [seats, setSeats] = useState(MIN_SEATS);
   const isYearly = billingCycle === 'yearly';
+  const reducedMotion = usePrefersReducedMotion();
 
   const filteredPlans = pricingPlans.filter((p) => p.type === planType);
+
+  /**
+   * The real saving between cycles for the plans currently on screen.
+   *
+   * Asked of `calculateTotal()` rather than asserted, so the badge on the
+   * Yearly control can only claim a discount the cards actually show. Today
+   * that means it appears on tracking plans and not on workspace plans, because
+   * `calculateTotal()` takes the `basePrice` branch for those and never reads
+   * the cycle — see the note on the toggle below.
+   *
+   * `Math.max` over the visible set, not an average: with mixed plans the
+   * headline should be the best available saving, which is what "save up to"
+   * means and what every card can then be checked against individually.
+   */
+  const cycleSaving = Math.max(
+    0,
+    ...filteredPlans.map((p) => {
+      const monthly = calculateTotal(p, seats, 'monthly');
+      const yearly = calculateTotal(p, seats, 'yearly');
+      if (!monthly || yearly >= monthly) return 0;
+      return Math.round(((monthly - yearly) / monthly) * 100);
+    })
+  );
 
   return (
     <section id="pricing" className={`${standalone ? '' : 'bg-white'} px-4 ${standalone ? 'pb-14 pt-10 sm:pb-18 sm:pt-14' : 'py-14 sm:py-20'} sm:px-6 lg:px-8`}>
@@ -168,25 +205,61 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
 
         {/* Billing cycle + seats */}
         <div className="mt-6 flex flex-col items-center justify-center gap-4 sm:flex-row flex-wrap">
-          {/* Billing cycle toggle - now for ALL plan types */}
-          <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+          {/*
+            Billing cycle. The pill is a `layoutId` shared transition, the same
+            mechanism the role tabs on the landing page use, so every segmented
+            control on this site moves the same way.
+
+            THE SAVINGS BADGE IS DERIVED, NEVER HARDCODED. It used to read
+            "Save 10%" unconditionally, on both plan types — but
+            `calculateTotal()` ignores `billingCycle` for workspace plans, so on
+            those cards switching to Yearly changes no number at all. A badge
+            promising a discount beside a price that does not move is the kind
+            of thing a buyer notices at checkout rather than here.
+
+            `cycleSaving` below asks the pricing functions what the visible
+            plans actually cost on each cycle and shows the badge only if the
+            answer differs. That makes it self-correcting: if the workspace
+            arithmetic is fixed, the badge comes back on its own; if the
+            intention really is no annual discount there, it stays off. Either
+            way the control cannot claim something the page contradicts.
+          */}
+          <div
+            role="radiogroup"
+            aria-label="Billing cycle"
+            className="relative inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm"
+          >
             {(['monthly', 'yearly'] as PricingBillingCycle[]).map((cycle) => (
               <button
                 key={cycle}
                 type="button"
+                role="radio"
+                aria-checked={billingCycle === cycle}
                 onClick={() => setBillingCycle(cycle)}
-                className={`rounded-md px-4 py-2 text-sm font-semibold transition-all duration-200 ${
-                  billingCycle === cycle
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-500 hover:text-slate-900'
+                className={`relative rounded-md px-4 py-2 text-sm font-semibold transition-colors duration-200 ${
+                  billingCycle === cycle ? 'text-white' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
-                {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
-                {cycle === 'yearly' && (
-                  <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-white/80">
-                    Save 10%
-                  </span>
+                {billingCycle === cycle && (
+                  <motion.span
+                    layoutId="pricing-cycle-pill"
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded-md bg-blue-600 shadow-sm"
+                    transition={
+                      reducedMotion
+                        ? { duration: 0 }
+                        : { type: 'spring', stiffness: 420, damping: 36 }
+                    }
+                  />
                 )}
+                <span className="relative z-10">
+                  {cycle === 'monthly' ? 'Monthly' : 'Yearly'}
+                  {cycle === 'yearly' && cycleSaving > 0 && (
+                    <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider text-white/80">
+                      Save {cycleSaving}%
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
           </div>
@@ -215,6 +288,10 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
           {filteredPlans.map((plan) => {
             const isHighlighted = plan.highlighted;
             const savingsPercent = getYearlySavingsPercent(plan);
+
+            /* No price of any kind in the table = a quote-only tier. */
+            const isQuoted =
+              !plan.pricePerSeat && !plan.basePrice && !plan.monthlyPrice;
 
             let totalPrice = 0;
             let perSeat = 0;
@@ -255,10 +332,39 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
 
                   {/* Pricing */}
                   <div className="mb-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
-                    {plan.pricePerSeat ? (
+                    {isQuoted ? (
+                      /*
+                       * A QUOTED PLAN HAS NO PRICE, AND MUST NOT PRINT ONE.
+                       *
+                       * Enterprise carries `basePrice: 0` in the plan table as
+                       * a placeholder, and this card rendered it literally:
+                       * "₹0/mo", under the tagline "Custom Solution", beside
+                       * "+₹0/extra user". An enterprise plan advertised as free
+                       * is a price nobody can honour — the same category as the
+                       * fabricated claims removed from the landing page — and
+                       * it is the sort of thing a buyer screenshots.
+                       *
+                       * Detected from the data (no price of any kind) rather
+                       * than by hardcoding the plan code, so any future
+                       * contact-us tier behaves correctly without an edit here.
+                       */
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-bold text-slate-900">{PRICE_CURRENCY}{perSeat}</span>
+                          <span className="text-3xl font-bold text-slate-900">Custom</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Priced on your headcount and requirements. Commercial terms agreed in
+                          writing.
+                        </p>
+                      </>
+                    ) : plan.pricePerSeat ? (
+                      <>
+                        <div className="flex items-baseline gap-1">
+                          <AnimatedPrice
+                            value={perSeat}
+                            format={formatRupees}
+                            className="text-3xl font-bold text-slate-900"
+                          />
                           <span className="text-sm text-slate-500">/user/mo</span>
                         </div>
                         {isYearly && savingsPercent > 0 && (
@@ -268,7 +374,7 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                           <div className="flex items-baseline justify-between">
                             <span className="text-xs text-slate-500">Total for {seats} users</span>
                             <span className="text-sm font-semibold text-slate-700">
-                              {PRICE_CURRENCY}{totalPrice.toLocaleString('en-IN')}
+                              <AnimatedPrice value={totalPrice} format={formatRupees} />
                               <span className="text-xs font-normal text-slate-500">/{isYearly ? 'yr' : 'mo'}</span>
                             </span>
                           </div>
@@ -277,7 +383,11 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                     ) : (
                       <>
                         <div className="flex items-baseline gap-1">
-                          <span className="text-3xl font-bold text-slate-900">{PRICE_CURRENCY}{(plan.basePrice ?? 0).toLocaleString('en-IN')}</span>
+                          <AnimatedPrice
+                            value={plan.basePrice ?? 0}
+                            format={formatRupees}
+                            className="text-3xl font-bold text-slate-900"
+                          />
                           <span className="text-sm text-slate-500">/mo</span>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">
@@ -288,7 +398,7 @@ export default function PricingSection({ standalone = false }: { standalone?: bo
                             <div className="flex items-baseline justify-between">
                               <span className="text-xs text-slate-500">Total for {seats} users ({seats - (plan.includedSeats ?? 50)} extra)</span>
                               <span className="text-sm font-semibold text-slate-700">
-                                {PRICE_CURRENCY}{totalPrice.toLocaleString('en-IN')}/mo
+                                <AnimatedPrice value={totalPrice} format={formatRupees} />/mo
                               </span>
                             </div>
                           </div>
