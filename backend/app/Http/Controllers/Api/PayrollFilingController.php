@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\GenerateRunFilings;
 use App\Models\EmployeeDocument;
@@ -1676,6 +1677,18 @@ class PayrollFilingController extends Controller
                     'regime' => $bestRegime,
                 ],
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -1773,6 +1786,18 @@ class PayrollFilingController extends Controller
                     'regime' => $bestRegime,
                 ],
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -1871,6 +1896,18 @@ class PayrollFilingController extends Controller
                 'tax_regime' => $taxRegime,
                 'state' => $state,
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2078,6 +2115,18 @@ class PayrollFilingController extends Controller
             }
 
             return response()->json(['success' => true, 'data' => $saved, 'message' => 'FBP allocations saved successfully.']);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2106,6 +2155,18 @@ class PayrollFilingController extends Controller
             ]);
 
             return response()->json(['success' => true, 'data' => $claim, 'message' => 'FBP claim submitted successfully.'], 201);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2152,6 +2213,18 @@ class PayrollFilingController extends Controller
             $claim->save();
 
             return response()->json(['success' => true, 'data' => $claim, 'message' => 'FBP claim rejected successfully.']);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2183,6 +2256,18 @@ class PayrollFilingController extends Controller
             ]);
 
             return response()->json(['success' => true, 'data' => $perquisite, 'message' => 'Perquisite created successfully.'], 201);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2298,6 +2383,18 @@ class PayrollFilingController extends Controller
                     'blocking_issues' => $blockingIssues,
                 ],
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2368,6 +2465,18 @@ class PayrollFilingController extends Controller
                 'data' => $check,
                 'message' => 'Checklist item resolved successfully.',
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2455,6 +2564,18 @@ class PayrollFilingController extends Controller
                     'total_arrear' => round($totalArrear, 2),
                 ],
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2520,6 +2641,18 @@ class PayrollFilingController extends Controller
                 ],
                 'message' => $processed . ' employee(s) variable pay calculated successfully.',
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2575,6 +2708,18 @@ class PayrollFilingController extends Controller
             ]);
 
             return response()->json(['success' => true, 'message' => 'Revision letter generated successfully.', 'data' => $letter], 201);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2659,6 +2804,18 @@ class PayrollFilingController extends Controller
             ]);
 
             return response()->json(['success' => true, 'message' => 'Revision letter rejected.', 'data' => $letter->fresh()]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2717,6 +2874,18 @@ class PayrollFilingController extends Controller
             });
 
             return response()->json(['success' => true, 'data' => $batch->fresh(), 'employees' => $employeeDetails, 'message' => 'Transfer batch created successfully.'], 201);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2863,6 +3032,18 @@ class PayrollFilingController extends Controller
             $payrollItem->update(['payment_status' => 'reversal_pending']);
 
             return response()->json(['success' => true, 'data' => $reversal, 'message' => 'Payment reversal initiated successfully.'], 201);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -2949,6 +3130,18 @@ class PayrollFilingController extends Controller
                 ],
                 'message' => 'Payroll register retrieved successfully.',
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -3025,6 +3218,18 @@ class PayrollFilingController extends Controller
                 ],
                 'message' => 'Statutory register retrieved successfully.',
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -3094,6 +3299,18 @@ class PayrollFilingController extends Controller
                 ],
                 'message' => 'Bank reconciliation report retrieved successfully.',
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
@@ -3176,6 +3393,18 @@ class PayrollFilingController extends Controller
                 'data' => $result,
                 'message' => $result['valid'] ? 'Formula is valid.' : 'Formula has errors.',
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }

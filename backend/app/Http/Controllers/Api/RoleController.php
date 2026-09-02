@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\Role;
@@ -75,6 +76,12 @@ class RoleController extends Controller
             );
 
             return response()->json(['data' => $this->serializeRole($role)], 201);
+        } catch (ValidationException $e) {
+            // Same pattern noted in the payroll controllers: ValidationException
+            // extends Exception, so the broad catch below answered 500 and threw
+            // away the per-field errors. Re-thrown so Laravel renders its own 422
+            // and the caller is told which field was wrong.
+            throw $e;
         } catch (Throwable $e) {
             Log::error('Role create failed', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to create role'], 500);
@@ -121,6 +128,12 @@ class RoleController extends Controller
             $role = $this->roleService->updateRole($role, $validated, $validated['permissions'] ?? null);
 
             return response()->json(['data' => $this->serializeRole($role)]);
+        } catch (ValidationException $e) {
+            // Same pattern noted in the payroll controllers: ValidationException
+            // extends Exception, so the broad catch below answered 500 and threw
+            // away the per-field errors. Re-thrown so Laravel renders its own 422
+            // and the caller is told which field was wrong.
+            throw $e;
         } catch (Throwable $e) {
             Log::error('Role update failed', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to update role'], 500);
@@ -174,6 +187,12 @@ class RoleController extends Controller
             $this->roleService->assignRole($targetUser, $validated['role_id']);
 
             return response()->json(['message' => 'Role assigned']);
+        } catch (ValidationException $e) {
+            // Same pattern noted in the payroll controllers: ValidationException
+            // extends Exception, so the broad catch below answered 500 and threw
+            // away the per-field errors. Re-thrown so Laravel renders its own 422
+            // and the caller is told which field was wrong.
+            throw $e;
         } catch (Throwable $e) {
             Log::error('Role assign failed', ['message' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to assign role'], 500);
