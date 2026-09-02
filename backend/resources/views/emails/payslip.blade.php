@@ -12,7 +12,7 @@
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 20px 45px rgba(15,23,42,0.1);">
                     <tr>
                         <td style="padding:28px 32px;background:#0f172a;color:#ffffff;">
-                            <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.24em;text-transform:uppercase;font-weight:700;color:#bae6fd;">CareVance HRMS</p>
+                            <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.24em;text-transform:uppercase;font-weight:700;color:#bae6fd;">{{ config('brand.product_label') }}</p>
                             <h1 style="margin:0;font-size:24px;line-height:1.2;font-weight:700;">Your Payslip is Ready</h1>
                         </td>
                     </tr>
@@ -32,7 +32,7 @@
                     <tr>
                         <td style="padding:16px 32px 28px;">
                             <p style="margin:0;font-size:12px;line-height:1.7;color:#94a3b8;">
-                                This is an automated email from CareVance HRMS. Please do not reply to this email.
+                                This is an automated email from {{ config('brand.product_label') }}. Please do not reply to this email.
                             </p>
                         </td>
                     </tr>

@@ -1,11 +1,11 @@
 @if ($stage === 'granted')
 SUPPORT HAS TEMPORARY ACCESS TO {{ strtoupper($organizationName) }}
 
-{{ $engineerName }} can now act as {{ $targetName }} in your CareVance account.
+{{ $engineerName }} can now act as {{ $targetName }} in your {{ config('brand.label') }} account.
 @else
 SUPPORT IS REQUESTING ACCESS TO {{ strtoupper($organizationName) }}
 
-{{ $engineerName }} has asked to act as {{ $targetName }} in your CareVance account.
+{{ $engineerName }} has asked to act as {{ $targetName }} in your {{ config('brand.label') }} account.
 Nobody has access until an administrator in your organisation approves it.
 @endif
 

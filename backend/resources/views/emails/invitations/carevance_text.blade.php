@@ -12,7 +12,7 @@ You're joining {!! $organizationName !!}
 @else
 You have been invited to set up your account.
 @endif
-{!! $organizationName !!} runs its HR and payroll on CareVance.
+{!! $organizationName !!} runs its HR and payroll on {{ config('brand.label') }}.
 
 Accept your invitation and set a password:
 {!! $acceptUrl !!}
@@ -29,7 +29,7 @@ YOUR INVITATION
   Expires        {!! $expiresAtLabel !!}
 
 WHAT HAPPENS NEXT
-  1. Set your password on the CareVance sign-in page.
+  1. Set your password on the {{ config('brand.label') }} sign-in page.
   2. Add your profile, bank and PAN details so payroll can run.
   3. @if ($inviterName){!! $inviterName !!} and the {!! $organizationName !!} HR team take it from there.@else The {!! $organizationName !!} HR team takes it from there.@endif
 
@@ -37,6 +37,6 @@ WHAT HAPPENS NEXT
 This link is personal and single-use - please don't forward it.
 
 ------------------------------------------------------------
-CareVance - the HR and payroll platform {!! $organizationName !!} runs on.
+{{ config('brand.label') }} - the HR and payroll platform {!! $organizationName !!} runs on.
 You're receiving this because someone at {!! $organizationName !!} added {!! $email !!}.
 Not expecting it? Ignore this email, or write to {!! $supportEmail !!}.

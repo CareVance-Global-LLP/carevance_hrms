@@ -4,6 +4,7 @@ import Button from '@/components/ui/Button';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import type { PayrollStats } from '@/types';
 import Modal from '@/components/ui/dialog/Modal';
+import { brandLabel, productLabel } from '@/config/brand';
 
 interface PayrollReportsModalProps {
   isOpen: boolean;
@@ -92,7 +93,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
 
   const generateSummaryReport = (stats?: PayrollStats, month?: string): string => {
     const lines = [
-      ['CareVance HRMS - Payroll Summary Report'],
+      [`${productLabel} - Payroll Summary Report`],
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
@@ -111,7 +112,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
 
   const generateDeductionsReport = (stats?: PayrollStats, month?: string): string => {
     const lines = [
-      ['CareVance HRMS - Statutory Deductions Report'],
+      [`${productLabel} - Statutory Deductions Report`],
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
@@ -128,7 +129,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
 
   const generateBankReport = (stats?: PayrollStats, month?: string): string => {
     const lines = [
-      ['CareVance HRMS - Bank Transfer Report'],
+      [`${productLabel} - Bank Transfer Report`],
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
@@ -143,7 +144,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
 
   const generateRegisterReport = (stats: PayrollStats | undefined, month?: string): string => {
     const lines = [
-      ['CareVance HRMS - Payroll Register'],
+      [`${productLabel} - Payroll Register`],
       [`Month: ${month}`],
       [`Generated on: ${new Date().toLocaleString()}`],
       [''],
@@ -188,7 +189,7 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
         </style>
       </head>
       <body>
-        <h1>CareVance HRMS - Payroll Report</h1>
+        <h1>${productLabel} - Payroll Report</h1>
         <p><strong>Month:</strong> ${month}</p>
         <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
         
@@ -201,8 +202,8 @@ export default function PayrollReportsModal({ isOpen, onClose, stats, monthYear 
         </div>
         
         <div class="footer">
-          <p>This report was generated from CareVance HRMS Payroll Module</p>
-          <p>© ${new Date().getFullYear()} CareVance. All rights reserved.</p>
+          <p>This report was generated from ${productLabel} Payroll Module</p>
+          <p>© ${new Date().getFullYear()} ${brandLabel}. All rights reserved.</p>
         </div>
       </body>
       </html>

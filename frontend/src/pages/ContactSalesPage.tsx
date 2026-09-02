@@ -7,9 +7,10 @@ import AdaptiveSurface from '@/components/ui/AdaptiveSurface';
 import PublicPageTransition from '@/components/public/PublicPageTransition';
 import { pricingUi } from '@/constants/pricing';
 import { analytics } from '@/lib/analytics';
+import { brandLabel, mailSubjectBrand } from '@/config/brand';
 
 export default function ContactSalesPage() {
-  const mailtoLink = `mailto:${pricingUi.contactEmail}?subject=CareVance%20Sales%20Inquiry`;
+  const mailtoLink = `mailto:${pricingUi.contactEmail}?subject=${encodeURIComponent(mailSubjectBrand)}Sales Inquiry`;
 
   return (
     <div className="relative overflow-x-clip page-canvas text-slate-950">
@@ -22,7 +23,7 @@ export default function ContactSalesPage() {
             <div className="max-w-3xl">
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-700">Contact sales</p>
               <h1 className="mt-5 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-[4.4rem] sm:leading-[0.94]">
-                Plan an onboarding conversation with the CareVance team
+                Plan an onboarding conversation with the {brandLabel} team
               </h1>
               <p className="mt-6 text-base leading-8 text-slate-600 sm:text-[1.08rem]">
                 Reach out when you want a tailored rollout discussion, enterprise pricing guidance, or help mapping your invite and onboarding workflow.

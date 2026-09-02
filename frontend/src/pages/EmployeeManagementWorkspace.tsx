@@ -26,6 +26,7 @@ import { resolveTimeZone, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { formatDateTime } from '@/lib/dateTime';
 import { todayIso } from '@/lib/formatters';
 import { LIST_MAX_BODY_HEIGHT } from '@/lib/pagination';
+import { brandLabel } from '@/config/brand';
 
 type EmployeeWorkspaceMode = 'employees' | 'teams' | 'invitations' | 'roles';
 type EmployeeDirectorySort = 'default' | 'name_asc' | 'working_first';
@@ -1239,7 +1240,7 @@ export default function EmployeeManagementWorkspace({ mode }: { mode: EmployeeWo
 
                 <SettingsCard
                   title="Access"
-                  description={`What ${settingsFirstName} can reach in CareVance.`}
+                  description={`What ${settingsFirstName} can reach in ${brandLabel}.`}
                   aside={(
                     <span className="rounded-full border border-slate-200 bg-surface-sunken px-2.5 py-1 text-xs font-semibold text-slate-600">
                       {settingsGrantedCount} of 4 on

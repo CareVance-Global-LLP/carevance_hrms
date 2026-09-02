@@ -1,3 +1,4 @@
+import { assistantLabel } from '@/config/brand';
 /**
  * The one visual identity shared by both assistant bubbles.
  *
@@ -87,7 +88,7 @@ export const CHAT_DOT_CLASS = 'h-1.5 w-1.5 animate-bounce rounded-full bg-primar
  *  The subtitle is NOT shared: it names what this particular assistant does,
  *  which is the one thing about them that genuinely differs. "Always here to
  *  help" said nothing in either place. */
-export const CHAT_ASSISTANT_NAME = 'CareVance Assistant';
+export const CHAT_ASSISTANT_NAME = assistantLabel;
 
 export const CHAT_DISCLAIMER = 'AI may be inaccurate. Verify important info.';
 export const CHAT_SUPPORT = { email: 'support@carevance.com', phone: '+91 800-123-4567' };

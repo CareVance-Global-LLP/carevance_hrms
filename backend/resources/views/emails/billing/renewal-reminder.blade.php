@@ -6,9 +6,9 @@
 
 <x-mail.layout
     :preheader="$organization->name.' renews on '.$renewalDate.' — '.($autoRenew ? 'no action needed.' : 'auto-renew is off.')"
-    eyebrow="CareVance billing"
+    eyebrow="{{ config('brand.label') }} billing"
     :heading="$headline"
-    footerNote="You are receiving this because you administer this CareVance workspace. Reminders are sent 7, 3 and 1 day before each renewal."
+    footerNote="You are receiving this because you administer this {{ config('brand.label') }} workspace. Reminders are sent 7, 3 and 1 day before each renewal."
 >
 
     <p style="margin:0 0 12px;font-size:15px;line-height:1.7;color:#4E565D;">Hello,</p>

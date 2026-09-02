@@ -26,6 +26,7 @@ import { analytics } from '@/lib/analytics';
 import { detectTimeZone } from '@/lib/timezones';
 import { roleLabel } from '@/utils/roleLabel';
 import PasswordStrength, { evaluatePassword } from '@/features/settings/components/PasswordStrength';
+import { brandLabel } from '@/config/brand';
 
 const parseError = (error: any) => {
   const fieldErrors = error?.response?.data?.errors;
@@ -65,7 +66,7 @@ const FEATURES: AuthShowcaseFeature[] = [
   {
     icon: CheckCircle2,
     title: 'Straight to sign in',
-    description: 'Create your account and you land on the CareVance sign-in page, ready to go.',
+    description: `Create your account and you land on the ${brandLabel} sign-in page, ready to go.`,
   },
 ];
 
@@ -163,7 +164,7 @@ export default function AcceptInvitePage() {
   return (
     <AuthPageShell
       heading="Accept your invitation"
-      intro={`Set a password to join ${organizationName} on CareVance. Your email address and assigned role come from the invitation and cannot be changed here.`}
+      intro={`Set a password to join ${organizationName} on ${brandLabel}. Your email address and assigned role come from the invitation and cannot be changed here.`}
       introAside={
         <>
           Already have an account?{' '}
@@ -173,7 +174,7 @@ export default function AcceptInvitePage() {
         </>
       }
       showcaseHeading="Invitations keep the workspace secure while onboarding stays smooth."
-      showcaseIntro="CareVance locks the invited email and role server-side, validates the token, and marks the invite as accepted the moment your account is created."
+      showcaseIntro={`${brandLabel} locks the invited email and role server-side, validates the token, and marks the invite as accepted the moment your account is created.`}
       features={FEATURES}
     >
       {topError ? (

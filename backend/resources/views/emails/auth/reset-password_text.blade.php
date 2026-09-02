@@ -9,6 +9,6 @@ Use the secure link below to choose a new password.
 {!! $resetUrl !!}
 
 ------------------------------------------------------------
-CareVance - HR and payroll, in one place.
+{{ config('brand.label') }} - HR and payroll, in one place.
 If you did not request this change, you can ignore this email
 or contact {!! $supportEmail !!}.

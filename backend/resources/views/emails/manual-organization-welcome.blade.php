@@ -1,9 +1,9 @@
 <x-mail.layout
     :preheader="'Your '.$organizationName.' workspace is ready — sign in with the temporary password inside.'"
-    eyebrow="CareVance HRMS"
-    heading="Welcome to CareVance"
+    eyebrow="{{ config('brand.product_label') }}"
+    heading="Welcome to '.config('brand.label').'"
     :subheading="'Hello '.$userName.', your workspace for '.$organizationName.' has been created and is ready to use.'"
-    :footerNote="'Need help? Contact '.$supportEmail.'. © '.date('Y').' CareVance. All rights reserved.'"
+    :footerNote="'Need help? Contact '.$supportEmail.'. © '.date('Y').' {{ config('brand.label') }}. All rights reserved.'"
 >
 
     <x-mail.panel

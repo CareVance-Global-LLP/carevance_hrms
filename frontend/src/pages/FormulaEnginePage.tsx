@@ -8,6 +8,7 @@ import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import PageHeader from '@/components/dashboard/PageHeader';
 import HowItWorksCard from '@/components/payroll/HowItWorksCard';
 import { cn } from '@/utils/cn';
+import { brandLabel } from '@/config/brand';
 
 interface VariableEntry {
   key: string;
@@ -152,7 +153,7 @@ export default function FormulaEnginePage() {
             'Creating a new salary template and want to verify a component formula',
             'Debugging a formula that produces unexpected payroll results',
             'Testing edge cases (zero values, negative numbers) before deployment',
-            'Training HR staff on how formula expressions work in CareVance',
+            `Training HR staff on how formula expressions work in ${brandLabel}`,
           ]}
           howItFlows={[
             { step: 1, label: 'Enter expression', desc: 'Type a formula using variable names and operators (e.g., basic * 0.5 + hra)' },

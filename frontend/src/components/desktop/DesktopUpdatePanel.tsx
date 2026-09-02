@@ -1,6 +1,7 @@
 import Button from '@/components/ui/Button';
 import { useDesktopUpdater } from '@/hooks/useDesktopUpdater';
 import { Download, RefreshCw, Rocket, Sparkles } from 'lucide-react';
+import { brandLabel } from '@/config/brand';
 
 const STATUS_LABELS: Record<DesktopUpdateState['status'], string> = {
   disabled: 'Updates Off',
@@ -62,7 +63,7 @@ export default function DesktopUpdatePanel() {
       <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
           <h3 className="mt-3 text-xl font-semibold tracking-[-0.04em]">
-            CareVance Tracker {state.currentVersion ? `v${state.currentVersion}` : ''}
+            {brandLabel} Tracker {state.currentVersion ? `v${state.currentVersion}` : ''}
           </h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50/85">
             {actionError || state.message}

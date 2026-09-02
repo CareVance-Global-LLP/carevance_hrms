@@ -1,6 +1,6 @@
 <x-mail.layout
-    preheader="Confirm your address to finish setting up your CareVance account."
-    eyebrow="CareVance"
+    preheader="Confirm your address to finish setting up your {{ config('brand.label') }} account."
+    eyebrow="{{ config('brand.label') }}"
     heading="Verify your email address"
     :subheading="'Hi '.($name ?: 'there').', confirm '.$email.' so your workspace account is fully verified.'"
     :footerNote="'If you did not create this account, contact '.$supportEmail.'.'"

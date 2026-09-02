@@ -1,6 +1,6 @@
 <x-mail.layout
     :preheader="'Your timer in '.$organizationName.' stopped after '.$idleDurationLabel.' idle.'"
-    eyebrow="CareVance"
+    eyebrow="{{ config('brand.label') }}"
     heading="Your timer was stopped"
     :subheading="'Hi '.($userName ?: 'there').', your running timer in '.$organizationName.' was stopped automatically because you were idle for '.$idleDurationLabel.'.'"
 >

@@ -5,6 +5,7 @@ import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import { useToast } from '@/components/ui/Toast';
 import { monitoringConsentApi } from '@/services/api';
 import SettingsCard from './SettingsCard';
+import { brandLabel } from '@/config/brand';
 
 const CAPTURE_TYPES = ['screenshot', 'activity', 'location', 'selfie'] as const;
 
@@ -23,7 +24,7 @@ const DEFAULT_PURPOSES: Record<string, string> = {
 };
 
 const DEFAULT_BODY =
-  'While you are clocked in, CareVance records what is listed below so that work can be verified and attendance confirmed. '
+  `While you are clocked in, ${brandLabel} records what is listed below so that work can be verified and attendance confirmed. `
   + 'Nothing is collected outside tracked working time. You can choose what you agree to, and you can withdraw at any time.';
 
 /**

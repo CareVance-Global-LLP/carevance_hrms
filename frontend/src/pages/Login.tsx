@@ -27,6 +27,7 @@ import { desktopDownloadUrl } from '@/lib/runtimeConfig';
 import { analytics } from '@/lib/analytics';
 import GoogleLoginButton from '@/components/auth/GoogleLoginButton';
 import OneTimeCodeInput from '@/components/auth/OneTimeCodeInput';
+import { brandLabel, productLabel } from '@/config/brand';
 
 const REMEMBERED_EMAIL_KEY = 'carevance.rememberedEmail';
 
@@ -238,7 +239,7 @@ export default function Login() {
   return (
     <AuthPageShell
       backTo={isDesktopShell ? null : '/'}
-      heading="Sign in to CareVance"
+      heading={`Sign in to ${brandLabel}`}
       intro="Welcome back. Open the dashboard, monitoring, attendance, reporting, payroll, and internal operations modules from one place."
       introAside={
         <>
@@ -248,7 +249,7 @@ export default function Login() {
           </Link>
         </>
       }
-      showcaseHeading="Access the real CareVance HRMS workflows after sign in."
+      showcaseHeading={`Access the real ${productLabel} workflows after sign in.`}
       showcaseIntro="This login takes you into the same modules shown on the front page: employee monitoring, attendance, reports, payroll, invoices, projects, tasks, chat, and settings."
       features={FEATURES}
       showcaseBelow={

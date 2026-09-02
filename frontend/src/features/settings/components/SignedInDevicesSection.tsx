@@ -8,6 +8,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { useAuth } from '@/contexts/AuthContext';
 import { authApi, type SignedInSession } from '@/services/api';
 import SettingRow from './SettingRow';
+import { brandLabel } from '@/config/brand';
 
 /**
  * Every device currently signed in to your own account.
@@ -306,7 +307,7 @@ export default function SignedInDevicesSection({ fallbackDeviceLabel }: { fallba
       <ConfirmDialog
         isOpen={signingOutOthers}
         title="Sign out every other device?"
-        message="This device stays signed in. Every other session on your account ends the next time it contacts CareVance, usually within a few seconds — including any you cannot see here. If you think somebody else has your password, change it as well."
+        message="This device stays signed in. Every other session on your account ends the next time it contacts ${brandLabel}, usually within a few seconds — including any you cannot see here. If you think somebody else has your password, change it as well."
         confirmLabel="Sign out the others"
         tone="danger"
         isLoading={revokeOthers.isPending}
@@ -324,7 +325,7 @@ export default function SignedInDevicesSection({ fallbackDeviceLabel }: { fallba
           signingOut
             ? signingOut.is_current
               ? 'You will be returned to the sign-in screen here. Your other devices stay signed in.'
-              : `${signingOut.device} will be signed out the next time it contacts CareVance, usually within a few seconds. Anyone using it will have to sign in again. If you did not recognise it, change your password as well.`
+              : `${signingOut.device} will be signed out the next time it contacts ${brandLabel}, usually within a few seconds. Anyone using it will have to sign in again. If you did not recognise it, change your password as well.`
             : ''
         }
         confirmLabel="Sign out"

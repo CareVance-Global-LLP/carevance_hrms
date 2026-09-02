@@ -1,3 +1,4 @@
+import { brandLabel } from '@/config/brand';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
@@ -210,7 +211,7 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     return (
       <SettingsCard title="No organization found">
         <p className="text-sm leading-6 text-slate-600">
-          Your account is not linked to an organization. Create a workspace to start using CareVance.
+          Your account is not linked to an organization. Create a workspace to start using {brandLabel}.
         </p>
         <Button className="mt-4" onClick={() => { window.location.href = '/signup-owner'; }}>
           Create workspace

@@ -11,6 +11,7 @@ import {
 } from '@/services/api';
 import { reportSilentError } from '@/lib/reportSilentError';
 import SettingsCard from './SettingsCard';
+import { brandLabel } from '@/config/brand';
 
 const formatWhen = (iso: string | null): string => {
   if (!iso) return '—';
@@ -115,7 +116,7 @@ export default function WebhooksSection() {
     <div className="space-y-4">
       <SettingsCard
         title="Webhooks"
-        description="CareVance calls your systems when something happens here, so they do not have to poll. Every request is signed, retried with backoff, and recorded."
+        description={`${brandLabel} calls your systems when something happens here, so they do not have to poll. Every request is signed, retried with backoff, and recorded.`}
         aside={
           !creating && !secret ? (
             <Button size="sm" onClick={() => setCreating(true)}>

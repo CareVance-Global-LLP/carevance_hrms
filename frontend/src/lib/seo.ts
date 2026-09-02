@@ -1,5 +1,6 @@
 import { isAuthenticatedAppPath } from '@/lib/publicRoutes';
 import { webAppUrl } from '@/lib/runtimeConfig';
+import { BRAND, brandLabel, productLabel } from '@/config/brand';
 
 interface RouteMetadata {
   title: string;
@@ -10,10 +11,10 @@ interface RouteMetadata {
 }
 
 const siteOrigin = webAppUrl.replace(/\/+$/, '');
-const siteName = 'CareVance HRMS';
+const siteName = productLabel;
 const defaultDescription =
-  'CareVance HRMS helps teams manage attendance, reports, onboarding, monitoring, payroll workflows, and day-to-day workforce operations from one connected workspace.';
-const defaultImage = `${siteOrigin}/carevance-logo-full.png?v=carevance-1`;
+  `${siteName} helps teams manage attendance, reports, onboarding, monitoring, payroll workflows, and day-to-day workforce operations from one connected workspace.`;
+const defaultImage = `${siteOrigin}${BRAND.logoFull}?v=brand-1`;
 
 function buildMarketingJsonLd(pathname: string) {
   const pageUrl = `${siteOrigin}${pathname}`;
@@ -42,7 +43,7 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
   if (isAuthenticatedAppPath(pathname)) {
     return {
       title: `${siteName} Workspace`,
-      description: 'Secure CareVance workspace area.',
+      description: `Secure ${brandLabel} workspace area.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,
     };
@@ -50,7 +51,7 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/') {
     return {
-      title: 'CareVance HRMS | Workforce Monitoring, Attendance, Reports, and Payroll',
+      title: `${siteName} | Workforce Monitoring, Attendance, Reports, and Payroll`,
       description: defaultDescription,
       robots: 'index,follow',
       canonicalPath: '/',
@@ -60,9 +61,9 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/pricing') {
     return {
-      title: 'Pricing | CareVance HRMS',
+      title: `Pricing | ${siteName}`,
       description:
-        'Compare CareVance HRMS plans for workforce monitoring, attendance, reporting, onboarding, and payroll-ready operations.',
+        `Compare ${siteName} plans for workforce monitoring, attendance, reporting, onboarding, and payroll-ready operations.`,
       robots: 'index,follow',
       canonicalPath: '/pricing',
       jsonLd: buildMarketingJsonLd(pathname),
@@ -71,9 +72,9 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/contact-sales' || pathname === '/book-demo') {
     return {
-      title: 'Contact Sales | CareVance HRMS',
+      title: `Contact Sales | ${siteName}`,
       description:
-        'Talk with the CareVance team about rollout planning, onboarding workflows, pricing, and enterprise support.',
+        `Talk with the ${brandLabel} team about rollout planning, onboarding workflows, pricing, and enterprise support.`,
       robots: 'index,follow',
       canonicalPath: '/contact-sales',
       jsonLd: buildMarketingJsonLd('/contact-sales'),
@@ -82,9 +83,9 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/support') {
     return {
-      title: 'Support | CareVance HRMS',
+      title: `Support | ${siteName}`,
       description:
-        'Contact CareVance support, share product issues, and submit bug reports through the public help channel.',
+        `Contact ${brandLabel} support, share product issues, and submit bug reports through the public help channel.`,
       robots: 'index,follow',
       canonicalPath: '/support',
       jsonLd: buildMarketingJsonLd(pathname),
@@ -93,8 +94,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/privacy') {
     return {
-      title: 'Privacy Policy | CareVance HRMS',
-      description: 'Review the CareVance privacy policy placeholder prepared for pre-launch legal review.',
+      title: `Privacy Policy | ${siteName}`,
+      description: `Review the ${brandLabel} privacy policy placeholder prepared for pre-launch legal review.`,
       robots: 'index,follow',
       canonicalPath: '/privacy',
     };
@@ -102,8 +103,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/terms') {
     return {
-      title: 'Terms & Conditions | CareVance HRMS',
-      description: 'Review the CareVance terms placeholder prepared for pre-launch legal review.',
+      title: `Terms & Conditions | ${siteName}`,
+      description: `Review the ${brandLabel} terms placeholder prepared for pre-launch legal review.`,
       robots: 'index,follow',
       canonicalPath: '/terms',
     };
@@ -111,9 +112,9 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/signup-owner' || pathname === '/register') {
     return {
-      title: 'Create Your Workspace | CareVance HRMS',
+      title: `Create Your Workspace | ${siteName}`,
       description:
-        'Start a CareVance workspace for attendance, monitoring, reporting, onboarding, and payroll-ready operations.',
+        `Start a ${brandLabel} workspace for attendance, monitoring, reporting, onboarding, and payroll-ready operations.`,
       robots: 'index,follow',
       canonicalPath: '/signup-owner',
     };
@@ -121,9 +122,9 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/start-trial') {
     return {
-      title: 'Start Free Trial | CareVance HRMS',
+      title: `Start Free Trial | ${siteName}`,
       description:
-        'Launch a CareVance free trial and create your owner workspace with plan and billing intent preselected.',
+        `Launch a ${brandLabel} free trial and create your owner workspace with plan and billing intent preselected.`,
       robots: 'index,follow',
       canonicalPath: '/start-trial',
     };
@@ -131,8 +132,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/login') {
     return {
-      title: 'Sign In | CareVance HRMS',
-      description: 'Access your CareVance workspace.',
+      title: `Sign In | ${siteName}`,
+      description: `Access your ${brandLabel} workspace.`,
       robots: 'noindex,nofollow',
       canonicalPath: '/login',
     };
@@ -140,8 +141,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/forgot-password') {
     return {
-      title: 'Forgot Password | CareVance HRMS',
-      description: 'Request a password reset for your CareVance account.',
+      title: `Forgot Password | ${siteName}`,
+      description: `Request a password reset for your ${brandLabel} account.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,
     };
@@ -149,8 +150,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/reset-password') {
     return {
-      title: 'Reset Password | CareVance HRMS',
-      description: 'Reset your CareVance account password.',
+      title: `Reset Password | ${siteName}`,
+      description: `Reset your ${brandLabel} account password.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,
     };
@@ -158,8 +159,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/verify-email') {
     return {
-      title: 'Verify Email | CareVance HRMS',
-      description: 'Verify your CareVance account email address.',
+      title: `Verify Email | ${siteName}`,
+      description: `Verify your ${brandLabel} account email address.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,
     };
@@ -167,8 +168,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname.startsWith('/accept-invite/')) {
     return {
-      title: 'Accept Invitation | CareVance HRMS',
-      description: 'Accept your CareVance invitation to join an existing workspace.',
+      title: `Accept Invitation | ${siteName}`,
+      description: `Accept your ${brandLabel} invitation to join an existing workspace.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,
     };
@@ -176,8 +177,8 @@ export function getRouteMetadata(pathname: string): RouteMetadata {
 
   if (pathname === '/signup') {
     return {
-      title: 'Invitation Signup | CareVance HRMS',
-      description: 'Continue your CareVance invite signup flow.',
+      title: `Invitation Signup | ${siteName}`,
+      description: `Continue your ${brandLabel} invite signup flow.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,
     };

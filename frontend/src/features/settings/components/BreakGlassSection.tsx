@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/Toast';
 import { authApi, type BreakGlassSession } from '@/services/api';
 import { reportSilentError } from '@/lib/reportSilentError';
 import SettingsCard from './SettingsCard';
+import { brandLabel } from '@/config/brand';
 
 const formatWhen = (iso: string | null): string => {
   if (!iso) return '—';
@@ -77,7 +78,7 @@ export default function BreakGlassSection() {
 
   if (sessions === null) {
     return (
-      <SettingsCard title="CareVance support access">
+      <SettingsCard title={`${brandLabel} support access`}>
         <p className="text-xs text-slate-500">Checking…</p>
       </SettingsCard>
     );
@@ -89,7 +90,7 @@ export default function BreakGlassSection() {
 
   return (
     <SettingsCard
-      title="CareVance support access"
+      title={`${brandLabel} support access`}
       description="Support can only enter your account when you allow it, for a stated reason, and never for more than an hour. Everything done during a session is recorded against it in your audit log."
       aside={
         active.length > 0
@@ -101,7 +102,7 @@ export default function BreakGlassSection() {
     >
       {sessions.length === 0 && (
         <p className="text-xs leading-5 text-slate-600">
-          Nobody at CareVance has ever requested access to this organisation.
+          Nobody at {brandLabel} has ever requested access to this organisation.
         </p>
       )}
 
@@ -119,7 +120,7 @@ export default function BreakGlassSection() {
 
             <div className="min-w-[12rem] flex-1">
               <p className="text-sm font-medium text-slate-900">
-                {session.requested_by.name || 'A CareVance engineer'} &rarr;{' '}
+                {session.requested_by.name || `A ${brandLabel} engineer`} &rarr;{' '}
                 {session.target_user.name || 'an employee account'}
               </p>
 

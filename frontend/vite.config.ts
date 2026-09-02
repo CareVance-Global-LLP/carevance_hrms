@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { BRAND, productLabel } from './src/config/brand'
 
 /**
  * Restart the dev server when the Tailwind config changes.
@@ -33,8 +34,47 @@ function restartOnTailwindConfigChange(): Plugin {
   }
 }
 
+/**
+ * Feed index.html from src/config/brand.ts.
+ *
+ * The document head is the one branded surface a React component cannot reach:
+ * the title, the favicon and the link-preview tags are read before the app
+ * boots. Tokenising them here keeps them on the same single source as the rest
+ * of the app, so un-branding stays one edit rather than two.
+ *
+ * With the brand off, the image tags are REMOVED rather than pointed at an
+ * empty string -- a `<link rel="icon" href="">` re-requests the page itself in
+ * some browsers, and an empty og:image renders as a broken card.
+ */
+function brandIndexHtml(): Plugin {
+  return {
+    name: 'brand:index-html',
+    transformIndexHtml(html) {
+      if (!BRAND.enabled) {
+        // Drop the whole tag rather than leave an empty href: a
+        // `<link rel="icon" href="">` re-requests the page itself in some
+        // browsers, and an empty og:image renders as a broken preview card.
+        const dropped = ['%BRAND_FAVICON%', '%BRAND_LOGO_MARK%', '%BRAND_LOGO_FULL%']
+        html = html
+          .split(/\r?\n/)
+          .filter((line) => !dropped.some((token) => line.includes(token)))
+          .join('\n')
+      }
+
+      return html
+        .replaceAll('%BRAND_PRODUCT_NAME%', productLabel)
+        .replaceAll('%BRAND_DESCRIPTION%', BRAND.enabled
+          ? `${BRAND.productName} helps teams manage attendance, reports, onboarding, monitoring, payroll workflows, and day-to-day workforce operations from one connected workspace.`
+          : 'Attendance, reports, onboarding, monitoring and payroll workflows in one connected workspace.')
+        .replaceAll('%BRAND_FAVICON%', '/favicon.ico?v=brand-1')
+        .replaceAll('%BRAND_LOGO_MARK%', `${BRAND.logoMark}?v=brand-1`)
+        .replaceAll('%BRAND_LOGO_FULL%', `${BRAND.logoFull}?v=brand-1`)
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), restartOnTailwindConfigChange()],
+  plugins: [react(), restartOnTailwindConfigChange(), brandIndexHtml()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

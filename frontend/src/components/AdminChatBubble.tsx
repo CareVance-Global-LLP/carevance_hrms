@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/chatChrome';
 import { useAnyDialogOpen } from '@/components/ui/dialog';
 import { ADMIN_QUICK_ACTIONS } from '@/lib/aiKnowledge';
+import { assistantLabel } from '@/config/brand';
 
 type ChatRole = 'user' | 'assistant';
 
@@ -241,7 +242,7 @@ export default function AdminChatBubble() {
       {!isOpen && (
         <button
           type="button"
-          aria-label="Open CareVance Assistant"
+          aria-label={`Open ${assistantLabel}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

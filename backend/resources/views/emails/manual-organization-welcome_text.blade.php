@@ -1,4 +1,4 @@
-Welcome to CareVance
+Welcome to {{ config('brand.label') }}
 ------------------------------------------------------------
 
 Hello {!! $userName !!},
@@ -21,6 +21,6 @@ Sign in here:
 {!! $loginUrl !!}
 
 ------------------------------------------------------------
-CareVance - HR and payroll, in one place.
+{{ config('brand.label') }} - HR and payroll, in one place.
 Need help? Contact {!! $supportEmail !!}.
-(c) {{ date('Y') }} CareVance. All rights reserved.
+(c) {{ date('Y') }} {{ config('brand.label') }}. All rights reserved.

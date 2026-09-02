@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from 'react';
+import { BRAND, brandLabel } from '@/config/brand';
 import { cn } from '@/utils/cn';
 
 interface BrandLogoProps extends HTMLAttributes<HTMLDivElement> {
@@ -39,18 +40,41 @@ const wrapperSizeMap = {
  * source from whoever owns the brand, not a redraw.
  */
 const assetMap = {
-  full: '/carevance-logo-full.png',
-  mark: '/carevance-logo-icon.png',
+  full: BRAND.logoFull,
+  mark: BRAND.logoMark,
 } as const;
 
 export default function BrandLogo({
   variant = 'full',
   size = 'md',
-  alt = 'CareVance',
+  alt = brandLabel,
   className,
   ...props
 }: BrandLogoProps) {
   const resolved = variant === 'icon' ? 'mark' : variant;
+
+  /*
+   * Un-branded, there is no vendor mark to draw.
+   *
+   * The wrapper is still rendered, at the same size, so every layout that
+   * reserves space for the logo keeps its geometry -- the sidebar, the auth
+   * shell and the topbar all size themselves around this box. Returning null
+   * outright collapsed the sidebar header by 3.25rem.
+   */
+  if (!BRAND.enabled) {
+    return (
+      <div
+        className={cn(
+          'inline-flex shrink-0 items-center justify-start align-middle',
+          wrapperSizeMap[resolved][size],
+          resolved === 'full' ? 'w-full' : '',
+          className
+        )}
+        aria-hidden="true"
+        {...props}
+      />
+    );
+  }
 
   return (
     <div

@@ -1,4 +1,5 @@
 import { invitationApi, projectApi, reportGroupApi } from '@/services/api';
+import { downloadPrefix } from '@/config/brand';
 
 export type InviteUserRole = 'employee' | 'manager' | 'admin';
 
@@ -929,7 +930,7 @@ export const addUserService = {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'carevance-add-user-template.csv';
+    link.download = `${downloadPrefix}add-user-template.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();

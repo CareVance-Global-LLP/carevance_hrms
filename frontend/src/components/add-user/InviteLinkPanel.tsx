@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FieldLabel, TextInput } from '@/components/ui/FormField';
 import Button from '@/components/ui/Button';
+import { brandLabel } from '@/config/brand';
 
 interface InviteLinkPanelProps {
   email: string;
@@ -75,7 +76,7 @@ export default function InviteLinkPanel({
       <div>
         <p className="text-sm font-semibold text-slate-950">Single-use secure invite link</p>
         <p className="mt-1 text-sm text-slate-500">
-          Generate a secure invite URL for one email address. The recipient lands on CareVance with the invited email and role already locked.
+          Generate a secure invite URL for one email address. The recipient lands on {brandLabel} with the invited email and role already locked.
         </p>
       </div>
 

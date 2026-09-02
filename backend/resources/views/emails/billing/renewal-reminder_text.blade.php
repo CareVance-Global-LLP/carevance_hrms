@@ -25,6 +25,6 @@ payment clears. Nothing is deleted at any point.
 {!! $billingUrl !!}
 
 ------------------------------------------------------------
-CareVance - HR and payroll, in one place.
-You are receiving this because you administer this CareVance workspace.
+{{ config('brand.label') }} - HR and payroll, in one place.
+You are receiving this because you administer this {{ config('brand.label') }} workspace.
 Reminders are sent 7, 3 and 1 day before each renewal.
