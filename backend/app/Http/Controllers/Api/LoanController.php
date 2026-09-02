@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\EmployeeLoan;
+use App\Services\Payroll\LoanAffordability;
+use App\Support\LoanSchedule;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -57,22 +59,63 @@ class LoanController extends Controller
             }
         }
 
+        /*
+         * The instalment has to be lawful before it is recorded.
+         *
+         * Nothing here previously compared the EMI to the salary it would be
+         * recovered from, at request or at approval, which is how a ₹15,000
+         * monthly instalment was agreed against ₹8,542 of gross and surfaced
+         * three months later as a negative net pay.
+         */
+        $affordability = app(LoanAffordability::class)->check($borrower, (float) $request->emi_amount);
+
+        if (! $affordability['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => $affordability['message'],
+                'affordability' => $affordability['assessment'],
+            ], 422);
+        }
+
+        /*
+         * The stored schedule is derived, never trusted from the client. Three
+         * free-text fields could disagree — a ₹40,000 loan at ₹6,000 over four
+         * instalments leaves ₹16,000 that would never be collected.
+         */
+        $schedule = LoanSchedule::fromEmi((float) $request->amount, (float) $request->emi_amount);
         $remainingAmount = $request->amount;
 
         return response()->json([
             'success' => true,
             'message' => 'Loan request submitted for approval',
+            'schedule' => $schedule,
             'loan' => EmployeeLoan::create([
                 'organization_id' => $borrower->organization_id,
                 'user_id' => $borrower->id,
                 'loan_type' => $request->loan_type,
                 'amount' => $request->amount,
                 'emi_amount' => $request->emi_amount,
-                'total_installments' => $request->total_installments,
+                // Derived, so amount / EMI / count can never disagree.
+                'total_installments' => $schedule['instalments'],
                 'remaining_amount' => $remainingAmount,
                 'purpose' => $request->purpose,
                 'status' => 'pending',
             ]),
+        ]);
+    }
+
+    /**
+     * What this employee can afford, for the request form.
+     *
+     * Resolved from the token, never a route parameter — somebody's borrowing
+     * capacity is derived from their salary, so an id in the URL would let one
+     * employee read another's pay. Same shape as the other `my/*` routes.
+     */
+    public function myLoanEligibility(Request $request): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'eligibility' => app(LoanAffordability::class)->maxEmiFor($request->user()),
         ]);
     }
 
@@ -146,6 +189,23 @@ class LoanController extends Controller
                 'success' => false,
                 'message' => 'You cannot approve your own loan request. Ask another approver.',
             ], 403);
+        }
+
+        /*
+         * Checked again at approval, not only at request. A salary revision or
+         * another loan approved in between can turn an affordable instalment
+         * into an unlawful one, and approval is the moment the commitment
+         * becomes real.
+         */
+        $recheck = app(LoanAffordability::class)
+            ->check($loan->user, (float) $loan->emi_amount, $loan->id);
+
+        if (! $recheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => $recheck['message'],
+                'affordability' => $recheck['assessment'],
+            ], 422);
         }
 
         $loan->update([
