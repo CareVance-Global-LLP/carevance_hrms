@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Layout from '@/components/Layout';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+import { BRAND, brandLabel, brandPrefix } from '@/config/brand';
 /*
  * Nav visibility is plan-gated as well as role-gated: usePlan reads
  * organization.plan_code off useAuth, and with no organization it falls back to
@@ -126,7 +127,7 @@ describe('Layout navigation', () => {
     const trigger = await screen.findByRole('button', { name: /search or jump to/i });
     await user.click(trigger);
 
-    const input = await screen.findByRole('combobox', { name: /search carevance/i });
+    const input = await screen.findByRole('combobox', { name: new RegExp(`search ${brandLabel}`, 'i') });
     await user.type(input, 'atendance');
 
     // Typo-tolerant, and it never asks the server for a page it already knows.
@@ -177,7 +178,19 @@ describe('Layout navigation', () => {
     // together. The header copy is now lg:hidden — it only appears at the widths
     // where the rail itself is hidden. jsdom applies no media queries, so assert
     // the class rather than visibility.
-    const wordmarks = screen.getAllByAltText('CareVance').filter((img) => img.getAttribute('src')?.includes('full'));
+    const wordmarks = screen.queryAllByAltText(brandLabel).filter((img) => img.getAttribute('src')?.includes('full'));
+
+    /*
+     * Un-branded there is no artwork to duplicate, and BrandLogo renders its
+     * box with no image at all. Asserting the absence is worth as much as
+     * asserting the rule: it is what stops a stray literal logo creeping back
+     * into a white-label build.
+     */
+    if (!BRAND.enabled) {
+      expect(wordmarks).toHaveLength(0);
+      return;
+    }
+
     const alwaysVisible = wordmarks.filter((img) => !img.parentElement?.className.includes('lg:hidden'));
 
     expect(wordmarks).toHaveLength(2);
@@ -189,7 +202,7 @@ describe('Layout navigation', () => {
     await screen.findByRole('navigation', { name: 'Main' });
     // The public/ SVGs are much smaller but draw a different monogram; the
     // favicon points at the PNG, so the app has to as well.
-    screen.getAllByAltText('CareVance').forEach((img) => {
+    screen.queryAllByAltText(brandLabel).forEach((img) => {
       expect(img.getAttribute('src')).toMatch(/\.png$/);
     });
   });
@@ -218,7 +231,7 @@ describe('Layout navigation', () => {
     await user.click(await screen.findByRole('button', { name: /search or jump to/i }));
     expect(apiMocks.searchQuery).not.toHaveBeenCalled();
 
-    await user.type(await screen.findByRole('combobox', { name: /search carevance/i }), 'zeel');
+    await user.type(await screen.findByRole('combobox', { name: new RegExp(`search ${brandLabel}`, 'i') }), 'zeel');
 
     await waitFor(() => expect(apiMocks.searchQuery).toHaveBeenCalled());
     expect(await screen.findByText('Zeel')).toBeInTheDocument();
@@ -751,7 +764,7 @@ describe('Layout navigation', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^updates$/i }));
 
     expect(await screen.findByText(/desktop updates/i)).toBeInTheDocument();
-    expect(screen.getByText(/carevance tracker v1.0.2/i)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`${brandPrefix}tracker v1.0.2`, 'i'))).toBeInTheDocument();
   });
 
   it('shows the desktop update dot on the profile name until updates are opened', async () => {

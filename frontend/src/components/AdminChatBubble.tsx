@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/chatChrome';
 import { useAnyDialogOpen } from '@/components/ui/dialog';
 import { ADMIN_QUICK_ACTIONS } from '@/lib/aiKnowledge';
-import { assistantLabel } from '@/config/brand';
+import { assistantLabel, supportEmailSuffix } from '@/config/brand';
 
 type ChatRole = 'user' | 'assistant';
 
@@ -219,7 +219,7 @@ export default function AdminChatBubble() {
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: "I'm having trouble connecting. Please try again or contact support at " + CHAT_SUPPORT.email },
+        { role: 'assistant', content: `I'm having trouble connecting. Please try again or contact support${supportEmailSuffix}.` },
       ]);
     } finally {
       setIsLoading(false);

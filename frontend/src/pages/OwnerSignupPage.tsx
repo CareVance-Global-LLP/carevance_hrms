@@ -515,7 +515,7 @@ export default function OwnerSignupPage({ defaultMode = 'trial' }: { defaultMode
                       value={companyName}
                       onChange={(event) => setCompanyName(event.target.value)}
                       className="block w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 transition duration-200 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-                      placeholder="CareVance Labs"
+                      placeholder="Acme Labs"
                     />
                   </div>
                   {fieldErrors.company_name ? <p className="mt-2 text-sm text-red-600">{fieldErrors.company_name[0]}</p> : null}

@@ -6,6 +6,7 @@ import LandingPageChatBubble from '@/components/LandingPageChatBubble';
 import { CHAT_HEADER_CLASS, CHAT_LAUNCHER_CLASS, CHAT_PANEL_CLASS } from '@/components/ui/chatChrome';
 import { renderWithProviders } from '@/test/renderWithProviders';
 
+import { assistantLabel } from '@/config/brand';
 const chat = vi.hoisted(() => vi.fn());
 
 vi.mock('@/services/api', async () => {
@@ -68,12 +69,12 @@ describe('assistant bubble parity', () => {
 
     const { unmount } = renderWithProviders(<AdminChatBubble />);
     await user.click(launcher());
-    expect(screen.getByText('CareVance Assistant')).toBeInTheDocument();
+    expect(screen.getByText(assistantLabel)).toBeInTheDocument();
     unmount();
 
     renderWithProviders(<LandingPageChatBubble />);
     await user.click(launcher());
-    expect(screen.getByText('CareVance Assistant')).toBeInTheDocument();
+    expect(screen.getByText(assistantLabel)).toBeInTheDocument();
   });
 
   /*

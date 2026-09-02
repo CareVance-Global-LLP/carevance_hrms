@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useInView, useMotionValueEvent, useScroll } from 'framer-motion';
 import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 
+import { BRAND } from '@/config/brand';
 /**
  * §6 — the statutory section, and the most load-bearing proof on the page.
  *
@@ -44,7 +45,7 @@ const ECR_FIELDS = [
 ] as const;
 
 const ECR_LINE = ECR_FIELDS.map((f) => f.value).join('||');
-const ECR_FILENAME = 'pf_ecr_carevance_2026-08.txt';
+const ECR_FILENAME = `pf_ecr_${BRAND.enabled ? BRAND.filePrefix : 'acme'}_2026-08.txt`;
 
 /** ~30 characters a second. */
 const CHARS_PER_SECOND = 30;

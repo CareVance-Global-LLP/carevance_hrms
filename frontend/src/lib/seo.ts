@@ -14,7 +14,12 @@ const siteOrigin = webAppUrl.replace(/\/+$/, '');
 const siteName = productLabel;
 const defaultDescription =
   `${siteName} helps teams manage attendance, reports, onboarding, monitoring, payroll workflows, and day-to-day workforce operations from one connected workspace.`;
-const defaultImage = `${siteOrigin}${BRAND.logoFull}?v=brand-1`;
+/*
+ * Empty when un-branded: there is no vendor mark to advertise, and a link
+ * preview pointing at a logo the deployment does not use is worse than one
+ * with no image at all. Every consumer below omits the tag when this is ''.
+ */
+const defaultImage = BRAND.enabled ? `${siteOrigin}${BRAND.logoFull}?v=brand-1` : '';
 
 function buildMarketingJsonLd(pathname: string) {
   const pageUrl = `${siteOrigin}${pathname}`;
@@ -25,7 +30,7 @@ function buildMarketingJsonLd(pathname: string) {
       '@type': 'Organization',
       name: siteName,
       url: siteOrigin,
-      logo: defaultImage,
+      ...(defaultImage ? { logo: defaultImage } : {}),
     },
     {
       '@context': 'https://schema.org',
@@ -251,12 +256,12 @@ export function applyRouteMetadata(pathname: string) {
   setMetaByProperty('og:title', metadata.title);
   setMetaByProperty('og:description', metadata.description);
   setMetaByProperty('og:type', 'website');
-  setMetaByProperty('og:image', defaultImage);
+  if (defaultImage) setMetaByProperty('og:image', defaultImage);
   setMetaByProperty('og:url', canonicalUrl || currentUrl);
   setMetaByName('twitter:card', 'summary_large_image');
   setMetaByName('twitter:title', metadata.title);
   setMetaByName('twitter:description', metadata.description);
-  setMetaByName('twitter:image', defaultImage);
+  if (defaultImage) setMetaByName('twitter:image', defaultImage);
 
   const canonicalLink = ensureLinkTag('link[rel="canonical"]', () => {
     const link = document.createElement('link');

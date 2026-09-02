@@ -1,4 +1,4 @@
-import { brandLabel } from '@/config/brand';
+import { appDomainPrefix, brandLabel } from '@/config/brand';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
@@ -271,7 +271,7 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
                   <FieldLabel>Workspace URL</FieldLabel>
                   <TextInput value={orgSlug} onChange={(event) => setOrgSlug(event.target.value)} disabled={!isOrgEditable} />
                   <p className="mt-1.5 truncate text-xs text-slate-600">
-                    app.carevance.com/<span className="font-semibold text-slate-900">{orgSlug || 'your-workspace'}</span>
+                    {appDomainPrefix}<span className="font-semibold text-slate-900">{orgSlug || 'your-workspace'}</span>
                   </p>
                 </div>
               </div>

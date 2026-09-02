@@ -289,7 +289,7 @@ export default function Layout() {
       // The preview takes precedence over the app icon: showing what was sent
       // is the entire point, and the app icon is already implied by the toast.
       icon: thumbnail
-        ?? (notification.type === 'announcement' ? BRAND.logoMark : undefined),
+        ?? (BRAND.enabled && notification.type === 'announcement' ? BRAND.logoMark : undefined),
     });
 
     systemNotification.onclick = () => {

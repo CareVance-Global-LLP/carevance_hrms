@@ -3,6 +3,7 @@ import { billingApi } from '@/services/api';
 import { useRazorpayCheckout } from '@/hooks/useRazorpayCheckout';
 import { ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import type { PricingBillingCycle } from '@/constants/pricing';
+import { productLabel } from '@/config/brand';
 
 interface RazorpayPaymentButtonProps {
   amount: number;
@@ -107,7 +108,7 @@ export function RazorpayPaymentButton({
         key: key_id,
         amount: orderResult.data.amount,
         currency: orderResult.data.currency,
-        name: organizationName || 'CareVance HRMS',
+        name: organizationName || productLabel,
         description: `${planCode} plan - ${seats} seats (${billingCycle})`,
         order_id: order_id,
         prefill: {

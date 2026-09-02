@@ -6,6 +6,7 @@ import { CalendarClock, LayoutDashboard, Users, Wallet } from 'lucide-react';
 import Sidebar from './Sidebar';
 import type { NavGroup } from '@/navigation/dashboardNavigation';
 
+import { BRAND, brandLabel } from '@/config/brand';
 vi.mock('@/services/api', () => ({
   timeEntryApi: {
     active: vi.fn().mockResolvedValue({ data: null }),
@@ -100,12 +101,20 @@ describe('Sidebar structure', () => {
 describe('Sidebar collapse', () => {
   it('shows the wordmark when expanded', () => {
     setup({ collapsed: false });
-    expect(screen.getByAltText('CareVance')).toHaveAttribute('src', '/carevance-logo-full.png');
+    if (!BRAND.enabled) {
+      expect(screen.queryByAltText(brandLabel)).toBeNull();
+    } else {
+      expect(screen.getByAltText(brandLabel)).toHaveAttribute('src', BRAND.logoFull);
+    }
   });
 
   it('swaps to the circle mark when collapsed', () => {
     setup({ collapsed: true });
-    expect(screen.getByAltText('CareVance')).toHaveAttribute('src', '/carevance-logo-icon.png');
+    if (!BRAND.enabled) {
+      expect(screen.queryByAltText(brandLabel)).toBeNull();
+    } else {
+      expect(screen.getByAltText(brandLabel)).toHaveAttribute('src', BRAND.logoMark);
+    }
   });
 
   /*
@@ -116,7 +125,9 @@ describe('Sidebar collapse', () => {
    */
   it('uses the same artwork the favicon does', () => {
     setup({ collapsed: true });
-    expect(screen.getByAltText('CareVance').getAttribute('src')).toMatch(/\.png$/);
+    if (BRAND.enabled) {
+      expect(screen.getByAltText(brandLabel).getAttribute('src')).toMatch(/\.png$/);
+    }
   });
 
   it('toggles from the chevron', async () => {
@@ -167,7 +178,11 @@ describe('Sidebar collapse', () => {
     setup({ variant: 'drawer', collapsed: true });
     expect(screen.queryByRole('button', { name: /collapse sidebar|expand sidebar/i })).not.toBeInTheDocument();
     // And it shows full labels regardless of the collapsed flag.
-    expect(screen.getByAltText('CareVance')).toHaveAttribute('src', '/carevance-logo-full.png');
+    if (!BRAND.enabled) {
+      expect(screen.queryByAltText(brandLabel)).toBeNull();
+    } else {
+      expect(screen.getByAltText(brandLabel)).toHaveAttribute('src', BRAND.logoFull);
+    }
   });
 });
 

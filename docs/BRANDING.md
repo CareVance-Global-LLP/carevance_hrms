@@ -9,6 +9,17 @@ to put any of it back.
 
 ---
 
+## Current state
+
+| App | Brand | Effect |
+|---|---|---|
+| **Web** | **OFF** | No wordmark, no logo, no "CareVance" text on any page — landing, legal and settings included. Title reads "HR and payroll". |
+| Backend | ON | Email and filings still carry the name. |
+| Mobile | ON | Login and the notification banner still carry the name. |
+
+Turn the web brand back on with one line: `enabled: true` in
+`frontend/src/config/brand.ts`.
+
 ## The switch
 
 | App | File | Off switch |
@@ -63,8 +74,33 @@ grammatical.
 | `assistantLabel` | CareVance Assistant | Assistant | The in-app chat assistant |
 | `mailSubjectBrand` | `CareVance ` | *(empty)* | `mailto:` subject prefixes |
 | `downloadPrefix` | `carevance-` | *(empty)* | Downloaded filenames |
+| `brandPrefix` | `CareVance ` | *(empty)* | Before a common noun: "CareVance tracker" → "tracker" |
+| `legalLabel` | CareVance | the Service | Terms, Privacy, the DPDP notice |
+| `legalProductLabel` | CareVance HRMS | the Service | The same, where the full name was used |
+| `siteUrl` | `https://carevance.com` | the serving origin | Landing-page structured data |
+| `appDomainPrefix` | `app.carevance.com/` | *(empty)* | Before the workspace slug in Settings |
+| `supportEmail` | support@… | `null` | The chat assistant's fallback contact |
+| `supportEmailSuffix` | ` at support@…` | *(empty)* | So the sentence closes cleanly with no address |
+| `webhookHeaderPrefix` | `X-CareVance-` | `X-Webhook-` | **Display only** — see the warning below |
 | `config('brand.label')` | CareVance | this workspace | Blade, mid-sentence |
 | `config('brand.product_label')` | CareVance HRMS | HR and payroll | Blade, mastheads and filing footers |
+
+### Two warnings
+
+**`webhookHeaderPrefix` changes only what the integrations screen SHOWS.**
+`backend/app/Jobs/DeliverWebhook.php` still sends `X-CareVance-Event`,
+`-Delivery`, `-Timestamp` and `-Signature`, because every customer who has built
+a receiver verifies against those exact names. With the brand off, that panel
+therefore describes headers the server does not send — documentation that is
+wrong rather than merely unbranded. Acceptable for a white-label preview;
+**not** acceptable on a deployment with live webhook consumers. To make them
+agree, change `DeliverWebhook.php` to the same prefix and send both names for a
+deprecation window.
+
+**`legalLabel` is a placeholder, not a legal review.** The Terms, the Privacy
+Policy and the DPDP notice name a party because a party is who owes the duty.
+"the Service" is fine for a demo; before real Terms go live they must name the
+actual contracting entity, and that is a lawyer's call.
 
 ---
 
@@ -208,3 +244,23 @@ Blade is the one that bites: a broken template compiles fine and throws a
 `ViewException` when the mail is sent. Three cases caught during this refactor,
 all in `:attribute="..."` bindings, where the value is a **PHP expression** and a
 `{{ }}` echo is a syntax error — use string concatenation there instead.
+
+### What a grep of the built bundle still finds, and why that is fine
+
+An un-branded build renders nothing branded, but the strings are not all gone
+from the JavaScript. Three groups survive and none of them reaches a screen:
+
+- **Storage keys** — `carevance.theme`, `carevance:user` and the dozen others.
+  Live, load-bearing, and listed above.
+- **The `BRAND` object's own values** — `carevance.com`, the two logo paths, the
+  support address. They sit in an object literal, so no bundler removes them
+  even when every reader is behind `BRAND.enabled`. Unreferenced at runtime. If
+  they must be absent from the artefact as well, move them to `VITE_*` env vars
+  so the build never sees them.
+- **`SELF_TRACKER_KEYWORDS`** — how the tracker recognises its own window.
+
+One thing that is **not** in the repo: `frontend/.env` (gitignored) sets
+`VITE_SALES_EMAIL` and `VITE_SUPPORT_EMAIL`, which Vite inlines at build time.
+A local build picks up whatever that file holds. Set both explicitly in any
+deployment that must not show a vendor address — the hardcoded fallbacks are now
+empty when the brand is off, so nothing leaks from the code itself.

@@ -4,6 +4,7 @@ import { motion, type Variants } from 'framer-motion';
 import BrandLogo from '@/components/branding/BrandLogo';
 import { useConsent } from '@/contexts/ConsentContext';
 
+import { BRAND, brandPrefix } from '@/config/brand';
 const groups = [
   { title: 'Product', links: [
     { label: 'Pricing', to: '/pricing' },
@@ -70,9 +71,9 @@ export default function Footer() {
                 reloads the homepage is worse than no icon.
               */}
               {[
-                { Icon: Twitter, label: 'CareVance on X' },
-                { Icon: Linkedin, label: 'CareVance on LinkedIn' },
-                { Icon: Github, label: 'CareVance on GitHub' },
+                { Icon: Twitter, label: `${brandPrefix}on X`.trim() },
+                { Icon: Linkedin, label: `${brandPrefix}on LinkedIn`.trim() },
+                { Icon: Github, label: `${brandPrefix}on GitHub`.trim() },
               ].map(({ Icon, label }) => (
                 <a
                   key={label}
@@ -103,7 +104,9 @@ export default function Footer() {
         </motion.div>
 
         <div className="mt-8 flex flex-col gap-3 border-t border-slate-200 pt-5 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-slate-500">&copy; {new Date().getFullYear()} CareVance. All rights reserved.</p>
+          {BRAND.enabled ? (
+            <p className="text-slate-500">&copy; {new Date().getFullYear()} {BRAND.name}. All rights reserved.</p>
+          ) : <span />}
           <button
             type="button"
             onClick={openPreferences}

@@ -1,4 +1,4 @@
-import { assistantLabel } from '@/config/brand';
+import { assistantLabel, supportEmail } from '@/config/brand';
 /**
  * The one visual identity shared by both assistant bubbles.
  *
@@ -91,4 +91,4 @@ export const CHAT_DOT_CLASS = 'h-1.5 w-1.5 animate-bounce rounded-full bg-primar
 export const CHAT_ASSISTANT_NAME = assistantLabel;
 
 export const CHAT_DISCLAIMER = 'AI may be inaccurate. Verify important info.';
-export const CHAT_SUPPORT = { email: 'support@carevance.com', phone: '+91 800-123-4567' };
+export const CHAT_SUPPORT = { email: supportEmail, phone: '+91 800-123-4567' };

@@ -11,7 +11,7 @@ import {
 } from '@/services/api';
 import { reportSilentError } from '@/lib/reportSilentError';
 import SettingsCard from './SettingsCard';
-import { brandLabel } from '@/config/brand';
+import { brandLabel, webhookHeaderPrefix } from '@/config/brand';
 
 const formatWhen = (iso: string | null): string => {
   if (!iso) return '—';
@@ -132,8 +132,8 @@ export default function WebhooksSection() {
             <p className="mt-1 text-xs leading-5 text-amber-800">
               Verify it on every request:{' '}
               <code className="font-mono">HMAC-SHA256</code> over{' '}
-              <code className="font-mono">{'{X-CareVance-Timestamp}.{raw body}'}</code>, compared
-              against <code className="font-mono">X-CareVance-Signature</code>. It is not shown again.
+              <code className="font-mono">{`{${webhookHeaderPrefix}Timestamp}.{raw body}`}</code>, compared
+              against <code className="font-mono">{`${webhookHeaderPrefix}Signature`}</code>. It is not shown again.
             </p>
             <code className="mt-3 block break-all rounded-md border border-amber-200 bg-white px-2 py-2 font-mono text-xs text-slate-800">
               {secret}

@@ -14,6 +14,7 @@ import {
   inr,
   num,
 } from './demoData';
+import { brandPrefix } from '@/config/brand';
 
 /**
  * The product's screens, rebuilt in markup.
@@ -108,7 +109,7 @@ function ExampleTag({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
  */
 export function TrackerCapture() {
   return (
-    <AppFrame title="CareVance tracker" subtitle={TRACKED.dateShort} tone="dark">
+    <AppFrame title={`${brandPrefix}tracker`} subtitle={TRACKED.dateShort} tone="dark">
       <div className="p-4">
         <div className="flex items-baseline justify-between">
           <div>
