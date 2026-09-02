@@ -1207,15 +1207,26 @@ class PayrollFilingController extends Controller
                         ->where('month_year', $monthYear)
                         ->get();
 
-                $processedCount = $items
-                    ->where('payment_status', '!=', 'pending')
-                    ->count();
+                /*
+                 * PROCESSED IS NOT PAID.
+                 *
+                 * processed_count counted items whose payment_status was not
+                 * pending - which is the answer to "how many have been PAID",
+                 * under a heading that asks how many have been processed. A
+                 * locked September run holding a calculated payslip for all
+                 * five people read "Processing Progress 0/5" and "5 PENDING",
+                 * with Total Net Pay Rs 0 beside it, because that summed only
+                 * paid rows too.
+                 *
+                 * A run sits locked and approved for days with every row
+                 * processed and none paid, and that is exactly when somebody
+                 * opens this screen.
+                 */
+                $processedCount = $items->count();
                 $paidCount = $items
                     ->where('payment_status', 'paid')
                     ->count();
-                $totalNetPay = (float) $items
-                    ->where('payment_status', 'paid')
-                    ->sum('net_pay');
+                $totalNetPay = (float) $items->sum('net_pay');
 
                 return [
                     'id' => $group->id,

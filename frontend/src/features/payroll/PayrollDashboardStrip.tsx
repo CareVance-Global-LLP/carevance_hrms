@@ -89,7 +89,13 @@ export default function PayrollDashboardStrip({ monthYear }: { monthYear?: strin
 
   const readiness = [
     { label: 'No bank account', value: attention?.attention?.missing_bank_details ?? 0, to: '/employees' },
-    { label: 'Missing PAN or UAN', value: attention?.attention?.missing_pan_uan ?? 0, to: '/employees' },
+    // PAN and UAN separately. Collapsed into one "PAN or UAN" count, filling
+    // in every PAN moved the number not at all - because nobody had a UAN -
+    // and the card read as though six saves had silently failed. They are
+    // also different jobs: a PAN is collected from the employee, a UAN is
+    // issued by EPFO.
+    { label: 'Missing PAN', value: attention?.attention?.missing_pan ?? 0, to: '/employees' },
+    { label: 'Missing UAN', value: attention?.attention?.missing_uan ?? 0, to: '/employees' },
     { label: 'Not in a pay group', value: attention?.attention?.unassigned_employees ?? 0, to: '/payroll/unassigned-employees' },
     { label: 'Declarations to review', value: attention?.attention?.pending_fbp_declarations ?? 0, to: '/payroll/tax-compliance?panel=proofs' },
   ].filter((row) => row.value > 0);

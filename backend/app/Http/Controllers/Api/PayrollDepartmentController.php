@@ -2563,15 +2563,50 @@ class PayrollDepartmentController extends Controller
                 ->count();
         }
 
-        // Missing PAN/UAN — on-payroll users whose profile lacks PAN or UAN.
+        /*
+         * Missing PAN / UAN, resolved the way the rest of the system resolves
+         * a statutory identifier.
+         *
+         * This counted rows in `employee_profiles` whose pan_number or
+         * uan_number was blank. Two things were wrong with that. A PAN entered
+         * through the Government IDs section lives in
+         * `employee_government_ids` and never touches that column, so six PANs
+         * were entered on production and the count stayed at six — the admin
+         * reasonably concluded the saves had failed. And starting the query
+         * FROM employee_profiles meant somebody with no profile row at all was
+         * counted as missing nothing, which is the opposite of the truth.
+         *
+         * User::statutoryId() already reads both places and resolves a person
+         * carrying two rows of the same kind deterministically. Use it.
+         *
+         * PAN and UAN are also counted SEPARATELY. They are different jobs — a
+         * PAN is collected from the employee, a UAN is issued by EPFO — and
+         * collapsing them meant filling in every PAN moved nothing on screen.
+         * The combined figure is still published so an older client keeps its
+         * tile.
+         */
+        $missingPan = 0;
+        $missingUan = 0;
         $missingPanUan = 0;
         if (! empty($onPayrollUserIds)) {
-            $missingPanUan = \App\Models\EmployeeProfile::whereIn('user_id', $onPayrollUserIds)
-                ->where(function ($q) {
-                    $q->whereNull('pan_number')->orWhere('pan_number', '')
-                      ->orWhereNull('uan_number')->orWhere('uan_number', '');
-                })
-                ->count();
+            $statutoryUsers = User::whereIn('id', $onPayrollUserIds)
+                ->with(['employeeProfile', 'employeeGovernmentIds'])
+                ->get();
+
+            foreach ($statutoryUsers as $statutoryUser) {
+                $hasPan = filled($statutoryUser->statutoryId('pan'));
+                $hasUan = filled($statutoryUser->statutoryId('uan'));
+
+                if (! $hasPan) {
+                    $missingPan++;
+                }
+                if (! $hasUan) {
+                    $missingUan++;
+                }
+                if (! $hasPan || ! $hasUan) {
+                    $missingPanUan++;
+                }
+            }
         }
 
         // Unassigned employees — users on payroll roles with no template.
@@ -2596,6 +2631,8 @@ class PayrollDepartmentController extends Controller
             'attention' => [
                 'missing_bank_details' => $missingBankDetails,
                 'missing_pan_uan' => $missingPanUan,
+                'missing_pan' => $missingPan,
+                'missing_uan' => $missingUan,
                 'unassigned_employees' => $unassignedEmployees,
                 'pending_fbp_declarations' => $pendingFbpDeclarations,
             ],

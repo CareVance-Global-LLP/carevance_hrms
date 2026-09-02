@@ -38,7 +38,21 @@ export default function PayrollRegisterReport() {
     enabled: activeTab === 'bank',
   });
 
-  const registerData = payrollRegister as any;
+  /*
+   * The register never rendered.
+   *
+   * This read `registerData?.register`, and the endpoint has never returned
+   * a key by that name. Two unwraps are needed, not none: payrollApi returns
+   * the AxiosResponse, so the body is `.data`, and that body is
+   * { success, data: { month_year, employees, totals } } - the rows sit at
+   * .data.data.employees. The columns were wrong too: the endpoint sends
+   * name/gross/pf_employee/pt/net_pay, never employee_name/basic/hra.
+   *
+   * A locked September run with six payslips therefore displayed "No data
+   * for this period" while the same endpoint returned all six.
+   */
+  const registerBody = (payrollRegister as any)?.data?.data ?? null;
+  const registerData = registerBody;
   const statRegData = statutoryRegister as any;
   const bankData = bankRecon as any;
   const isLoading = loadingPayroll || loadingStatutory || loadingBank;
@@ -130,10 +144,10 @@ export default function PayrollRegisterReport() {
           </div>
         ) : activeTab === 'payroll' ? (
           <>
-            {renderSummaryCards(registerData?.summary)}
+            {renderSummaryCards(registerData?.totals)}
             {renderTable(
-              ['employee_name', 'basic', 'hra', 'gross_salary', 'total_deductions', 'net_pay', 'payment_status'],
-              registerData?.register ?? [],
+              ['name', 'department', 'gross', 'pf_employee', 'esi_employee', 'pt', 'tds', 'other_deductions', 'net_pay'],
+              registerData?.employees ?? [],
             )}
           </>
         ) : ['pf', 'esi', 'pt', 'tds'].includes(activeTab) ? (

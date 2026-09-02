@@ -3943,6 +3943,8 @@ export const payrollApi = {
       attention: {
         missing_bank_details?: number;
         missing_pan_uan?: number;
+        missing_pan?: number;
+        missing_uan?: number;
         unassigned_employees?: number;
         pending_fbp_declarations?: number;
       };

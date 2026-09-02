@@ -51,9 +51,10 @@ const REGISTER_SUB_TABS: { key: RegisterSubTab; label: string }[] = [
 ];
 
 const SUMMARY_COLUMNS = [
-  { key: 'employee_name', label: 'Employee' },
+  { key: 'name', label: 'Employee' },
   { key: 'department', label: 'Dept' },
-  { key: 'gross_salary', label: 'Gross' },
+  { key: 'gross', label: 'Gross' },
+  { key: 'esi_employee', label: 'ESI (Emp)' },
   { key: 'pf_employee', label: 'PF (Emp)' },
   { key: 'pf_employer', label: 'PF (Er)' },
   { key: 'tds', label: 'TDS' },
@@ -192,7 +193,12 @@ function PayrollRegisterPanel() {
   const isLoading = loadingPayroll || loadingStatutory || loadingBank;
 
   const getRows = (): any[] => {
-    if (activeSubTab === 'summary') return registerData?.register ?? registerData?.data?.register ?? [];
+    // The endpoint answers { success, data: { month_year, employees, totals } }
+    // and the query already unwraps the AxiosResponse, so the rows are at
+    // data.employees. Reading `register` — a key this endpoint has never
+    // returned — is why a locked September run with six payslips rendered
+    // "No data for this period" while the same call returned all six.
+    if (activeSubTab === 'summary') return registerData?.data?.employees ?? registerData?.employees ?? [];
     if (activeSubTab === 'pf-esi' || activeSubTab === 'tds') return statRegData?.entries ?? statRegData?.data?.entries ?? [];
     if (activeSubTab === 'bank-recon') return bankData?.entries ?? bankData?.data?.entries ?? [];
     return [];
@@ -212,7 +218,7 @@ function PayrollRegisterPanel() {
   const totalRow = rows.reduce(
     (acc: Record<string, number>, row: any) => {
       columns.forEach(({ key }) => {
-        if (key === 'employee_name' || key === 'department' || key === 'account_number' || key === 'ifsc' || key === 'bank_name' || key === 'payment_status') return;
+        if (key === 'name' || key === 'employee_name' || key === 'department' || key === 'account_number' || key === 'ifsc' || key === 'bank_name' || key === 'payment_status') return;
         acc[key] = (acc[key] ?? 0) + Number(row[key] ?? 0);
       });
       return acc;
