@@ -137,16 +137,27 @@ class ProcessPayrollRunEmployees implements ShouldQueue
                 continue;
             }
 
-            // working_days is re-derived from attendance inside
-            // processEmployeePayroll when not overridden, so 26 is a safe
-            // placeholder rather than a figure anyone is paid against.
+            /*
+             * ATTENDANCE IS READ, NEVER ASSERTED.
+             *
+             * This used to pass `'working_days' => 26`, under a comment saying
+             * the value would be re-derived when not overridden. Passing the
+             * key IS the override — `$request->filled('working_days')` is true
+             * for 26 — so the controller took 26, took days_present from the
+             * real summary, and derived `LOP = 26 - present_days`. A fully
+             * present employee in a 21-working-day month was docked five days
+             * by a placeholder, on every bulk run.
+             *
+             * Sending nothing is what lets processEmployeePayroll fall through
+             * to monthlyAttendanceSummary, which is the only figure anyone
+             * should be paid against.
+             */
             $subRequest = Request::create(
                 '/payroll/employees/'.$uid.'/process',
                 'POST',
                 [
                     'month_year' => $run->month_year,
                     'annual_ctc' => (float) $template->annual_ctc,
-                    'working_days' => 26,
                 ]
             );
             $subRequest->setUserResolver(fn () => $actor);

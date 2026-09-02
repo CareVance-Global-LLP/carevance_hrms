@@ -1065,7 +1065,25 @@ class PayrollDepartmentController extends Controller
         if ($request->filled('lOP_days')) {
             $lOPDays = (float) $request->lOP_days;
         } elseif ($request->filled('working_days') || $request->filled('days_present')) {
-            $lOPDays = (float) max(0, $workingDays - $daysPresent);
+            /*
+             * PAID LEAVE IS NOT LOSS OF PAY.
+             *
+             * `present_days` deliberately excludes paid leave and half days —
+             * the summary's own payable total is
+             * `present_days + paid_leave_days + half_day_present`. So
+             * `workingDays - daysPresent` charges every approved paid leave day
+             * as unpaid, on top of whatever the stated working-day count is
+             * wrong by.
+             *
+             * The caller's statement still wins for the days it covers (see the
+             * docblock above); the paid days it does not mention are taken from
+             * the summary, because a caller stating "present for 22 of 26" is
+             * not thereby claiming the other four were unpaid.
+             */
+            $paidButNotPresent = (float) ($attendance['paid_leave_days'] ?? 0)
+                + (float) ($attendance['half_day_present'] ?? 0);
+
+            $lOPDays = (float) max(0, $workingDays - $daysPresent - $paidButNotPresent);
         } else {
             $lOPDays = (float) ($attendance['total_lop_days'] ?? $attendance['legacy_lop_days'] ?? 0);
         }
@@ -1292,14 +1310,51 @@ class PayrollDepartmentController extends Controller
         // no loan EMI was already deducted for this employee+run.
         $loanEmiAmount = 0;
         $loanDetails = null;
-        $activeLoan = \App\Models\EmployeeLoan::where('organization_id', $organizationId)
+
+        /*
+         * EVERY active commitment, not the first one found.
+         *
+         * This was `->first()`, so an employee carrying a loan AND a salary
+         * advance had exactly one of them recovered. The other was never
+         * deducted, its balance never moved, and nothing said so — the company
+         * did not get its money back, month after month, while the employee's
+         * advance stayed outstanding for ever. Found by running the seeded
+         * scenario: an 8,000 EMI was taken and a 6,000 advance ignored, with
+         * zero recovery rows against it.
+         *
+         * Ordered oldest-first so the recovery sequence is stable and
+         * reproducible across re-processing, rather than depending on whatever
+         * order the database happened to return.
+         *
+         * Net pay is NOT clamped if the total exceeds it. Payroll validation is
+         * what should stop such a run, and it can only do that if it can see
+         * the real number — see the money rules in CLAUDE.md.
+         */
+        $activeLoans = \App\Models\EmployeeLoan::where('organization_id', $organizationId)
             ->where('user_id', $userId)
             ->where('status', 'approved')
             ->where('remaining_amount', '>', 0)
-            ->first();
+            ->orderBy('id')
+            ->get();
 
-        if ($activeLoan) {
-            $loanEmiAmount = (float) $activeLoan->emi_amount;
+        $loanLines = [];
+
+        foreach ($activeLoans as $activeLoan) {
+            /*
+             * NEVER MORE THAN WHAT IS LEFT.
+             *
+             * This took the full EMI every month and clamped a negative balance
+             * to zero afterwards, so a ₹40,000 loan at ₹6,000 recovered ₹42,000
+             * — the final instalment charged ₹6,000 against a ₹4,000 balance and
+             * the ₹2,000 difference vanished into the clamp. Uneven schedules
+             * are now the normal case rather than the exception, because the
+             * request form derives the instalment count with LoanSchedule and
+             * 40,000 ÷ 6,000 is 6.67.
+             */
+            $thisEmi = min(
+                (float) $activeLoan->emi_amount,
+                (float) $activeLoan->remaining_amount
+            );
 
             // Idempotency comes from the payroll_loan_recoveries ledger, NOT
             // from `custom_deductions > 0`. That column also carries
@@ -1315,14 +1370,14 @@ class PayrollDepartmentController extends Controller
                 [
                     'organization_id' => $organizationId,
                     'user_id' => $userId,
-                    'amount' => $loanEmiAmount,
+                    'amount' => $thisEmi,
                     'recovered_at' => now(),
                 ]
             );
 
             if ($recovery->wasRecentlyCreated) {
                 $activeLoan->increment('paid_installments');
-                $activeLoan->decrement('remaining_amount', $loanEmiAmount);
+                $activeLoan->decrement('remaining_amount', $thisEmi);
                 $activeLoan->refresh();
 
                 if ($activeLoan->remaining_amount <= 0) {
@@ -1331,23 +1386,52 @@ class PayrollDepartmentController extends Controller
             } else {
                 // Already recovered in this run — keep the payslip line
                 // consistent with what was actually taken.
-                $loanEmiAmount = (float) $recovery->amount;
+                $thisEmi = (float) $recovery->amount;
             }
 
-            $loanDetails = [
+            $loanEmiAmount += $thisEmi;
+
+            $loanLines[] = [
                 'loan_id' => $activeLoan->id,
                 'loan_type' => $activeLoan->loan_type,
-                'emi' => $loanEmiAmount,
+                'emi' => $thisEmi,
                 'remaining' => max(0, (float) $activeLoan->remaining_amount),
             ];
         }
 
+        if ($loanLines !== []) {
+            /*
+             * One line stays one line for the single-loan case, which is almost
+             * every employee; a second commitment adds `lines` rather than
+             * changing the shape readers already handle.
+             */
+            $loanDetails = $loanLines[0];
+            $loanDetails['total_emi'] = $loanEmiAmount;
+            $loanDetails['lines'] = $loanLines;
+        }
+
+        /*
+         * ONE PAYSLIP LINE PER COMMITMENT.
+         *
+         * This emitted a single line labelled from `$activeLoan->loan_type`.
+         * Now that every active commitment is recovered, `$activeLoan` is the
+         * loop's last value — so somebody carrying a loan and an advance would
+         * see their combined total under whichever type happened to be
+         * iterated last. "Advance EMI 14,000" against an 8,000 loan and a
+         * 6,000 advance is not a description of what was taken.
+         *
+         * A line each also answers the question an employee actually asks,
+         * which is not "how much was deducted" but "for which of my two".
+         */
         $customDeductions = [];
-        if ($loanEmiAmount > 0) {
+
+        foreach ($loanLines as $line) {
             $customDeductions[] = [
                 'type' => 'loan_emi',
-                'label' => ($activeLoan?->loan_type === 'advance' ? 'Advance' : 'Loan') . ' EMI',
-                'amount' => $loanEmiAmount,
+                'label' => ($line['loan_type'] === 'advance' ? 'Advance' : 'Loan').' EMI',
+                'amount' => $line['emi'],
+                'loan_id' => $line['loan_id'],
+                'remaining' => $line['remaining'],
             ];
         }
 
@@ -1559,6 +1643,32 @@ class PayrollDepartmentController extends Controller
                 'days_present' => $daysPresent,
                 'days_absent' => $daysAbsent,
                 'lOP_days' => $lOPDays,
+                /*
+                 * PAID LEAVE HAS TO BE ON THE ROW, not merely netted out of LOP.
+                 *
+                 * PayrollFilingService::contributoryDays() reports
+                 * `days_present + days_leave` to EPFO and ESI. This block wrote
+                 * days_present and never days_leave, so somebody with four days
+                 * of approved paid leave was PAID for the whole month and
+                 * REPORTED as having four fewer contributory days. The pay was
+                 * right and the statutory return was wrong — the harder of the
+                 * two to notice, because nothing on the payslip disagrees.
+                 *
+                 * Taken from the summary rather than from the request: a caller
+                 * may state presence, but nobody states somebody else's approved
+                 * leave. The simplified columns come from the same place, so a
+                 * row written here matches one written by the sync path.
+                 */
+                'days_leave' => (float) ($attendance['paid_leave_days'] ?? 0),
+                'present_days' => (float) ($attendance['present_days'] ?? 0),
+                'paid_leave_days' => (float) ($attendance['paid_leave_days'] ?? 0),
+                'unpaid_leave_days' => (float) ($attendance['unpaid_leave_days'] ?? 0),
+                'half_day_present' => (float) ($attendance['half_day_present'] ?? 0),
+                'half_day_absent' => (float) ($attendance['half_day_absent'] ?? 0),
+                'absent_days' => (float) ($attendance['absent_days'] ?? 0),
+                'total_payable_days' => (float) ($attendance['total_payable_days'] ?? 0),
+                'total_lop_days' => (float) ($attendance['total_lop_days'] ?? 0),
+                'attendance_calculation_mode' => (string) ($attendance['calculation_mode'] ?? 'simplified'),
                 'total_worked_seconds' => $timeData['total_worked_seconds'],
                 'total_productive_seconds' => $timeData['total_productive_seconds'],
                 'total_idle_seconds' => $timeData['total_idle_seconds'],
@@ -1587,6 +1697,13 @@ class PayrollDepartmentController extends Controller
                 'arrears_pf' => $arrearsPf,
                 'lOP_deduction' => $lOPDeduction,
                 'custom_deductions' => $loanEmiAmount + $customDeductionsTotal,
+                /*
+                 * The breakdown behind that total, so a payslip can answer
+                 * "what was this for?" months later. `custom_deductions` mixes
+                 * loan recoveries with wizard-entered deductions, so the number
+                 * alone cannot be decomposed even by inference.
+                 */
+                'deduction_lines' => array_values($customDeductions),
                 'custom_earnings' => $customEarningsTotal,
                 'total_deductions' => $totalDeductions,
                 'pf_employer' => $template->pf_enabled ? $calculation['components']['employer_contributions']['pf_employer'] : 0,
@@ -1739,7 +1856,18 @@ class PayrollDepartmentController extends Controller
             'month_year' => 'required|string',
             'user_ids' => 'required|array|min:1',
             'user_ids.*' => 'integer|exists:users,id',
-            'working_days' => 'required|integer|min:1',
+            /*
+             * OPTIONAL, and normally absent.
+             *
+             * It was required, so the screen had to invent one for the whole
+             * group — the first row's value, or a hardcoded 26 — and everybody
+             * was then priced against a number that belonged to somebody else.
+             * Omitted, each employee falls through to their own attendance,
+             * which is the only figure anyone should be paid against. It stays
+             * accepted because the wizard legitimately states attendance the
+             * records do not have: a mid-month joiner, an agreed correction.
+             */
+            'working_days' => 'nullable|integer|min:1',
             'default_annual_ctc' => 'nullable|numeric|min:0',
             'lOP_days' => 'nullable|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
@@ -1785,8 +1913,6 @@ class PayrollDepartmentController extends Controller
 
         $succeeded = [];
         $failed = [];
-        $lOPDays = $data['lOP_days'] ?? 0;
-        $overtimeHours = $data['overtime_hours'] ?? 0;
 
         // Bulk-fetch existing templates in one query, then create any
         // missing ones. This replaces an N+1 loop of per-user
@@ -1822,16 +1948,38 @@ class PayrollDepartmentController extends Controller
                     continue;
                 }
 
-                $daysPresent = $data['working_days'] - $lOPDays;
-
-                $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
+                /*
+                 * ATTENDANCE IS READ, NEVER DERIVED.
+                 *
+                 * This used to compute `days_present = working_days - lOP_days`
+                 * from two group-wide numbers, which was wrong three times over.
+                 * The screen sent one working-day count for everybody and an
+                 * AVERAGE loss of pay, so a fully present employee was docked
+                 * the group mean while a colleague who missed eight days was
+                 * docked less than they took — pay redistributed between people
+                 * who never agreed to it. And because a mean is fractional while
+                 * `days_present` validates as an integer, the whole run 422'd
+                 * with "The days present field must be an integer." for every
+                 * employee, which is the only reason the other two were noticed.
+                 *
+                 * Sending nothing is what lets processEmployeePayroll fall
+                 * through to monthlyAttendanceSummary per person. Keys the
+                 * caller genuinely stated are still forwarded — the wizard's
+                 * override path depends on that — but nothing is manufactured
+                 * here, and days_present is never derived at all.
+                 */
+                $payload = [
                     'month_year' => $data['month_year'],
                     'annual_ctc' => $annualCtc,
-                    'working_days' => $data['working_days'],
-                    'days_present' => max(0, $daysPresent),
-                    'lOP_days' => $lOPDays,
-                    'overtime_hours' => $overtimeHours,
-                ]);
+                ];
+
+                foreach (['working_days', 'lOP_days', 'overtime_hours'] as $stated) {
+                    if (($data[$stated] ?? null) !== null) {
+                        $payload[$stated] = $data[$stated];
+                    }
+                }
+
+                $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', $payload);
                 $subRequest->setUserResolver(fn () => $request->user());
 
                 try {
@@ -1876,7 +2024,18 @@ class PayrollDepartmentController extends Controller
             'month_year' => 'required|string',
             'user_ids' => 'required|array|min:1',
             'user_ids.*' => 'integer|exists:users,id',
-            'working_days' => 'required|integer|min:1',
+            /*
+             * OPTIONAL, and normally absent.
+             *
+             * It was required, so the screen had to invent one for the whole
+             * group — the first row's value, or a hardcoded 26 — and everybody
+             * was then priced against a number that belonged to somebody else.
+             * Omitted, each employee falls through to their own attendance,
+             * which is the only figure anyone should be paid against. It stays
+             * accepted because the wizard legitimately states attendance the
+             * records do not have: a mid-month joiner, an agreed correction.
+             */
+            'working_days' => 'nullable|integer|min:1',
             'default_annual_ctc' => 'nullable|numeric|min:0',
             'lOP_days' => 'nullable|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
@@ -1923,8 +2082,6 @@ class PayrollDepartmentController extends Controller
 
         $succeeded = [];
         $failed = [];
-        $lOPDays = $data['lOP_days'] ?? 0;
-        $overtimeHours = $data['overtime_hours'] ?? 0;
 
         // Bulk-fetch existing templates in one query, then create any
         // missing ones. This replaces an N+1 loop of per-user
@@ -1960,16 +2117,38 @@ class PayrollDepartmentController extends Controller
                     continue;
                 }
 
-                $daysPresent = $data['working_days'] - $lOPDays;
-
-                $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
+                /*
+                 * ATTENDANCE IS READ, NEVER DERIVED.
+                 *
+                 * This used to compute `days_present = working_days - lOP_days`
+                 * from two group-wide numbers, which was wrong three times over.
+                 * The screen sent one working-day count for everybody and an
+                 * AVERAGE loss of pay, so a fully present employee was docked
+                 * the group mean while a colleague who missed eight days was
+                 * docked less than they took — pay redistributed between people
+                 * who never agreed to it. And because a mean is fractional while
+                 * `days_present` validates as an integer, the whole run 422'd
+                 * with "The days present field must be an integer." for every
+                 * employee, which is the only reason the other two were noticed.
+                 *
+                 * Sending nothing is what lets processEmployeePayroll fall
+                 * through to monthlyAttendanceSummary per person. Keys the
+                 * caller genuinely stated are still forwarded — the wizard's
+                 * override path depends on that — but nothing is manufactured
+                 * here, and days_present is never derived at all.
+                 */
+                $payload = [
                     'month_year' => $data['month_year'],
                     'annual_ctc' => $annualCtc,
-                    'working_days' => $data['working_days'],
-                    'days_present' => max(0, $daysPresent),
-                    'lOP_days' => $lOPDays,
-                    'overtime_hours' => $overtimeHours,
-                ]);
+                ];
+
+                foreach (['working_days', 'lOP_days', 'overtime_hours'] as $stated) {
+                    if (($data[$stated] ?? null) !== null) {
+                        $payload[$stated] = $data[$stated];
+                    }
+                }
+
+                $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', $payload);
                 $subRequest->setUserResolver(fn () => $request->user());
 
                 try {
@@ -2566,8 +2745,19 @@ class PayrollDepartmentController extends Controller
             ->where('arrears', '>', 0)
             ->count());
 
-        // 6. Override (PT, ESI, TDS, LWF) — no `manual_override` flag yet, no_action.
-        //    Could be enhanced later by comparing computed vs actual values.
+        // 6. Override (PT, ESI, TDS, LWF) — overrides awaiting approval that
+        //    would apply to this month. `payroll_overrides` is date-ranged, so
+        //    "this month" is an overlap test, not an equality one: an override
+        //    effective from last month with no end date still applies now.
+        $pendingOverrides = $safeCount(fn () => DB::table('payroll_overrides')
+            ->where('organization_id', $organizationId)
+            ->where('status', \App\Models\PayrollOverride::STATUS_PENDING)
+            ->whereDate('effective_from', '<=', $monthEnd)
+            ->where(function ($q) use ($monthStart) {
+                $q->whereNull('effective_to')
+                    ->orWhereDate('effective_to', '>=', $monthStart);
+            })
+            ->count());
 
         // Audit acknowledgement — if any recent audit_logs entry exists for this run
         // dated today, treat the run as "reviewed" for status purposes.
@@ -2656,8 +2846,20 @@ class PayrollDepartmentController extends Controller
             $step(
                 'overrides',
                 'Override (PT, ESI, TDS, LWF)',
-                'no_action',
-                'Manual override tracking is not yet enabled',
+                /*
+                 * Counted, not declared.
+                 *
+                 * This step was hardcoded to 'no_action' with the text "Manual
+                 * override tracking is not yet enabled" while the override
+                 * module was live, approved and applying to runs — so the one
+                 * screen an admin checks before locking a run told them
+                 * overrides did not exist, on a month that might carry several
+                 * awaiting approval.
+                 */
+                $pendingOverrides > 0 ? 'pending' : 'no_action',
+                $pendingOverrides > 0
+                    ? "{$pendingOverrides} override(s) awaiting approval"
+                    : 'No overrides awaiting approval this month',
                 'Sliders',
             ),
         ];
