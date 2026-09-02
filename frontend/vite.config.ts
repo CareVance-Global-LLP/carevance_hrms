@@ -51,14 +51,25 @@ function brandIndexHtml(): Plugin {
     name: 'brand:index-html',
     transformIndexHtml(html) {
       if (!BRAND.enabled) {
-        // Drop the whole tag rather than leave an empty href: a
-        // `<link rel="icon" href="">` re-requests the page itself in some
-        // browsers, and an empty og:image renders as a broken preview card.
-        const dropped = ['%BRAND_FAVICON%', '%BRAND_LOGO_MARK%', '%BRAND_LOGO_FULL%']
+        /*
+         * Removing the icon tags is NOT enough, and this was a real bug.
+         *
+         * With no `<link rel="icon">` at all, every browser falls back to
+         * requesting `/favicon.ico` at the site root on its own. That file is
+         * still the vendor's 78 KB mark, so an un-branded build went out with
+         * the brand sitting in the browser tab — the one place a viewer looks
+         * without being asked to.
+         *
+         * `href="data:,"` is an explicit, empty icon. It satisfies the browser,
+         * so the default request never happens, and it renders as the blank
+         * page glyph rather than a broken image.
+         */
+        const dropped = ['%BRAND_LOGO_MARK%', '%BRAND_LOGO_FULL%']
         html = html
           .split(/\r?\n/)
           .filter((line) => !dropped.some((token) => line.includes(token)))
           .join('\n')
+          .replaceAll('%BRAND_FAVICON%', 'data:,')
       }
 
       return html

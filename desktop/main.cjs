@@ -49,6 +49,7 @@ const { NetworkMonitor } = require('./offline/network-monitor.cjs');
 const { QueueManager } = require('./offline/queue-manager.cjs');
 const SyncEngineModule = require('./offline/sync-engine.cjs');
 const { BrowserUrlReader } = require('./browser-url/browser-url-reader.cjs');
+const { brandLabel, appLabel, contextLabel, trayPrefix } = require('./brand.cjs');
 console.log('[Desktop] SyncEngine loaded, keys:', Object.keys(SyncEngineModule));
 const { SyncEngine } = SyncEngineModule;
 let activeWindowGetter = null;
@@ -298,7 +299,7 @@ let osConnectivityWatchTimer = null;
 
 app.disableHardwareAcceleration();
 
-app.setName('CareVance Tracker');
+app.setName(appLabel);
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 console.log('[Desktop] Single instance lock:', hasSingleInstanceLock);
@@ -473,7 +474,7 @@ const normalizeDeviceLabel = (value) => {
     return hostName.slice(0, 255);
   }
 
-  return 'CareVance Desktop';
+  return contextLabel;
 };
 
 const buildDesktopDeviceIdentity = () => {
@@ -1117,7 +1118,7 @@ const buildRendererLoadErrorDataUrl = ({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CareVance desktop load error</title>
+    <title>${appLabel} load error</title>
     <style>
       /*
        * Tokens rather than literals so the dark block only has to restate the
@@ -1156,7 +1157,7 @@ const buildRendererLoadErrorDataUrl = ({
     <div class="wrap">
       <div class="card">
         <h1>Desktop app could not load the web workspace</h1>
-        <p>CareVance desktop opened, but the configured web URL is not reachable from this machine.</p>
+        <p>${appLabel} opened, but the configured web URL is not reachable from this machine.</p>
         <p>Set a reachable <code>APP_URL</code> when packaging/running the desktop app (for production this should be your deployed HTTPS app URL).</p>
         <ul>${diagnostics.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
         <div class="actions">
@@ -1208,7 +1209,7 @@ const createWindow = async () => {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: resolveShellBackground(),
-    title: 'CareVance Tracker',
+    title: appLabel,
     icon: APP_ICON,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -1797,8 +1798,8 @@ const applyTrayState = () => {
 
   tray.setToolTip(
     trayTimerState.running
-      ? `CareVance — running${elapsed ? ` ${elapsed}` : ''}${trayTimerState.label ? ` · ${trayTimerState.label}` : ''}`
-      : 'CareVance — timer stopped'
+      ? `${trayPrefix}Running${elapsed ? ` ${elapsed}` : ''}${trayTimerState.label ? ` · ${trayTimerState.label}` : ''}`
+      : `${trayPrefix}Timer stopped`
   );
 
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -1810,7 +1811,7 @@ const applyTrayState = () => {
     },
     { type: 'separator' },
     {
-      label: 'Open CareVance Tracker',
+      label: `Open ${appLabel}`,
       click: () => {
         openOrRevealMainWindow();
       },
@@ -2017,7 +2018,7 @@ const resolveScreenCapturePermissionStatus = () => {
 const buildScreenPermissionDeniedResult = () => {
   const platform = process.platform;
   const guidance = platform === 'darwin'
-    ? 'Open System Settings → Privacy & Security → Screen Recording and enable CareVance Tracker, then restart the app.'
+    ? 'Open System Settings → Privacy & Security → Screen Recording and enable ${appLabel}, then restart the app.'
     : 'Check that screen capture is allowed for this app (it may be blocked by device policy).';
 
   return {
@@ -2143,7 +2144,7 @@ const forwardQuickReply = (reply) => {
   if (!mainWindow || mainWindow.isDestroyed()) {
     // The tray keeps the window alive, so this is rare — but a reply that
     // silently vanished would be worse than one that says it failed.
-    quickReplyPopup.reportQuickReplyResult({ ok: false, error: 'CareVance is not running' });
+    quickReplyPopup.reportQuickReplyResult({ ok: false, error: `${brandLabel} is not running` });
     return;
   }
 
@@ -2258,7 +2259,7 @@ ipcMain.handle('desktop:show-notification', async (_event, payload = {}) => {
     return false;
   }
 
-  const title = String(payload.title || 'CareVance').trim() || 'CareVance';
+  const title = String(payload.title || appLabel).trim() || appLabel;
   const body = String(payload.body || '').trim();
   const id = Number(payload.id || 0);
   const route = String(payload.route || '').trim();

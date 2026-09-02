@@ -21,6 +21,7 @@
     "icon": "assets/icon.ico",
     "files": [
       "main.cjs",
+      "brand.cjs",
       "preload.cjs",
       "auto-start.cjs",
       "idle-popup.cjs",
