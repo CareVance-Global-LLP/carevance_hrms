@@ -7,6 +7,7 @@ use App\Models\BankTransferItem;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\User;
+use App\Services\Employees\SalaryAccountResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -38,6 +39,11 @@ class PayrollDisbursementService
      * batch being forced to one rail.
      */
     private const RTGS_THRESHOLD = 200000.00;
+
+    public function __construct(
+        private readonly SalaryAccountResolver $accounts,
+    ) {
+    }
 
     /**
      * Build a transfer batch for a run.
@@ -109,7 +115,7 @@ class PayrollDisbursementService
                     'bank_transfer_batch_id' => $batch->id,
                     'user_id' => $item->user_id,
                     'payroll_item_id' => $item->id,
-                    'beneficiary_name' => $account->account_holder_name ?: $item->user?->name,
+                    'beneficiary_name' => $this->accounts->beneficiaryName($account, $item->user),
                     'beneficiary_account' => $account->account_number,
                     'beneficiary_ifsc' => $account->ifsc_swift,
                     'amount' => round((float) $item->net_pay, 2),
@@ -218,12 +224,26 @@ class PayrollDisbursementService
 
         $account = $this->beneficiaryAccount($item->user);
 
-        if ($account === null) {
-            return 'No bank account on record.';
+        /*
+         * Delegated, so the readiness screen and the bank file cannot disagree.
+         *
+         * This used to ask only whether the two columns were non-empty, while
+         * SalaryAccountResolver — which the readiness report and the onboarding
+         * checklist both use — checked the RBI format. So a present-but-
+         * malformed IFSC passed here, went into the CSV and was rejected by the
+         * bank AFTER the batch had gone out, with the run reading 'disbursed'
+         * and the money not moved. The readiness screen is advisory; this is
+         * the gate that decides, so this is where the rules have to hold.
+         */
+        if (($problem = $this->accounts->problemWith($account)) !== null) {
+            return $problem;
         }
 
-        if (blank($account->account_number) || blank($account->ifsc_swift)) {
-            return 'Bank account is missing an account number or IFSC.';
+        // The file has a Beneficiary Name column and a bank matches on it. A
+        // blank one is a line nobody can reconcile and some formats reject
+        // outright, so it is an exclusion rather than an empty field.
+        if ($this->accounts->beneficiaryName($account, $item->user) === null) {
+            return 'No beneficiary name on the bank account or the employee record.';
         }
 
         return null;
