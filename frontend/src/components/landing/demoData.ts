@@ -90,18 +90,35 @@ export const TRACKED = Object.freeze({
 });
 
 /** Stage 2 — the attendance month the payroll run reads. */
+/*
+ * The Attendance workspace's own Monthly Summary tiles, named as it names them:
+ * Present Days, Absent Days, Late Days, and Track Time.
+ *
+ * "Loss of pay" and "Regularisations" were shown here and neither is on that
+ * screen -- LOP Days belongs to the payslip, which is where PayslipViewer
+ * renders it.
+ */
 export const ATTENDANCE = Object.freeze({
-  present: 22,
+  presentDays: 22,
   workingDays: 22,
-  lop: 0,
-  totalHours: '169h 24m',
-  shift: 'General · 09:30–18:30 IST',
-  regularisations: 1,
+  absentDays: 0,
+  lateDays: 0,
+  trackTime: '169h 24m',
+  shiftTarget: 'General · 09:30–18:30 IST',
+  lopDays: 0,
 });
 
 /** Stage 3 — the run lifecycle, exactly as the product models it. */
+/*
+ * The six states of PayrollRunLifecycleStepper, in its order and with its
+ * labels. `processing` was missing here, which made the mock-up show a
+ * five-step lifecycle the product does not have -- and it is the one step a
+ * buyer asks about, because it is where a queued run sits while the worker
+ * walks the employee list.
+ */
 export const RUN_STAGES = Object.freeze([
   { key: 'draft', label: 'Draft', done: true },
+  { key: 'processing', label: 'Processing', done: true },
   { key: 'locked', label: 'Locked', done: true },
   { key: 'approved', label: 'Approved', done: true },
   { key: 'released', label: 'Released', done: true },
