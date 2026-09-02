@@ -890,7 +890,19 @@ class PayrollAutoProcessService
                 'payment_status' => 'pending',
             ]);
 
-            $totals['total_gross'] += $gross;
+            // The EARNED wage, not the contracted one.
+            //
+            // This accumulated $gross, the full contracted month, while the
+            // two lines under it accumulate the actual post-LOP figures. One
+            // header then mixed two scales, so gross - deductions did not
+            // equal net anywhere it was displayed. Production, 2 Sep 2026:
+            // header gross 763,630.83 against line items summing 221,685.87,
+            // out by 541,944.96 on the dashboard. It is also how a month came
+            // to show deductions larger than the gross they were taken from.
+            //
+            // $gross is still written to the item as gross_full_month, which
+            // is where arrears and the payslip read the contracted rate.
+            $totals['total_gross'] += $payableGross;
             $totals['total_deductions'] += $totalDeductions;
             $totals['total_net_pay'] += $netPay;
             $totals['total_employer_contributions'] += $totalEmployerContributions;
