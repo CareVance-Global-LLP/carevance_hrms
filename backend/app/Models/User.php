@@ -144,6 +144,39 @@ class User extends Authenticatable
      * `id_type` values are mixed case ('pan', 'PAN', 'uan'), hence the
      * case-insensitive match.
      */
+    /**
+     * The one name this person is known by, everywhere.
+     *
+     * `users.name` wins because it is already what the Employees list, the
+     * sidebar, the payroll register and the revision table all show.
+     * EmployeePayrollCardController composed its own from the profile in six
+     * places and fell back to the EMAIL rather than here, so the same person
+     * appeared as "Akash" on one screen and "akash vishwakarma" on the next,
+     * and "Nisha Goswami" became "Nisha Gauswami" one tab across.
+     *
+     * The profile name stays as the fallback for a row that genuinely has no
+     * account name, and email remains the last resort it always was. Every
+     * step is trimmed, because a name of spaces passed the old `?:` check and
+     * rendered as an empty cell.
+     */
+    public function displayName(): string
+    {
+        $accountName = trim((string) $this->name);
+        if ($accountName !== '') {
+            return $accountName;
+        }
+
+        $profile = $this->employeeProfile;
+        $fromProfile = trim(
+            trim((string) ($profile->first_name ?? '')) . ' ' . trim((string) ($profile->last_name ?? ''))
+        );
+
+        if ($fromProfile !== '') {
+            return $fromProfile;
+        }
+
+        return (string) $this->email;
+    }
     public function statutoryId(string $type): ?string
     {
         $column = match (strtolower($type)) {
