@@ -301,8 +301,17 @@ export default function FBPPage() {
             />
           ) : components.length === 0 ? (
             <PageEmptyState
-              title="No FBP components configured"
-              description="Contact admin to set up FBP components."
+              title="No FBP components yet"
+              description="The basket is defined on a salary template. Add components there and they appear here for employees to allocate against."
+              action={
+                <Button
+                  size="sm"
+                  iconLeft={<Settings className="h-4 w-4" />}
+                  onClick={() => setSearchParams({ tab: 'employee-pay', type: 'dept-templates' })}
+                >
+                  Set up in Salary Templates
+                </Button>
+              }
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
