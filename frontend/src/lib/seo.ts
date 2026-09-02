@@ -47,7 +47,12 @@ function buildMarketingJsonLd(pathname: string) {
 export function getRouteMetadata(pathname: string): RouteMetadata {
   if (isAuthenticatedAppPath(pathname)) {
     return {
-      title: `${siteName} Workspace`,
+      /*
+       * Un-branded, `${siteName} Workspace` renders as "HR and payroll
+       * Workspace" — the product-category stand-in reads as a name here and
+       * the title turns to mush. The word alone is what this screen is.
+       */
+      title: BRAND.enabled ? `${siteName} Workspace` : 'Workspace',
       description: `Secure ${brandLabel} workspace area.`,
       robots: 'noindex,nofollow',
       canonicalPath: null,

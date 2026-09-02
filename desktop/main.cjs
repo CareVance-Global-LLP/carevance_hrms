@@ -49,7 +49,7 @@ const { NetworkMonitor } = require('./offline/network-monitor.cjs');
 const { QueueManager } = require('./offline/queue-manager.cjs');
 const SyncEngineModule = require('./offline/sync-engine.cjs');
 const { BrowserUrlReader } = require('./browser-url/browser-url-reader.cjs');
-const { brandLabel, appLabel, contextLabel, trayPrefix } = require('./brand.cjs');
+const { BRAND, brandLabel, appLabel, contextLabel, trayPrefix } = require('./brand.cjs');
 console.log('[Desktop] SyncEngine loaded, keys:', Object.keys(SyncEngineModule));
 const { SyncEngine } = SyncEngineModule;
 let activeWindowGetter = null;
@@ -219,9 +219,21 @@ const BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS = Array.from(new Set(
     .filter(Boolean)
 ));
 console.log('[Desktop] Browser tracking allowed origins:', BROWSER_TRACKING_ALLOWED_EXTENSION_ORIGINS);
+/*
+ * The window and taskbar mark.
+ *
+ * Un-branded builds use the neutral stopwatch in the same folder rather than
+ * the vendor's mark. Both sets of artwork ship: switching the brand back on is
+ * one line in brand.cjs, not a restore from git.
+ *
+ * This is the icon the RUNNING app shows. The installer's icon is a separate
+ * thing, set in package.json under `build`, and changing that one changes the
+ * install identity — see the header of brand.cjs.
+ */
+const ICON_BASE = BRAND.enabled ? 'icon' : 'neutral-icon';
 const APP_ICON = process.platform === 'win32'
-  ? path.join(__dirname, 'assets', 'icon.ico')
-  : path.join(__dirname, 'assets', 'icon.png');
+  ? path.join(__dirname, 'assets', `${ICON_BASE}.ico`)
+  : path.join(__dirname, 'assets', `${ICON_BASE}.png`);
 const APP_ID = 'com.carevance.tracker';
 const DEFAULT_SCREENSHOT_MAX_WIDTH = 1920;
 const DEFAULT_SCREENSHOT_MAX_HEIGHT = 1080;
@@ -1858,7 +1870,17 @@ const setTrayTimerState = (next = {}) => {
 const createTray = () => {
   if (process.platform !== 'win32') return;
 
-  const trayIconPath = path.join(__dirname, 'tray-icon.ico');
+  /*
+   * `assets/`, not the package root.
+   *
+   * This read `path.join(__dirname, 'tray-icon.ico')`, which is a path that has
+   * never existed — the file has always been in assets/. So existsSync failed
+   * every time and the tray silently fell back to APP_ICON, meaning the
+   * purpose-built 16px artwork was never once used and Windows downsampled the
+   * 256px app mark instead. A wrong path with a fallback behind it is the kind
+   * of bug that looks like a rendering opinion.
+   */
+  const trayIconPath = path.join(__dirname, 'assets', BRAND.enabled ? 'tray-icon.ico' : 'neutral-tray-icon.ico');
   const iconPath = fs.existsSync(trayIconPath) ? trayIconPath : APP_ICON;
 
   tray = new Tray(iconPath);
