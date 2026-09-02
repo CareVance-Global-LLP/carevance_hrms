@@ -14,6 +14,7 @@ import {
   ConsentNotice,
   PayrollRun,
 } from '@/components/product/screens';
+import { RosterWeek } from '@/components/product/screens-modules';
 import { Panel } from '@/components/product/Frame';
 import { inr } from '@/lib/demo';
 
@@ -25,10 +26,11 @@ export const metadata: Metadata = {
 };
 
 const NOT_CLAIMED = [
-  'Biometric or RFID hardware integration',
-  'Automatic shift rostering or scheduling optimisation',
   'Screen recording — captures are periodic screenshots, not video',
   'Keystroke logging of any kind',
+  'Biometric devices that only offer SDK pull, or sit on a LAN with no outbound route',
+  'A drag-and-drop roster calendar — a one-off day is set through a form',
+  'Scheduling optimisation — the roster generates from a rotation you define, it does not solve for coverage',
 ];
 
 export default function TimeAttendancePage() {
@@ -121,6 +123,72 @@ export default function TimeAttendancePage() {
                 </Panel>
               }
               stat={{ value: '60s', label: 'how often the server-side sweep closes abandoned timers' }}
+            />
+
+            <FeatureBlock
+              claim="BIO-01"
+              eyebrow="Biometric terminals"
+              title="The fourth capture path: the fingerprint reader on the wall."
+              body="Attendance terminals from eSSL, ZKTeco, Biomax and Matrix speak a push protocol called ADMS. CareVance implements it, so a factory floor with a reader by the door feeds the same attendance record a laptop tracker does — and the same payroll run reads both."
+              points={[
+                { text: 'A device serial must be registered by an admin before anything is accepted', claim: 'BIO-02' },
+                { text: 'Punches are unique on device, device user and timestamp, so a replayed request is a no-op', claim: 'BIO-03' },
+                { text: 'Unclaimed punches are KEPT, not dropped — claiming the device user ID attaches the backlog', claim: 'BIO-06' },
+                { text: 'A device that has stopped reporting is distinguished from one that never has: conflating them teaches an admin to ignore the warning', claim: 'BIO-05' },
+              ]}
+              screen={
+                <Panel label="Biometric devices">
+                  <div className="p-4">
+                    <ul className="grid gap-2">
+                      {[
+                        { serial: 'ESSL-8841', where: 'Gate A', state: 'reporting', tone: 'ok' },
+                        { serial: 'ZKT-2210', where: 'Shop floor', state: 'stale · 3d', tone: 'warn' },
+                        { serial: 'BMX-0417', where: 'Registered 2m ago', state: 'awaiting first punch', tone: 'new' },
+                      ].map((d) => (
+                        <li key={d.serial} className="flex items-center justify-between gap-3 rounded-lg border border-n-200 px-3 py-2">
+                          <span className="min-w-0">
+                            <span className="block text-[12px] font-semibold text-n-900">{d.serial}</span>
+                            <span className="block text-[11px] text-n-600">{d.where}</span>
+                          </span>
+                          <span
+                            className={
+                              d.tone === 'ok'
+                                ? 'shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700'
+                                : d.tone === 'warn'
+                                  ? 'shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700'
+                                  : 'shrink-0 rounded bg-n-100 px-1.5 py-0.5 text-[10px] font-semibold text-n-600'
+                            }
+                          >
+                            {d.state}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-3 border-t border-n-200 pt-2.5 text-[11px] leading-4 text-n-600">
+                      The third device is <b>new</b>, not broken. A terminal registered two minutes
+                      ago announcing “no attendance is arriving” is how an admin learns to ignore
+                      the warning by the time it means something.
+                    </p>
+                  </div>
+                </Panel>
+              }
+            />
+
+            <FeatureBlock
+              claim="ROS-04"
+              flip
+              eyebrow="Rostering"
+              title="Publishing is the act that makes a roster real."
+              body="A manager builds next month in the open without changing what attendance expects of anybody today, because draft days are invisible to shift resolution. That is why publishing is a separate act rather than implied by saving — and why regenerating a month never overwrites a decision somebody made by hand."
+              points={[
+                { text: 'An off day is a ROW, not a missing row: being told you are off differs from nobody scheduling you', claim: 'ROS-02' },
+                { text: 'A rostered rest day does not fall through to the standing assignment', claim: 'ROS-03' },
+                { text: 'Regenerating replaces only rows it produced — a manual change on the 14th survives', claim: 'ROS-05' },
+                { text: 'A past day is never rewritten; it is the record attendance was measured against', claim: 'ROS-06' },
+                { text: 'Cycle length is in DAYS — a four-on-four-off runs on eight, which a week-based model cannot express', claim: 'ROS-07' },
+                { text: 'A swap needs three parties: the counterparty agrees AND a manager approves', claim: 'ROS-08' },
+              ]}
+              screen={<RosterWeek />}
             />
 
             <FeatureBlock

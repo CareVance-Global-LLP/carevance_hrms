@@ -130,17 +130,28 @@ export default function WhyPage() {
               pretend the architecture compensates for the gaps.
             </p>
             <p>
-              There is <strong>no recruitment module</strong>. No applicant tracking, no candidate
-              pipeline, no offer letters, no e-signature, no background verification. For a company
-              whose main pain is hiring throughput, most of a Keka or Darwinbox comparison turns on
-              exactly that, and we lose it.
+              <strong>Nobody can apply to you.</strong> There is a full hiring pipeline behind the
+              login — openings, stages, panel feedback, an offer approval chain, a signed letter —
+              and no public careers page in front of it. If your bottleneck is inbound applicant
+              volume, that is the wrong shape of product.
             </p>
             <p>
-              There is <strong>no SSO or SAML</strong>, which gates a meaningful share of enterprise
-              deals on its own. There is <strong>no multi-entity layer</strong>: one organisation is
-              one PAN and one TAN. <strong>Leave is a flat annual quota</strong> with no accrual or
-              pro-rating. And ten statutory declaration forms are registered but cannot be
-              generated, because their templates have not been written.
+              <strong>SCIM syncs people but not groups.</strong> Single sign-on works, and
+              deprovisioning genuinely revokes tokens rather than setting a flag. But somebody
+              arrives from your directory without the role they should have, and for an
+              identity-led procurement that is the gap that matters.
+            </p>
+            <p>
+              <strong>Background verification has no vendor.</strong> <strong>Accounting export
+              produces a file, not an API call.</strong> <strong>The roster has no drag-and-drop.</strong>{' '}
+              <strong>Biometric ingestion is push only</strong>, so a terminal on a LAN with no
+              outbound route cannot reach us. And four of the twenty-three statutory documents are
+              preparation sheets rather than returns.
+            </p>
+            <p>
+              <strong>It is English only.</strong> No i18n layer of any kind. On a shop floor that
+              caps self-service adoption more than any missing module does, and it is the gap we
+              are least comfortable with.
             </p>
             <p>
               If any of those is your deciding requirement, the right answer is a different product,

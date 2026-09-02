@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { EMPLOYEE, PERIOD, TRACKED, ATTENDANCE, GROSS, NET_PAY, inr, num } from '@/lib/demo';
 import { cn } from '@/components/ui/primitives';
 
 /**
@@ -24,54 +23,26 @@ import { cn } from '@/components/ui/primitives';
  *    paints immediately; nothing that fades in is allowed to be the largest
  *    contentful paint, which is why the hero copy is not animated at all.
  *
- * 3. anime.js owns these nodes, and motion/react never touches them. One
- *    library per element — two would fight over the same transform.
+ * 3. anime.js owns these nodes, and nothing else touches their transform. One
+ *    owner per element — two would fight over the same property.
+ *
+ * 4. THE DATA ARRIVES AS A PROP. This is a client component, so importing
+ *    lib/demo here would bundle the WHOLE demo dataset — every payslip line,
+ *    the run roster, the differences report — into the browser payload for the
+ *    five numbers this actually renders. The server page builds the array and
+ *    passes it down, which kept ~9 KB gzipped out of the initial chunk.
  */
 
-const NODES = [
-  {
-    key: 'tracked',
-    stage: 'Tracked',
-    caption: TRACKED.dateShort,
-    value: TRACKED.hours,
-    detail: `${TRACKED.activeShare}% active · ${TRACKED.idleRecovered} idle rewound`,
-    tone: 'dark' as const,
-  },
-  {
-    key: 'attendance',
-    stage: 'Attendance',
-    caption: PERIOD.monthShort,
-    value: `${ATTENDANCE.present}/${ATTENDANCE.workingDays}`,
-    detail: `${ATTENDANCE.totalHours} · ${ATTENDANCE.lop} LOP days`,
-    tone: 'light' as const,
-  },
-  {
-    key: 'run',
-    stage: 'Payroll run',
-    caption: EMPLOYEE.name,
-    value: num(GROSS),
-    detail: 'gross, from the synced attendance',
-    tone: 'light' as const,
-  },
-  {
-    key: 'statutory',
-    stage: 'Statutory',
-    caption: 'PF · PT · TDS',
-    value: '8,704',
-    detail: 'ESI nil — gross above ₹21,000',
-    tone: 'light' as const,
-  },
-  {
-    key: 'payslip',
-    stage: 'Payslip',
-    caption: EMPLOYEE.name,
-    value: num(NET_PAY),
-    detail: 'net pay, paid by bank file',
-    tone: 'brand' as const,
-  },
-];
+export interface ChainNode {
+  key: string;
+  stage: string;
+  caption: string;
+  value: string;
+  detail: string;
+  tone: 'dark' | 'light' | 'brand';
+}
 
-export function ChainHero() {
+export function ChainHero({ nodes }: { nodes: readonly ChainNode[] }) {
   const root = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
 
@@ -173,7 +144,7 @@ export function ChainHero() {
         </svg>
 
         <ol className="relative z-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:gap-4">
-          {NODES.map((node, i) => (
+          {nodes.map((node, i) => (
             <li key={node.key} data-chain-node className="relative">
               <ChainCard {...node} index={i} />
             </li>

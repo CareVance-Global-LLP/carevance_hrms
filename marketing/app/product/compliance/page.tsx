@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/primitives';
 import { ProductHero, FeatureBlock, ProductCta } from '@/components/product/PageParts';
 import { StatutoryBreakdown, FilingsList, EmployerCost } from '@/components/product/screens';
+import { WorkingTimeBreaches, JournalPreview } from '@/components/product/screens-modules';
 import { Panel } from '@/components/product/Frame';
 
 export const metadata: Metadata = {
@@ -21,8 +22,15 @@ export const metadata: Metadata = {
   alternates: { canonical: '/product/compliance' },
 };
 
-/** The 13 that generate. Named, because a count alone is not checkable. */
-const GENERATES = [
+/**
+ * The 19 that are returns, named — because a count alone is not checkable.
+ *
+ * An earlier version of this page said 13 generated and 10 were unavailable.
+ * Both numbers were wrong: the ten missing blade templates have since been
+ * written. The honest distinction is no longer available-vs-unavailable, it is
+ * return-vs-preparation-sheet. See PRODUCT_TRUTH.md FIL-06.
+ */
+const RETURNS = [
   { label: 'PF ECR', note: 'EPFO electronic challan-cum-return' },
   { label: 'Full ECR', note: 'complete member-wise return' },
   { label: 'ESI Challan', note: 'ESIC contribution challan' },
@@ -32,22 +40,34 @@ const GENERATES = [
   { label: 'Form 12BA', note: 'perquisites statement' },
   { label: 'PT Return', note: 'state professional tax' },
   { label: 'LWF Return', note: 'labour welfare fund' },
+  { label: 'Form 19', note: 'EPF final settlement claim' },
+  { label: 'Form 31', note: 'EPF partial withdrawal' },
+  { label: 'Form 2', note: 'EPF/EPS nomination and declaration' },
+  { label: 'Form 6', note: 'EPS revised nomination' },
+  { label: 'Form 124', note: 'LWF statement' },
+  { label: 'UAN Activation', note: 'member declaration' },
   { label: 'Bonus — Form C', note: 'Payment of Bonus Act' },
   { label: 'Bonus — Form D', note: 'Payment of Bonus Act' },
   { label: 'Bonus — Form E', note: 'Payment of Bonus Act' },
   { label: 'Bonus (combined)', note: 'C, D and E together' },
 ];
 
-/** The 10 that do not. Named too — that is the whole point. */
-const UNAVAILABLE = [
-  'Form 1', 'Form 2', 'Form 6', 'Form 19', 'Form 31', 'Form 124',
-  'e-SHRAM registration', 'UAN activation', 'S&E registration', 'Shram card',
+/** The 4 that generate output but are NOT returns. Named, because that matters. */
+const PREPARATION_SHEETS = [
+  { label: 'e-SHRAM registration', why: 'e-SHRAM covers unorganised workers, so most of a PF-deducting payroll is ineligible.' },
+  { label: 'Shram card', why: 'A worksheet for the state portal, not a return in itself.' },
+  { label: 'S&E registration', why: 'Shops & Establishments registration is state legislation, filed on each state’s own form.' },
+  { label: 'Form 1', why: 'A preparation sheet rather than a submission.' },
 ];
 
 const FAQS = [
   {
-    q: 'How many statutory returns can CareVance actually produce?',
-    a: 'Thirteen. Twenty-three generator types are registered, and ten of them report as unavailable because their statutory templates have not been written. Availability is resolved against the filesystem rather than a hand-kept flag, so the product cannot advertise a return it is unable to write.',
+    q: 'How many statutory documents can CareVance actually produce?',
+    a: 'Twenty-three generate output, and nineteen of those are returns. The other four — e-SHRAM registration, the Shram card, S&E registration and Form 1 — are preparation sheets rather than returns, and the templates say so on their face. Availability is resolved against the filesystem rather than a hand-kept flag, so the product cannot advertise a return it is unable to write.',
+  },
+  {
+    q: 'Does CareVance file the returns for me?',
+    a: 'No. Every filing is a document you download and upload to the relevant portal. Nothing here submits anything on your behalf, and we would rather say that plainly than let "compliance automation" imply otherwise.',
   },
   {
     q: 'What is the ESI contribution-period rule?',
@@ -204,6 +224,94 @@ export default function CompliancePage() {
             />
 
             <FeatureBlock
+              claim="SWT-01"
+              flip
+              eyebrow="Working-hour law"
+              title="Limits are properties of the premises, not a policy somebody configured."
+              body="How long somebody may work, and what overtime is worth, are set by the Factories Act and the state Shops & Establishments Acts. So they live on the legal entity — with the provision each number comes from — rather than as literals scattered through the engines that apply them. When a state amends a limit, one file changes."
+              points={[
+                { text: 'An exemption is READ from the entity, never inferred from an address: s.55 allows six hours instead of five only by written order of the Chief Inspector, so a Gujarat factory without that order is still on five', claim: 'SWT-03' },
+                { text: 'S&E limits are deliberately thinner — the Acts genuinely differ by state, so a daily ceiling is left null rather than guessed. A compliance screen that cries wolf gets switched off', claim: 'SWT-04' },
+                { text: 'The overtime floor is computed always and applied only on request: raising a live payroll rate because somebody deployed a release is not the engine\u2019s decision', claim: 'SWT-07' },
+                { text: 'The register measures excess over nine hours a day or forty-eight a week — s.59 — not excess over the rostered shift', claim: 'SWT-08' },
+                { text: 'A rest interval is one qualifying break, not the sum of several: two fifteen-minute teas are not a half hour under s.55', claim: 'SWT-09' },
+              ]}
+              screen={<WorkingTimeBreaches />}
+            />
+
+            <FeatureBlock
+              claim="SWT-06"
+              eyebrow="Honesty in a report"
+              title="&ldquo;Unregulated&rdquo; means unassessed, not compliant."
+              body="An employee with no legal entity assigned has no limits to be measured against. Folding those people into the clear column produces a green tick that means nothing — and nobody re-checks a clean compliance report. So they are counted separately, by name, as not assessed."
+              points={[
+                { text: 'The breach list returns is_regulated: false and an empty array, never a pass', claim: 'SWT-06' },
+                { text: 'The register prices ASSESSED hours, not approved ones — pricing only approved rows returns zero for everything pending, which reads as overtime worked and nothing owed', claim: 'SWT-10' },
+                { text: 'An employee with no annual CTC yields a null amount, never a zero, and the totals surface how many rows could not be priced', claim: 'SWT-10' },
+              ]}
+              screen={<WorkingTimeBreaches />}
+            />
+
+            <FeatureBlock
+              claim="ENT-01"
+              flip
+              eyebrow="Legal entities"
+              title="One organisation, several registered companies."
+              body="Each legal entity carries its own PAN, TAN, PF and ESI codes, plus its establishment type and any recorded exemption. A resolver decides which entity an employee files under, defaulting to the primary — and filings generate per entity rather than per workspace."
+              points={[
+                { text: 'Filings generate per entity, resolved per employee', claim: 'FIL-07' },
+                { text: 'Establishment type and exemptions drive the working-hour assessment', claim: 'ENT-04' },
+                { text: 'Configured under Settings, Legal entities', claim: 'ENT-05' },
+              ]}
+              screen={
+                <Panel label="Legal entities">
+                  <ul className="divide-y divide-n-100">
+                    {[
+                      { name: 'CareVance Global LLP', type: 'Head office \u00b7 S&E', primary: true },
+                      { name: 'CareVance Manufacturing Pvt Ltd', type: 'Factory \u00b7 Maharashtra', primary: false },
+                    ].map((e) => (
+                      <li key={e.name} className="px-4 py-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-[12.5px] font-semibold text-n-900">
+                            {e.name}
+                          </span>
+                          {e.primary && (
+                            <span className="shrink-0 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-800">
+                              primary
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-[11px] text-n-600">
+                          {e.type} &middot; own PAN, TAN, PF and ESI codes
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="border-t border-n-200 bg-sunken px-4 py-2 text-[11px] leading-4 text-n-600">
+                    The factory is on Factories Act limits; the head office is on state S&amp;E
+                    limits. Same workspace, different statute.
+                  </p>
+                </Panel>
+              }
+            />
+
+            <FeatureBlock
+              claim="ACC-01"
+              eyebrow="Accounting"
+              title="The journal balances exactly, or nothing is produced."
+              body="A payroll run posts as double entry. Debits equal credits to the paisa or the export refuses — because an unbalanced journal is rejected by every accounting system worth the name, and the ones that do not reject it import half, which is considerably worse than a refusal somebody can act on."
+              points={[
+                { text: 'An unmapped component refuses the export and is NAMED — never a suspense account, never omitted', claim: 'ACC-02' },
+                { text: 'PF and ESI payable carry both halves in one credit line, so it reconciles against the single challan that gets paid', claim: 'ACC-04' },
+                { text: 'Computed in bcmath and rounded once: a float sum drifts by a paisa across a few hundred employees, and a paisa is the difference between balanced and rejected', claim: 'ACC-03' },
+                { text: 'Tally sign convention is backwards — a debit is a negative amount. Get it the intuitive way round and the voucher still imports, it just posts every salary as income', claim: 'ACC-05' },
+                { text: 'Zoho Books gets a separate exporter rather than a flag, because the two formats disagree about something fundamental', claim: 'ACC-07' },
+              ]}
+              screen={<JournalPreview />}
+              flip
+            />
+
+            <FeatureBlock
               claim="STA-06"
               flip
               eyebrow="Income tax"
@@ -227,23 +335,24 @@ export default function CompliancePage() {
           <div className="max-w-2xl">
             <Eyebrow>Filings</Eyebrow>
             <SectionTitle className="mt-3">
-              Thirteen generate. Ten do not. Both lists are here.
+              Twenty-three documents. Nineteen of them are returns.
             </SectionTitle>
             <Lead className="mt-4">
               Availability is resolved against the filesystem rather than a flag someone maintains
               by hand, so the product physically cannot advertise a return it is unable to write.
-              Writing the missing templates is real statutory work, not a configuration step.
+              The distinction worth caring about is not whether a document generates — they all do —
+              but whether it is a <em>return</em>.
             </Lead>
           </div>
 
-          <div className="mt-10 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+          <div className="mt-10 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <Card className="p-6">
               <p className="flex items-center gap-2 text-caption uppercase text-emerald-700">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                Generates today — {GENERATES.length}
+                Statutory returns — {RETURNS.length}
               </p>
               <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-                {GENERATES.map((f) => (
+                {RETURNS.map((f) => (
                   <li key={f.label} className="text-[13.5px] leading-5">
                     <span className="font-semibold text-n-900">{f.label}</span>
                     <span className="block text-[11.5px] text-n-600">{f.note}</span>
@@ -252,24 +361,33 @@ export default function CompliancePage() {
               </ul>
             </Card>
 
-            <Card className="border-n-300 p-6">
-              <p className="flex items-center gap-2 text-caption uppercase text-n-600">
-                <span className="h-1.5 w-1.5 rounded-full bg-n-400" aria-hidden="true" />
-                Registered but unavailable — {UNAVAILABLE.length}
+            <Card className="border-accent-200 bg-accent-50 p-6">
+              <p className="flex items-center gap-2 text-caption uppercase text-accent-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent-400" aria-hidden="true" />
+                Preparation sheets, not returns — {PREPARATION_SHEETS.length}
               </p>
-              <ul className="mt-4 grid gap-1.5">
-                {UNAVAILABLE.map((f) => (
-                  <li key={f} className="text-[13.5px] text-n-600">
-                    {f}
+              <ul className="mt-4 grid gap-3">
+                {PREPARATION_SHEETS.map((f) => (
+                  <li key={f.label} className="text-[13.5px] leading-5">
+                    <span className="font-semibold text-n-900">{f.label}</span>
+                    <span className="mt-0.5 block text-[11.5px] leading-4 text-n-600">{f.why}</span>
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 border-t border-n-200 pt-3 text-[12px] leading-5 text-n-600">
-                These report as unavailable with a stated reason rather than failing when you click.
-                They are listed rather than hidden, because the product must be able to say{' '}
-                <em>why</em> they are missing.
+              <p className="mt-4 border-t border-accent-200/70 pt-3 text-[12px] leading-5 text-n-700">
+                These produce a document, and each says on its face that it is a preparation sheet.
+                Calling them returns would be the easiest four numbers on this page to inflate.
               </p>
             </Card>
+          </div>
+
+          <div className="mt-6 rounded-xl border border-n-300 bg-card p-5">
+            <p className="text-[14px] leading-6 text-n-700">
+              <strong className="text-n-900">And nothing here submits anything.</strong> Every
+              filing is a file you download and upload to the relevant portal. There is no
+              integration with EPFO, ESIC, NSDL or any state portal, and “compliance automation”
+              should not be read as implying one.
+            </p>
           </div>
         </Container>
       </Section>

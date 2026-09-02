@@ -158,23 +158,34 @@ export default function ProductOverview() {
           <SectionTitle className="mt-3">What CareVance is not</SectionTitle>
           <div className="mt-5 grid gap-4 text-[15px] leading-7 text-n-700">
             <p>
-              It is not a recruitment system. There is no applicant tracking, no job posting, no
-              candidate pipeline, no offer letter and no e-signature. If your evaluation is
-              hire-to-retire, the hire half is missing and no amount of framing changes that.
+              <strong>Candidates cannot apply to you.</strong> Hiring is here — openings, a
+              configurable pipeline, panel feedback, offers with an approval chain, a signed offer
+              letter — but there is no public careers page. Somebody records a candidate; the
+              candidate does not record themselves.
             </p>
             <p>
-              It is not an enterprise identity platform. Google OAuth is the only federated
-              sign-in; SAML, SCIM and directory sync do not exist. Two-factor authentication does,
-              and can be enforced.
+              <strong>Background verification has no vendor behind it.</strong> The consent
+              machinery, the scope enforcement and the findings model are all real. What is missing
+              is a connection to AuthBridge or IDfy, so a human enters what the check found.
             </p>
             <p>
-              It does not model multiple legal entities. One organisation is one PAN, one TAN and
-              one PF code — a group with three registered companies needs three workspaces today.
+              <strong>SCIM syncs people, not groups.</strong> SAML single sign-on works and
+              deprovisioning genuinely revokes access. But <code>/Groups</code> is unimplemented,
+              so somebody arrives from your directory without the role they should have.
             </p>
             <p>
-              And leave is a flat annual quota. No accrual schedule, no pro-rating for a mid-year
-              joiner, no per-type carry-forward caps. It works, and it is simpler than what a
-              1,000-person company will want.
+              <strong>The roster has no drag-and-drop.</strong> Rotations, generation, publishing,
+              coverage and three-party swaps all exist. Moving one person to nights on the 14th is
+              a form, not a drag.
+            </p>
+            <p>
+              <strong>Accounting export produces a file.</strong> The journal is real double-entry
+              and it balances or nothing is produced — but it lands as Tally XML or a Zoho Books
+              CSV that somebody imports, not as an API call into either.
+            </p>
+            <p>
+              <strong>And it is English only.</strong> There is no i18n layer of any kind, which
+              caps self-service adoption on a shop floor more than any missing feature does.
             </p>
           </div>
           <p className="mt-6 text-[13px] leading-6 text-n-600">

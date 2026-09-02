@@ -7,6 +7,7 @@ import { themeScript } from '@/components/chrome/theme';
 import { Navbar } from '@/components/chrome/Navbar';
 import { Footer } from '@/components/chrome/Footer';
 import { Cursor } from '@/components/motion/Cursor';
+import { ScrollProgress } from '@/components/motion/ScrollProgress';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -82,6 +83,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-sans antialiased">
+        <ScrollProgress />
         <Cursor />
         <Navbar />
         <main id="main">{children}</main>

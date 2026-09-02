@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+<meta charset="utf-8" />
+<title>CareVance — Product Guide</title>
+<style>
+  /*
+   * Print stylesheet for the product brochure.
+   *
+   * A4 with a 14mm margin, one <section class="page"> per printed page. The
+   * page break is forced rather than left to the flow: a brochure whose
+   * sections drift across page boundaries between builds cannot be checked
+   * against a page count, and this document is verified at 18-20 pages.
+   *
+   * Colours are the app's own brand tokens (frontend/src/styles/theme.css) so
+   * the brochure, the website and the product look like one company. The gold
+   * is taken from the logo mark.
+   */
+  :root {
+    --brand-50:  rgb(240 247 248);
+    --brand-100: rgb(217 235 237);
+    --brand-500: rgb(93 150 157);
+    --brand-700: rgb(61 101 107);
+    --brand-800: rgb(48 80 86);
+    --brand-900: rgb(35 59 64);
+    --gold:      #D9A33A;
+    --ink:       #14181C;
+    --muted:     #5A6771;
+    --line:      #DCE3E6;
+    --paper:     #FFFFFF;
+  }
+
+  @page { size: A4; margin: 14mm 14mm 16mm; }
+
+  /*
+   * The cover bleeds to the paper edge, which a negative margin cannot do
+   * reliably — it changes where the element paints without changing how much
+   * room it takes in the flow, so a full-height cover spills onto a second,
+   * blank sheet. A named page with no margin is the mechanism that actually
+   * exists for this.
+   */
+  @page cover { margin: 0; }
+  .page-cover { page: cover; }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.2pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    page-break-after: always;
+    break-after: page;
+    position: relative;
+    min-height: 245mm;
+  }
+  .page:last-of-type { page-break-after: auto; break-after: auto; }
+
+  /* ── Type ─────────────────────────────────────────────────────────── */
+  h1 { font-size: 30pt; line-height: 1.1; letter-spacing: -0.5pt; margin: 0 0 6pt; }
+  h2 {
+    font-size: 17pt; line-height: 1.15; letter-spacing: -0.3pt;
+    margin: 0 0 3pt; color: var(--brand-900);
+  }
+  h3 {
+    font-size: 11.5pt; margin: 13pt 0 4pt; color: var(--brand-800);
+    letter-spacing: -0.1pt;
+  }
+  p { margin: 0 0 7pt; }
+  .lede { font-size: 11pt; color: var(--muted); margin: 0 0 12pt; max-width: 165mm; }
+
+  .eyebrow {
+    font-size: 7.5pt; font-weight: 700; letter-spacing: 1.6pt;
+    text-transform: uppercase; color: var(--brand-500); margin: 0 0 5pt;
+  }
+
+  .rule { height: 2.5pt; width: 46pt; background: var(--gold); margin: 0 0 11pt; border-radius: 2pt; }
+
+  /* ── Layout helpers ───────────────────────────────────────────────── */
+  .cols-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9pt 16pt; }
+  .cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 9pt 12pt; }
+
+  /* ── Feature list: the workhorse of this document ─────────────────── */
+  .feat { margin: 0 0 8pt; break-inside: avoid; }
+  .feat h4 {
+    font-size: 9.6pt; margin: 0 0 1.5pt; color: var(--ink); font-weight: 700;
+  }
+  .feat p { margin: 0; font-size: 9pt; color: var(--muted); line-height: 1.45; }
+
+  /* ── Tables ───────────────────────────────────────────────────────── */
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt; font-size: 9pt; }
+  th {
+    text-align: left; padding: 5pt 7pt; background: var(--brand-800); color: #fff;
+    font-size: 8pt; letter-spacing: 0.5pt; text-transform: uppercase; font-weight: 700;
+  }
+  td { padding: 5pt 7pt; border-bottom: 0.6pt solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: #FAFCFC; }
+  td strong { color: var(--brand-900); }
+
+  /* ── Callouts ─────────────────────────────────────────────────────── */
+  .note {
+    border-left: 3pt solid var(--gold); background: #FDF9F1;
+    padding: 7pt 10pt; margin: 9pt 0; font-size: 8.8pt; break-inside: avoid;
+  }
+  .note strong { color: #8A6417; }
+
+  .keypoint {
+    background: var(--brand-50); border: 0.6pt solid var(--brand-100);
+    border-radius: 4pt; padding: 8pt 10pt; margin: 9pt 0; font-size: 9pt;
+    break-inside: avoid;
+  }
+  .keypoint strong { color: var(--brand-800); }
+
+  .glossary {
+    background: #F7FAFA; border: 0.6pt solid var(--line); border-radius: 4pt;
+    padding: 8pt 10pt; margin: 8pt 0; font-size: 8.6pt; break-inside: avoid;
+  }
+  .glossary dt { font-weight: 700; color: var(--brand-800); float: left; clear: left; margin-right: 5pt; }
+  .glossary dd { margin: 0 0 2.5pt; color: var(--muted); }
+
+  /* ── Step flow ────────────────────────────────────────────────────── */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10pt; margin: 12pt 0; }
+  .step {
+    border: 0.8pt solid var(--line); border-radius: 5pt; padding: 10pt; break-inside: avoid;
+  }
+  .step .n {
+    width: 17pt; height: 17pt; border-radius: 50%; background: var(--brand-700);
+    color: #fff; font-size: 8.5pt; font-weight: 700; display: flex;
+    align-items: center; justify-content: center; margin-bottom: 5pt;
+  }
+  .step h4 { margin: 0 0 2pt; font-size: 9.6pt; }
+  .step p { margin: 0; font-size: 8.6pt; color: var(--muted); }
+
+  /* ── Cover ────────────────────────────────────────────────────────── */
+  /*
+   * Full bleed, and the arithmetic matters.
+   *
+   * The @page margin is 14mm top / 14mm sides / 16mm bottom, so the content box
+   * is 297 − 14 − 16 = 267mm tall. Pulling the cover out by exactly those
+   * margins and giving it the full 297mm paper height makes the space it
+   * occupies in the flow 297 − 14 − 16 = 267mm — precisely the content box.
+   *
+   * An earlier version used `min-height: 273mm` with no negative bottom margin.
+   * That is 6mm taller than the box, which is invisible on screen and produced
+   * a 21st blank page in the PDF. Print overflow does not warn; it just adds a
+   * sheet.
+   */
+  .cover {
+    background: linear-gradient(155deg, var(--brand-900) 0%, var(--brand-700) 62%, var(--brand-500) 100%);
+    color: #fff;
+    padding: 40mm 22mm 24mm;
+    height: 297mm;
+    overflow: hidden;
+  }
+  .page-cover { min-height: 0; }
+  .cover svg { width: 62mm; height: auto; margin-bottom: 26mm; }
+  .cover h1 { font-size: 40pt; max-width: 150mm; }
+  .cover .sub { font-size: 13pt; opacity: 0.9; max-width: 130mm; margin-top: 10pt; line-height: 1.45; }
+  .cover .meta { margin-top: 30mm; font-size: 9pt; opacity: 0.75; }
+  .cover .chips { margin-top: 16mm; display: flex; gap: 7pt; flex-wrap: wrap; }
+  .cover .chip {
+    border: 0.8pt solid rgba(255,255,255,0.4); border-radius: 20pt;
+    padding: 3.5pt 10pt; font-size: 8.4pt;
+  }
+
+  /* ── Contents ─────────────────────────────────────────────────────── */
+  .toc { font-size: 10pt; }
+  .toc li { margin-bottom: 5pt; }
+  .toc .t { font-weight: 700; color: var(--brand-900); }
+  .toc .d { color: var(--muted); font-size: 9pt; }
+
+  .footer-note {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    font-size: 7.5pt; color: #9AA6AE; border-top: 0.5pt solid var(--line); padding-top: 4pt;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ 1 · COVER ═══════════════════ -->
+<section class="page page-cover">
+  <div class="cover">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 160" aria-label="CareVance">
+      <g fill="none" fill-rule="evenodd">
+        <g transform="translate(10 10)">
+          <circle cx="70" cy="70" r="52" stroke="#D9A33A" stroke-width="12" stroke-dasharray="265 40" stroke-linecap="round"/>
+          <path d="M44 72l18 18 34-38" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <text x="170" y="88" fill="#FFFFFF" font-family="Segoe UI, sans-serif" font-size="54" font-weight="700" letter-spacing="2">CAREVANCE</text>
+        <text x="172" y="116" fill="#D9A33A" font-family="Segoe UI, sans-serif" font-size="17" letter-spacing="5.5">TRUST THE PROCESS</text>
+      </g>
+    </svg>
+
+    <h1>The hours worked and the salary paid are the same record.</h1>
+    <p class="sub">
+      HR, attendance and payroll for India — built as one system, so nobody
+      copies numbers between tools on the 25th of the month.
+    </p>
+
+    <div class="chips">
+      <span class="chip">Time &amp; attendance</span>
+      <span class="chip">Payroll</span>
+      <span class="chip">Statutory filing</span>
+      <span class="chip">Core HR</span>
+      <span class="chip">Hiring</span>
+    </div>
+
+    <p class="meta">Product guide · August 2026</p>
+  </div>
+</section>
+
+<!-- ═══════════════════ 2 · THE PROBLEM ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Why this exists</p>
+  <div class="rule"></div>
+  <h2>Most companies run this on five tools and a spreadsheet</h2>
+  <p class="lede">
+    And the join between them is a person, once a month, under time pressure.
+  </p>
+
+  <p>
+    A typical setup looks like this. A biometric machine or a tracking tool
+    records who worked. An HR system holds leave. A spreadsheet holds salary
+    structures. A payroll tool computes the pay. An accountant re-types the
+    totals into Tally. Five places, and nothing checks that they agree.
+  </p>
+
+  <p>
+    The failure is always the same shape. Somebody exports a file on the 25th,
+    the columns have shifted, or a mid-month joiner is missed, or a leave
+    approval never reached payroll. It is found in the following month, if it is
+    found at all — and by then the money has moved.
+  </p>
+
+  <div class="keypoint">
+    <strong>Who this is for.</strong> Companies of roughly 10 to 500 people in
+    India who run monthly payroll and have to file provident fund, employee
+    insurance, professional tax and income-tax returns. It suits organisations
+    with shift work, field staff or remote teams particularly well, because
+    those are the cases where attendance is hardest to establish.
+  </div>
+
+  <h3>The whole product, in six steps</h3>
+  <p>
+    This is everything in order. Each section of this guide is a detailed look
+    at one of these six.
+  </p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="n">1</div>
+      <h4>Work is recorded</h4>
+      <p>A desktop app, a phone, a biometric machine on the wall, or a browser add-on. Whichever a company uses, it arrives in the same place.</p>
+    </div>
+    <div class="step">
+      <div class="n">2</div>
+      <h4>It becomes attendance</h4>
+      <p>Recorded work is measured against the shift the person was meant to work, producing present, half day, absent or on leave.</p>
+    </div>
+    <div class="step">
+      <div class="n">3</div>
+      <h4>Payroll is run</h4>
+      <p>The attendance comes into the run without anyone exporting it. Salary, deductions and taxes are calculated from it.</p>
+    </div>
+    <div class="step">
+      <div class="n">4</div>
+      <h4>Salary is paid</h4>
+      <p>A bank transfer file is produced in the bank's own format, and every payslip is issued from the same figures.</p>
+    </div>
+    <div class="step">
+      <div class="n">5</div>
+      <h4>Returns are filed</h4>
+      <p>Provident fund, insurance, professional tax and income-tax documents are generated from that run, ready to upload.</p>
+    </div>
+    <div class="step">
+      <div class="n">6</div>
+      <h4>Books are updated</h4>
+      <p>The run becomes a double-entry journal for Tally or Zoho Books, so nobody re-types salary figures into the accounts.</p>
+    </div>
+  </div>
+
+  <h3>The one thing worth understanding</h3>
+  <p>
+    In most products, steps 1 and 3 belong to different systems. That is why a
+    payslip and a timesheet can disagree, and why the answer to "why was I paid
+    this?" is usually a spreadsheet somebody has to dig out. Here they are the
+    same record: the minute recorded in step 1 is the minute the payslip in step
+    4 is built from, and the return in step 5 is generated from that same
+    payslip. That is the whole design, and everything else follows from it.
+  </p>
+</section>
+
+<!-- ═══════════════════ 4 · RECORDING WORK — DESKTOP ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 1 · Recording the work</p>
+  <div class="rule"></div>
+  <h2>The desktop app</h2>
+  <p class="lede">
+    Installed on a laptop or desktop. Runs on Windows, macOS and Linux. Used by
+    office, remote and hybrid teams.
+  </p>
+
+  <h3>Timing the work</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Start and stop</h4>
+      <p>A person clicks start when they begin and stop when they finish. The time is saved against a project and task if one is chosen, so hours can later be attributed to client work.</p>
+    </div>
+    <div class="feat">
+      <h4>Two timers at once</h4>
+      <p>A second piece of work can be timed alongside the main one without stopping it — useful where a support task interrupts project work.</p>
+    </div>
+    <div class="feat">
+      <h4>Works offline</h4>
+      <p>If the connection drops, the app keeps recording to disk and uploads when it returns. It saves the moment the person actually clicked, not the moment it reached the server, so hours land in the correct month.</p>
+    </div>
+    <div class="feat">
+      <h4>Screenshots</h4>
+      <p>Taken automatically while the timer runs, at whatever interval the company sets. Consent is required first — see page 6.</p>
+    </div>
+  </div>
+
+  <h3>Idle time — the part that decides whether hours are trusted</h3>
+  <p>
+    Idle handling is where most tracking tools quietly overcharge. If someone
+    leaves their desk with the timer running, a naive tool bills the gap.
+  </p>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>The timer stops itself</h4>
+      <p>After five minutes with no typing or mouse movement, the timer stops — and it <strong>backdates the stop to the last real activity</strong>, so the idle gap is never counted as work.</p>
+    </div>
+    <div class="feat">
+      <h4>The person is told</h4>
+      <p>An email goes out when idle time has stopped a timer, so it is discovered immediately rather than at the end of the month.</p>
+    </div>
+    <div class="feat">
+      <h4>A closed laptop cannot leave it running</h4>
+      <p>If the machine sleeps or the app dies, the server closes the timer using the same rule. A sleeping laptop cannot report fifteen hours.</p>
+    </div>
+    <div class="feat">
+      <h4>Genuine offline work is not lost</h4>
+      <p>A phone call or reading a document looks like idle time. The company picks one rule: always count it, never count it, or ask the person. Only the person it belongs to can answer — a manager cannot answer for them.</p>
+    </div>
+  </div>
+
+  <div class="keypoint">
+    <strong>Why the backdating matters.</strong> Recording that idle time
+    happened is not the same as billing for it. The system keeps the idle period
+    on the record so it can be seen and questioned, and removes it from the paid
+    hours. Both facts survive.
+  </div>
+</section>
+
+<!-- ═══════════════════ 5 · RECORDING WORK — OTHER THREE ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 1 · Recording the work</p>
+  <div class="rule"></div>
+  <h2>Phones, wall machines and the browser</h2>
+  <p class="lede">
+    Not everyone works at a laptop. Three more ways in, all landing in the same
+    attendance record.
+  </p>
+
+  <h3>The mobile app — for field staff, drivers and site teams</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Punch in from anywhere</h4>
+      <p>Check in and out from an iPhone or Android phone, with the same record as a desk punch.</p>
+    </div>
+    <div class="feat">
+      <h4>Geofencing</h4>
+      <p>Draw a circle on a map around an office or site. A punch from outside it is refused or flagged, depending on the setting. <em>A geofence is simply a boundary drawn on a map.</em></p>
+    </div>
+    <div class="feat">
+      <h4>Attendance selfie</h4>
+      <p>A photo is taken at the moment of punching, with a map view showing where each one was taken — the practical answer to proxy attendance.</p>
+    </div>
+    <div class="feat">
+      <h4>Approvals on the move</h4>
+      <p>Managers approve leave, attendance corrections and overtime from the phone, so a request does not wait for someone to reach a desk.</p>
+    </div>
+  </div>
+
+  <h3>Biometric machines — the fingerprint and face readers already on the wall</h3>
+  <p>
+    Existing devices from eSSL, ZKTeco, Biomax and Matrix can send punches
+    directly into the system. Nothing is installed on an office PC; the machine
+    posts the punches itself.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Unknown machines are refused</h4>
+      <p>A device must be registered by an administrator before any punch from it is accepted, so nobody can inject fake attendance.</p>
+    </div>
+    <div class="feat">
+      <h4>Unclaimed punches are kept</h4>
+      <p>If a machine sends a punch for an ID nobody has claimed, it is stored rather than discarded. When someone claims that ID, the whole history attaches to them.</p>
+    </div>
+    <div class="feat">
+      <h4>A device that stops reporting is surfaced</h4>
+      <p>The settings screen shows any machine that used to report and has gone quiet — the failure that otherwise surfaces on payroll day.</p>
+    </div>
+    <div class="feat">
+      <h4>Repeats are harmless</h4>
+      <p>A punch is unique on the device, the device user and the timestamp, so a machine re-sending its buffer cannot double-count anybody.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Worth knowing.</strong> The machine has to be able to reach the
+    internet. This uses the push protocol (known as ADMS), which those four
+    brands speak. A device that only offers an SDK for a PC to pull data out of,
+    or one sitting on a network with no outbound route, cannot connect.
+  </div>
+
+  <h3>The browser add-on</h3>
+  <p>
+    A small Chrome extension records which websites were open, so the activity
+    list shows the actual site rather than just "browser". Anything after a
+    question mark in a web address is stripped before anyone can see it, because
+    that is where login links and one-time codes hide — and it is stripped when
+    the record is displayed, so it also protects records captured before that
+    rule existed.
+  </p>
+</section>
+
+<!-- ═══════════════════ 6 · PRIVACY ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 1 · Recording the work</p>
+  <div class="rule"></div>
+  <h2>Monitoring people can live with</h2>
+  <p class="lede">
+    Under India's Digital Personal Data Protection Act, the responsibility for
+    collecting employee data lawfully sits with the employer — not with the
+    software supplier. So the controls are built in rather than left to you.
+  </p>
+
+  <h3>How consent works here</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>One gate, every path</h4>
+      <p>Screenshots, activity, web addresses and location all pass through the same consent check. There is no path that captures first and asks later.</p>
+    </div>
+    <div class="feat">
+      <h4>Consent is per type, not one blanket tick</h4>
+      <p>Agreeing to activity tracking is not agreeing to screenshots. Each kind of capture is consented to separately.</p>
+    </div>
+    <div class="feat">
+      <h4>Notices are versioned, never edited</h4>
+      <p>What somebody agreed to is the text they were actually shown. Editing a notice in place would rewrite consent already given, so a change creates a new version.</p>
+    </div>
+    <div class="feat">
+      <h4>It can be withdrawn</h4>
+      <p>Withdrawal takes effect on the next capture attempt, which is then refused. The code path ends — the data is not captured and hidden.</p>
+    </div>
+    <div class="feat">
+      <h4>Attendance is never blocked over privacy</h4>
+      <p>Someone who has not consented to location can still punch in. Only the location is left off. Nobody is marked absent because of a privacy setting.</p>
+    </div>
+    <div class="feat">
+      <h4>Screenshots are purged on a schedule</h4>
+      <p>Kept for the retention period the company sets, then removed automatically.</p>
+    </div>
+  </div>
+
+  <h3>Who can see a capture</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>A manager sees their own team only</h4>
+      <p>Never a colleague at their own level, and never anyone senior to them.</p>
+    </div>
+    <div class="feat">
+      <h4>A screenshot link cannot be forwarded</h4>
+      <p>The link stops working for anyone but the person it was issued to, so a capture cannot be passed around.</p>
+    </div>
+    <div class="feat">
+      <h4>Deleting evidence deducts the time</h4>
+      <p>Where a company lets people delete their own screenshots, the tracked time that screenshot covered is deducted with it. Otherwise deleting the proof while keeping the pay would be possible.</p>
+    </div>
+    <div class="feat">
+      <h4>Break time is never work time</h4>
+      <p>Break types are configured by the company as paid or unpaid, with a daily limit if wanted, and are excluded from worked hours.</p>
+    </div>
+  </div>
+
+  <div class="keypoint">
+    <strong>The practical argument for employees.</strong> Monitoring is easier
+    to accept when the rules are visible and the time is honest. Idle time is
+    removed rather than billed, breaks are excluded, sensitive parts of web
+    addresses are stripped, and captures expire. Those are the terms, and they
+    are the same for everybody.
+  </div>
+</section>
+
+<!-- ═══════════════════ 7 · ATTENDANCE ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 2 · Attendance</p>
+  <div class="rule"></div>
+  <h2>Turning recorded hours into a day</h2>
+  <p class="lede">
+    Attendance is what payroll actually reads. It is recorded work measured
+    against what the person was supposed to work.
+  </p>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Automatic check-in</h4>
+      <p>Someone who forgets to press check in is marked present the moment they start working, rather than losing the day to a missed click.</p>
+    </div>
+    <div class="feat">
+      <h4>Late-mark threshold</h4>
+      <p>The company sets the cut-off. Arriving early records zero minutes late — never credit that could offset a later lateness.</p>
+    </div>
+    <div class="feat">
+      <h4>Several punches a day</h4>
+      <p>The day is made of separate punch pairs which add up to the total, so lunch, site visits and split shifts are handled properly.</p>
+    </div>
+    <div class="feat">
+      <h4>Live view</h4>
+      <p>One screen showing who is in, who is out, who is on leave and who is finishing soon.</p>
+    </div>
+    <div class="feat">
+      <h4>Calendar and register</h4>
+      <p>A month at a glance per person, and a summary across any date range up to 90 days.</p>
+    </div>
+    <div class="feat">
+      <h4>Timezone-aware</h4>
+      <p>Times are shown in each person's own zone, with the zone named — so a 9am start in Manila does not appear as 5:30am to someone in Mumbai.</p>
+    </div>
+  </div>
+
+  <h3>Corrections — when tracking missed real work</h3>
+  <p>
+    This is called <strong>regularisation</strong>. The person asks for time to
+    be added, giving a reason.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Bounded and evidenced</h4>
+      <p>Between ten minutes and ten hours, with a note, and only one open request per day. Checked against the company holiday list.</p>
+    </div>
+    <div class="feat">
+      <h4>Forwarding to the right approver</h4>
+      <p>An approver who is not the right person can pass it up the chain or to a named colleague. The full history of who passed it where is kept.</p>
+    </div>
+    <div class="feat">
+      <h4>Closed months stay closed</h4>
+      <p>Once payroll for a month is complete, a correction for that month is refused with a clear message rather than quietly changing a figure that was already paid.</p>
+    </div>
+    <div class="feat">
+      <h4>Everything lands in one inbox</h4>
+      <p>Leave, corrections, expenses, resignations, offers and payroll approvals all queue in a single approval inbox rather than four separate screens.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 8 · SHIFTS & ROTA ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 2 · Attendance</p>
+  <div class="rule"></div>
+  <h2>Shifts and the rota</h2>
+  <p class="lede">
+    For any company where people do not all work nine to five.
+  </p>
+
+  <h3>Defining a shift</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>The shift itself</h4>
+      <p>Name, timing, length, unpaid break, and how many minutes of lateness are allowed before it counts.</p>
+    </div>
+    <div class="feat">
+      <h4>Night shifts detect themselves</h4>
+      <p>A 10pm to 6am shift is treated as a night shift whether or not anyone ticked a box, because the night allowance depends on it.</p>
+    </div>
+    <div class="feat">
+      <h4>Overtime follows the shift</h4>
+      <p>Someone on a six-hour shift earns overtime after six hours, not after eight.</p>
+    </div>
+    <div class="feat">
+      <h4>Timezone-aware resolution</h4>
+      <p>A shift is resolved in the employee's own timezone, which matters the moment a company has people in more than one city or country.</p>
+    </div>
+  </div>
+
+  <h3>Building the rota</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Rotations in days, not weeks</h4>
+      <p>Set up a cycle such as four days on, four days off. Each person can start at a different point in the cycle, so the whole team does not rest on the same day.</p>
+    </div>
+    <div class="feat">
+      <h4>Next month is a draft until published</h4>
+      <p>A manager builds it without changing what attendance expects of anybody today. Attendance ignores drafts entirely.</p>
+    </div>
+    <div class="feat">
+      <h4>A day off is recorded, not absent</h4>
+      <p>"Told to take the day off" and "nobody scheduled them" stay different facts — which matters when someone asks why they were marked absent.</p>
+    </div>
+    <div class="feat">
+      <h4>Past rotas are never rewritten</h4>
+      <p>Last month's rota stays as the record every attendance day was measured against.</p>
+    </div>
+    <div class="feat">
+      <h4>Regenerating never destroys a decision</h4>
+      <p>Days a manager set by hand are skipped and reported back, so rebuilding a month does not wipe the person moved to nights on the 14th.</p>
+    </div>
+    <div class="feat">
+      <h4>Swaps need three people</h4>
+      <p>The person asking, the colleague accepting, and a manager approving. Shifts are re-read at approval rather than trusted from when the request was made, so two people cannot quietly rewrite the site's cover.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Worth knowing.</strong> The rota is built through forms rather than
+    by dragging shifts around a calendar. Everything can be set — a one-off day
+    is a form, not a drag.
+  </div>
+</section>
+
+<!-- ═══════════════════ 9 · LEAVE ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 2 · Attendance</p>
+  <div class="rule"></div>
+  <h2>Leave</h2>
+  <p class="lede">
+    The part employees interact with most, and the part where a wrong balance
+    causes the loudest arguments.
+  </p>
+
+  <h3>Asking for leave</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>The request</h4>
+      <p>A date range, full day or half day, a leave type and a reason.</p>
+    </div>
+    <div class="feat">
+      <h4>Checked before it is submitted</h4>
+      <p>Weekends are excluded, half days count as half, and a request beyond the balance is refused — telling the person exactly how much they have and how much they asked for.</p>
+    </div>
+    <div class="feat">
+      <h4>Overlaps are caught</h4>
+      <p>Nobody can accidentally book the same days twice.</p>
+    </div>
+    <div class="feat">
+      <h4>Cancellation</h4>
+      <p>Allowed up to one day before it starts. Approving the cancellation removes the absent days — but only days where nobody actually worked, so real work is never deleted.</p>
+    </div>
+  </div>
+
+  <h3>How balances are built</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Each type has its own rules</h4>
+      <p>Its own yearly quota, whether it is paid, and how it accrues — yearly, half-yearly, quarterly or monthly, whichever the company uses.</p>
+    </div>
+    <div class="feat">
+      <h4>Fair for mid-year joiners</h4>
+      <p>Somebody joining in August gets a proportionate part-year amount rather than the full year, with a separate rate during probation and during notice period.</p>
+    </div>
+    <div class="feat">
+      <h4>A balance is a ledger, not a number</h4>
+      <p>It is the sum of dated entries. So "why is my balance 8.5?" opens into the rows that produced it, instead of ending in an argument.</p>
+    </div>
+    <div class="feat">
+      <h4>Year-end, said properly</h4>
+      <p>Carry forward up to a cap with the rest lapsing, reset to zero, or pay it out. Each is recorded as its own entry, so "10 carried, 5 lapsed" is a sentence the system can actually say.</p>
+    </div>
+    <div class="feat">
+      <h4>Encashment reaches payroll</h4>
+      <p>Days converted to money at the correct daily rate, checked against the balance and paid through the run rather than added by hand.</p>
+    </div>
+    <div class="feat">
+      <h4>Holiday calendars</h4>
+      <p>Per company and per location, applied to both attendance and leave, so a regional holiday is not counted as leave.</p>
+    </div>
+  </div>
+
+  <div class="keypoint">
+    <strong>Why the ledger matters.</strong> A stored counter can only tell you
+    what it currently says. A ledger can tell you how it got there — which
+    accrual added days, which request took them, and what happened at year end.
+    Every balance in this product is the second kind.
+  </div>
+</section>
+
+<!-- ═══════════════════ 10 · WORKING-TIME POLICIES ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 2 · Attendance</p>
+  <div class="rule"></div>
+  <h2>Working-time policies and the law</h2>
+  <p class="lede">
+    The rules that decide what an hour is worth. Set once for the company, and
+    adjustable for an individual without creating a whole new policy.
+  </p>
+
+  <h3>Overtime — you decide what it is worth</h3>
+  <p>
+    There is no fixed multiplier, because no two companies pay overtime the same
+    way. You set the rate yourself, once, in the working-time settings. Payroll
+    then applies what you set — nobody re-enters a rate each month.
+  </p>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>A separate rate per kind of day</h4>
+      <p>A normal working day, a weekly off and a public holiday are three independent settings, each with its own rate. Paying one rate midweek and a higher one on a holiday is the normal case, not an exception.</p>
+    </div>
+    <div class="feat">
+      <h4>Higher rates once it builds up</h4>
+      <p>A second, higher rate can start once overtime passes a threshold — and a rate can be given a validity window, for a seasonal arrangement.</p>
+    </div>
+    <div class="feat">
+      <h4>When it starts counting</h4>
+      <p>You set how much overtime must build up before any of it accrues, and whether it is measured on gross hours or on hours net of breaks.</p>
+    </div>
+    <div class="feat">
+      <h4>Rounding and approval</h4>
+      <p>How it rounds, and whether a manager must approve it before it reaches payroll. With approval on, unapproved overtime never becomes pay.</p>
+    </div>
+  </div>
+
+  <h3>The other policies</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Weekly off</h4>
+      <p>Fixed or rotating weekly offs, and alternate Saturdays.</p>
+    </div>
+    <div class="feat">
+      <h4>Late marks and penalties</h4>
+      <p>What happens after repeated late arrivals or early departures, including half-day rules and how much lateness is tolerated first.</p>
+    </div>
+    <div class="feat">
+      <h4>Shift allowances</h4>
+      <p>Night-shift and other allowances, worked out from actual attendance and paid through payroll rather than added manually.</p>
+    </div>
+    <div class="feat">
+      <h4>Employees can read their own</h4>
+      <p>So "why was I marked half day" has an answer the person can look up themselves.</p>
+    </div>
+  </div>
+
+  <h3>Indian working-hour law, checked rather than assumed</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Limits belong to the premises</h4>
+      <p>Daily and weekly hour ceilings, spread-over limits and rest breaks come from the Factories Act and the relevant state Shops &amp; Establishments Act, held against the registered establishment and its type — not from a policy somebody typed in.</p>
+    </div>
+    <div class="feat">
+      <h4>A separate legal overtime figure</h4>
+      <p>Overtime against the legal threshold — beyond nine hours a day or forty-eight a week — is a different number from overtime against the rostered shift, and it is the one an inspector asks for.</p>
+    </div>
+    <div class="feat">
+      <h4>A rate below the legal floor is flagged</h4>
+      <p>If the rate you configured falls below the statutory minimum, it is reported — without silently overwriting the rate you chose.</p>
+    </div>
+    <div class="feat">
+      <h4>Unassessed is not the same as compliant</h4>
+      <p>Where an establishment has not been assessed, the report says unassessed rather than showing a green tick that means nothing.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 11 · PAYROLL RUN ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 3 · Running payroll</p>
+  <div class="rule"></div>
+  <h2>The monthly run</h2>
+  <p class="lede">
+    The hours from step 1 and the attendance from step 2 arrive here without
+    anyone exporting or re-typing anything. This is the part most companies do
+    in a spreadsheet.
+  </p>
+
+  <h3>Processing</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Everyone at once</h4>
+      <p>Pick the month, and every employee with a salary set is calculated. Anyone without one is skipped and listed back to you by name, rather than silently left out of payroll.</p>
+    </div>
+    <div class="feat">
+      <h4>Or one person</h4>
+      <p>Useful for a late joiner or a correction, without touching anybody else.</p>
+    </div>
+    <div class="feat">
+      <h4>Attendance sync</h4>
+      <p>Attendance, leave, unpaid days and overtime come into the run in one action, through a single step you can inspect before trusting it.</p>
+    </div>
+    <div class="feat">
+      <h4>Progress you can watch</h4>
+      <p>A large payroll processes in the background with a progress count of done, failed and skipped, rather than a frozen screen.</p>
+    </div>
+    <div class="feat">
+      <h4>It cannot run twice</h4>
+      <p>A second attempt while one is already running is refused, so nobody is paid twice by a double click.</p>
+    </div>
+    <div class="feat">
+      <h4>Undo one person</h4>
+      <p>A single employee's pay can be reversed and recalculated. Any loan instalment it collected is added back to their loan balance automatically.</p>
+    </div>
+  </div>
+
+  <h3>The stages a run moves through</h3>
+  <table>
+    <tr><th style="width:22%">Stage</th><th>What it means</th></tr>
+    <tr><td><strong>Draft</strong></td><td>Figures are being calculated and can still be changed freely.</td></tr>
+    <tr><td><strong>Locked</strong></td><td>The numbers are settled and no longer editable, pending review.</td></tr>
+    <tr><td><strong>Approved</strong></td><td>Signed off. Only now can the bank transfer file be produced.</td></tr>
+    <tr><td><strong>Released</strong></td><td>Payslips are issued to employees.</td></tr>
+    <tr><td><strong>Disbursed</strong></td><td>The money has moved. The month is closed and becomes the permanent record of what was paid.</td></tr>
+  </table>
+
+  <div class="keypoint">
+    <strong>Separation of duties.</strong> The person who locks a run cannot
+    approve it, and the person who approves cannot release it. This switches on
+    automatically once a company has three or more administrators — small teams
+    are not blocked by a rule they cannot satisfy. Every stage records who did
+    it and when, and unlocking a run requires a written reason that is attached
+    to it permanently.
+  </div>
+</section>
+
+<!-- ═══════════════════ 12 · CHECKS BEFORE MONEY MOVES ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 3 · Running payroll</p>
+  <div class="rule"></div>
+  <h2>Finding the mistake before the money moves</h2>
+  <p class="lede">
+    A payroll error is cheap to fix before disbursement and expensive
+    afterwards. These are the checks that sit in between.
+  </p>
+
+  <h3>The pre-payroll checklist</h3>
+  <p>
+    A single screen with live counts — "18 of 20 employees have attendance
+    finalised" — covering leave and attendance, joiners and leavers, bonuses and
+    revisions, reimbursements, holds and arrears.
+  </p>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Joiner and leaver review</h4>
+      <p>Who joined, who left, and any final settlements outstanding — with a decision per person: pay normally, hold the calculation, hold only the payment, or leave out.</p>
+    </div>
+    <div class="feat">
+      <h4>Stop-payment flag</h4>
+      <p>Hold one person's pay with a reason, either "do not calculate" or "calculate but do not pay".</p>
+    </div>
+  </div>
+
+  <h3>The differences report — the single most useful check</h3>
+  <p>
+    It shows every figure that moved between two runs, per person and per
+    component, <strong>with the reason it moved</strong>. A salary that changed
+    because of an approved override reads differently from one that changed for
+    no stated reason, and the second is what you are looking for.
+  </p>
+
+  <h3>Exception reports</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Negative pay</h4>
+      <p>Where deductions exceed earnings, the figure is shown as negative rather than rounded up to zero — so the problem is visible before payday instead of hidden by a tidy number.</p>
+    </div>
+    <div class="feat">
+      <h4>Duplicates</h4>
+      <p>Duplicate payments, duplicate bank accounts and duplicate employee records are all flagged.</p>
+    </div>
+    <div class="feat">
+      <h4>Negative cost</h4>
+      <p>Employees carrying a negative cost to company, which almost always indicates a structure set up wrongly.</p>
+    </div>
+    <div class="feat">
+      <h4>Full audit trail</h4>
+      <p>Every action with who did it, when, and from where. Payroll records cannot be edited or deleted after the fact.</p>
+    </div>
+  </div>
+
+  <div class="keypoint">
+    <strong>Closing the month.</strong> Once salary has gone out, that month
+    cannot be re-processed or edited. It is the record of what was actually
+    paid, and a system that lets you quietly change it is a system whose records
+    mean nothing.
+  </div>
+</section>
+
+<!-- ═══════════════════ 13 · STRUCTURES, GROUPS, OVERRIDES ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 3 · Running payroll</p>
+  <div class="rule"></div>
+  <h2>Salary structures, pay groups and exceptions</h2>
+  <p class="lede">
+    How a salary is composed, how those rules are applied to many people at
+    once, and what happens when one person needs to be different.
+  </p>
+
+  <h3>The structure</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Components</h4>
+      <p>Basic and house rent allowance as percentages, plus fixed amounts for conveyance, meals, internet, transport, uniform, education, books and fuel. Your own components can be added.</p>
+    </div>
+    <div class="feat">
+      <h4>See it before you assign it</h4>
+      <p>Type any cost to company and see the full monthly breakdown it would produce, before it is given to anybody. <em>Cost to company, or CTC, is the total annual cost of employing someone.</em></p>
+    </div>
+    <div class="feat">
+      <h4>Formula components</h4>
+      <p>For anything unusual — a bonus that only applies above a salary threshold, for instance. Formulas are validated before they can be saved.</p>
+    </div>
+    <div class="feat">
+      <h4>Range bands</h4>
+      <p>A junior and a senior on the same template still get appropriate splits, rather than one template per grade.</p>
+    </div>
+  </div>
+
+  <h3>Pay groups — the first thing to set up</h3>
+  <p>
+    A pay group holds everyone paid the same way, so settings are made once
+    rather than per person. Name, short code, pay frequency and pay day; then
+    provident fund, insurance, professional tax, labour welfare fund and income
+    tax switched on or off for the whole group — and the change flows down to
+    every employee in it automatically.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>State-wise registrations</h4>
+      <p>Each group holds its own professional tax establishment number, labour welfare fund number, provident fund registration and insurance registration, recorded per state. This is what makes returns correct for a company operating in more than one state.</p>
+    </div>
+    <div class="feat">
+      <h4>One group at a time, with history</h4>
+      <p>A person belongs to exactly one group. Moving them closes the previous membership with an end date rather than overwriting it, so you can always see which group somebody was in when a past month was paid.</p>
+    </div>
+  </div>
+
+  <h3>Changing one person's salary</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>You are shown the true cost first</h4>
+      <p>Raising basic pay by ₹1 takes about ₹1.67 out of the balancing allowance, because house rent allowance, employer provident fund and the gratuity provision all move with it. You see that before you save, not after.</p>
+    </div>
+    <div class="feat">
+      <h4>Refused at entry, with the number that would work</h4>
+      <p>A value that cannot balance is rejected as you type it, and the message names the largest amount that would work — rather than being accepted and failing on payroll day.</p>
+    </div>
+    <div class="feat">
+      <h4>Proposed by one, approved by another</h4>
+      <p>Nobody can approve a change to their own pay. Every change keeps both what was applied and what the system would have calculated, so the difference can always be explained.</p>
+    </div>
+    <div class="feat">
+      <h4>In bulk, through a spreadsheet</h4>
+      <p>Export, edit in Excel, upload back. Errors are reported per row with the spreadsheet row number, what is wrong and how to fix it — and nothing is saved until they are cleared.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 14 · STATUTORY DEDUCTIONS ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Step 3 · Running payroll</p>
+  <div class="rule"></div>
+  <h2>Statutory deductions, in plain terms</h2>
+  <p class="lede">
+    These are the deductions Indian law requires. They are calculated inside the
+    payroll run, not worked out separately and pasted in.
+  </p>
+
+  <div class="glossary">
+    <dl>
+      <dt>PF</dt><dd>Provident Fund — a retirement savings scheme. Both the employee and the employer contribute.</dd>
+      <dt>EPS</dt><dd>Employees’ Pension Scheme — the pension portion carved out of the employer’s provident fund contribution.</dd>
+      <dt>ESI</dt><dd>Employees’ State Insurance — state medical insurance for lower-paid employees.</dd>
+      <dt>PT</dt><dd>Professional Tax — a tax charged by individual state governments, not by the central government.</dd>
+      <dt>TDS</dt><dd>Tax Deducted at Source — income tax collected from salary each month rather than in a lump sum.</dd>
+      <dt>LWF</dt><dd>Labour Welfare Fund — a small state-level contribution for worker welfare.</dd>
+      <dt>LOP</dt><dd>Loss of Pay — salary deducted for unpaid absence.</dd>
+    </dl>
+  </div>
+
+  <table>
+    <tr><th style="width:20%">Deduction</th><th>What is handled</th></tr>
+    <tr>
+      <td><strong>Provident fund</strong></td>
+      <td>The ₹15,000 wage ceiling, 12% from the employee and 12% from the employer, the employer's half split correctly between pension and provident fund, contribution above the ceiling where a company chooses it, and voluntary contributions.</td>
+    </tr>
+    <tr>
+      <td><strong>State insurance</strong></td>
+      <td>The ₹21,000 threshold, at 0.75% from the employee and 3.25% from the employer. <strong>Coverage is held for the whole contribution period</strong> — April to September, and October to March — so somebody who gets a raise mid-period keeps contributing until it ends. This is the rule most systems get wrong, and it makes the return disagree with the payslip.</td>
+    </tr>
+    <tr>
+      <td><strong>Professional tax</strong></td>
+      <td>All 37 states and union territories. 20 charge it; 17 correctly charge nothing rather than defaulting to a neighbouring state's rate. Special cases are handled, such as Maharashtra's higher February deduction.</td>
+    </tr>
+    <tr>
+      <td><strong>Income tax</strong></td>
+      <td>Old and new regimes, current slabs, surcharge, cess and rebate. Calculated on the year to date, so a mid-year salary change corrects itself across the remaining months instead of arriving as a shock in March.</td>
+    </tr>
+    <tr>
+      <td><strong>Gratuity</strong></td>
+      <td>Provisioned monthly. At settlement, both the five-year qualifying rule and the ₹20,00,000 ceiling are applied.</td>
+    </tr>
+    <tr>
+      <td><strong>Labour welfare fund</strong></td>
+      <td>State by state, on each state's own contribution cycle.</td>
+    </tr>
+    <tr>
+      <td><strong>Unpaid leave</strong></td>
+      <td>Divided by calendar days, so one absent day costs at most one thirtieth of the month — never one twenty-second. Provident fund, insurance and professional tax are then charged on what was actually earned.</td>
+    </tr>
+  </table>
+
+  <div class="keypoint">
+    <strong>When the rules change.</strong> Rates and slabs are stored by period
+    rather than built into the software. Re-running an old month applies that
+    month's rules, not today's — which is what makes a recalculation of a past
+    period trustworthy.
+  </div>
+</section>
+
+<!-- ═══════════════════ 15 · PAYING & FILING ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Steps 4, 5 &amp; 6 · Paying, filing, booking</p>
+  <div class="rule"></div>
+  <h2>Getting the money out, and the returns in</h2>
+
+  <h3>Paying people</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>The bank file</h4>
+      <p>Produced in your bank's own format for NEFT or RTGS transfer, with names, account numbers, IFSC codes, amounts and a total. Only available once the run has been approved.</p>
+    </div>
+    <div class="feat">
+      <h4>Nobody is silently dropped</h4>
+      <p>Anyone who cannot be paid is excluded from the file and returned to you <strong>by name, with the exact detail that is missing</strong>, so they can be paid another way.</p>
+    </div>
+    <div class="feat">
+      <h4>The bank's reference is kept</h4>
+      <p>The UTR the bank returns is recorded against the payment, so a line on a bank statement can be matched to a payslip. Where no reference exists the field is left empty rather than filled with an invented code.</p>
+    </div>
+    <div class="feat">
+      <h4>Reversals and off-cycle payments</h4>
+      <p>A payment made outside the bank run can be recorded with its own reference. A reversal requires an administrator and a written reason.</p>
+    </div>
+  </div>
+
+  <h3>Payslips</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Issued automatically</h4>
+      <p>Every employee gets a notification and an email with the PDF attached the moment the run is paid. Anyone who already has one is skipped rather than sent a duplicate.</p>
+    </div>
+    <div class="feat">
+      <h4>Full history</h4>
+      <p>Every payslip they have ever had, with earnings, each deduction, days worked, hours and running year-to-date totals. An employee can only ever open their own.</p>
+    </div>
+  </div>
+
+  <h3>Statutory returns</h3>
+  <p>
+    Twenty-three statutory documents are generated from the run: provident fund
+    ECR, insurance challan, Form 24Q, professional tax and labour welfare fund
+    returns, bonus registers, Form 16, Form 12BA and more — formatted for upload
+    to the department portal.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Validated before they are produced</h4>
+      <p>PAN, TAN and UAN numbers are checked first. A document reports as not ready rather than being produced containing an invalid number that the portal will reject.</p>
+    </div>
+    <div class="feat">
+      <h4>Per legal entity</h4>
+      <p>Each registered entity has its own PAN, TAN, provident fund and insurance numbers, and returns are produced separately for each.</p>
+    </div>
+    <div class="feat">
+      <h4>A compliance calendar</h4>
+      <p>Provident fund and insurance by the 15th, professional tax by the 20th, tax deducted at source by the 7th — with a countdown and a warning as a deadline approaches.</p>
+    </div>
+    <div class="feat">
+      <h4>Evidence is recorded</h4>
+      <p>Filing and acknowledgement are separate facts, and the portal's receipt is attached to the filing rather than left in somebody's email.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Worth knowing.</strong> Of the 23 documents, <strong>16 are
+    returns</strong> and <strong>7 are preparation sheets</strong> — worklists
+    that help you complete a filing rather than the filing itself. And nothing
+    submits automatically: every document is produced ready, and a person
+    uploads it to the department portal.
+  </div>
+
+  <h3>Updating the books</h3>
+  <p>
+    The payroll run becomes a double-entry journal for Tally or Zoho Books.
+    Debits must equal credits exactly, and a component with no ledger account
+    assigned <strong>stops the export and is named</strong> — never quietly
+    dropped or dumped into a suspense account, because "the journal is ₹40,000
+    light and nobody knows why" is what that produces.
+  </p>
+  <div class="note">
+    <strong>Worth knowing.</strong> This produces a file you import into Tally
+    or Zoho. It does not connect to them directly over an interface.
+  </div>
+</section>
+
+<!-- ═══════════════════ 16 · PEOPLE RECORDS ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Core HR</p>
+  <div class="rule"></div>
+  <h2>Employee records, joining and leaving</h2>
+
+  <h3>The record itself</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>What it holds</h4>
+      <p>Personal details, address, emergency contact, job details, department, designation, reporting manager, joining date and employment status.</p>
+    </div>
+    <div class="feat">
+      <h4>Statutory identifiers</h4>
+      <p>PAN, Aadhaar, UAN, insurance number and bank details, each with its proof document attached. Numbers are format-checked on save, so a wrong PAN is refused at entry rather than discovered on filing day.</p>
+    </div>
+    <div class="feat">
+      <h4>Sensitive data is masked</h4>
+      <p>A list shows whether a PAN is on file, not the number itself. Bank account numbers are masked to the last four digits.</p>
+    </div>
+    <div class="feat">
+      <h4>Documents are private by default</h4>
+      <p>An offer letter and a warning letter sit on the same record, so sharing is always a deliberate choice. Anything the employee uploaded themselves is always visible to them.</p>
+    </div>
+    <div class="feat">
+      <h4>The reporting line is validated</h4>
+      <p>A reporting loop is refused, and a manager must actually be senior to the person reporting to them.</p>
+    </div>
+    <div class="feat">
+      <h4>An org chart everyone can see</h4>
+      <p>Who reports to whom, with no salary, no identifier numbers and no personal details in it.</p>
+    </div>
+  </div>
+
+  <h3>Joining</h3>
+  <p>
+    Hiring someone opens an onboarding journey automatically, however they were
+    added. It is an eighteen-step checklist running from two weeks before the
+    start date to three months after, because several things need doing before
+    somebody arrives.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Every task has an owner</h4>
+      <p>HR, IT, finance, the manager, a buddy, or the joiner themselves — so nothing sits unassigned. The joiner sees only their own items; "IT has not ordered your laptop" is not their problem.</p>
+    </div>
+    <div class="feat">
+      <h4>Steps complete themselves from evidence</h4>
+      <p>Upload the PAN card and "add PAN details" completes itself. It cannot be ticked by hand, because a hand-ticked box would claim a document exists that payroll will later find missing.</p>
+    </div>
+    <div class="feat">
+      <h4>Pre-boarding is normal</h4>
+      <p>A future joining date is valid, not an error, so preparation can start before day one.</p>
+    </div>
+    <div class="feat">
+      <h4>Payroll readiness is checked</h4>
+      <p>Before the first salary run, so a new joiner is never missed or paid wrongly.</p>
+    </div>
+  </div>
+
+  <h3>Leaving</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Resignation</h4>
+      <p>Raised by the employee, with the notice period calculated, manager and HR approval, and the option to withdraw.</p>
+    </div>
+    <div class="feat">
+      <h4>Exit and clearance</h4>
+      <p>Clearance checklist, access removal, last working day and an exit interview. Terminations and retirements follow the same route.</p>
+    </div>
+    <div class="feat">
+      <h4>Full and final settlement</h4>
+      <p>Notice shortfall recovery, leave encashment, gratuity, part-month salary and any outstanding loan — worked out together and paid as one settlement.</p>
+    </div>
+    <div class="feat">
+      <h4>Rehire eligibility</h4>
+      <p>Recorded at exit and surfaced if that person is ever considered again.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 17 · SELF-SERVICE ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Employee self-service</p>
+  <div class="rule"></div>
+  <h2>What employees do for themselves</h2>
+  <p class="lede">
+    Work that would otherwise land on HR as email. Each of these is available on
+    the web and on the phone.
+  </p>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Payslips and the CTC breakup</h4>
+      <p>Current and past payslips, plus the full explanation of what makes up their cost to company.</p>
+    </div>
+    <div class="feat">
+      <h4>Leave</h4>
+      <p>Apply, cancel, and see the balance — including the dated entries behind it.</p>
+    </div>
+    <div class="feat">
+      <h4>Attendance corrections</h4>
+      <p>Raise a regularisation for a missed punch rather than emailing HR about it.</p>
+    </div>
+    <div class="feat">
+      <h4>Investment declarations and proofs</h4>
+      <p>Submit declarations and upload the supporting documents for tax purposes.</p>
+    </div>
+    <div class="feat">
+      <h4>Expense claims</h4>
+      <p>Submitted with a receipt photograph taken on the phone.</p>
+    </div>
+    <div class="feat">
+      <h4>Profile updates</h4>
+      <p>Address, phone, bank details and documents. Their own submissions are always marked pending review — nobody is their own verifier.</p>
+    </div>
+    <div class="feat">
+      <h4>Salary revision letters</h4>
+      <p>Formally accepted or rejected by the employee, on record — so a revision is agreed rather than announced.</p>
+    </div>
+    <div class="feat">
+      <h4>Their own working-time policy</h4>
+      <p>They can read the rules being applied to them, so "why was I marked half day" is self-answerable.</p>
+    </div>
+  </div>
+
+  <h3>Income tax help, built in</h3>
+  <p>
+    Choosing between India's old and new tax regimes is the question employees
+    ask HR most, and it is a question about their own numbers.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Old regime or new — which is better</h4>
+      <p>Compared side by side on the person's real salary, showing the rupee difference and which to choose.</p>
+    </div>
+    <div class="feat">
+      <h4>Tax-saving recommendations</h4>
+      <p>Remaining room under Section 80C, the pension scheme, health insurance and home loan interest — each showing the tax it would actually save, largest first.</p>
+    </div>
+    <div class="feat">
+      <h4>House rent allowance calculator</h4>
+      <p>Enter the rent paid and see the exemption and the tax it saves.</p>
+    </div>
+    <div class="feat">
+      <h4>For the payroll team</h4>
+      <p>Move a group of employees between regimes in one action, approve many proofs at once, and produce Form 12BB from what was approved.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 18 · MONEY BEYOND SALARY ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Money beyond salary</p>
+  <div class="rule"></div>
+  <h2>Reimbursements, loans and benefits</h2>
+  <p class="lede">
+    Everything that reaches an employee's bank account that is not their basic
+    monthly salary — all of it settled through the payroll run rather than paid
+    separately and reconciled later.
+  </p>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Reimbursements</h4>
+      <p>Submitted with a receipt, approved first by the manager and then by finance, and paid with the next salary. Nobody approves their own — a manager's own claim goes straight to the administrator queue.</p>
+    </div>
+    <div class="feat">
+      <h4>Bulk approval</h4>
+      <p>With unread counts, search, and approve or reject in bulk, so a month of claims is not fifty separate clicks.</p>
+    </div>
+    <div class="feat">
+      <h4>Loans and salary advances</h4>
+      <p>Requested with an amount and a number of instalments up to sixty. Once approved, instalments are recovered from salary automatically and the loan closes itself when fully repaid.</p>
+    </div>
+    <div class="feat">
+      <h4>Recovery survives a correction</h4>
+      <p>If a payslip is reversed, the instalment it collected is added back to the loan balance — so a correction cannot quietly make somebody repay twice.</p>
+    </div>
+    <div class="feat">
+      <h4>Flexible benefit plan</h4>
+      <p>Employees choose components within an allowance, claim against proofs, and the tax effect is applied through payroll.</p>
+    </div>
+    <div class="feat">
+      <h4>Leave encashment</h4>
+      <p>Days converted to money at the correct daily rate, checked against the balance and paid through the run.</p>
+    </div>
+  </div>
+
+  <h3>Arrears — back-dated increases done properly</h3>
+  <p>
+    When a raise is agreed in June but effective from April, the difference has
+    to be paid for April and May. This is where spreadsheets usually approximate.
+  </p>
+  <div class="keypoint">
+    <strong>How it is calculated.</strong> The difference is worked out against
+    the salary that was <em>actually in force on each affected day</em>, not
+    against today's salary applied backwards. A mid-month revision blends
+    correctly. And the tax on the arrear is the difference between the old and
+    the new position — not a fresh charge on the whole amount, which would
+    over-deduct.
+  </div>
+
+  <h3>Variable pay</h3>
+  <p>
+    Bonus and incentive rules are set once and applied per person through the
+    run, so a performance payment arrives on the payslip with its own line
+    rather than being added to salary and losing its identity.
+  </p>
+</section>
+
+<!-- ═══════════════════ 19 · HIRING, REPORTS, WORK ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Hiring · Reports · Daily work</p>
+  <div class="rule"></div>
+  <h2>Everything around the edges</h2>
+
+  <h3>Hiring</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>A candidate is a person; an application is one attempt</h4>
+      <p>So somebody good who applies for a second role keeps their history instead of becoming a duplicate record.</p>
+    </div>
+    <div class="feat">
+      <h4>Your own pipeline stages</h4>
+      <p>Every move recorded and dated. Moving somebody backwards is allowed and recorded as such, and "rejected after the technical round" stays a different fact from "rejected on the CV".</p>
+    </div>
+    <div class="feat">
+      <h4>Panel feedback is never averaged</h4>
+      <p>Recorded per interviewer. Three people split two-to-one and three people all lukewarm produce the same average but call for completely different conversations.</p>
+    </div>
+    <div class="feat">
+      <h4>Offers, approved then signed</h4>
+      <p>An approval chain before it goes out, then the candidate opens a secure link, reads the letter, types their name and accepts or declines. No account to create — asking a candidate to register loses offers.</p>
+    </div>
+    <div class="feat">
+      <h4>Background checks are consent-gated</h4>
+      <p>Consent is recorded against a specific list of checks: agreeing to employment verification is not agreeing to a credit check. Findings are recorded as clear, discrepancy or insufficient — never pass or fail.</p>
+    </div>
+    <div class="feat">
+      <h4>Straight into onboarding</h4>
+      <p>Accepting an offer moves the candidate through the pipeline to hired, so headcount and the offer cannot disagree, and joining formalities begin immediately.</p>
+    </div>
+  </div>
+  <div class="note">
+    <strong>Worth knowing.</strong> There is no public careers page — candidates
+    are added by your hiring team rather than applying themselves. Background
+    check findings are recorded by a person; there is no connection to a
+    verification agency.
+  </div>
+
+  <h3>Reports</h3>
+  <div class="cols-3">
+    <div class="feat"><h4>Time and productivity</h4><p>Hours by person, team and project; productive against unproductive time; which applications and websites were used.</p></div>
+    <div class="feat"><h4>Attendance</h4><p>Present, absent, late, early leaving and overtime across any period.</p></div>
+    <div class="feat"><h4>Payroll registers</h4><p>The full salary register for a month, plus separate provident fund, insurance, professional tax and income tax registers.</p></div>
+    <div class="feat"><h4>Headcount movement</h4><p>Joiners, leavers and running headcount month by month, counted properly — including people who have since left.</p></div>
+    <div class="feat"><h4>Attrition</h4><p>Who left, when, why, and from which department.</p></div>
+    <div class="feat"><h4>Export</h4><p>Any report to Excel.</p></div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 20 · ASKING & DAILY WORK ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Answers · Daily work</p>
+  <div class="rule"></div>
+  <h2>Asking questions, and the work around the work</h2>
+
+  <h3>Ask a question in plain English</h3>
+  <p class="lede">
+    Most reporting questions are asked once and never again, which makes
+    building a report for them a waste.
+  </p>
+  <p>
+    "Who was absent more than three days last month". "Average salary by
+    department". "Top five departments by salary cost in July". Each is answered
+    as a table from your own records, without anybody building a report first.
+  </p>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>Every answer shows its working</h4>
+      <p>How the figure was arrived at, what period it covers and how many records it used — so it can be checked rather than taken on faith.</p>
+    </div>
+    <div class="feat">
+      <h4>It says no rather than guessing</h4>
+      <p>A question it cannot answer is refused with the reason. And an empty result is reported as empty, never as zero — those are different facts, and confusing them is how a report quietly misleads.</p>
+    </div>
+  </div>
+
+  <h3>Day-to-day work</h3>
+  <div class="cols-2">
+    <div class="feat"><h4>Projects and tasks</h4><p>Owners, due dates, priorities, checklists, dependencies and comments, with time logged against each — so hours can be attributed to a deliverable rather than to a day. Recurring tasks create themselves on a schedule.</p></div>
+    <div class="feat"><h4>Chat</h4><p>One-to-one and group messaging with file sharing, including large files, inside the workspace rather than on a separate app.</p></div>
+    <div class="feat"><h4>Assets</h4><p>Laptops, phones and equipment assigned to people, with return tracked as part of the exit checklist rather than remembered separately.</p></div>
+    <div class="feat"><h4>Performance</h4><p>Review cycles, goals with progress check-ins, a competency framework, and feedback gathered from self, manager and peers.</p></div>
+    <div class="feat"><h4>Polls</h4><p>Ask the whole company a question and see the answers.</p></div>
+    <div class="feat"><h4>One approval inbox</h4><p>Leave, attendance corrections, expenses, resignations, offers and payroll — everything waiting on a person, in one place instead of six screens.</p></div>
+  </div>
+
+  <div class="keypoint">
+    <strong>Notifications arrive as they happen.</strong> Approvals, payroll
+    events and messages are delivered in real time rather than on a timer, so an
+    approval that unblocks somebody does not sit unseen. The chat page itself
+    still refreshes on a short interval — it works well, but it is not a live
+    chat application.
+  </div>
+
+  <h3>The four apps</h3>
+  <div class="cols-2">
+    <div class="feat"><h4>Web</h4><p>The full system — payroll, attendance, people, hiring, reports and settings. Used by HR, finance, managers and administrators.</p></div>
+    <div class="feat"><h4>Desktop</h4><p>Windows, macOS and Linux. Time tracking, screenshots, idle detection, and works offline.</p></div>
+    <div class="feat"><h4>Mobile</h4><p>iPhone and Android. Punch in and out, apply for leave, see payslips, approve requests, attendance selfie and notifications.</p></div>
+    <div class="feat"><h4>Browser add-on</h4><p>Chrome. Records which websites were used so activity reports show real detail.</p></div>
+  </div>
+</section>
+
+<!-- ═══════════════════ 20 · ACCESS, SECURITY, APPS ═══════════════════ -->
+<section class="page">
+  <p class="eyebrow">Access · Security · Apps</p>
+  <div class="rule"></div>
+  <h2>Who can see what, and how it is protected</h2>
+  <p class="lede">
+    Salary is the most sensitive thing a company holds. In most small companies
+    it sits in a spreadsheet that anyone with the file can open.
+  </p>
+
+  <table>
+    <tr><th style="width:18%">Level</th><th>What they can reach</th></tr>
+    <tr><td><strong>Admin</strong></td><td>Everything — settings, all employees, all salary, all reports, and who else gets which role.</td></tr>
+    <tr><td><strong>HR / Payroll</strong></td><td>Runs payroll and sees everybody's pay, but cannot change company settings or hand out roles. <em>This is the level most products do not have, which is why HR usually ends up as a full administrator.</em></td></tr>
+    <tr><td><strong>Manager</strong></td><td>Their own team only — attendance, leave, timesheets, approvals. They cannot see company salary data.</td></tr>
+    <tr><td><strong>Employee</strong></td><td>Their own record, payslips and leave, plus the org chart, which carries no salary or personal details.</td></tr>
+  </table>
+
+  <div class="cols-2">
+    <div class="feat">
+      <h4>"My team" really means my team</h4>
+      <p>A manager can only act on someone both below them and in their department. Level alone would let any manager reach any employee; department alone would let them act on their own department head.</p>
+    </div>
+    <div class="feat">
+      <h4>Custom roles</h4>
+      <p>Create roles with your own names — "Shift Supervisor", "Regional HR" — choosing from around thirty separate permissions.</p>
+    </div>
+    <div class="feat">
+      <h4>Nobody locks the company out</h4>
+      <p>Only an administrator changes roles, and an administrator cannot remove their own administrator rights.</p>
+    </div>
+    <div class="feat">
+      <h4>Approvals follow the hierarchy</h4>
+      <p>An approver must be senior to the person asking, and nobody approves their own request.</p>
+    </div>
+  </div>
+
+  <h3>Protecting the data</h3>
+  <div class="cols-2">
+    <div class="feat">
+      <h4>One company cannot see another</h4>
+      <p>Separation is enforced in the data layer itself rather than by remembering to filter, with an automatic test that fails the build if a new record type is added without it.</p>
+    </div>
+    <div class="feat">
+      <h4>Two-factor authentication</h4>
+      <p>Authenticator codes with backup codes. Optional, on a grace period, or required — and required automatically for senior roles.</p>
+    </div>
+    <div class="feat">
+      <h4>Company sign-in</h4>
+      <p>Staff can sign in with the company's existing Microsoft or Google account. Turning it on is a deliberate second step, because it changes how everyone signs in.</p>
+    </div>
+    <div class="feat">
+      <h4>Removing someone removes their access</h4>
+      <p>Where the company directory is connected, deactivating a person revokes their existing access tokens rather than just marking them inactive — the failure that otherwise leaves a leaver reading payroll on Monday.</p>
+    </div>
+    <div class="feat">
+      <h4>Audit log</h4>
+      <p>Every meaningful action with the person, the time and what changed. Payroll records cannot be edited or deleted after the fact.</p>
+    </div>
+    <div class="feat">
+      <h4>Temporary elevated access</h4>
+      <p>Where somebody genuinely needs more, it is a time-limited session with a written reason, not a permission quietly granted for ever.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Being straight about this.</strong> There is no ISO 27001
+    certificate or SOC 2 report at present, and no published uptime guarantee.
+    The controls above are built and can be demonstrated; the external audit has
+    not been done. If your procurement process requires one of those, you should
+    know it here rather than in week three of an evaluation.
+  </div>
+
+  <div class="keypoint" style="margin-top:14pt">
+    <strong>See it on your own numbers.</strong> The fastest way to judge a
+    payroll engine is to run a month through it in parallel with your current
+    one and compare the differences report line by line. That is a
+    conversation we are happy to start with.
+  </div>
+</section>
+
+</body>
+</html>
