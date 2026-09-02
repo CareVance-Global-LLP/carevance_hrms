@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use App\Services\PayrollPdfService;
 
 class PayrollDepartmentController extends Controller
@@ -276,9 +277,22 @@ class PayrollDepartmentController extends Controller
                         'tds_enabled' => (bool) $template->tds_enabled,
                         // Tax/regime/state fields — required for the
                         // salary-structure form to hydrate the right
-                        // dropdown value (otherwise it always defaults
-                        // to Maharashtra on page load).
-                        'pt_state' => $template->pt_state ?? 'maharashtra',
+                        // dropdown value.
+                        /*
+                         * NULL SURVIVES. This read used to answer
+                         * `?? 'maharashtra'` for anybody whose state was unset,
+                         * and this card is read then saved back by the operator:
+                         * one Save on a Delhi or Haryana employee — pressed to
+                         * change their CTC, not their state — stored the
+                         * fabricated Maharashtra and started deducting ₹200 a
+                         * month (₹300 in February) of professional tax in a
+                         * state that levies none. Professional tax is levied by
+                         * the state, several levy none, and an unset state must
+                         * yield ₹0 rather than a real state's slab. The client
+                         * has to be able to tell "not set" from "set to
+                         * Maharashtra", so the null is the answer.
+                         */
+                        'pt_state' => $template->pt_state,
                         'tax_regime' => $template->tax_regime ?? 'new',
                         'is_metro_city' => (bool) ($template->is_metro_city ?? true),
                     ];
@@ -871,32 +885,54 @@ class PayrollDepartmentController extends Controller
             auth()->id()
         );
 
+        $templateFields = $request->only([
+            'annual_ctc',
+            'basic_percentage',
+            'hra_percentage',
+            'da_percentage',
+            'conveyance_allowance',
+            'pf_enabled',
+            'esi_enabled',
+            'pt_enabled',
+            'tds_enabled',
+            'lwf_enabled',
+            'pf_above_cap',
+            'pf_employee_percentage',
+            'pf_employer_percentage',
+            'pf_wage_cap',
+            'esi_employee_percentage',
+            'esi_employer_percentage',
+            'esi_threshold',
+            'pt_state',
+            'tax_regime',
+            'is_metro_city',
+            'is_active',
+            'custom_earnings',
+            'custom_deductions',
+        ]);
+
+        /*
+         * pt_state is written through UNTOUCHED, and that is the fix.
+         *
+         * This endpoint is the write half of a round trip: the salary card is
+         * read, edited and posted back whole. While the read fabricated
+         * 'maharashtra' for an unset state (see getDepartmentEmployees), one
+         * Save on an employee in a state that levies no professional tax — a
+         * Save pressed to change their CTC, not their state — stored that
+         * fabrication and began deducting ₹200 a month (₹300 in February) from
+         * somebody who owes nothing. The defect was the invented value on the
+         * way out, so nothing here may invent one on the way in: no `?:`, no
+         * fallback to an organisation default, no "sensible" state for a blank.
+         *
+         * A caller who omits the key leaves the stored state alone (`only()`
+         * drops absent keys); a caller who clears it stores null, because
+         * Laravel's global TrimStrings and ConvertEmptyStringsToNull have
+         * already turned an empty or whitespace selection into null before
+         * validation runs. Re-normalising it here would be a rule that can never
+         * fire, which reads like a guarantee and is not one.
+         */
         $template->update([
-            ...$request->only([
-                'annual_ctc',
-                'basic_percentage',
-                'hra_percentage',
-                'da_percentage',
-                'conveyance_allowance',
-                'pf_enabled',
-                'esi_enabled',
-                'pt_enabled',
-                'tds_enabled',
-                'lwf_enabled',
-                'pf_above_cap',
-                'pf_employee_percentage',
-                'pf_employer_percentage',
-                'pf_wage_cap',
-                'esi_employee_percentage',
-                'esi_employer_percentage',
-                'esi_threshold',
-                'pt_state',
-                'tax_regime',
-                'is_metro_city',
-                'is_active',
-                'custom_earnings',
-                'custom_deductions',
-            ]),
+            ...$templateFields,
             'updated_by' => auth()->id(),
         ]);
 
@@ -1729,9 +1765,122 @@ class PayrollDepartmentController extends Controller
     }
 
     /**
+     * The attendance fields handed to ONE employee inside a bulk run.
+     *
+     * Both bulk endpoints used to take a single working_days and a single
+     * lOP_days for the whole selection, so BulkPayrollMatrix — the only
+     * reachable run path in the product — sent the FIRST row's working days for
+     * everybody and the group's total LOP divided by headcount. One person
+     * taking five unpaid days in a group of twenty docked all twenty a quarter
+     * of a day and overpaid the absentee by four and three quarter days. Nothing
+     * errored, every row reported success, and the only way to find it was two
+     * employees comparing payslips.
+     *
+     * Attendance is not four independent fields. It is ONE statement about ONE
+     * person's month, so it is resolved from ONE source: an entry in
+     * `employees[]` answers for that person entirely, and with no entry the flat
+     * fields answer for them as the group-wide statement they have always been.
+     *
+     * Resolving the four fields independently — entry first, then the flat body,
+     * FIELD BY FIELD — is what the first attempt at this did, and it reproduced
+     * both halves of the original defect inside one 200 OK response. A flat
+     * lOP_days is non-null for everybody, so the "derive the other half of the
+     * pair" rule below never fired: an employee stated present 20 of 26 days was
+     * paid a full month (₹9,447.60 overpaid), and an employee stated present 26
+     * of 26 was docked ₹3,149.20 by the group's figure leaking into their row —
+     * the very leak this array exists to end. Never mix the two levels.
+     *
+     * Within the chosen source, three rules:
+     *
+     *  - An unstated field stays absent from the payload. processEmployeePayroll
+     *    treats a present working_days as "the caller is stating attendance";
+     *    handing it a number nobody chose is what docked every employee with
+     *    perfect attendance 3-5 days on the process-and-pay path. An entry that
+     *    names somebody and states nothing therefore means "use their own
+     *    calendar" — expressible even when the group states one.
+     *  - days_present and lOP_days must AGREE with the working_days they were
+     *    derived from. Stating one of the pair while the other came from
+     *    somewhere else is the contradiction that deducted ₹81,464 from a
+     *    ₹96,275 gross and paid the employee ₹3,762 (see processEmployeePayroll)
+     *    — so whichever one the caller gives, the other is derived from it here,
+     *    out of the SAME source, rather than left to a different one. A caller
+     *    who states all three has stated all three and none is dropped.
+     *  - Overtime defaults to zero only ALONGSIDE a stated working_days. A
+     *    caller describing the month is describing all of it, and silence there
+     *    means none; a caller who states no calendar has said nothing about
+     *    overtime either, so the employee's own records still apply. Keeping
+     *    that pair together is what makes the legacy flat request byte-identical
+     *    to what it produced before.
+     *
+     * @param  array<string, mixed>  $data  the validated request body
+     * @return array<string, float|int>
+     */
+    private function bulkAttendanceFor(array $data, int $userId): array
+    {
+        $entry = null;
+        foreach ($data['employees'] ?? [] as $row) {
+            if ((int) ($row['user_id'] ?? 0) === $userId) {
+                $entry = $row;
+                break;
+            }
+        }
+
+        // The source is chosen ONCE, here, and every field below comes out of
+        // it. Reaching for `$data[$field]` when the entry happens to be silent
+        // on that field is the leak: it re-assembles one person's month out of
+        // their own statement and the group's.
+        $source = $entry ?? $data;
+
+        $workingDays = $source['working_days'] ?? null;
+        $daysPresent = $source['days_present'] ?? null;
+        $lOPDays = $source['lOP_days'] ?? null;
+        $overtimeHours = $source['overtime_hours'] ?? null;
+
+        // Nobody stated anything for this person: send no attendance at all so
+        // processEmployeePayroll reads their own monthly summary. This is the
+        // shape that makes "let each employee's own calendar decide" expressible.
+        if ($workingDays === null && $daysPresent === null && $lOPDays === null && $overtimeHours === null) {
+            return [];
+        }
+
+        $fields = [];
+
+        if ($workingDays !== null) {
+            $fields['working_days'] = (int) $workingDays;
+
+            if ($daysPresent === null && $lOPDays === null) {
+                $lOPDays = 0;
+            }
+            if ($daysPresent === null) {
+                $daysPresent = max(0, (float) $workingDays - (float) $lOPDays);
+            } elseif ($lOPDays === null) {
+                $lOPDays = max(0, (float) $workingDays - (float) $daysPresent);
+            }
+
+            $fields['overtime_hours'] = (float) ($overtimeHours ?? 0);
+        } elseif ($overtimeHours !== null) {
+            $fields['overtime_hours'] = (float) $overtimeHours;
+        }
+
+        if ($daysPresent !== null) {
+            $fields['days_present'] = max(0.0, (float) $daysPresent);
+        }
+        if ($lOPDays !== null) {
+            $fields['lOP_days'] = (float) $lOPDays;
+        }
+
+        return $fields;
+    }
+
+    /**
      * Bulk process payroll for selected employees in a department.
      * For each user_id: validates the run is not paid/released and reuses
      * the same per-employee calc as processEmployeePayroll.
+     *
+     * Attendance may be stated once for the group (the flat working_days /
+     * lOP_days / overtime_hours) or per person via `employees[]`. One or the
+     * other answers for a given employee, never a field from each.
+     * bulkAttendanceFor() carries the reasoning.
      */
     public function processSelectedEmployees(Request $request, int $departmentId): JsonResponse
     {
@@ -1739,10 +1888,39 @@ class PayrollDepartmentController extends Controller
             'month_year' => 'required|string',
             'user_ids' => 'required|array|min:1',
             'user_ids.*' => 'integer|exists:users,id',
-            'working_days' => 'required|integer|min:1',
+            /*
+             * Nullable, not required. `required` forced a caller to invent a
+             * number, and processEmployeePayroll reads a stated working_days as
+             * "the caller is stating this month's attendance" and derives LOP
+             * from it — the same trap that docked every employee with perfect
+             * attendance 3-5 days on every process-and-pay run (see that
+             * method's docblock). Omitting it lets each employee's own calendar
+             * decide, which is the only correct answer for a mixed group.
+             */
+            'working_days' => 'nullable|integer|min:1',
+            'days_present' => 'nullable|numeric|min:0',
             'default_annual_ctc' => 'nullable|numeric|min:0',
             'lOP_days' => 'nullable|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
+            /*
+             * Per-employee attendance. The flat fields above state the group's
+             * month; an entry here states one person's, and it answers for them
+             * WHOLLY — a field the entry is silent on is not filled in from the
+             * flat body. See bulkAttendanceFor() for why one figure for a group
+             * was wrong, and for the two payslips that mixing the levels
+             * produced.
+             *
+             * A user_id outside `user_ids` is REFUSED, not ignored. An override
+             * that silently evaporates is indistinguishable from one that was
+             * applied, and every row still reports success — which is precisely
+             * the failure mode this array exists to end.
+             */
+            'employees' => 'nullable|array',
+            'employees.*.user_id' => ['required_with:employees', 'integer', Rule::in($request->input('user_ids', []))],
+            'employees.*.working_days' => 'nullable|integer|min:1',
+            'employees.*.days_present' => 'nullable|numeric|min:0',
+            'employees.*.lOP_days' => 'nullable|numeric|min:0',
+            'employees.*.overtime_hours' => 'nullable|numeric|min:0',
         ]);
 
         $organizationId = $request->user()->organization_id;
@@ -1785,8 +1963,6 @@ class PayrollDepartmentController extends Controller
 
         $succeeded = [];
         $failed = [];
-        $lOPDays = $data['lOP_days'] ?? 0;
-        $overtimeHours = $data['overtime_hours'] ?? 0;
 
         // Bulk-fetch existing templates in one query, then create any
         // missing ones. This replaces an N+1 loop of per-user
@@ -1822,15 +1998,10 @@ class PayrollDepartmentController extends Controller
                     continue;
                 }
 
-                $daysPresent = $data['working_days'] - $lOPDays;
-
                 $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
                     'month_year' => $data['month_year'],
                     'annual_ctc' => $annualCtc,
-                    'working_days' => $data['working_days'],
-                    'days_present' => max(0, $daysPresent),
-                    'lOP_days' => $lOPDays,
-                    'overtime_hours' => $overtimeHours,
+                    ...$this->bulkAttendanceFor($data, $uid),
                 ]);
                 $subRequest->setUserResolver(fn () => $request->user());
 
@@ -1869,6 +2040,11 @@ class PayrollDepartmentController extends Controller
      * Returns the same { success, succeeded, failed } shape so the
      * PayGroupEmployees view can share the response handler with
      * DepartmentEmployees.
+     *
+     * Attendance may be stated once for the group (the flat working_days /
+     * lOP_days / overtime_hours) or per person via `employees[]`. One or the
+     * other answers for a given employee, never a field from each.
+     * bulkAttendanceFor() carries the reasoning.
      */
     public function processPayGroupSelectedEmployees(Request $request, int $payGroupId): JsonResponse
     {
@@ -1876,10 +2052,39 @@ class PayrollDepartmentController extends Controller
             'month_year' => 'required|string',
             'user_ids' => 'required|array|min:1',
             'user_ids.*' => 'integer|exists:users,id',
-            'working_days' => 'required|integer|min:1',
+            /*
+             * Nullable, not required. `required` forced a caller to invent a
+             * number, and processEmployeePayroll reads a stated working_days as
+             * "the caller is stating this month's attendance" and derives LOP
+             * from it — the same trap that docked every employee with perfect
+             * attendance 3-5 days on every process-and-pay run (see that
+             * method's docblock). Omitting it lets each employee's own calendar
+             * decide, which is the only correct answer for a mixed group.
+             */
+            'working_days' => 'nullable|integer|min:1',
+            'days_present' => 'nullable|numeric|min:0',
             'default_annual_ctc' => 'nullable|numeric|min:0',
             'lOP_days' => 'nullable|numeric|min:0',
             'overtime_hours' => 'nullable|numeric|min:0',
+            /*
+             * Per-employee attendance. The flat fields above state the group's
+             * month; an entry here states one person's, and it answers for them
+             * WHOLLY — a field the entry is silent on is not filled in from the
+             * flat body. See bulkAttendanceFor() for why one figure for a group
+             * was wrong, and for the two payslips that mixing the levels
+             * produced.
+             *
+             * A user_id outside `user_ids` is REFUSED, not ignored. An override
+             * that silently evaporates is indistinguishable from one that was
+             * applied, and every row still reports success — which is precisely
+             * the failure mode this array exists to end.
+             */
+            'employees' => 'nullable|array',
+            'employees.*.user_id' => ['required_with:employees', 'integer', Rule::in($request->input('user_ids', []))],
+            'employees.*.working_days' => 'nullable|integer|min:1',
+            'employees.*.days_present' => 'nullable|numeric|min:0',
+            'employees.*.lOP_days' => 'nullable|numeric|min:0',
+            'employees.*.overtime_hours' => 'nullable|numeric|min:0',
         ]);
 
         $organizationId = $request->user()->organization_id;
@@ -1923,8 +2128,6 @@ class PayrollDepartmentController extends Controller
 
         $succeeded = [];
         $failed = [];
-        $lOPDays = $data['lOP_days'] ?? 0;
-        $overtimeHours = $data['overtime_hours'] ?? 0;
 
         // Bulk-fetch existing templates in one query, then create any
         // missing ones. This replaces an N+1 loop of per-user
@@ -1960,15 +2163,10 @@ class PayrollDepartmentController extends Controller
                     continue;
                 }
 
-                $daysPresent = $data['working_days'] - $lOPDays;
-
                 $subRequest = Request::create('/payroll/employees/' . $uid . '/process', 'POST', [
                     'month_year' => $data['month_year'],
                     'annual_ctc' => $annualCtc,
-                    'working_days' => $data['working_days'],
-                    'days_present' => max(0, $daysPresent),
-                    'lOP_days' => $lOPDays,
-                    'overtime_hours' => $overtimeHours,
+                    ...$this->bulkAttendanceFor($data, $uid),
                 ]);
                 $subRequest->setUserResolver(fn () => $request->user());
 
@@ -2789,13 +2987,34 @@ class PayrollDepartmentController extends Controller
         // Record the reason if the caller passed one (e.g. via the legacy
         // `force=1` path or for audit clarity).
         $lockReason = trim((string) $request->get('reason', ''));
-        if (! $completeness['is_complete'] && $lockReason === '') {
-            // Auto-generate a reason when partial so the audit trail is
-            // never empty.
-            $lockReason = "Partial run: {$completeness['processed_count']} of {$completeness['expected_count']} employees processed.";
+
+        /*
+         * Two sentences, because they are two facts and only one of them is
+         * about this run being partial.
+         *
+         * "Partial: 3 of 4 processed" reads like a transient batch failure
+         * somebody should retry. An employee with no salary configured is not
+         * going to appear on a re-run, and a run that left them unpaid has to
+         * say so — including on a run that is otherwise COMPLETE, which is the
+         * ordinary case now that people with no CTC no longer make it partial.
+         * Folding them into the partial count instead is what made every lock in
+         * every organisation say "(partial)" forever, over admin accounts nobody
+         * intended to pay.
+         */
+        $unpricedNote = $completeness['unpriced_count'] > 0
+            ? "{$completeness['unpriced_count']} employee(s) have no salary configured and could not be paid."
+            : '';
+
+        if ($lockReason === '') {
+            $lockReason = trim(
+                ($completeness['is_complete']
+                    ? ''
+                    : "Partial run: {$completeness['processed_count']} of {$completeness['expected_count']} employees processed.")
+                .' '.$unpricedNote
+            );
         }
 
-        DB::transaction(function () use ($run, $lockReason, $request, $completeness) {
+        DB::transaction(function () use ($run, $lockReason, $request, $completeness, $unpricedNote) {
             $run->update([
                 'status' => 'locked',
                 'locked_at' => now(),
@@ -2809,17 +3028,20 @@ class PayrollDepartmentController extends Controller
                 'expected_count' => $completeness['expected_count'],
                 'processed_count' => $completeness['processed_count'],
                 'missing_count' => $completeness['missing_count'],
+                'unpriced_count' => $completeness['unpriced_count'],
                 'is_complete' => $completeness['is_complete'],
                 'reason' => $lockReason,
                 'locked_by' => auth()->id(),
             ]);
         });
 
+        $message = $completeness['is_complete']
+            ? 'Payroll run locked.'
+            : "Payroll run locked (partial). {$completeness['missing_count']} employee(s) not included.";
+
         return response()->json([
             'success' => true,
-            'message' => $completeness['is_complete']
-                ? 'Payroll run locked.'
-                : "Payroll run locked (partial). {$completeness['missing_count']} employee(s) not included.",
+            'message' => trim($message.' '.$unpricedNote),
             'run' => $run->fresh(),
             'completeness' => $completeness,
         ]);
@@ -2829,19 +3051,60 @@ class PayrollDepartmentController extends Controller
      * Get completeness info for a run — how many of the expected
      * active employees have been processed for this run's month.
      *
-     * "Expected" = active users in this org with role in
-     * [employee, manager, admin] AND a payroll template (i.e. on payroll).
-     * Users without an annual_ctc configured yet are counted as expected
-     * so the operator sees them as "needs setup" rather than silently skipped.
+     * TWO facts, kept apart, because collapsing them has now gone wrong in both
+     * directions:
+     *
+     *  - `expected_count` / `missing_count` / `is_complete` answer "did everyone
+     *    who CAN be paid get paid". Expected is every on-payroll user with an
+     *    active template AND a configured salary.
+     *  - `unpriced_count` / `unpriced_employees` answer "who could not be priced
+     *    at all". Always present, never zero-defaulted, never folded into
+     *    missing_count.
+     *
+     * The first mistake was one `annual_ctc > 0` filter deciding both questions.
+     * A new joiner nobody had priced was not expected, not missing, missing_count
+     * 0, is_complete true — the run locked and approved clean and that person was
+     * simply not paid that month.
+     *
+     * The fix for that was to call everyone with an active template "expected",
+     * and it was worse. EmployeePayrollTemplate::getOrCreateForUser writes
+     * annual_ctc = 0 with is_active true and is called eagerly on every
+     * user-creation path (UserController's Add User, InvitationService on
+     * acceptance, both bulk-run endpoints), so the CTC filter was the ONLY thing
+     * separating "on payroll" from "exists as a user". Every HR and admin account
+     * not paid through payroll then sat in missing_employees permanently,
+     * is_complete was permanently false, and every lock read "(partial). N
+     * employee(s) not included" forever — with nothing an operator could do about
+     * it, since nothing in the product deactivates an employee payroll template.
+     * A warning that always fires is one an admin has learned to ignore by the
+     * time it means something (the isStale() rule), so that re-buried the
+     * unpriced joiner it was built to surface.
+     *
+     * Neither number therefore carries the other's meaning. This is the shape
+     * StatutoryComplianceService already uses for unregulated employees — an
+     * empty breach list plus a separate `employees_not_assessed` — and the one
+     * the overtime register uses for unpriced rows: `amount: null`, never 0.00,
+     * plus `rows_without_a_rate`.
+     *
+     * Not a hard block either way: lockPayrollRun locks a partial run and states
+     * BOTH facts, in the message and in the audit trail. Refusing the lock would
+     * strand a payroll over one unconfigured joiner, which is a worse failure
+     * than a run somebody can see and explain.
      */
     /**
-     * The employees in this run that still have no payroll item.
+     * The employees in this run that still have no payroll item AND can be paid.
      *
      * Public because ProcessPayrollRunEmployees needs it, and because it is the
      * only part of completeness the job cares about. Deliberately re-derived on
      * every call rather than passed along: the job recomputes it when the worker
      * picks the run up, which is what makes re-running safe — anyone processed
      * in the meantime is simply no longer in the list.
+     *
+     * Unpriced people are reported through `unpriced_employees`, not handed to a
+     * job whose only possible response to them is to increment a skip counter.
+     * Feeding them in would put people nobody can pay into `processing_total`,
+     * so every re-run would report the same skips and the progress bar would
+     * stop short of its own total for a reason it cannot explain.
      *
      * @return array<int, int>
      */
@@ -2856,22 +3119,35 @@ class PayrollDepartmentController extends Controller
     {
         $monthYear = $run->month_year;
 
-        // Expected: every on-payroll user with an active template
-        $expectedUserIds = DB::table('employee_payroll_templates as t')
+        // On payroll = an active template. Whether that template carries a
+        // salary is a SECOND fact, resolved separately below.
+        $onPayroll = DB::table('employee_payroll_templates as t')
             ->join('users as u', 'u.id', '=', 't.user_id')
             ->where('t.organization_id', $organizationId)
             ->whereIn('u.role', ['employee', 'manager', 'admin'])
             ->where('t.is_active', true)
-            ->whereNotNull('t.annual_ctc')
-            ->where('t.annual_ctc', '>', 0)
-            ->pluck('u.id')
-            ->unique()
-            ->values()
-            ->all();
+            ->select('u.id', 't.annual_ctc')
+            ->get();
 
-        // If we have NO templates with CTCs yet, fall back to "everyone in
-        // this org" so we don't silently report 100% complete on a fresh org.
-        if (empty($expectedUserIds)) {
+        // Highest CTC wins where a user somehow holds more than one active
+        // template row: one configured row means the person IS priced, and
+        // reading whichever row the database returned last would make
+        // completeness depend on row order.
+        $ctcByUser = [];
+        foreach ($onPayroll as $row) {
+            $uid = (int) $row->id;
+            $ctcByUser[$uid] = max($ctcByUser[$uid] ?? 0.0, (float) ($row->annual_ctc ?? 0));
+        }
+
+        $pricedUserIds = array_keys(array_filter($ctcByUser, fn (float $ctc) => $ctc > 0));
+        $unpricedUserIds = array_keys(array_filter($ctcByUser, fn (float $ctc) => $ctc <= 0));
+
+        // Expected = the people this run can actually pay.
+        $expectedUserIds = $pricedUserIds;
+
+        // If NOBODY has a CTC yet, fall back to "everyone in this org" so we
+        // don't silently report 100% complete on a fresh org.
+        if (empty($pricedUserIds)) {
             $expectedUserIds = User::where('organization_id', $organizationId)
                 ->whereIn('role', ['employee', 'manager', 'admin'])
                 ->pluck('id')
@@ -2893,13 +3169,41 @@ class PayrollDepartmentController extends Controller
         // user ids — no need for array_values() (which would reindex them to 0,1,2...).
         $missingUserIds = array_keys(array_diff_key($expectedSet, $processedSet));
 
-        $missingEmployees = empty($missingUserIds)
-            ? []
-            : User::whereIn('id', $missingUserIds)
-                ->select(['id', 'name', 'email'])
-                ->get()
-                ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email])
-                ->all();
+        // Somebody who already has an item on this run was paid, whatever their
+        // template says now. A list headed "could not be priced" that names a
+        // paid employee is a false statement, and it would never clear.
+        $unpricedUserIds = array_values(array_diff($unpricedUserIds, $processedUserIds));
+
+        $pricedSet = array_flip($pricedUserIds);
+
+        $people = User::whereIn('id', array_values(array_unique(array_merge($missingUserIds, $unpricedUserIds))))
+            ->select(['id', 'name', 'email'])
+            ->get()
+            ->keyBy('id');
+
+        /*
+         * needs_ctc is the difference between "run the batch again" and "go and
+         * set this person's salary first". It is false for every missing row on
+         * the normal path — expected is priced by construction — and earns its
+         * keep in the fresh-org fallback, where expected is the whole org.
+         *
+         * has_template is read off the template query rather than assumed,
+         * because that fallback also sweeps in people who are not on payroll at
+         * all. The previous flag could not tell the two apart: it was derived
+         * from a CTC set that is empty precisely when the fallback fires, so
+         * every fallback row came back needs_ctc regardless of whether the person
+         * had a payroll record to set a CTC on.
+         */
+        $describe = fn (int $id) => [
+            'id' => $id,
+            'name' => $people[$id]->name ?? null,
+            'email' => $people[$id]->email ?? null,
+            'needs_ctc' => ! isset($pricedSet[$id]),
+            'has_template' => isset($ctcByUser[$id]),
+        ];
+
+        $missingEmployees = array_map($describe, $missingUserIds);
+        $unpricedEmployees = array_map($describe, $unpricedUserIds);
 
         return [
             'expected_count' => count($expectedUserIds),
@@ -2907,6 +3211,12 @@ class PayrollDepartmentController extends Controller
             'missing_count' => count($missingUserIds),
             'is_complete' => count($missingUserIds) === 0,
             'missing_employees' => $missingEmployees,
+            // Always present, on a complete run as much as an incomplete one.
+            // Zero-defaulting this, or only reporting it when something else is
+            // already wrong, is how an unpriced joiner went unpaid without
+            // appearing anywhere.
+            'unpriced_count' => count($unpricedEmployees),
+            'unpriced_employees' => $unpricedEmployees,
         ];
     }
 

@@ -274,6 +274,43 @@ class AiChatService
         }
     }
 
+    /**
+     * The prose half of the assistant, and the one sentence it must never say.
+     *
+     * Asked 'give me all detail of kajal', this replied "I do not have access
+     * to individual employee records." The product holds those records, the
+     * asker is an admin of the organisation that owns them, and they are on
+     * screen at /employees. What actually happened is that the data path
+     * declined the phrasing and fell through to here — a missing TOOL — and
+     * the prompt then told the user it was a missing FEATURE.
+     *
+     * The licence was one clause: 'say what you do not have rather than
+     * guessing'. It was written to stop invented figures, and it does, but to a
+     * model 'what you do not have' reads as the product's capabilities rather
+     * than this turn's tool list. Those are different claims and only one of
+     * them is checkable from in here, so the prompt now separates them
+     * explicitly and routes an unanswerable question to the screen instead.
+     *
+     * If you reword this prompt, keep both halves: no invented numbers, and no
+     * assertion about what CareVance cannot do. ProseCapabilityClaimsTest
+     * asserts against the returned string and needs no model call.
+     *
+     * Two later corrections, both about precedence between those bullets.
+     *
+     * The withheld-identifier bullet claimed it "outranks the two above it".
+     * Counted from where it sits, the two above are the never-say-the-product-
+     * cannot rule and the named-person rule — while the rule it exists to beat,
+     * "answer with a route", is three above and was left standing. It names both
+     * rules it overrides now, because a precedence written as a line count is
+     * wrong the moment somebody inserts a bullet above it.
+     *
+     * And 'give me all detail of kajal' arguably asks for a PAN among everything
+     * else, which put the named-person bullet and the withheld bullet in conflict
+     * on the exact sentence this prompt was rewritten for. Resolved the withheld
+     * way, it returns the original defect: a refusal with no screen on it, for a
+     * person who is sitting at /employees. Withholding a FIELD is not withholding
+     * the PERSON — only a question whose subject IS the identifier is refused.
+     */
     private function systemPrompt(?User $user): string
     {
         $roleContext = '';
@@ -287,9 +324,16 @@ class AiChatService
             . "Your goal is to solve their problem on the first reply.\n\n"
             . "USING YOUR TOOLS (this is what makes you useful):\n"
             . "- When the question is about a real figure — approvals waiting, who is in or out today, headcount, payroll progress, who cannot be paid — CALL THE TOOL. Do not answer from memory and do not tell them which screen to go and count it on.\n"
-            . "- NEVER invent, estimate or round a number you did not get from a tool. If no tool covers the question, say what you do not have rather than guessing.\n"
+            . "- NEVER invent, estimate or round a number you did not get from a tool. A figure you did not read out of a tool result does not belong in your reply at all.\n"
             . "- State the figure plainly and briefly. Do NOT append a 'source' or a link yourself — the app attaches the record links to your reply automatically, so writing your own duplicates them.\n"
             . "- Tools read the caller's own organisation only. You cannot see any other company's data.\n\n"
+            . "WHEN NO TOOL COVERS THE QUESTION (read this twice):\n"
+            . "- Your tool list is short. The product is not. Anything you cannot pull is a limit of THIS conversation, never a limit of CareVance — you cannot see what the app holds, only its screens can.\n"
+            . "- So say you could not pull it here, then send them to the screen that holds it, from the route map below. 'I can't pull that here — it's on Employees (/employees)' is the shape. Two lines, no apology.\n"
+            . "- NEVER say the product cannot do something, does not have a feature, does not store a record, or that you 'do not have access to' a kind of record. Each of those is a claim about the product that you have no way to check, and the person reading it is the admin who owns that data.\n"
+            . "- A question about ONE NAMED PERSON always has an answer here. No tool returns a whole employee record, but every one of them is in the app: send them to Employees (/employees), search the name and open the row for profile, job and contact details. Never reply that individual employee records are unavailable.\n"
+            . "- The one thing you do withhold is statutory and banking identifiers — PAN, UAN, ESI, Aadhaar, account and IFSC numbers. When one of those is what was asked for, this bullet overrides both the 'send them to the screen' rule and the named-person rule above: do not state the number and do not name a screen to read it off. Say it is not available through this assistant, which is a limit of you, not of the product.\n"
+            . "- Withholding a FIELD is not withholding the PERSON. 'Give me all the details of Kajal' is a question about somebody, not a request for a PAN, so it is answered the normal way: send them to Employees (/employees) and leave the identifiers out of the reply. Only a question whose subject IS the identifier — 'what is her PAN', 'everyone's account numbers' — reaches the bullet above.\n\n"
             . "RESPONSE STYLE (follow strictly):\n"
             . "- Be SHORT. Aim for 2-5 lines. Lead with the direct answer, then only the exact steps needed.\n"
             . "- For a 'how do I…' question, give a single compact numbered list with the exact path (e.g. 'Settings → Organization'). No filler sentences.\n"
@@ -347,7 +391,29 @@ class AiChatService
     }
 
     /**
-     * Public-facing sales/marketing prompt for the landing-page chat bubble (unauthenticated visitors).
+     * Public-facing sales/marketing prompt for the landing-page chat bubble
+     * (unauthenticated visitors), and the reason it is honest in BOTH directions.
+     *
+     * The capability bullets summarise a much larger product, so a model reading
+     * them as exhaustive told prospects CareVance had no recruitment. The first
+     * repair closed that hole by opening its mirror: it asserted "recruitment,
+     * rostering, statutory filings ... are all built" and then forbade the model
+     * from ever admitting a gap. Seven filing generators are reference_only with
+     * nothing submitting to a portal, and recruitment has no public careers page,
+     * so "does it file our PF return to EPFO?" would have been answered yes — to
+     * somebody deciding whether to buy.
+     *
+     * A false no and a false yes are the same defect. CLAUDE.md's Known gaps
+     * section opens by recording what the first one cost: a stale list "cost real
+     * marks in a customer evaluation for features that already shipped". The yes
+     * costs more, because it is found out after the contract. So the rule is
+     * ACCURACY, not optimism: the list is evidence of neither presence nor
+     * absence, and anything not written in it gets "I'll get you a firm answer"
+     * whichever way the visitor is hoping.
+     *
+     * Deliberately no gap list of its own. That would be a second copy of
+     * CLAUDE.md's to keep honest, and it would go stale exactly as the one it
+     * copied did.
      */
     private function landingSystemPrompt(): string
     {
@@ -367,6 +433,10 @@ class AiChatService
             . "- Employee management, org hierarchy, performance reviews & goals, projects & tasks.\n"
             . "- Reports, analytics, productivity monitoring, and role-based access.\n"
             . "- Built-in team chat and announcements.\n\n"
+            . "That list is a summary, not the whole product, and not a warranty — it is evidence of neither presence nor absence for anything not written in it:\n"
+            . "- Recruitment, rostering, statutory filings, asset tracking and single sign-on are all in the product and none of them is written above, so its silence is not a gap. NEVER tell a visitor CareVance does not do something, and never call anything a limitation: you cannot see the feature set from here.\n"
+            . "- NEVER tell a visitor it DOES something that is not written above either, and never say how complete, certified or automated any of it is — no 'yes, that is fully covered', no 'it files that for you automatically'. Depth varies by area and you cannot read it from here. A guess in the flattering direction is still a guess, and it is the one they sign a contract on.\n"
+            . "- Both get the same reply: say you will get them a firm answer, and offer a demo or support@carevance.com.\n\n"
             . "WHY IT'S DIFFERENT: One platform for HR + payroll + productivity (no juggling multiple tools), fast setup, and a modern easy-to-use interface.\n\n"
             . "NEXT STEPS you can suggest: 'Start a free trial', 'See Pricing', or 'Book a demo'. "
             . "If they want to talk to a human: support@carevance.com or +91 800-123-4567 (Mon-Fri, 9 AM-6 PM IST).";

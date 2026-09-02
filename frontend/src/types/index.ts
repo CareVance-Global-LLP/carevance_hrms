@@ -1551,7 +1551,17 @@ export interface PayrollOrganizationSettings {
   defaultBasicPercentage: number;
   defaultHraPercentage: number;
   defaultConveyance: number;
-  defaultState: string;
+  /*
+   * Three values, three different statements — the API no longer collapses
+   * them into one, so this type must not either:
+   *   undefined — nobody has chosen a professional tax state yet
+   *   null      — chosen: this organisation's state levies none
+   *   a code    — that state's slabs
+   * It was `string`, which forced every screen to invent a state to display
+   * and then save the invention back. Professional tax is state-levied and
+   * several states levy none; there is no default that is merely cosmetic.
+   */
+  defaultState?: string | null;
   defaultTaxRegime: 'new' | 'old';
   pfWageCap: number;
   esiThreshold: number;

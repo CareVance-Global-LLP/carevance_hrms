@@ -38,7 +38,15 @@ const DEFAULT_SETTINGS: PayrollOrganizationSettings = {
   defaultBasicPercentage: 40,
   defaultHraPercentage: 20,
   defaultConveyance: 0,
-  defaultState: 'gujarat',
+  /*
+   * Unset, not a state. This read 'gujarat', and the spread below
+   * (`{...DEFAULT_SETTINGS, ...settingsData.settings}`) means anything the
+   * API does not send survives — so for an organisation that has never named
+   * a professional tax state, opening this dialog and pressing Save would
+   * commit Gujarat's slabs to every employee template. The API used to hide
+   * that by always sending 'maharashtra'; it now correctly sends nothing.
+   */
+  defaultState: null,
   defaultTaxRegime: 'new',
   pfWageCap: 15000,
   esiThreshold: 21000,
@@ -229,9 +237,17 @@ export default function PayrollSettingsModal({ isOpen, onClose, onSave }: Payrol
                 <div className="mb-4">
                   <FieldLabel>PT State</FieldLabel>
                   <SelectInput
-                    value={settings.defaultState}
-                    onChange={(e) => updateSetting('defaultState', e.target.value)}
+                    value={settings.defaultState ?? ''}
+                    onChange={(e) => updateSetting('defaultState', e.target.value || null)}
                   >
+                    {/*
+                      * An empty first option so an unset state shows as unset.
+                      * SelectInput falls back to options[0] when nothing
+                      * matches, so without this the dialog would display —
+                      * and on save commit — whichever state happens to sort
+                      * first in INDIAN_STATES.
+                      */}
+                    <option value="">No professional tax / not set</option>
                     {INDIAN_STATES.map((state) => (
                       <option key={state.value} value={state.value}>
                         {state.label}

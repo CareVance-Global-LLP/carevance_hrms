@@ -1138,6 +1138,242 @@
         },
         "limit": 20
       }
+    },
+    {
+      "question": "make me an table with different department with whoes more produtive",
+      "why": "The live question this whole metric set exists for. It was answered 'No records match that question.' because retrieval only knew the word 'productive' from payroll_items' column names, so the planner averaged a payroll snapshot holding zero rows. The rate is the Monitoring screen's arithmetic, so the two cannot disagree.",
+      "plan": {
+        "entity": "activities",
+        "metrics": [
+          "productivity_rate",
+          "productive_hours",
+          "tracked_hours"
+        ],
+        "group_by": [
+          "department"
+        ],
+        "sort": {
+          "by": "productivity_rate",
+          "dir": "desc"
+        }
+      },
+      "expect": {
+        "entity": "activities",
+        "mode": "aggregate",
+        "metrics": [
+          "productivity_rate",
+          "productive_hours",
+          "tracked_hours"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": {
+          "by": "productivity_rate",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "how much unproductive, idle and unclassified time did each department log last month",
+      "why": "The three buckets that are deliberately NOT folded into the rate. Idle is measured and kept out of every share; unclassified activity is its own row rather than a silent exclusion, because dropping it shrinks the denominator and flatters every department.",
+      "plan": {
+        "entity": "activities",
+        "metrics": [
+          "unproductive_hours",
+          "idle_hours",
+          "unclassified_hours"
+        ],
+        "group_by": [
+          "department"
+        ],
+        "filters": [
+          {
+            "field": "recorded_at",
+            "op": "period",
+            "value": "last_month"
+          }
+        ]
+      },
+      "expect": {
+        "entity": "activities",
+        "mode": "aggregate",
+        "metrics": [
+          "unproductive_hours",
+          "idle_hours",
+          "unclassified_hours"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [
+          {
+            "field": "recorded_at",
+            "op": "period",
+            "token": "last_month"
+          }
+        ],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "what productivity did the payroll run record for each department",
+      "why": "The payroll snapshot is KEPT, not deleted — once a run has been processed these columns are the right answer to what the payroll was computed against. Their notes say they are a snapshot, and the exclusion is avg_net_pay's: an unprocessed item carries 0 in every computed column.",
+      "plan": {
+        "entity": "payroll",
+        "metrics": [
+          "avg_productivity_score",
+          "avg_activity_percentage"
+        ],
+        "group_by": [
+          "department"
+        ]
+      },
+      "expect": {
+        "entity": "payroll",
+        "mode": "aggregate",
+        "metrics": [
+          "avg_productivity_score",
+          "avg_activity_percentage"
+        ],
+        "columns": [],
+        "group_by": [
+          "department"
+        ],
+        "filters": [],
+        "having": [],
+        "sort": null,
+        "limit": 20
+      }
+    },
+    {
+      "question": "give me all detail of kajal",
+      "why": "The live question of 26 Aug 2026, refused by the data path and then denied by prose. It is a ROW LOOKUP filtered to one person, and every piece of it had to be pinned: list mode so there is no aggregate cell, a contains filter on the name so two people called Kajal both come back, and exactly the eight columns QueryPlanner::PERSON_COLUMNS publishes - 'all details' means every field this layer is allowed to show, never every column on the row. UNLIKE EVERY OTHER CASE HERE this plan is emitted by QueryPlanner rather than by a model, so test_the_person_cases_pin_the_plan_the_planner_actually_emits asserts this block verbatim against what it emits. For a while it did not, and this was a hand-written copy of PERSON_COLUMNS that would have stayed green while the real list was narrowed to one column or widened past the published profile.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "employee_code",
+          "designation",
+          "department",
+          "reporting_manager",
+          "work_location",
+          "employment_status",
+          "joining_date"
+        ],
+        "filters": [
+          {
+            "field": "name",
+            "op": "contains",
+            "value": "kajal"
+          }
+        ],
+        "sort": {
+          "by": "name",
+          "dir": "asc"
+        }
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "employee_code",
+          "designation",
+          "department",
+          "reporting_manager",
+          "work_location",
+          "employment_status",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "name",
+            "op": "contains",
+            "value": "kajal"
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "name",
+          "dir": "asc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "question": "kajel details (the name typed one character wrong)",
+      "why": "The other filter shape the person path emits, also asserted verbatim against QueryPlanner's own output. A correction is resolved against the roster and then pinned with `in` over the names it actually found, never re-broadened into a contains on the corrected word - that would pull in people nothing matched. Both names are carried because two candidates are two rows, never a silent pick between them, and they are alphabetical because the prefilter's own row order is the storage engine's - an unpinnable plan is one that emits differently on two runs of the same question.",
+      "plan": {
+        "entity": "employees",
+        "mode": "list",
+        "columns": [
+          "name",
+          "employee_code",
+          "designation",
+          "department",
+          "reporting_manager",
+          "work_location",
+          "employment_status",
+          "joining_date"
+        ],
+        "filters": [
+          {
+            "field": "name",
+            "op": "in",
+            "value": [
+              "Kajal Mehta",
+              "Kajal Sharma"
+            ]
+          }
+        ],
+        "sort": {
+          "by": "name",
+          "dir": "asc"
+        }
+      },
+      "expect": {
+        "entity": "employees",
+        "mode": "list",
+        "metrics": [],
+        "columns": [
+          "name",
+          "employee_code",
+          "designation",
+          "department",
+          "reporting_manager",
+          "work_location",
+          "employment_status",
+          "joining_date"
+        ],
+        "group_by": [],
+        "filters": [
+          {
+            "field": "name",
+            "op": "in",
+            "value": [
+              "Kajal Mehta",
+              "Kajal Sharma"
+            ]
+          }
+        ],
+        "having": [],
+        "sort": {
+          "by": "name",
+          "dir": "asc"
+        },
+        "limit": 20
+      }
     }
   ],
   "refused": [

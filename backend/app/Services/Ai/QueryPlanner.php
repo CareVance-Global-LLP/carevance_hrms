@@ -40,6 +40,37 @@ class QueryPlanner
      */
     private const MAX_TOKENS = 1200;
 
+    /**
+     * What "all details" is allowed to mean.
+     *
+     * NOT everything on the row, and the distinction is the whole point.
+     * `employee_work_infos` joined to `users` carries statutory identifiers and
+     * bank details; `SchemaIntrospector` already withholds those from the layer
+     * entirely, so none of them could be named here — but "give me everything"
+     * is precisely the question that would tempt somebody to widen the
+     * exclusion to make a lookup feel complete. It stays a fixed list of
+     * columns the layer publishes, chosen once, in code, where it can be read.
+     *
+     * EIGHT, because §5.3 caps a row listing at eight columns and this plan is
+     * held to the same grammar as any other. The employees entity publishes
+     * twenty allowed fields, so eight is a genuine edit and these are the ones
+     * an HR admin looking somebody up is asking for: who they are, what they
+     * do, who they report to, where they sit, whether they are still here, and
+     * since when. `department` rather than `report_group` because it is the
+     * curated dimension — it labels a person with no group "(unassigned)"
+     * instead of leaving the cell blank, and it carries the note saying so.
+     */
+    private const PERSON_COLUMNS = [
+        'name',
+        'employee_code',
+        'designation',
+        'department',
+        'reporting_manager',
+        'work_location',
+        'employment_status',
+        'joining_date',
+    ];
+
     public function __construct(private readonly PlanningClient $client)
     {
     }
@@ -53,6 +84,12 @@ class QueryPlanner
         }
 
         $this->refuseWithheldSubject($question);
+
+        $lookup = $this->personLookupPlan($question);
+
+        if ($lookup !== null) {
+            return $lookup;
+        }
 
         $catalogue = $this->catalogueFor($question);
 
@@ -68,6 +105,67 @@ class QueryPlanner
         }
 
         return $plan;
+    }
+
+    /**
+     * "details of <person>" is planned HERE, not by the model.
+     *
+     * THE DEFECT. "give me all detail of kajal" reached prose, which then said
+     * the data did not exist. `PersonLookup`'s docblock has the measured
+     * retrieval scores; the short version is that a person's name is a column
+     * VALUE, retrieval indexes only names, and so the `employees` entity scored
+     * 0.00 on every phrasing of the most obvious question anyone asks an HR
+     * assistant. Two of the four phrasings never reached a model at all.
+     *
+     * WHY A DETERMINISTIC PLAN RATHER THAN A BETTER PROMPT. Handing the model
+     * the right catalogue would fix the entity and leave two things to chance,
+     * both of which decide the answer:
+     *
+     *  - that "kajal" is a VALUE for `name` rather than a field it should have
+     *    found in the catalogue and did not. A model that reads it the second
+     *    way emits the error shape, and the error shape is a refusal.
+     *  - which eight of twenty allowed columns "all details" means. That is a
+     *    product decision about what a profile IS, it is made once in
+     *    `PERSON_COLUMNS` above, and re-deciding it per request means the same
+     *    question shows different fields on different days.
+     *
+     * It also makes the behaviour testable without a vendor in the loop, which
+     * is how every other guarantee in this layer is pinned, and it answers the
+     * commonest question in the product with no model call at all.
+     *
+     * WHAT IT DELIBERATELY DOES NOT TAKE. Only a question whose every word is
+     * either the name or a request for the row itself. "what did kajal earn
+     * last month" names a subject and goes to the planner, which can filter
+     * payroll by a person; answering that from this list would be a confident
+     * answer to a different question. `PersonLookup` owns that gate, because it
+     * is the same judgement as "is this a person at all".
+     *
+     * The plan is returned RAW, in the model's own grammar, and goes through
+     * `PlanValidator` exactly like any other. Nothing here is trusted further
+     * than a model would be — `PERSON_COLUMNS` is still resolved against the
+     * entity's allow-list, so an excluded column could not be smuggled in from
+     * this side either.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function personLookupPlan(string $question): ?array
+    {
+        $filters = PersonLookup::nameFiltersFor($question, SemanticLayer::cached());
+
+        if ($filters === null) {
+            return null;
+        }
+
+        return [
+            'entity' => 'employees',
+            'mode' => 'list',
+            'columns' => self::PERSON_COLUMNS,
+            'filters' => $filters,
+            // Two people called Kajal are two rows, and a table nobody ordered
+            // puts them in whatever order the join happened to produce. Sorted
+            // by the column the reader is comparing.
+            'sort' => ['by' => 'name', 'dir' => 'asc'],
+        ];
     }
 
     /**

@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AiChatLog;
 use App\Models\User;
+use App\Services\Ai\Actions\ActionExecutor;
+use App\Services\Ai\Actions\ActionPlanner;
+use App\Services\Ai\Actions\ActionPreviewBuilder;
+use App\Services\Ai\Actions\ActionRefusedException;
 use App\Services\Ai\AnswerSummariser;
 use App\Services\Ai\PlanValidator;
 use App\Services\Ai\QueryPlanExecutor;
@@ -26,6 +30,9 @@ class SearchAskController extends Controller
         private readonly PlanValidator $validator,
         private readonly QueryPlanExecutor $executor,
         private readonly AnswerSummariser $summariser,
+        private readonly ActionPlanner $actions,
+        private readonly ActionPreviewBuilder $previews,
+        private readonly ActionExecutor $applier,
     ) {
     }
 
@@ -65,6 +72,25 @@ class SearchAskController extends Controller
              * refusal (PAN, bank details) stays refused here, because routing
              * it to a general assistant is how an exclusion gets talked around.
              */
+            /*
+             * THE WRITE PATH SITS BETWEEN THE READ PATH AND PROSE.
+             *
+             * Between, and nowhere else. Consulted only AFTER the query planner
+             * has declined, because a change request never costs a table that
+             * would otherwise have been answered — and BEFORE prose, because §6
+             * says "a refusal is never a fallback to prose. A person asking for
+             * a change and receiving a paragraph would reasonably believe
+             * something happened."
+             *
+             * `isChangeRequest()` is local, free and decides ROUTING rather
+             * than an answer: a wrong yes costs a refusal on something the read
+             * path had already refused, and a wrong no leaves the question
+             * exactly where it went before write actions existed.
+             */
+            if ($this->readsAsAChange($e, $data['question'])) {
+                return $this->previewAction($request, $data['question']);
+            }
+
             if ($e->mayAnswerInProse()) {
                 return $this->answerInProse($request, $data['question'], $e);
             }
@@ -149,6 +175,168 @@ class SearchAskController extends Controller
             'summary' => null,
             'truncated' => false,
         ]);
+    }
+
+    /**
+     * Whether this refusal should be offered to the write path at all.
+     *
+     * A WITHHELD refusal never is. "set everyone's PAN to …" is declined by
+     * `QueryPlanner::refuseWithheldSubject()` before any model sees it, and
+     * handing that sentence to a second planner is how an exclusion gets talked
+     * around by a different route — the same reasoning that keeps WITHHELD out
+     * of the prose fallback below it.
+     */
+    private function readsAsAChange(UnsupportedQuestionException $refusal, string $question): bool
+    {
+        if ($refusal->getReason() === UnsupportedQuestionException::WITHHELD) {
+            return false;
+        }
+
+        return ActionPlanner::isChangeRequest($question);
+    }
+
+    /**
+     * The change the person asked for, interpreted and shown back to them.
+     *
+     * A PREVIEW WRITES NOTHING. Everything below reads: the planner produces an
+     * interpretation, the builder resolves the target inside the tenant scope,
+     * reads the live values and computes the diff. The only thing it issues is
+     * a signed token, and a token is a claim about what was shown — not a
+     * change to anything.
+     *
+     * ITS OWN try/catch, and that is load-bearing rather than tidy.
+     * `ActionRefusedException` EXTENDS `UnsupportedQuestionException`, and PHP
+     * does not re-enter a catch block with a throw raised inside it — written
+     * in the caller's catch, every refusal here would escape as an unhandled
+     * 500, which is the one outcome §6 rules out most firmly.
+     *
+     * A no-op preview comes back with `token: null` and a `message`. It is not
+     * a refusal — nothing is wrong, the row already holds what was asked for —
+     * and the absence of a token is what stops the client offering an Apply
+     * button for a write that would change nothing.
+     */
+    private function previewAction(Request $request, string $question)
+    {
+        try {
+            $preview = $this->previews->build(
+                $this->actions->plan($question),
+                $request->user(),
+                $question,
+            );
+        } catch (ActionRefusedException $e) {
+            return $this->refuseAction($e);
+        } catch (UnsupportedQuestionException $e) {
+            // The planner declining before it ever produced a plan — an
+            // unconfigured provider, or output nothing could parse. Still a
+            // change request, so still an action refusal and never prose.
+            return $this->refuseAction(ActionRefusedException::malformed($e->getDetail()));
+        }
+
+        AiChatLog::create([
+            'user_id' => $request->user()->id,
+            'organization_id' => $request->user()->organization_id,
+            'message' => $question,
+            'reply' => json_encode($this->loggableAction($preview)),
+            'tool_calls_used' => ['action_preview.'.$preview['key']],
+        ]);
+
+        return response()->json([
+            // The client switches on this, exactly as it does for a table or a
+            // prose answer. An action is a third answer shape, not a table with
+            // unusual columns.
+            'kind' => 'action',
+            'action' => $preview,
+            /*
+             * The read path's empty fields, carried exactly as a prose answer
+             * carries them. An action is a third answer shape on ONE response
+             * type, and a client holding `rows` or `notes` must not have to
+             * know which shape it got before it may read them.
+             */
+            'plan' => null,
+            'columns' => [],
+            'rows' => [],
+            'notes' => [],
+            'summary' => null,
+            'truncated' => false,
+        ]);
+    }
+
+    /**
+     * Apply a previewed change.
+     *
+     * The controller does almost nothing here on purpose. `ActionExecutor`
+     * re-opens the token, re-reads the catalogue, re-checks the permission and
+     * the role gate, re-resolves the target inside the tenant scope, re-reads
+     * the live row and refuses if anything moved, dispatches through the REAL
+     * HTTP endpoint and writes the audit naming this human. Any of that lifted
+     * up here would be a second implementation of a check that already exists,
+     * and two copies of a security check is one that eventually disagrees with
+     * itself.
+     *
+     * The inbound request is handed over untouched: the executor forwards its
+     * credential to the internal request, so the endpoint authenticates the
+     * same person through the same middleware, and it is the provenance the
+     * audit row records.
+     */
+    public function act(Request $request)
+    {
+        $data = $request->validate(['token' => 'required|string|max:8192']);
+
+        if (! $this->mayAsk($request->user())) {
+            return response()->json(['message' => 'AI mode is available to administrators only.'], 403);
+        }
+
+        try {
+            $result = $this->applier->execute($data['token'], $request->user(), $request);
+        } catch (ActionRefusedException $e) {
+            return $this->refuseAction($e);
+        }
+
+        return response()->json($result);
+    }
+
+    /**
+     * One refusal envelope for the whole write path.
+     *
+     * The READ PATH'S SHAPE, deliberately: `kind`/`error`/`message`/`detail` on
+     * a 422, because a client that already parses a refusal must not need a
+     * second parser to learn that a change was declined. What differs is what
+     * fills them — `error` is the machine code, so an action refusal says
+     * `action_refused` rather than `unsupported_question`, and the client can
+     * tell "I can't answer that from your HR data" apart from "you do not have
+     * permission to change leave types". Rendering the second under the first
+     * is a false statement, not a cosmetic mismatch.
+     *
+     * `refusal` carries WHICH refusal it is — stale, not permitted, no
+     * preview — so the client can offer the right next step. Every sentence
+     * names the thing that was wrong; none of them is "forbidden".
+     */
+    private function refuseAction(ActionRefusedException $e)
+    {
+        return response()->json([
+            'kind' => 'refusal',
+            'error' => 'action_refused',
+            'refusal' => $e->refusal(),
+            'message' => $e->getDetail(),
+            // The same sentence, in the key the existing client reads off a
+            // 422. A refusal the reader cannot see is one they will retry.
+            'detail' => $e->getDetail(),
+        ], 422);
+    }
+
+    /**
+     * The preview, minus the token, for the ask log.
+     *
+     * The token is a bearer capability for five minutes. It belongs in the
+     * response the person is looking at and nowhere else — certainly not in a
+     * table anybody with log access can read.
+     *
+     * @param  array<string, mixed>  $preview
+     * @return array<string, mixed>
+     */
+    private function loggableAction(array $preview): array
+    {
+        return array_diff_key($preview, ['token' => null]);
     }
 
     public function summary(Request $request)

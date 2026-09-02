@@ -27,13 +27,22 @@ const INDIAN_STATES = [
 interface EmpFormState {
   annual_ctc: number | null;
   salary_template_id: number | null;
-  pt_state: string;
+  /*
+   * Nullable, and it starts null. This was `string` defaulting to
+   * 'maharashtra', and this form writes straight to the employee's payroll
+   * template — so an admin who opened the card to set a CTC and never looked
+   * at the PT field committed Maharashtra's slab to that employee, and every
+   * payslip after it deducted ₹200 a month from somebody who may work in
+   * Delhi and owe nothing. Professional tax is state-levied; null means
+   * nobody has said which state, which PTStateService prices at ₹0.
+   */
+  pt_state: string | null;
 }
 
 const defaultEmpForm: EmpFormState = {
   annual_ctc: null,
   salary_template_id: null,
-  pt_state: 'maharashtra',
+  pt_state: null,
 };
 
 function getInitials(name: string): string {
@@ -131,7 +140,7 @@ export default function EmployeePayrollCards() {
       setEmpForm({
         annual_ctc: payrollConfig.annual_ctc ? Number(payrollConfig.annual_ctc) : null,
         salary_template_id: payrollConfig.salary_template_id ?? null,
-        pt_state: payrollConfig.pt_state ?? 'maharashtra',
+        pt_state: payrollConfig.pt_state ?? null,
       });
     } else {
       setEmpForm(defaultEmpForm);
@@ -332,9 +341,16 @@ export default function EmployeePayrollCards() {
                 <div>
                   <label className="text-xs font-medium text-slate-500 mb-1 block">PT State</label>
                   <SelectInput
-                    value={empForm.pt_state}
-                    onChange={e => setEmpForm({ ...empForm, pt_state: e.target.value })}
+                    value={empForm.pt_state ?? ''}
+                    onChange={e => setEmpForm({ ...empForm, pt_state: e.target.value || null })}
                   >
+                    {/*
+                      * SelectInput shows options[0] when the value matches
+                      * nothing, so an unset state needs an option of its own
+                      * or the field displays a state this employee was never
+                      * assigned — and the next save makes it true.
+                      */}
+                    <option value="">— No professional tax / not set —</option>
                     {INDIAN_STATES.map(s => (
                       <option key={s.value} value={s.value}>{s.label}</option>
                     ))}

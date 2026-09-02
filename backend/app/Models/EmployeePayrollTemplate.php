@@ -240,15 +240,36 @@ class EmployeePayrollTemplate extends Model
                         ?? ($deptTemplate?->esi_employer_percentage ?? 3.25),
                     'esi_threshold' => $orgSettings['esiThreshold']
                         ?? ($deptTemplate?->esi_threshold ?? 21000.00),
-                    // No fabricated fallback. Professional tax is state-levied
-                    // and several states charge none, so stamping a real state
-                    // on a template nobody configured quietly deducts ₹200 a
-                    // month from people who may owe nothing. Null means
-                    // unconfigured, and PTStateService returns ₹0 for it —
-                    // under-deducting is correctable, taking money that was
-                    // never owed is not.
-                    'pt_state' => $orgSettings['defaultState']
-                        ?? $deptTemplate?->pt_state,
+                    /*
+                     * array_key_exists, NOT `??` — and this is the only key in
+                     * this block that needs it.
+                     *
+                     * "Nobody has answered yet" (key absent) and "answered:
+                     * this organisation's state levies none" (key => null) are
+                     * different facts, and `??` cannot tell them apart. It read
+                     * the explicit null as unanswered and fell through to the
+                     * department template, whose pt_state column was NOT NULL
+                     * DEFAULT 'maharashtra' at the database level. So an admin
+                     * who ticked "No professional tax in my state" in the
+                     * wizard and then saved any department template had
+                     * Maharashtra stamped on every hire that followed —
+                     * getOrCreateForUser runs once per new employee — and
+                     * PayrollAutoProcessService deducted Rs 200 a month,
+                     * Rs 300 in February, Rs 2,500 a year per head, from their
+                     * explicit answer of "none".
+                     *
+                     * The other keys here take numbers and booleans where null
+                     * genuinely means "not set", so `??` is right for them.
+                     *
+                     * Professional tax is state-levied and Delhi, Haryana,
+                     * Punjab and Uttar Pradesh levy none. Null prices at Rs 0
+                     * through PTStateService, so an unanswered setup
+                     * under-deducts, which is correctable. Taking a tax that
+                     * was never owed is not.
+                     */
+                    'pt_state' => array_key_exists('defaultState', $orgSettings)
+                        ? $orgSettings['defaultState']
+                        : $deptTemplate?->pt_state,
                     'tax_regime' => $orgSettings['defaultTaxRegime']
                         ?? ($deptTemplate?->tax_regime ?? 'new'),
                     'is_metro_city' => $orgSettings['isMetroCity']

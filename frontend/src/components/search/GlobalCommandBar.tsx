@@ -17,6 +17,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import CommandBar from '@/components/search/CommandBar';
+import { ActionRefusedError } from '@/components/search/AiActionPreview';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { usePlan } from '@/hooks/usePlan';
@@ -30,7 +31,14 @@ import {
 import { canAccess } from '@/lib/permissions';
 import { reportSilentError } from '@/lib/reportSilentError';
 import type { NavGroup } from '@/navigation/dashboardNavigation';
-import { searchApi, searchAskApi, type AskResponse, type GlobalSearchHit } from '@/services/api';
+import {
+  getApiErrorMessage,
+  searchApi,
+  searchAskApi,
+  type ActRefusal,
+  type AskResponse,
+  type GlobalSearchHit,
+} from '@/services/api';
 
 /** Long enough to skip a keystroke burst, short enough to feel live. */
 const DEBOUNCE_MS = 200;
@@ -114,8 +122,20 @@ export default function GlobalCommandBar({
   const [aiAnswer, setAiAnswer] = useState<AskResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  // Which path refused. The write path's refusals ("you do not have permission
+  // to change leave types", "that value changed since I showed you") must not
+  // render under the read path's heading — that would say a change was not
+  // answered when it was not APPLIED, and the two are different facts.
+  const [aiErrorKind, setAiErrorKind] = useState<'data' | 'action'>('data');
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<number | null>(null);
+  /*
+   * The question that produced the answer on screen, kept so a preview which
+   * has gone stale can be rebuilt from the SAME words. Re-reading the input
+   * instead would re-ask whatever has been typed since, which is a different
+   * question wearing the old one's refusal.
+   */
+  const lastQuestionRef = useRef<string>('');
 
   const copyCurrentUrl = useCallback(() => {
     const url = window.location.href;
@@ -270,8 +290,10 @@ export default function GlobalCommandBar({
   /* ------------------------------------------------------------------- ask */
 
   const handleAskAi = useCallback(async (question: string) => {
+    lastQuestionRef.current = question;
     setAiLoading(true);
     setAiError(null);
+    setAiErrorKind('data');
     setAiAnswer(null);
 
     let answer: AskResponse;
@@ -281,16 +303,32 @@ export default function GlobalCommandBar({
       answer = response.data;
       setAiAnswer(answer);
     } catch (error) {
-      const detail = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
+      const detail = (error as {
+        response?: { status?: number; data?: { detail?: string; message?: string; error?: string } };
+      }).response;
+      // `error` is the machine code, the same slot the read path fills with
+      // 'unsupported_question'. A change that was declined is not a question
+      // that could not be answered, and the heading has to say so.
+      const refusedAChange = detail?.data?.error === 'action_refused';
+      setAiErrorKind(refusedAChange ? 'action' : 'data');
       setAiError(
         detail?.status === 422
-          ? (detail.data?.detail ?? 'That question cannot be answered from your HR data.')
+          ? (detail.data?.detail ??
+              detail.data?.message ??
+              'That question cannot be answered from your HR data.')
           : 'Something went wrong reaching the AI service.',
       );
       return;
     } finally {
       setAiLoading(false);
     }
+
+    /*
+     * TABLES ONLY. A prose answer and an action preview both carry no columns
+     * and no rows, so summarising one posts an empty payload to a summariser
+     * with nothing to summarise — and spends a rate-limited call doing it.
+     */
+    if ((answer.kind ?? 'table') !== 'table') return;
 
     /*
      * Deliberately after the table is already on screen, and deliberately not
@@ -307,13 +345,69 @@ export default function GlobalCommandBar({
     }
   }, []);
 
+  /**
+   * Apply a previewed change.
+   *
+   * The TOKEN is the whole payload — the plan, the before-values and the person
+   * it was issued to all ride inside the server's signature — so there is
+   * nothing to compose here and nothing a client could edit. A refusal is
+   * re-thrown as a written sentence for the preview to render beside the diff,
+   * because a change that was refused has to leave the numbers it refused on
+   * screen.
+   */
+  const handleApplyAction = useCallback(async (token: string) => {
+    try {
+      const response = await searchAskApi.act(token);
+      return response.data;
+    } catch (error) {
+      /*
+       * The sentence AND the code. The sentence is the only thing that names
+       * what was wrong with this row and it is rendered verbatim; the code is
+       * what lets the card tell a refusal it can retry apart from one that has
+       * made the diff above it untrue.
+       */
+      const refusal = (error as { response?: { data?: { refusal?: ActRefusal } } }).response?.data
+        ?.refusal;
+
+      throw new ActionRefusedError(
+        getApiErrorMessage(error, 'That change could not be applied.'),
+        refusal ?? null,
+      );
+    }
+  }, []);
+
+  /**
+   * Drop a previewed change without applying it.
+   *
+   * Nothing is undone because nothing was written — a preview reads and signs,
+   * and this discards the signature. Kept separate from closing the palette:
+   * Escape throws away the whole session, and somebody who has decided against
+   * one proposal has not decided against searching.
+   */
+  const handleCancelAction = useCallback(() => {
+    setAiAnswer(null);
+    setAiError(null);
+    setAiErrorKind('data');
+  }, []);
+
+  /** Rebuild a preview whose diff no longer describes the row. */
+  const handleReaskAction = useCallback(() => {
+    if (lastQuestionRef.current) void handleAskAi(lastQuestionRef.current);
+  }, [handleAskAi]);
+
   // A closed palette must not reopen holding the last answer: the next question
   // is a new one, and a stale table under a fresh prompt reads as a reply to it.
+  //
+  // That discards an unapplied preview too, and deliberately: a token is
+  // consent to one interpretation somebody was looking at, and one they walked
+  // away from is not consent held in reserve. The preview says "nothing has
+  // changed yet" for exactly this reason.
   useEffect(() => {
     if (!open) {
       setAiMode(false);
       setAiAnswer(null);
       setAiError(null);
+      setAiErrorKind('data');
     }
   }, [open]);
 
@@ -375,7 +469,11 @@ export default function GlobalCommandBar({
       aiAnswer={aiAnswer}
       aiLoading={aiLoading}
       aiError={aiError}
+      aiErrorKind={aiErrorKind}
       onAskAi={handleAskAi}
+      onApplyAction={handleApplyAction}
+      onCancelAction={handleCancelAction}
+      onReaskAction={handleReaskAction}
       onAiExample={handleAskAi}
     />
   );

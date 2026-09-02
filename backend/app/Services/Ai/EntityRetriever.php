@@ -36,6 +36,26 @@ final class EntityRetriever
     /** Below this, a match is noise and the question is refused instead. */
     private const FLOOR = 3.0;
 
+    /**
+     * A word must be at least this long before a single-character misspelling
+     * of it is corrected.
+     *
+     * "make me an table with different department with whoes more produtive" is
+     * a real question, typed by a real person, and it has to work. `produtive`
+     * matches nothing in the catalogue and nothing in the map, so before this
+     * it scored 0.00 everywhere and the question was decided entirely by the
+     * word "department" — which two payroll template tables win outright.
+     *
+     * Six characters and edit distance 1 is deliberately timid. Short words are
+     * excluded because one edit reaches too much at that length ("pay"/"day",
+     * "task"/"tasks"), and a correction is only applied to a token the
+     * catalogue does NOT recognise, so a word that means something real is
+     * never quietly rewritten into something else. If two synonyms are equally
+     * close the token is left alone — guessing between them would answer a
+     * different question with full confidence.
+     */
+    private const FUZZY_MIN_LENGTH = 6;
+
     private const DEFAULT_TOP = 5;
 
     /** A synonym that names the entity outright — the strongest signal there is. */
@@ -145,6 +165,43 @@ final class EntityRetriever
         'offer' => ['hiring', 'candidates'],
         'opening' => ['hiring', 'candidates'],
         'vacancy' => ['hiring', 'candidates'],
+
+        /*
+         * productive|productivity|idle|utilisation|tracker -> activities
+         *
+         * THE BUG THIS GROUP EXISTS FOR. Retrieval indexes names and labels,
+         * never column VALUES. "productive" is a VALUE of
+         * `activities.classification`; the only NAMES carrying that word
+         * anywhere in a 150-entity catalogue are `payroll_items`'
+         * `total_productive_seconds` and `productivity_score`. So "which
+         * department is most productive" scored payroll 35.07 and activities
+         * 0.00, the planner averaged a payroll snapshot that holds no rows
+         * until a run has been processed, and the product answered "no records"
+         * to a question 10,548 classified activity rows could answer.
+         *
+         * A synonym alone would not have been enough — SYNONYM_NAMES is 10.0
+         * and loses to 35.07 on score — but naming an entity RESERVES it a
+         * slot (see `namedEntities()`), which is the mechanism that was already
+         * built for exactly this: a word that names a table is a promise about
+         * which table is meant, not evidence to be weighed against how many
+         * column names happen to collide.
+         *
+         * One target, not two. The `activity` concept owns `activity_sessions`
+         * and is reachable by its own name; `activities` is the row-level table
+         * the classification actually lives on.
+         */
+        'productive' => ['activities'],
+        'productivity' => ['activities'],
+        'unproductive' => ['activities'],
+        'active' => ['activities'],
+        'idle' => ['activities'],
+        'utilisation' => ['activities'],
+        'utilization' => ['activities'],
+        'efficiency' => ['activities'],
+        'monitoring' => ['activities'],
+        'tracker' => ['activities'],
+        'tracking' => ['activities'],
+        'usage' => ['activities'],
     ];
 
     /** Words that carry no signal about WHICH entity is meant. */
@@ -235,7 +292,7 @@ final class EntityRetriever
      */
     private static function namedEntities(string $question, array $catalogue): array
     {
-        $tokens = self::tokenise($question);
+        $tokens = self::tokensFor($question, self::documentFrequency($catalogue));
         $named = [];
 
         foreach ($catalogue as $key => $entity) {
@@ -291,8 +348,8 @@ final class EntityRetriever
      */
     public static function scoreAll(string $question, array $catalogue): array
     {
-        $tokens = self::tokenise($question);
         $documentFrequency = self::documentFrequency($catalogue);
+        $tokens = self::tokensFor($question, $documentFrequency);
         $entityCount = max(1, count($catalogue));
 
         $scores = [];
@@ -344,6 +401,58 @@ final class EntityRetriever
     }
 
     /**
+     * The question's content words, split by whether this catalogue means
+     * anything at all by them.
+     *
+     * THE WORD THAT IS A VALUE, WHICH RETRIEVAL CAN NEVER SEE.
+     *
+     * Everything above indexes NAMES — entity keys, labels, table names,
+     * metric, dimension and column names. It never indexes column VALUES, and
+     * it never can: values change hourly and there are millions of them. The
+     * consequence is invisible until somebody asks about a PERSON, because a
+     * person's name is the one thing an HR admin asks about that appears in no
+     * table name, no label and no column anywhere in the schema.
+     *
+     * Measured on the 150-entity catalogue, 26 Aug 2026. "show me kajal" and
+     * "everything about kajal" scored 0.00 on every single entity and were
+     * refused outright. "give me all detail of kajal" was decided entirely by
+     * the word "detail", which won `attendance_holidays` 15.03 on its `details`
+     * column; "kajal profile" won `employee_profiles` 36.24. In all four the
+     * `employees` entity — the one the question is about — scored 0.00.
+     *
+     * `namedEntities()` is the lever that fixes a question whose SUBJECT loses
+     * to its predicate, and it cannot fire here: it reads the question against
+     * the catalogue and the synonym map, and a colleague's first name is in
+     * neither. The only place "kajal" means anything is the roster, which is
+     * DATA — so this method stops at the honest boundary. It reports which
+     * words this catalogue cannot account for and never guesses what they are;
+     * `PersonLookup` is what asks the roster, and it is the only caller.
+     *
+     * Words come back in the form the person TYPED, for the reason
+     * `contentWords()` gives.
+     *
+     * @param  array<string, array<string, mixed>>  $catalogue
+     * @return array{known: list<string>, unknown: list<string>}
+     */
+    public static function questionWords(string $question, array $catalogue): array
+    {
+        $documentFrequency = self::documentFrequency($catalogue);
+
+        $split = ['known' => [], 'unknown' => []];
+
+        foreach (self::contentWords($question) as $word => $canonical) {
+            $recognised = isset($documentFrequency[$canonical]) || self::synonymTargets($canonical) !== [];
+
+            // Cast because PHP turns a wholly numeric array key into an int,
+            // so an employee code typed as a question would arrive here as one
+            // and reach a caller that was promised a string.
+            $split[$recognised ? 'known' : 'unknown'][] = (string) $word;
+        }
+
+        return $split;
+    }
+
+    /**
      * What one token is worth to one entity as a synonym: it either NAMES the
      * entity or points at its concept, and the better of the two counts once.
      * Summing every matching target would score an entity twice for one word.
@@ -376,6 +485,16 @@ final class EntityRetriever
      */
     private static function synonymTargets(string $token): array
     {
+        return self::normalisedSynonyms()[$token] ?? [];
+    }
+
+    /**
+     * The map keyed by canonical form, built once.
+     *
+     * @return array<string, list<string>>
+     */
+    private static function normalisedSynonyms(): array
+    {
         static $normalised = null;
 
         if ($normalised === null) {
@@ -386,7 +505,67 @@ final class EntityRetriever
             }
         }
 
-        return $normalised[$token] ?? [];
+        return $normalised;
+    }
+
+    /**
+     * The question's tokens, with an unrecognisable word corrected to the
+     * synonym it is one character away from.
+     *
+     * @param  array<string, int>  $documentFrequency
+     * @return list<string>
+     */
+    private static function tokensFor(string $question, array $documentFrequency): array
+    {
+        $tokens = [];
+
+        foreach (self::tokenise($question) as $token) {
+            $tokens[] = self::correct($token, $documentFrequency);
+        }
+
+        // Corrections can collide two tokens into one ("productive produtive"),
+        // and a token counted twice would score twice.
+        return array_values(array_unique($tokens));
+    }
+
+    /**
+     * One token, corrected only if leaving it alone tells us nothing.
+     *
+     * The guard is what makes this safe: a token the catalogue reaches — any
+     * entity name, metric, dimension or column — or that the map already knows
+     * is returned untouched. Only a word that means NOTHING here is a candidate
+     * for having been mistyped, and even then it must be within one edit of
+     * exactly one synonym.
+     *
+     * @param  array<string, int>  $documentFrequency
+     */
+    private static function correct(string $token, array $documentFrequency): string
+    {
+        if (isset($documentFrequency[$token]) || self::synonymTargets($token) !== []) {
+            return $token; // it means something already; never rewrite it
+        }
+
+        if (strlen($token) < self::FUZZY_MIN_LENGTH) {
+            return $token;
+        }
+
+        $match = null;
+        $candidates = 0;
+
+        foreach (array_keys(self::normalisedSynonyms()) as $word) {
+            if (strlen($word) < self::FUZZY_MIN_LENGTH || abs(strlen($word) - strlen($token)) > 1) {
+                continue;
+            }
+
+            if (levenshtein($token, $word) !== 1) {
+                continue;
+            }
+
+            $match = $match ?? $word;
+            $candidates++;
+        }
+
+        return $candidates === 1 ? (string) $match : $token;
     }
 
     /**
@@ -457,9 +636,27 @@ final class EntityRetriever
      */
     private static function tokenise(string $text): array
     {
+        return array_values(array_unique(array_values(self::contentWords($text))));
+    }
+
+    /**
+     * The words a text is actually about, as TYPED => canonical.
+     *
+     * Both forms are kept because the two readers need different ones and
+     * neither may derive the other for itself. Scoring compares canonical forms
+     * on both sides — that is what makes "salaries" reach payroll. A reader
+     * resolving a word against real DATA needs what the person typed, because
+     * the inflector rewrites words it has no business rewriting once a name is
+     * in play: a surname ending in "s" singularises into a name nobody has, and
+     * looking that up finds nobody while the person is sitting in the roster.
+     *
+     * @return array<string, string>
+     */
+    private static function contentWords(string $text): array
+    {
         $parts = preg_split('/[^a-z0-9]+/i', strtolower($text), -1, PREG_SPLIT_NO_EMPTY) ?: [];
 
-        $tokens = [];
+        $words = [];
 
         foreach ($parts as $part) {
             $canonical = self::normalise($part);
@@ -472,10 +669,10 @@ final class EntityRetriever
                 continue;
             }
 
-            $tokens[] = $canonical;
+            $words[$part] = $canonical;
         }
 
-        return array_values(array_unique($tokens));
+        return $words;
     }
 
     /**

@@ -191,11 +191,22 @@ class SemanticLayerTest extends TestCase
                 // min/max join derivation's own allowed set (SchemaIntrospectorTest)
                 // now that entities() carries the ~80 derived tables alongside
                 // the curated ones.
-                $this->assertContains($metric['aggregate'], ['avg', 'sum', 'count', 'min', 'max'], $where);
+                // `rate` is curated-only: one population as a percentage of
+                // another, both over the same column and the same rows. It
+                // cannot be derived, because deciding which subset is the
+                // numerator is the whole judgement.
+                $this->assertContains($metric['aggregate'], ['avg', 'sum', 'count', 'min', 'max', 'rate'], $where);
                 $this->assertIsArray($metric['where'], $where);
 
-                // A sum/avg/min/max with no column is a query the executor cannot build.
-                if (in_array($metric['aggregate'], ['avg', 'sum', 'min', 'max'], true) && $metricKey !== 'leave_days_taken') {
+                if ($metric['aggregate'] === 'rate') {
+                    $this->assertNotEmpty(
+                        $metric['numerator'] ?? [],
+                        "{$where} is a rate with no numerator, so it would report 100% of itself"
+                    );
+                }
+
+                // A sum/avg/min/max/rate with no column is a query the executor cannot build.
+                if (in_array($metric['aggregate'], ['avg', 'sum', 'min', 'max', 'rate'], true) && $metricKey !== 'leave_days_taken') {
                     $this->assertNotNull($metric['column'], "{$where} aggregates but names no column");
                 }
             }

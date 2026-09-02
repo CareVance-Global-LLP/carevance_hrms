@@ -98,13 +98,24 @@ class PayrollCalculatorService
     }
 
     /**
+     * $stateCode defaults to EMPTY, never to a state.
+     *
+     * It defaulted to 'maharashtra', which meant every caller that simply
+     * forgot the argument priced Maharashtra's professional tax — ₹200 a
+     * month, ₹300 in February — onto an employee who might work in Delhi,
+     * where there is no professional tax to pay. EnhancedPayrollController's
+     * CTC breakdown calls this with `annualCtc:` alone and did exactly that.
+     * A default that is a real jurisdiction cannot be spotted at the call
+     * site; '' resolves to ₹0 in PTStateService, which is wrong in a
+     * direction somebody can see and correct.
+     *
      * @param  float|array<string,float>  $annualTaxExemptions
      *         Prefer the per-section map from getApprovedTaxDeductionMap().
      *         A bare float is treated as 80C only and will be capped at 1.5L.
      */
     public function calculatePayroll(
         float $annualCtc,
-        string $stateCode = 'maharashtra',
+        string $stateCode = '',
         bool $isMetroCity = false,
         string $taxRegime = 'new',
         array $customConfig = [],
@@ -1105,8 +1116,14 @@ class PayrollCalculatorService
      * directly; this method now just delegates to keep the public
      * surface stable. The previously-hardcoded slabs for 3 states were
      * removed because they had drifted from the official rates.
+     *
+     * $state defaults to EMPTY for the same reason calculatePayroll() does:
+     * this is a public helper on a widely-injected service, and a default of
+     * 'maharashtra' bills a real state's slab to any caller that omits the
+     * argument. '' is the only default that cannot invent a liability —
+     * PTStateService reads it as "no state", which is ₹0.
      */
-    public function calculatePT(float $gross, string $state = 'maharashtra', ?int $month = null): float
+    public function calculatePT(float $gross, string $state = '', ?int $month = null): float
     {
         // $month must be threaded through for states with a special-month
         // instalment (Maharashtra's higher February PT). Omitting it silently

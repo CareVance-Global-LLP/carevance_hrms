@@ -17,8 +17,9 @@ import { createPortal } from 'react-dom';
 import { CornerDownLeft, Loader2, Search, Sparkles, X } from 'lucide-react';
 import { COMMAND_GROUPS, type CommandGroup, type CommandItem } from '@/lib/commandRegistry';
 import { highlightSegments, rankCandidates, suggestCorrection } from '@/lib/searchRanking';
-import type { AskResponse } from '@/services/api';
+import type { ActResponse, AskResponse } from '@/services/api';
 import { cn } from '@/utils/cn';
+import AiActionPreview from './AiActionPreview';
 import AiAnswerTable from './AiAnswerTable';
 
 /** Scope prefixes. Typing one of these as the first character narrows the search. */
@@ -57,7 +58,27 @@ export interface CommandBarProps {
   aiLoading?: boolean;
   /** The reason a question was refused. Refusing is a normal outcome. */
   aiError?: string | null;
+  /**
+   * WHICH path refused, because the two need different headings and one of
+   * them would otherwise be a false statement. "I can't answer that from your
+   * HR data" over "you do not have permission to change leave types" reads as
+   * the read path declining, and hides that a CHANGE was refused.
+   */
+  aiErrorKind?: 'data' | 'action';
   onAskAi?: (question: string) => void;
+  /**
+   * Applies a previewed change. Rejects with a written sentence, which the
+   * preview renders beside the diff rather than in place of it — a refused
+   * Apply has to leave the numbers that were refused on screen.
+   */
+  onApplyAction?: (token: string) => Promise<ActResponse>;
+  /** Discards a previewed change. Nothing was written, so nothing is undone. */
+  onCancelAction?: () => void;
+  /**
+   * Re-runs the question behind a preview that is no longer true. Offered on a
+   * stale refusal, where the diff on screen describes a row that has moved.
+   */
+  onReaskAction?: () => void;
   /**
    * Runs one of the example questions the empty AI panel offers. Separate from
    * `onAskAi` because this one also has to put the question in the field:
@@ -93,7 +114,11 @@ export default function CommandBar({
   aiAnswer = null,
   aiLoading = false,
   aiError = null,
+  aiErrorKind = 'data',
   onAskAi,
+  onApplyAction,
+  onCancelAction,
+  onReaskAction,
   onAiExample,
 }: CommandBarProps) {
   const [query, setQuery] = useState('');
@@ -482,9 +507,38 @@ export default function CommandBar({
           {aiMode ? (
             aiError ? (
               <div className="px-4 py-8 text-center">
-                <p className="text-sm text-slate-900">I can't answer that from your HR data.</p>
+                <p className="text-sm text-slate-900">
+                  {aiErrorKind === 'action'
+                    ? "I haven't changed anything."
+                    : "I can't answer that from your HR data."}
+                </p>
                 <p className="mt-1 text-xs text-slate-600">{aiError}</p>
               </div>
+            ) : aiAnswer?.kind === 'action' && aiAnswer.action && onApplyAction ? (
+              /*
+                A sibling of AiAnswerTable, not a fourth mode inside it. That
+                component's whole subject is columns and rows; an action has
+                neither, and threading a diff through it would leave every
+                branch in there checking which kind it was rendering.
+              */
+              <AiActionPreview
+                action={aiAnswer.action}
+                onApply={onApplyAction}
+                /*
+                  Both of these unmount the card, so both hand focus back to
+                  the input rather than letting it fall to <body> — which
+                  would leave a keyboard user with no way back into the
+                  palette short of Tab-ing in from the page behind it.
+                */
+                onCancel={() => {
+                  onCancelAction?.();
+                  inputRef.current?.focus();
+                }}
+                onReask={() => {
+                  onReaskAction?.();
+                  inputRef.current?.focus();
+                }}
+              />
             ) : (
               <AiAnswerTable
                 columns={aiAnswer?.columns ?? []}
@@ -496,7 +550,10 @@ export default function CommandBar({
                 // Absent `kind` means a table — that is what every response was
                 // before prose existed, so an answer cached from before the
                 // merge still renders as the table it is.
-                kind={aiAnswer?.kind ?? 'table'}
+                // 'action' never reaches here — it is handled above — and
+                // AiAnswerTable has no rendering for one, so it is narrowed
+                // rather than widened into a component that cannot draw it.
+                kind={aiAnswer?.kind === 'prose' ? 'prose' : 'table'}
                 reply={aiAnswer?.reply}
                 sources={aiAnswer?.sources}
                 loading={aiLoading}

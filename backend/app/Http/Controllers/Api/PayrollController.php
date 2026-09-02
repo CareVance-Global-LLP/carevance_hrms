@@ -697,7 +697,13 @@ class PayrollController extends Controller
         ]);
 
         $results = [];
-        $state = $request->get('state', 'maharashtra');
+        // Empty rather than a fallback state — the same rule calculate()
+        // above already follows, and the reason the two endpoints used to
+        // disagree: given the same unconfigured employee, calculate()
+        // returned ₹0 professional tax and calculate-bulk returned
+        // Maharashtra's ₹200. One caller applying one state to a whole list
+        // of people makes that worse, not better.
+        $state = $request->get('state') ?: '';
         $taxRegime = $request->get('tax_regime', 'new');
         $isMetro = $request->get('is_metro_city', false);
 
