@@ -59,8 +59,27 @@ export const PERIOD = Object.freeze({
 export const TRACKED = Object.freeze({
   dateShort: 'Mon 18 Aug',
   hours: '7h 42m',
-  activeShare: 94,
+  /*
+   * The product's own metric, not an invented one.
+   *
+   * `productivity_score` is productive over tracked seconds, computed in
+   * PayrollDepartmentController and rendered on the real dashboard as a
+   * "Productivity" tile. It was labelled "% active" here, which named nothing
+   * the product measures -- and `Screenshot::getActivityStateAttribute()`
+   * returns a hardcoded 'active' for every capture, so "active" is precisely
+   * the word that carries no measurement behind it.
+   *
+   * 29 productive slots, 1 neutral and 1 idle out of 31 is 93.5%, so the badge
+   * and the bar below agree.
+   */
+  productivityScore: 94,
   idleRecovered: '18m',
+  /*
+   * Captures are taken on a FIXED interval the organization sets (Settings ->
+   * Organization -> Screenshot interval; the system default is 10 minutes),
+   * never on an app switch. 31 captures across 7h42m is the 15-minute option.
+   */
+  captureIntervalMinutes: 15,
   screenshots: 31,
   captures: [
     { at: '09:12', app: 'VS Code', kind: 'productive' as const },

@@ -84,7 +84,19 @@ export function AppFrame({
  * about something that matters — whose data this is. One line removes the
  * ambiguity, and it is cheap enough that no screen has an excuse to skip it.
  */
-function ExampleTag({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
+function ExampleTag({
+  tone = 'light',
+  source = 'figures derived from the payroll engine',
+}: {
+  tone?: 'light' | 'dark';
+  /*
+   * Where these numbers come from, which is not the same on every screen. The
+   * payroll figures really are the engine's output; the tracker panel's are
+   * the tracker's own, and saying "payroll engine" there described the wrong
+   * system. The line exists to be exact about provenance, so it has to be.
+   */
+  source?: string;
+}) {
   return (
     <p
       className={`border-t px-4 py-1.5 text-[10px] ${
@@ -93,7 +105,7 @@ function ExampleTag({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
           : 'border-slate-100 bg-slate-50 text-slate-400'
       }`}
     >
-      Worked example · figures derived from the payroll engine, not a customer record
+      Worked example · {source}, not a customer record
     </p>
   );
 }
@@ -118,8 +130,11 @@ export function TrackerCapture() {
             </p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-white">{TRACKED.hours}</p>
           </div>
+          {/* "Productivity", because that is what the dashboard tile is called
+              and what productivity_score measures. It used to read "% active",
+              which named nothing the product computes. */}
           <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold tabular-nums text-emerald-300">
-            {TRACKED.activeShare}% active
+            Productivity {TRACKED.productivityScore}%
           </span>
         </div>
 
@@ -136,7 +151,11 @@ export function TrackerCapture() {
           ))}
         </div>
 
-        <ul className="mt-3.5 grid gap-1.5">
+        <p className="mt-3.5 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+          4 of {TRACKED.screenshots} captures · every {TRACKED.captureIntervalMinutes} min
+        </p>
+
+        <ul className="mt-2 grid gap-1.5">
           {TRACKED.captures.map((c) => (
             <li key={c.at} className="flex items-center gap-2.5 text-[11.5px]">
               <span className="w-9 shrink-0 tabular-nums text-slate-400">{c.at}</span>
@@ -157,7 +176,7 @@ export function TrackerCapture() {
           to the last real activity — recorded, never billed.
         </p>
       </div>
-      <ExampleTag tone="dark" />
+      <ExampleTag tone="dark" source="a day shaped the way the tracker records one" />
     </AppFrame>
   );
 }
