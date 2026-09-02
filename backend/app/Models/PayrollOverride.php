@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\MonthYear;
 use App\Traits\Auditable;
 use App\Traits\BelongsToOrganization;
 use Carbon\Carbon;
@@ -103,8 +104,8 @@ class PayrollOverride extends Model
      */
     public function scopeInForceFor(Builder $query, string $monthYear): Builder
     {
-        $periodEnd = Carbon::createFromFormat('Y-m', $monthYear)->endOfMonth()->toDateString();
-        $periodStart = Carbon::createFromFormat('Y-m', $monthYear)->startOfMonth()->toDateString();
+        $periodEnd = MonthYear::end($monthYear)->toDateString();
+        $periodStart = MonthYear::start($monthYear)->toDateString();
 
         return $query
             ->where('status', self::STATUS_APPROVED)

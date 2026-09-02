@@ -106,6 +106,23 @@ class EnhancedPayrollController extends Controller
         }
     }
 
+    /**
+     * The acting employee's own salary structure.
+     *
+     * Deliberately a separate entry point rather than letting the mobile app
+     * call `/payroll/employees/{id}/ctc-breakdown` with its own id. That route
+     * is HR-scoped: it takes a user id, and the only thing standing between an
+     * employee and a colleague's CTC would be the client choosing to pass the
+     * right number. Here the id is the token's, so there is no id to tamper
+     * with — the same reason `payroll/my/*` exists at all.
+     *
+     * The calculation is shared with the HR view, so the two cannot drift.
+     */
+    public function myCtcBreakdown(Request $request): JsonResponse
+    {
+        return $this->getCTCBreakdown($request, (int) $request->user()->id);
+    }
+
     public function getCTCBreakdown(Request $request, int $userId): JsonResponse
     {
         $organizationId = $request->user()->organization_id;
@@ -951,9 +968,26 @@ class EnhancedPayrollController extends Controller
             ->first();
 
         $annualGross = (float) ($decl->projected_annual_gross ?? 0);
-        if ($annualGross === 0) {
-            $emp = \App\Models\Employee::where('user_id', $userId)->first();
-            $annualGross = (float) ($emp->current_ctc ?? 0);
+
+        /*
+         * `<= 0`, and the payroll template.
+         *
+         * This was `if ($annualGross === 0)` against a value already cast to
+         * float, and `0.0 === 0` is false in PHP — so the fallback never ran
+         * and every employee without an approved declaration was told their
+         * marginal rate was zero and no deduction could save them anything.
+         * That is the normal case for most of the year, not an edge one.
+         *
+         * The unreachability was also the only thing hiding a fatal: the branch
+         * queried `App\Models\Employee`, a model this application does not
+         * have. `employee_payroll_templates.annual_ctc` is where CTC actually
+         * lives and what the rest of payroll reads.
+         */
+        if ($annualGross <= 0) {
+            $annualGross = (float) (EmployeePayrollTemplate::query()
+                ->where('user_id', $userId)
+                ->where('is_active', true)
+                ->value('annual_ctc') ?? 0);
         }
 
         $calc = app(PayrollCalculatorService::class);

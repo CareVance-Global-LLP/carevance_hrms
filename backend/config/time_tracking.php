@@ -36,6 +36,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Lock-Screen Auto-Stop Threshold
+    |--------------------------------------------------------------------------
+    |
+    | Seconds a workstation may stay locked before the running timer is stopped.
+    |
+    | TrackerPolicyResolver has always resolved this key, but it was never
+    | defined here — so the resolver's own inline fallback of 300 was the only
+    | value it could ever take, and no deployment could change it. Five minutes
+    | is shorter than most Windows auto-lock policies, which means a screen that
+    | locks itself while somebody reads stops their timer.
+    |
+    | Defined at the same 300 the fallback used, so nothing changes on upgrade;
+    | what changes is that it can now be raised.
+    |
+    */
+    'lock_auto_stop_threshold_seconds' => (int) env('LOCK_AUTO_STOP_THRESHOLD_SECONDS', 300),
+
+    /*
+    |--------------------------------------------------------------------------
     | Stale Timer Max Minutes
     |--------------------------------------------------------------------------
     |

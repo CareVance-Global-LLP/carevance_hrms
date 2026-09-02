@@ -20,7 +20,22 @@ use Illuminate\Support\Facades\Route;
 Route::get('/billing/current', [BillingController::class, 'current']);
 
 Route::middleware('role:admin')->group(function () {
-    Route::post('/billing/mock-pay', [BillingController::class, 'mockPay']);
+    /*
+     * The development shortcut, and only where development happens.
+     *
+     * mockPay activates a paid subscription with no payment. `role:admin` is
+     * not a defence — the admin is precisely the person who benefits from
+     * never paying, and every tenant has one. Registered conditionally so the
+     * endpoint genuinely does not exist in production rather than existing and
+     * refusing; BillingController::mockPay carries the same check as a backstop
+     * for a route cache built in the wrong environment.
+     *
+     * This is the same gate verifyRazorpayPayment already applies to its
+     * `mock_order_` branch.
+     */
+    if (app()->environment('local', 'testing')) {
+        Route::post('/billing/mock-pay', [BillingController::class, 'mockPay']);
+    }
     Route::post('/billing/upgrade', [BillingController::class, 'upgradePlan']);
     Route::post('/billing/confirm-upgrade', [BillingController::class, 'confirmUpgrade']);
     Route::post('/billing/add-seats', [BillingController::class, 'addSeats']);

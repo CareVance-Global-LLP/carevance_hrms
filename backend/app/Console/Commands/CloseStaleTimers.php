@@ -7,6 +7,7 @@ use App\Models\AttendanceRecord;
 use App\Models\TimeEntry;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class CloseStaleTimers extends Command
@@ -25,7 +26,7 @@ class CloseStaleTimers extends Command
         $dryRun = (bool) $this->option('dry-run');
         $cutoff = now()->subMinutes($maxMinutes);
 
-        $this->line("Closing running timers started before {$cutoff->toIso8601String()} (max {$maxMinutes} minutes)");
+        $this->line("Closing running timers with no activity since {$cutoff->toIso8601String()} (max {$maxMinutes} minutes)");
         $this->line("Mode: " . ($dryRun ? 'dry-run' : 'apply'));
 
         // withoutOrganizationScope() is explicit on purpose — see
@@ -37,12 +38,74 @@ class CloseStaleTimers extends Command
         // the is_break entry orphans the paired break_times row, which this
         // command cannot close, and that orphan permanently locks the user out
         // of break tracking once the date rolls over.
-        $staleEntries = TimeEntry::withoutOrganizationScope()
+        $candidates = TimeEntry::withoutOrganizationScope()
             ->whereNull('end_time')
             ->where('is_break', false)
             ->where('start_time', '<', $cutoff)
             ->orderBy('start_time')
             ->get();
+
+        if ($candidates->isEmpty()) {
+            $this->info('No stale running timers found.');
+
+            return 0;
+        }
+
+        /*
+         * STALE MEANS ABANDONED, NOT LONG.
+         *
+         * The query above can only ask how long ago a timer STARTED, and that
+         * was the whole test: every timer running past the cap was closed,
+         * every fifteen minutes, whether or not the person was at their desk.
+         * Somebody who auto-started at 09:30 and worked straight through had
+         * their timer stopped between 11:30 and 11:45 - silently, because this
+         * path does not set `auto_stopped_for_idle`, and that flag is what the
+         * desktop client reads to decide whether to say anything at all.
+         *
+         * The command's own description, and the config key it reads, have
+         * always said "without any activity". This is where that gets
+         * implemented. Both ledgers are consulted for the same reason
+         * CloseIdleTimers consults both: the Electron foreground-window bridge
+         * writes `activity_sessions` and no `activities` row at all, so reading
+         * only one of them is blind to a whole class of live tracker.
+         */
+        $entryIds = $candidates->pluck('id')->all();
+
+        $latestActivityByEntry = DB::table('activities')
+            ->selectRaw('time_entry_id, MAX(recorded_at) as last_active_at')
+            ->whereIn('time_entry_id', $entryIds)
+            ->where('type', '!=', 'idle')
+            ->groupBy('time_entry_id')
+            ->pluck('last_active_at', 'time_entry_id')
+            ->all();
+
+        $latestSessionByEntry = DB::table('activity_sessions')
+            ->selectRaw('time_entry_id, MAX(COALESCE(ended_at, started_at)) as last_active_at')
+            ->whereIn('time_entry_id', $entryIds)
+            ->groupBy('time_entry_id')
+            ->pluck('last_active_at', 'time_entry_id')
+            ->all();
+
+        $lastActiveAtFor = function (TimeEntry $entry) use ($latestActivityByEntry, $latestSessionByEntry): Carbon {
+            $lastActiveAt = Carbon::parse($entry->start_time);
+
+            foreach ([$latestActivityByEntry[$entry->id] ?? null, $latestSessionByEntry[$entry->id] ?? null] as $candidate) {
+                if ($candidate && Carbon::parse($candidate)->gt($lastActiveAt)) {
+                    $lastActiveAt = Carbon::parse($candidate);
+                }
+            }
+
+            return $lastActiveAt;
+        };
+
+        $staleEntries = $candidates->filter(
+            fn (TimeEntry $entry) => $lastActiveAtFor($entry)->lt($cutoff)
+        )->values();
+
+        $stillWorking = $candidates->count() - $staleEntries->count();
+        if ($stillWorking > 0) {
+            $this->line("Skipped {$stillWorking} long-running timer(s) still reporting activity.");
+        }
 
         if ($staleEntries->isEmpty()) {
             $this->info('No stale running timers found.');
@@ -62,25 +125,44 @@ class CloseStaleTimers extends Command
             }
 
             $startTime = Carbon::parse($entry->start_time);
-            $duration = (int) max(0, $startTime->diffInSeconds($now));
+
+            /*
+             * End AT the last activity, never at `now`.
+             *
+             * Every other auto-stop path rewinds to the last real moment of
+             * work and records the silence separately. This one billed
+             * start->now, so an app that died at 10:00 and was swept at 12:15
+             * charged two and a quarter hours of a closed laptop.
+             */
+            $lastActiveAt = $lastActiveAtFor($entry);
+            $endTime = $lastActiveAt->lt($startTime) ? $startTime->copy() : $lastActiveAt->copy();
+            $duration = (int) max(0, $startTime->diffInSeconds($endTime));
+            $trailingIdleSeconds = (int) max(0, $endTime->diffInSeconds($now));
 
             $entry->timestamps = false;
             $entry->update([
-                'end_time' => $now,
+                'end_time' => $endTime,
                 'duration' => $duration,
                 // Without this these rows are indistinguishable from a real
                 // manual stop, even though the user never stopped anything.
                 'stop_reason' => TimeEntry::STOP_STALE_CLOSE,
+                'last_activity_at' => $lastActiveAt,
+                'trailing_idle_seconds' => $trailingIdleSeconds,
+                // Marks `duration` as deliberately computed so effectiveDuration()
+                // does not raise it back to the raw start->end span.
+                'duration_reconciled_at' => $now,
             ]);
 
-            $this->closeOpenAttendancePunches((int) $entry->user_id, $now);
+            $this->closeOpenAttendancePunches((int) $entry->user_id, $endTime);
 
             Log::info('Stale timer auto-closed by scheduled command', [
                 'time_entry_id' => $entry->id,
                 'user_id' => $entry->user_id,
                 'start_time' => $entry->start_time,
-                'end_time' => $now->toIso8601String(),
+                'end_time' => $endTime->toIso8601String(),
                 'duration' => $duration,
+                'last_activity_at' => $lastActiveAt->toIso8601String(),
+                'trailing_idle_seconds' => $trailingIdleSeconds,
                 'max_minutes' => $maxMinutes,
             ]);
 

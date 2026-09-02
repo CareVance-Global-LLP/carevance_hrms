@@ -43,6 +43,7 @@ Route::middleware('role:admin,manager')->group(function () {
     Route::post('/employees/{id}/government-ids', [EmployeeWorkspaceController::class, 'storeGovernmentId']);
     Route::post('/employees/{id}/bank-accounts', [EmployeeWorkspaceController::class, 'storeBankAccount']);
     Route::post('/employees/{id}/documents', [EmployeeWorkspaceController::class, 'storeDocument']);
+    Route::patch('/employees/{id}/documents/{documentId}/review', [EmployeeWorkspaceController::class, 'reviewDocument']);
     Route::get('/employees/{id}/documents/{documentId}/download', [EmployeeWorkspaceController::class, 'downloadDocument']);
     // Qualifications. HR-owned rather than self-service, because the
     // certificate is the evidence and the person it describes should not be

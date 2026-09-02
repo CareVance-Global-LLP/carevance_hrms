@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll;
 
+use App\Support\MonthYear;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\SalaryRevisionLetter;
 use Carbon\Carbon;
@@ -79,7 +80,7 @@ class CompensationTimeline
      */
     public function segmentsForMonth(int $userId, int $organizationId, string $monthYear): array
     {
-        $start = Carbon::createFromFormat('Y-m', $monthYear)->startOfMonth();
+        $start = MonthYear::start($monthYear);
         $end = $start->copy()->endOfMonth();
 
         $boundaries = $this->acceptedRevisions($userId, $organizationId)

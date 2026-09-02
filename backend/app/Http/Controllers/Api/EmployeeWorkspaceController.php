@@ -423,6 +423,55 @@ class EmployeeWorkspaceController extends Controller
         return response()->json($document, 201);
     }
 
+    /**
+     * Verify or reject a document that has already been uploaded.
+     *
+     * `review_status` was settable only at upload time and displayed as a badge
+     * on every document row, with no way to change it afterwards — so a
+     * document filed as 'pending' stayed pending for ever and the badge could
+     * never tell anyone anything. Reviewing a document is the one thing the
+     * column exists for, and it necessarily happens after the upload.
+     *
+     * Same gate as the rest of this controller: whoever may manage the employee
+     * may review their documents.
+     */
+    public function reviewDocument(Request $request, int|string $id, int $documentId)
+    {
+        $currentUser = $request->user();
+        $employee = $this->employee($currentUser?->organization_id, $id);
+        if (!$currentUser || !$employee || !$this->canManageEmployee($currentUser, $employee)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $data = $request->validate([
+            'review_status' => 'required|in:pending,verified,rejected',
+            'notes' => 'nullable|string',
+        ]);
+
+        $document = EmployeeDocument::query()
+            ->where('organization_id', $employee->organization_id)
+            ->where('user_id', $employee->id)
+            ->find($documentId);
+
+        if (!$document) {
+            return response()->json(['message' => 'Document not found'], 404);
+        }
+
+        $document->review_status = $data['review_status'];
+        if (array_key_exists('notes', $data)) {
+            $document->notes = $data['notes'];
+        }
+        $document->save();
+
+        return response()->json([
+            'success' => true,
+            'document' => [
+                'id' => $document->id,
+                'review_status' => $document->review_status,
+            ],
+        ]);
+    }
+
     public function downloadDocument(Request $request, int|string $id, int $documentId)
     {
         $currentUser = $request->user();

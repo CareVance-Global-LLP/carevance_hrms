@@ -44,6 +44,8 @@ Route::prefix('payroll')->middleware('plan.payroll')->group(function () {
     Route::post('/my/declaration/items', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'saveItems']);
     Route::post('/my/declaration/{declarationId}/submit', [\App\Http\Controllers\Api\TaxDeclarationController::class, 'submit']);
 
+    Route::get('/my/ctc-breakdown', [\App\Http\Controllers\Api\EnhancedPayrollController::class, 'myCtcBreakdown']);
+    Route::get('/my/loan-eligibility', [\App\Http\Controllers\Api\LoanController::class, 'myLoanEligibility']);
     Route::get('/my/loans', [\App\Http\Controllers\Api\LoanController::class, 'myLoans']);
 
     Route::get('/reimbursements/mine', [ReimbursementController::class, 'myReimbursements']);

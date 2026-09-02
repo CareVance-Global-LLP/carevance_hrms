@@ -34,6 +34,14 @@ class PayrollRouteAuthorizationTest extends TestCase
         'api/payroll/my/declaration',
         'api/payroll/my/declaration/items',
         'api/payroll/my/declaration/{declarationId}/submit',
+        // Resolves the employee from $request->user()->id and takes no id of
+        // its own, so there is nothing for a caller to point elsewhere. The HR
+        // equivalent, employees/{userId}/ctc-breakdown, stays role-gated.
+        // Covered by MyCtcBreakdownTest.
+        'api/payroll/my/ctc-breakdown',
+        // Reads the caller's own borrowing headroom from their own salary
+        // structure; takes no id. Covered by LoanAffordabilityTest.
+        'api/payroll/my/loan-eligibility',
         'api/payroll/my/loans',
         'api/payroll/reimbursements',
         'api/payroll/reimbursements/mine',

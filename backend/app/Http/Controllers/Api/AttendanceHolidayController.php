@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\MonthYear;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceHoliday;
 use App\Models\User;
@@ -29,7 +30,7 @@ class AttendanceHolidayController extends Controller
         }
 
         $month = $request->get('month', now()->format('Y-m'));
-        $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $monthStart = MonthYear::start($month);
         $monthEnd = $monthStart->copy()->endOfMonth();
 
         $query = AttendanceHoliday::query()

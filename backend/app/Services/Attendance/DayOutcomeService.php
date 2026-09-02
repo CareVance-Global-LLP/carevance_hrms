@@ -2,6 +2,7 @@
 
 namespace App\Services\Attendance;
 
+use App\Support\MonthYear;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendanceRecord;
 use App\Models\AttendanceTimeEditRequest;
@@ -337,7 +338,7 @@ class DayOutcomeService
             return Carbon::now()->startOfMonth();
         }
 
-        return Carbon::createFromFormat('Y-m', $candidate)->startOfMonth();
+        return MonthYear::start($candidate);
     }
 
     /** @return array<string, AttendanceRecord> */

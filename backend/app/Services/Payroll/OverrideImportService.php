@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll;
 
+use App\Support\MonthYear;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\EmployeeWorkInfo;
 use App\Models\PayrollOverride;
@@ -469,7 +470,7 @@ class OverrideImportService
             $toRaw = trim((string) $cell('effective_to'));
 
             if ($fromRaw === '') {
-                $fromRaw = Carbon::createFromFormat('Y-m', $earliestOpen)->startOfMonth()->toDateString();
+                $fromRaw = MonthYear::start($earliestOpen)->toDateString();
             }
 
             $from = $this->parseDate($fromRaw);

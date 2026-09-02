@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\MonthYear;
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceRecord;
 use App\Models\GeofenceZone;
@@ -42,7 +43,7 @@ class EmployeeDashboardController extends Controller
             $zone = GeofenceZone::activeForOrg((int) $user->organization_id)->first();
         }
 
-        $monthStart = \Carbon\Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $monthStart = MonthYear::start($month);
         $monthEnd = $monthStart->copy()->endOfMonth();
 
         // Single aggregate query replaces two sequential TimeEntry queries

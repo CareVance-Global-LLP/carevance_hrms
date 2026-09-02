@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll;
 
+use App\Support\MonthYear;
 use App\Models\PayrollItem;
 use Carbon\Carbon;
 
@@ -28,7 +29,7 @@ class EsiContributionPeriodService
      */
     public function periodFor(string $monthYear): array
     {
-        $month = Carbon::createFromFormat('Y-m', $monthYear)->startOfMonth();
+        $month = MonthYear::start($monthYear);
 
         // April-September, else October-March (which spans the year boundary).
         if ($month->month >= 4 && $month->month <= 9) {
