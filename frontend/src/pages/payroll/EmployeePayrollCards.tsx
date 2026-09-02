@@ -80,11 +80,29 @@ export default function EmployeePayrollCards() {
     [payGroupsData],
   );
 
-  useEffect(() => {
-    if (selectedPayGroupId == null && payGroupsList.length > 0) {
-      setSelectedPayGroupId(payGroupsList[0].id);
-    }
-  }, [payGroupsList, selectedPayGroupId]);
+  /*
+     * Open on the largest pay group, not the first one the API happens to
+     * return.
+     *
+     * This took payGroupsList[0], which is whatever order the endpoint sends —
+     * on production that is a one-employee group somebody named "j", so the
+     * first thing anyone sees on Employee Cards is a group of one with a
+     * placeholder name, while the real team of five sits below it unselected.
+     *
+     * Headcount is the honest proxy for "the group you meant": the biggest one
+     * is where the work is. Ties fall back to the API order, so this is stable
+     * rather than merely different.
+     */
+    useEffect(() => {
+      if (selectedPayGroupId != null || payGroupsList.length === 0) return;
+
+      const largest = payGroupsList.reduce(
+        (best, group) => ((group.employee_count ?? 0) > (best.employee_count ?? 0) ? group : best),
+        payGroupsList[0],
+      );
+
+      setSelectedPayGroupId(largest.id);
+    }, [payGroupsList, selectedPayGroupId]);
 
   const { data: employeesData, isLoading: loadingEmployees } = useQuery({
     queryKey: ['employee-payroll-cards', selectedPayGroupId],

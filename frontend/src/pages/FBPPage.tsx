@@ -211,7 +211,18 @@ export default function FBPPage() {
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <MetricCard label="Basket Components" value={components.length} accent="sky" icon={Wallet} />
-          <MetricCard label="Allocations" value={userFilter ? allocations.length : '—'} accent="violet" />
+          {/*
+            * Same hint as Total Allocated beside it. Both read "—" until an
+            * employee is picked, and one explaining itself while the other
+            * does not makes the dash look like a missing number rather than
+            * a question nobody has asked yet.
+            */}
+          <MetricCard
+            label="Allocations"
+            value={userFilter ? allocations.length : '—'}
+            accent="violet"
+            hint={userFilter ? undefined : 'Select an employee'}
+          />
           <MetricCard
             label="Total Allocated"
             value={userFilter ? formatPayrollAmount(totalAllocated, { compact: true }) : '—'}
