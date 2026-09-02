@@ -263,7 +263,7 @@ export function RunAndDifferences() {
 
       <div className="p-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-          Differences · Aug → Sep
+          Differences · Jul → Aug
         </p>
         <ul className="mt-2 grid gap-2">
           {moved.map((d) => (

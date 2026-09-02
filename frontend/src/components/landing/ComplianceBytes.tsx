@@ -15,7 +15,7 @@ import { BRAND } from '@/config/brand';
  *
  * THE BYTES ARE NOT PROP COPY. The format is `PayrollFilingService::
  * generatePfEcr()` in the backend — eleven fields joined with `||`, in that
- * order. The values are one worked example that balances: basic ₹48,000 caps to
+ * order. The values are one worked example that balances: basic ₹60,000 caps to
  * the ₹15,000 PF wage ceiling, 12% of which is ₹1,800, which splits 8.33/3.67
  * into ₹1,249.50 of pension and ₹550.50 of provident fund. The line is
  * ASSEMBLED from ECR_FIELDS below rather than typed out, so the bytes and the

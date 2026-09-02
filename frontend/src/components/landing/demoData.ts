@@ -135,24 +135,49 @@ export const RUN_STAGES = Object.freeze([
  * falls from ₹42,291.20 to ₹22,275.20.
  */
 export const DIFFERENCES = Object.freeze([
-  { component: 'Basic', from: 48000, to: 48000, reason: null },
-  { component: 'House Rent Allowance', from: 24000, to: 24000, reason: null },
+  {
+    component: 'Basic',
+    from: 48000,
+    to: 60000,
+    reason: 'Override #418 — approved 28 Jul',
+  },
+  {
+    component: 'House Rent Allowance',
+    from: 24000,
+    to: 30000,
+    reason: '50% of Basic — recomputed',
+  },
   {
     component: 'Special Allowance',
     from: 42291.2,
-    to: 22275.2,
-    reason: 'Override #418 — Basic raised to ₹60,000',
+    to: 24291.2,
+    reason: 'Residual — absorbs the restructure',
   },
-  { component: 'Professional Tax', from: 200, to: 300, reason: 'February — Maharashtra' },
+  // Flat across the pair, so the report does not list them. Professional Tax
+  // is 200 on Maharashtra's top slab every month EXCEPT February, which is
+  // 300 (PTStateService STATE_CONFIGS). A February step is a real difference
+  // and a real demonstration -- but only in a Jan -> Feb comparison, which is
+  // why it is not shown against an August run.
+  { component: 'Professional Tax', from: 200, to: 200, reason: null },
   { component: 'TDS', from: 6704.03, to: 6704.03, reason: null },
 ]);
 
 /** Stage 4 — the payslip. */
+/*
+ * August, AFTER Override #418. The differences report above is what moved the
+ * money here, so the two panels have to agree: a payslip still showing the
+ * pre-override Basic while the report says it was raised is the exact
+ * contradiction the report exists to catch.
+ *
+ * The restructure is inside the same CTC, so gross stays 1,15,891.20 and net
+ * stays 1,07,187.17 -- both pinned by scripts/verify-landing.mjs.
+ * 60,000 + 30,000 + 1,600 + 24,291.20 = 1,15,891.20.
+ */
 export const EARNINGS = Object.freeze([
-  { label: 'Basic', amount: 48000, note: '40% of CTC' },
-  { label: 'House Rent Allowance', amount: 24000, note: '50% of basic — metro' },
+  { label: 'Basic', amount: 60000, note: 'Override #418' },
+  { label: 'House Rent Allowance', amount: 30000, note: '50% of basic — metro' },
   { label: 'Conveyance Allowance', amount: 1600, note: 'flat' },
-  { label: 'Special Allowance', amount: 42291.2, note: 'residual' },
+  { label: 'Special Allowance', amount: 24291.2, note: 'residual' },
 ]);
 
 export const DEDUCTIONS = Object.freeze([
