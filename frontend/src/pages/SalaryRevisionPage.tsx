@@ -27,6 +27,8 @@ export default function SalaryRevisionPage() {
   const [formData, setFormData] = useState({
     user_id: '',
     new_ctc: '',
+    revision_type: 'annual_increment',
+    reason: '',
     effective_date: '',
     generate_arrears: true,
   });
@@ -58,11 +60,13 @@ export default function SalaryRevisionPage() {
       user_id: parseInt(formData.user_id),
       new_ctc: parseFloat(formData.new_ctc),
       effective_date: formData.effective_date,
+      revision_type: formData.revision_type,
+      reason: formData.reason || undefined,
       generate_arrears: formData.generate_arrears,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['revision-letters'] });
-      setFormData({ user_id: '', new_ctc: '', effective_date: '', generate_arrears: true });
+      setFormData({ user_id: '', new_ctc: '', revision_type: 'annual_increment', reason: '', effective_date: '', generate_arrears: true });
       setShowForm(false);
       show({ kind: 'success', message: 'Salary revision letter generated.' });
     },
@@ -236,7 +240,35 @@ export default function SalaryRevisionPage() {
                   />
                 </div>
 
+                {/*
+                  * The type is a fact about the revision, not a formality. It was stored
+                  * as a literal "correction" for every letter, so somebody promoted was
+                  * told in writing that their pay had been corrected.
+                  */}
                 <div>
+                  <FieldLabel>Revision Type</FieldLabel>
+                  <select
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.revision_type}
+                    onChange={(e) => setFormData({ ...formData, revision_type: e.target.value })}
+                  >
+                    <option value="annual_increment">Annual increment</option>
+                    <option value="promotion">Promotion</option>
+                    <option value="correction">Correction</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <FieldLabel>Reason (optional)</FieldLabel>
+                  <TextInput
+                    value={formData.reason}
+                    placeholder="e.g. Promoted to Senior Recruiter after Q2 review"
+                    onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                  />
+                </div>
+
+<div>
                   <FieldLabel>Generate Arrears?</FieldLabel>
                   <div className="flex items-center gap-3 mt-1">
                     <button
@@ -286,7 +318,7 @@ export default function SalaryRevisionPage() {
                     variant="secondary"
                     onClick={() => {
                       setShowForm(false);
-                      setFormData({ user_id: '', new_ctc: '', effective_date: '', generate_arrears: true });
+                      setFormData({ user_id: '', new_ctc: '', revision_type: 'annual_increment', reason: '', effective_date: '', generate_arrears: true });
                     }}
                   >
                     Cancel

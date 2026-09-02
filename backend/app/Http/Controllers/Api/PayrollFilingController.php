@@ -2666,6 +2666,13 @@ class PayrollFilingController extends Controller
                 'new_ctc' => 'required|numeric|min:0',
                 'effective_date' => 'nullable|date',
                 'generate_arrears' => 'nullable|boolean',
+                // The column's own comment lists these four, and the screen
+                // above promises 'increments, promotions, corrections'. The
+                // value was previously a literal 'correction' for every
+                // revision, which put 'correction' on the letter an employee
+                // receives for their promotion.
+                'revision_type' => 'nullable|in:annual_increment,promotion,correction,other',
+                'reason' => 'nullable|string|max:1000',
             ]);
 
             $orgId = auth()->user()->organization_id;
@@ -2701,7 +2708,11 @@ class PayrollFilingController extends Controller
                 'new_ctc' => $newCtc,
                 'arrear_amount' => max(0, $arrearAmount),
                 'revision_percentage' => $revisionPct,
-                'revision_type' => 'correction',
+                // Default `other`, never a guess. An unstated type is unknown,
+                // and 'correction' is the one value of the four that asserts
+                // somebody got it wrong the first time.
+                'revision_type' => $data['revision_type'] ?? 'other',
+                'reason' => $data['reason'] ?? null,
                 'effective_from' => $effectiveDate->format('Y-m-d'),
                 'status' => 'draft',
                 'generated_by' => auth()->id(),
