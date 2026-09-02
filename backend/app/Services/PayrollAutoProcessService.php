@@ -178,9 +178,32 @@ class PayrollAutoProcessService
             if (!$existingItem) {
                 PayrollItem::create([
                     'payroll_run_id' => $run->id,
+                    // Denormalised from the run so an item can be found by
+                    // month without joining back through it. Left NULL, the
+                    // whole month is invisible to /payroll/pay-groups, which
+                    // filters on this column - so Payroll -> Overview read
+                    // "TOTAL PAYROLL Rs 0" over a locked run worth 2.2 lakh
+                    // while the dashboard, reading the run, showed the truth.
+                    'month_year' => $run->month_year,
                     'organization_id' => $orgId,
                     'user_id' => $userId,
-                    'department_id' => $template->user->employeeWorkInfo->department_id ?? $template->user->group_id,
+                    /*
+                     * Departments ARE the groups table, reached through the
+                     * group_user pivot.
+                     *
+                     * This read employee_work_infos.department_id, falling back
+                     * to users.group_id. Neither column exists, so both sides
+                     * resolved to null and every payroll item ever written here
+                     * carried a null department. Nothing failed and the money
+                     * was right; what broke was every screen that groups payroll
+                     * BY department, which filters on this column and matched
+                     * nothing - Payroll -> Overview read "TOTAL PAYROLL Rs 0"
+                     * over a locked run worth 2.2 lakh.
+                     *
+                     * Null stays null for somebody in no department. They are
+                     * still paid; they just do not appear under a heading.
+                     */
+                    'department_id' => $template->user->groups()->value('groups.id'),
                     'total_working_days' => 26,
                     'template_snapshot' => $template->toArray(),
                     'is_payout_held' => $hold && $hold->hold_type === 'payout',
