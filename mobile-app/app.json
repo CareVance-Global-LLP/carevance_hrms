@@ -36,7 +36,8 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
-      ]
+      ],
+      "usesCleartextTraffic": true
     },
     "plugins": [
       "expo-router",
@@ -44,7 +45,6 @@
       "expo-camera",
       "expo-secure-store",
       "expo-notifications",
-      "react-native-bottom-tabs",
       [
         "expo-splash-screen",
         {
@@ -56,7 +56,8 @@
             "backgroundColor": "#0E141A"
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
@@ -64,9 +65,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "9993712d-7d7c-4256-8e4b-54fa349c186c"
+        "projectId": "1165213f-7a97-4ff4-93df-b66ba4360ee9"
       }
     },
-    "owner": "carevance_ayush"
+    "owner": "irbaz_mavli"
   }
 }

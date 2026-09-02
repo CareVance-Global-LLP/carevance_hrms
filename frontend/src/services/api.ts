@@ -4554,7 +4554,13 @@ export const payrollApi = {
     data: {
       month_year: string;
       user_ids: number[];
-      working_days: number;
+      /**
+       * Optional, and normally omitted — the server then reads each employee's
+       * own attendance. Send these only to STATE attendance the records do not
+       * have (a mid-month joiner, an agreed correction); a value here applies
+       * to everybody in the request.
+       */
+      working_days?: number;
       default_annual_ctc?: number;
       lOP_days?: number;
       overtime_hours?: number;
@@ -4682,9 +4688,42 @@ export const payrollApi = {
     api.get<any>('/payroll/reimbursements/summary', { params }),
   // Used by the Salary Structure wizard to show approved reimbursements
   // for the current employee.
+  /*
+   * `month_basis: 'expense'` because this feeds the payroll run.
+   *
+   * The default basis is the submitted month, which is what the approval
+   * workflow wants. Payroll pays on the expense date, so without this the
+   * wizard's review step showed ₹0 for claims the run would pay — most
+   * receipts are filed after the month they belong to.
+   */
+  /*
+   * What the acting employee can afford to repay each month.
+   *
+   * `my/loan-eligibility` takes no id — borrowing capacity is derived from
+   * salary, so an id in the URL would let one employee read another's pay.
+   */
+  getLoanEligibility: () =>
+    api.get<{
+      success: boolean;
+      eligibility: {
+        max_emi: number;
+        monthly_gross: number;
+        statutory_deductions: number;
+        existing_loan_emis: number;
+        ceiling: number;
+        has_salary: boolean;
+        reason: string | null;
+      };
+    }>('/payroll/my/loan-eligibility'),
+
   getEmployeeReimbursements: (employeeId: number, status?: 'pending' | 'approved' | 'rejected' | 'removed', monthYear?: string) =>
     api.get<any[]>('/payroll/reimbursements', {
-      params: { user_id: employeeId, status: status ?? 'approved', month_year: monthYear },
+      params: {
+        user_id: employeeId,
+        status: status ?? 'approved',
+        month_year: monthYear,
+        month_basis: 'expense',
+      },
     }),
 
   // ===== Revision Letters (Employee self-service) =====

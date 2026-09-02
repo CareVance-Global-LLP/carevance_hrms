@@ -14,6 +14,22 @@ import {
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TableVirtuoso } from 'react-virtuoso';
+
+/**
+ * Makes every step's table span the full width.
+ *
+ * TableVirtuoso renders a bare `<table>` that sizes to its content, so a step
+ * with six columns stopped two-thirds of the way across while an eleven-column
+ * step filled the panel — the same wizard looking like two different screens
+ * depending on which step you were on.
+ *
+ * Defined once and shared by all five grids so they cannot drift apart again.
+ */
+const fullWidthTable = {
+  Table: (props: React.ComponentProps<'table'>) => (
+    <table {...props} className="w-full border-collapse text-sm" style={{ ...props.style, width: '100%' }} />
+  ),
+};
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { cn } from '@/utils/cn';
@@ -100,9 +116,29 @@ export default function BulkPayrollMatrix({
     return allEmployees.filter((e) => idSet.has(e.id));
   }, [allEmployees, selectedEmployeeIds]);
 
+  /**
+   * Tall enough to show fifteen employees before the table scrolls.
+   *
+   * Every step of the wizard is a TableVirtuoso whose visible rows come from
+   * this height, so one number governs all six. It used to be
+   * `max(400, min(count * 25, 1000))` — but 25px is not a row: the rows are
+   * `py-3`, which lands at ~44px. Nine employees therefore computed 225, floored
+   * to the 400 minimum, and showed seven rows with the last one sliced in half
+   * under the sticky total.
+   *
+   * Sized from the real row height instead, and capped at fifteen rows so a
+   * large pay group scrolls rather than growing without limit.
+   */
   const tableMinHeight = useMemo(() => {
-    const count = employees.length;
-    return Math.max(400, Math.min(count * 25, 1000));
+    const ROW_HEIGHT = 44;        // px-3 py-3 row
+    const STICKY_CHROME = 96;     // sticky header + sticky totals row
+    const MAX_VISIBLE_ROWS = 15;
+
+    // Always fifteen rows tall, whatever the headcount. Sizing to the count
+    // made the box shrink to fit — nine employees got a nine-row box, which
+    // still clipped the last row under the sticky total. A constant viewport
+    // also stops the table resizing as filters change the row count.
+    return MAX_VISIBLE_ROWS * ROW_HEIGHT + STICKY_CHROME;
   }, [employees.length]);
 
   const employeeMap = useMemo(() => {
@@ -288,16 +324,25 @@ export default function BulkPayrollMatrix({
 
   const processMutation = useMutation({
     mutationFn: () => {
-      const userIds = employees.map((e) => e.id);
-      const firstRow = rowEntries[0]?.[1];
-      const workingDays = firstRow?.working_days ?? 26;
-      const totalLop = rows.reduce((s, r) => s + r.lop_days, 0);
-      const avgLop = employees.length > 0 ? totalLop / employees.length : 0;
+      /*
+       * ATTENDANCE IS NOT SENT FROM HERE.
+       *
+       * This used to send `working_days` — the FIRST row's value, or 26 — and
+       * `lOP_days` as the group AVERAGE, both applied to every employee. So a
+       * colleague's absence docked people who had worked every day, and the
+       * server derived `days_present` from the pair, discarding real attendance
+       * entirely. The average is also fractional, and `days_present` validates
+       * as an integer, which is what failed all nine employees of the August
+       * 2026 run with "The days present field must be an integer."
+       *
+       * Omitting both is the fix: the server reads each person's own monthly
+       * attendance summary, which is the only figure anybody should be paid
+       * against. The matrix still SHOWS per-employee days; it just has no
+       * business collapsing them into one number on the way out.
+       */
       return payrollApi.processPayGroupSelectedEmployees(payGroupId, {
         month_year: monthYear,
-        user_ids: userIds,
-        working_days: workingDays,
-        lOP_days: avgLop,
+        user_ids: employees.map((e) => e.id),
       });
     },
     onSuccess: (res) => {
@@ -376,6 +421,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -443,6 +489,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -511,6 +558,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -571,6 +619,7 @@ export default function BulkPayrollMatrix({
     });
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -637,6 +686,7 @@ export default function BulkPayrollMatrix({
     });
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={loanRowEntries.length}
         fixedHeaderContent={() => (
@@ -921,7 +971,16 @@ export default function BulkPayrollMatrix({
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto bg-white">
+      {/*
+        The scroll region has to be as tall as the table wants to be.
+
+        `flex-1` alone gives it only the viewport's leftover height — about
+        seven rows on a laptop — so the table scrolled inside a short box no
+        matter how tall tableMinHeight made it. Sharing the same minimum lets
+        the region grow to fit fifteen rows and hands scrolling to the page,
+        which is what people expect when comparing employees down a column.
+      */}
+      <div className="flex-1 overflow-auto bg-white" style={{ minHeight: tableMinHeight }}>
         {isEmployeesLoading ? (
           <div className="flex items-center justify-center h-full text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />

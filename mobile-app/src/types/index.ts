@@ -84,15 +84,119 @@ export interface LeaveRequest {
   approver_remarks?: string;
 }
 
+/**
+ * One line of a payslip breakdown.
+ *
+ * `deduction_lines` carries these for loan and advance recoveries: a combined
+ * `custom_deductions` total cannot be decomposed after the fact, because
+ * wizard-entered deductions land in the same number.
+ */
+export interface PayslipDeductionLine {
+  type: string;
+  label: string;
+  amount: number;
+  loan_id?: number;
+  remaining?: number;
+}
+
+/**
+ * Field names here are the API's, not a prettier set of our own.
+ *
+ * They used to differ — the app declared `month`, `year`, `gross_earnings` and
+ * `status` while /payroll/my/payslips returns `month_year`, `gross_salary` and
+ * `payment_status`. Nothing mapped between them, so every figure on the screen
+ * resolved to undefined. Renaming on the client is what created the drift; the
+ * server's names are the ones that stay true when the endpoint changes.
+ */
 export interface Payslip {
   id: number;
-  month: string;
-  year: number;
+  month_year: string;
   net_pay: number;
-  gross_earnings: number;
+  gross_salary: number;
   total_deductions: number;
-  status: 'generated' | 'locked';
+  payment_status: string;
+
+  // Earnings
+  basic?: number;
+  hra?: number;
+  conveyance?: number;
+  special_allowance?: number;
+
+  // Statutory deductions
+  pf_employee?: number;
+  esi_employee?: number;
+  pt?: number;
+  tds?: number;
+  lwf?: number;
+
+  // Other deductions
+  lop_deduction?: number;
+  custom_deductions?: number;
+  deduction_lines?: PayslipDeductionLine[];
+
+  // The half that never reaches the employee's account, but is part of CTC.
+  employer_contributions?: {
+    pf_employer?: number;
+    esi_employer?: number;
+  };
+
+  // Attendance the pay was computed from
+  working_days?: number;
+  days_present?: number;
+  lOP_days?: number;
+
   pdf_url?: string;
+}
+
+/** Running totals for the financial year, served alongside the payslips. */
+export interface PayslipYtd {
+  gross: number;
+  deductions: number;
+  net_pay: number;
+  months_count: number;
+}
+
+/**
+ * The employee's own salary structure.
+ *
+ * `monthly_details` and `annual_details` are the same component map keyed by
+ * name, so the screen renders whatever the organisation actually configured
+ * rather than a fixed list of allowances this app happens to know about.
+ */
+export interface CtcBreakdown {
+  annual_ctc: number;
+  monthly_ctc: number;
+  /** Summary totals only — ctc, gross, net. Not a breakup. */
+  monthly_details?: Record<string, number>;
+  annual_details?: Record<string, number>;
+  /** The actual monthly breakup, grouped. This is what a payslip is made of. */
+  components?: {
+    earnings?: Record<string, number>;
+    deductions?: Record<string, number>;
+    employer_contributions?: Record<string, number>;
+  };
+  /** Why the numbers are what they are — PF cap, ESI applicability, regime. */
+  breakdown?: {
+    pf_wages?: number;
+    pf_cap_applied?: boolean;
+    esi_applicable?: boolean;
+    tax_regime?: string;
+    state_code?: string;
+    is_metro_city?: boolean;
+  };
+}
+
+export interface CtcBreakdownResponse {
+  success: boolean;
+  message?: string;
+  employee?: { id: number; name: string; email: string };
+  ctc_breakdown?: CtcBreakdown;
+}
+
+export interface PayslipListResponse {
+  payslips: Payslip[];
+  ytd: PayslipYtd;
+  employee: Record<string, unknown>;
 }
 
 export interface SelfieRecord {

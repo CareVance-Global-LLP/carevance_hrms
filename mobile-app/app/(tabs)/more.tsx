@@ -11,6 +11,20 @@ import type { ThemeColors } from '../../src/constants/theme';
 import { payslipApi, notificationApi } from '../../src/api/endpoints';
 import type { Payslip } from '../../src/types';
 
+/**
+ * 'YYYY-MM' as a person reads it. The API sends `month_year`; the app used to
+ * read `month` and `year`, which do not exist on the response and rendered as
+ * two blanks.
+ */
+const payslipMonthLabel = (monthYear?: string): string => {
+  if (!monthYear) return 'Payslip';
+  const [y, m] = monthYear.split('-');
+  const names = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const name = names[Number(m) - 1];
+  return name ? `${name} ${y}` : monthYear;
+};
+
 export default function MoreScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -36,7 +50,9 @@ export default function MoreScreen() {
   const loadPayslips = async () => {
     try {
       const res = await payslipApi.list();
-      setPayslips(Array.isArray(res.data) ? res.data : res.data?.data || []);
+      // { payslips, ytd, employee } — neither a bare array nor a `data`
+      // envelope, so both of the old readings produced an empty list.
+      setPayslips(res.data?.payslips ?? []);
     } catch (e) { console.warn('Failed to load payslips:', e); }
   };
 
@@ -91,6 +107,14 @@ export default function MoreScreen() {
         <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
       </TouchableOpacity>
 
+      <TouchableOpacity style={s.menuCard} onPress={() => router.push('/salary')}>
+        <View style={s.menuRow}>
+          <Ionicons name="wallet-outline" size={20} color={colors.primary} />
+          <Text style={s.menuLabel}>Salary structure</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+      </TouchableOpacity>
+
       <TouchableOpacity style={s.menuCard} onPress={() => router.push('/comp-off')}>
         <View style={s.menuRow}>
           <Ionicons name="calendar-outline" size={20} color={colors.success} />
@@ -130,12 +154,14 @@ export default function MoreScreen() {
         payslips.map((p) => (
           <TouchableOpacity key={p.id} style={s.payslipCard} onPress={() => router.push(`/payslip/${p.id}`)}>
             <View>
-              <Text style={s.payslipMonth}>{p.month} {p.year}</Text>
-              <Text style={s.payslipNet}>₹{Number(p.net_pay).toLocaleString()}</Text>
+              <Text style={s.payslipMonth}>{payslipMonthLabel(p.month_year)}</Text>
+              <Text style={s.payslipNet}>₹{Number(p.net_pay ?? 0).toLocaleString('en-IN')}</Text>
             </View>
-            <View style={[s.payslipStatus, { backgroundColor: p.status === 'locked' ? '#d1fae5' : '#fef3c7' }]}>
-              <Text style={{ fontSize: 11, fontWeight: '600', color: p.status === 'locked' ? '#065f46' : '#92400e' }}>{p.status}</Text>
-            </View>
+            {!!p.payment_status && (
+              <View style={[s.payslipStatus, { backgroundColor: p.payment_status === 'paid' ? '#d1fae5' : '#fef3c7' }]}>
+                <Text style={{ fontSize: 11, fontWeight: '600', color: p.payment_status === 'paid' ? '#065f46' : '#92400e' }}>{p.payment_status}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         ))
       )}

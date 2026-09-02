@@ -7,6 +7,8 @@ import type {
   LeaveBalanceResponse,
   LeaveRequest,
   Payslip,
+  PayslipListResponse,
+  CtcBreakdownResponse,
   SelfieRecord,
   TodayAttendance,
   GeoPosition,
@@ -120,8 +122,20 @@ export const leaveApi = {
 };
 
 export const payslipApi = {
-  list: () =>
-    api.get<{ data: Payslip[] }>('/payroll/my/payslips'),
+  /*
+   * The endpoint returns { payslips, ytd, employee } — not a bare array and not
+   * a `data` envelope. Typing it as `{ data: Payslip[] }` meant every read fell
+   * through to an empty list, so the payslip screen showed "Payslip not found"
+   * for everybody, always.
+   */
+  list: () => api.get<PayslipListResponse>('/payroll/my/payslips'),
+
+  /*
+   * `my/ctc-breakdown`, never `employees/{id}/ctc-breakdown`. The HR route
+   * takes a user id, so calling it from here would leave the client deciding
+   * whose salary to read; this one derives the employee from the token.
+   */
+  ctcBreakdown: () => api.get<CtcBreakdownResponse>('/payroll/my/ctc-breakdown'),
 };
 
 export const orgApi = {

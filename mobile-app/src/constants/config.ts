@@ -10,7 +10,7 @@ const hostUri =
 const lanHost = hostUri.split(':')[0];
 const devApiUrl = lanHost
   ? `http://${lanHost}:8000/api`
-  : 'http://192.168.0.81:8000/api';
+  : 'http://192.168.0.71:8000/api';
 
 const ENV = {
   development: {
