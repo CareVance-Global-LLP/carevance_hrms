@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\MonthYear;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
 use App\Models\EmployeePayrollTemplate;
@@ -28,10 +29,9 @@ class ArrearCalculatorService
 
         $arrears = [];
         $currentCtc = (float) $currentTemplate->annual_ctc;
-        // startOfMonth matters: createFromFormat('Y-m') leaves the day as today,
-        // so running this on the 31st walks back over months that have no 31st
-        // and skips them.
-        $currentMonth = Carbon::createFromFormat('Y-m', $currentMonthYear)->startOfMonth();
+        // MonthYear, not a raw parse: walking back a month from the 31st skips
+        // any month with no 31st. See App\Support\MonthYear.
+        $currentMonth = MonthYear::start($currentMonthYear);
 
         for ($i = 1; $i <= 6; $i++) {
             $pastMonth = $currentMonth->copy()->subMonths($i);

@@ -1,14 +1,43 @@
 import { useRef } from 'react';
+import StepArrows from './StepArrows';
+import { usePrefersReducedMotion } from './usePrefersReducedMotion';
 import { motion, useScroll, useTransform } from 'framer-motion';
-import { DownloadCloud, Gauge, ScanSearch, UserPlus } from 'lucide-react';
+import { DownloadCloud, ScanSearch, UserPlus } from 'lucide-react';
 import { viewportOptions } from './animations';
 import SectionNumber from './SectionNumber';
 
+/**
+ * THREE steps, not four.
+ *
+ * "Monitor in real time" and "Review, approve, and export" were separate
+ * entries describing the same phase — the ongoing use of the product once it is
+ * running — and splitting them made the migration look longer than it is, which
+ * is precisely the objection this section exists to answer. They are merged.
+ *
+ * The order is also now the order a buyer actually experiences: the tracker
+ * comes LAST. Payroll runs from attendance however it was created, so a
+ * customer can be live on payroll before anyone installs anything, and putting
+ * the desktop rollout at step two implied a dependency that does not exist.
+ */
 const steps = [
-  { icon: UserPlus, title: 'Set up your workspace', description: 'Create your organization, invite team members, assign roles, and configure attendance rules. Ready in minutes.' },
-  { icon: DownloadCloud, title: 'Install the desktop tracker', description: 'Team members download the Windows app, punch in, and start tracking. The tracker records apps, URLs, idle time, and screenshots.' },
-  { icon: ScanSearch, title: 'Monitor in real time', description: 'Managers see live activity, productivity classifications, idle alerts, and attendance status from the web dashboard.' },
-  { icon: Gauge, title: 'Review, approve, and export', description: 'Run reports, review screenshots, approve leave and overtime, process payroll, and export data for accounting.' },
+  {
+    icon: UserPlus,
+    title: 'Your people and your structure',
+    description:
+      'Import employees and salary structures by CSV, with government ID and bank-detail validation running as you go. Define components and the structure they hang off, or start from a template.',
+  },
+  {
+    icon: ScanSearch,
+    title: 'A parallel run against your current payroll',
+    description:
+      'Process a month without paying from it, then compare against your existing output. Every component that disagrees is listed with the reason it moved, and the override that caused it.',
+  },
+  {
+    icon: DownloadCloud,
+    title: 'Go live, with the tracker following',
+    description:
+      'Run payroll for real, generate the returns and the bank file. Roll the desktop tracker out afterwards — payroll works without it, and it makes attendance better once it is on.',
+  },
 ];
 
 function TimelineLine() {
@@ -17,7 +46,18 @@ function TimelineLine() {
     target: ref,
     offset: ['start 0.7', 'start 0.2'],
   });
-  const scaleY = useTransform(scrollYProgress, [0, 1], [0, 1]);
+  const scrubbedScaleY = useTransform(scrollYProgress, [0, 1], [0, 1]);
+
+  /*
+   * The timeline spine fills as the reader descends; under reduced motion it is
+   * drawn in full from the start.
+   *
+   * Bound through `style`, so the page's `MotionConfig reducedMotion="user"`
+   * does not reach it. Left scrubbed it would stay at `scaleY: 0` — no spine at
+   * all — since nothing advances a bound value when animations are off.
+   */
+  const reducedMotion = usePrefersReducedMotion();
+  const scaleY = reducedMotion ? 1 : scrubbedScaleY;
 
   return (
     <div ref={ref} className="absolute left-6 top-0 bottom-0 hidden lg:block">
@@ -30,8 +70,21 @@ function TimelineLine() {
 }
 
 export default function Workflow() {
+  /*
+   * `overflow-x-clip` below is load-bearing. Each step row enters from
+   * `x: ±48`, so until it lands it sits up to 48px outside the viewport —
+   * which at 390px was 32px of horizontal page scroll on every phone, on a
+   * section most readers reach. Clipping contains the slide without changing
+   * the animation.
+   *
+   * `clip` rather than `hidden`: `hidden` would make this a scroll container
+   * and break `position: sticky` for anything a later edit nests inside.
+   */
   return (
-    <section id="workflow" className="bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8">
+    <section
+      id="workflow"
+      className="overflow-x-clip bg-surface-sunken px-4 py-10 sm:px-6 sm:py-14 lg:px-8"
+    >
       <div className="mx-auto max-w-7xl">
         <SectionNumber number={3} label="Workflow" className="mb-6" />
         <div className="mx-auto flex max-w-3xl flex-col items-center gap-3 text-center">
@@ -45,7 +98,7 @@ export default function Workflow() {
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl"
           >
-            From setup to insights in four steps
+            The objection is never the product. It is the migration.
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 16 }}
@@ -54,12 +107,17 @@ export default function Workflow() {
             transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
             className="max-w-2xl text-base leading-7 text-slate-500"
           >
-            Get your team onboarded fast — the tracker handles data collection while managers focus on the big picture.
+            So here is the actual shape of it. The parallel run in step two is the part that matters
+            — you should not have to trust a payroll engine you have not audited against your own
+            numbers.
           </motion.p>
         </div>
 
         <div className="relative mt-14">
           <TimelineLine />
+          {/* §7 — arrows drawn between the step cards. Decoration only: the
+              steps are an ordered list and read as a sequence without it. */}
+          <StepArrows count={steps.length} />
 
           <div className="space-y-8 lg:space-y-12">
             {steps.map((step, index) => {

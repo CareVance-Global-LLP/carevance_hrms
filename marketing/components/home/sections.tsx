@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { PROOF_STRIP, STATUTORY, SCALE, SECURITY } from '@/lib/facts';
-import { PLANS, formatINR, GST_PERCENT, TRIAL_DAYS, MIN_SEATS } from '@/lib/pricing';
+import { PLANS, GST_PERCENT, TRIAL_DAYS, MIN_SEATS } from '@/lib/pricing';
 import { CTA } from '@/lib/site';
 import { CountUp } from '@/components/motion/CountUp';
+import { StepArrows } from '@/components/home/StepArrows';
+import { PricingCards, type PriceCard } from '@/components/home/PricingCards';
 import { Reveal } from '@/components/motion/Reveal';
 import { OverrideRegister, OverrideRefusal, ConsentNotice } from '@/components/product/screens';
 import {
@@ -295,12 +297,12 @@ export function ComplianceSection() {
 
         <div className="mt-8 rounded-xl border border-accent-200 bg-accent-50 p-5">
           <p className="text-[14px] leading-6 text-n-700">
-            <strong className="text-n-900">And what is not there.</strong> Thirteen statutory
-            returns generate today. Ten further declaration forms are registered and reported as
-            unavailable, because their templates have not been written — that is real statutory
-            work, and the product says so rather than failing at the moment you click.{' '}
+            <strong className="text-n-900">And the honest part.</strong> Twenty-three statutory
+            documents generate — but only nineteen are returns. e-SHRAM, the Shram card, S&amp;E
+            registration and Form 1 are preparation sheets, and say so on their face. Nothing here
+            submits anything to a portal: every filing is a document a human uploads.{' '}
             <Link href="/product/compliance" className="font-semibold text-brand-700 underline underline-offset-4">
-              The full list
+              The full list, named
             </Link>
           </p>
         </div>
@@ -350,6 +352,15 @@ export function SecuritySection() {
                   and mandatory enrolment for privileged roles.
                 </p>
               </li>
+              <li data-claim="SCM-02" className="border-l-2 border-brand-300 pl-4">
+                <p className="font-semibold text-n-900">Deprovisioning actually removes access</p>
+                <p className="mt-1 text-[14px] leading-6 text-n-600">
+                  SAML lets somebody sign in; SCIM is the half that takes it away. Deactivating a
+                  user <strong>revokes their API tokens</strong> rather than only setting a flag —
+                  because a flag alone leaves a leaver’s existing token reading payroll on Monday,
+                  which is the precise failure SCIM is bought to prevent.
+                </p>
+              </li>
               <li data-claim="CON-01" className="border-l-2 border-brand-300 pl-4">
                 <p className="font-semibold text-n-900">Monitoring runs on notice and consent</p>
                 <p className="mt-1 text-[14px] leading-6 text-n-600">
@@ -364,9 +375,10 @@ export function SecuritySection() {
             <div className="mt-6 rounded-xl border border-n-300 bg-card p-5">
               <p className="text-caption uppercase text-n-600">Not yet true</p>
               <p className="mt-2 text-[14px] leading-6 text-n-700">
-                No SOC 2 report and no ISO 27001 certificate. No SSO or SAML — Google OAuth is the
-                only federated sign-in. We would rather you read that here than discover it in
-                procurement.
+                No SOC 2 report and no ISO 27001 certificate, and no published uptime or SLA.
+                SAML single sign-on and SCIM provisioning do exist — but SCIM syncs people, not
+                groups, so the roles somebody should get do not arrive with them. We would rather
+                you read that here than discover it in procurement.
               </p>
             </div>
 
@@ -390,24 +402,47 @@ export function PricingPreview() {
   const tracking = PLANS.filter((p) => p.family === 'tracking');
   const payroll = PLANS.filter((p) => p.family === 'payroll' && !p.contactOnly);
 
-  const cards = [
+  const cheapestMonthlySeat = Math.min(...tracking.map((p) => p.monthlyPerSeat ?? 0));
+  const cheapestYearlySeat = Math.min(
+    ...tracking.map((p) => p.yearlyPerSeat ?? p.monthlyPerSeat ?? 0)
+  );
+
+  /*
+   * The saving is DERIVED, never typed. "Save 10%" written by hand is a claim
+   * that silently becomes false the day somebody edits a plan's yearly rate;
+   * computed from the same two numbers the cards render, it cannot.
+   */
+  const savingPercent = Math.round(
+    ((cheapestMonthlySeat - cheapestYearlySeat) / cheapestMonthlySeat) * 100
+  );
+
+  const cards: PriceCard[] = [
     {
       title: 'Tracking',
-      from: `${formatINR(Math.min(...tracking.map((p) => p.monthlyPerSeat ?? 0)))} / user / month`,
+      monthly: cheapestMonthlySeat,
+      yearly: cheapestYearlySeat,
+      unit: '/ user / month',
       body: 'Evidence of work, attendance, leave and approvals. Priced per person, minimum 10.',
       points: ['Desktop tracker & browser extension', 'Attendance, leave, overtime', 'Projects, tasks and approvals'],
       highlighted: false,
     },
     {
       title: 'Payroll + Tracking',
-      from: `${formatINR(Math.min(...payroll.map((p) => p.basePrice ?? 0)))} / month`,
+      monthly: Math.min(...payroll.map((p) => p.basePrice ?? 0)),
+      // Workspace plans are billed on `basePrice`, which monthlyTotal() resolves
+      // without reference to the cycle. There is no annual rate to show, and
+      // showing the monthly one twice would imply a discount that is not there.
+      yearly: null,
+      unit: '/ month',
       body: `Everything above, plus the payroll engine, statutory and filings. Includes 50 seats.`,
       points: ['Full payroll run lifecycle', 'PF, ESI, PT, TDS and 13 returns', 'Bank files, payslips and Form 16'],
       highlighted: true,
     },
     {
       title: 'Enterprise',
-      from: 'Custom',
+      monthly: null,
+      yearly: null,
+      unit: '',
       body: 'Custom integrations and commercial terms, agreed in writing rather than implied.',
       points: ['Custom integrations', 'Commercial terms by agreement'],
       highlighted: false,
@@ -425,33 +460,7 @@ export function PricingPreview() {
           </Lead>
         </div>
 
-        <div className="mt-10 grid gap-4 lg:grid-cols-3">
-          {cards.map((card) => (
-            <Card
-              key={card.title}
-              className={cn('flex flex-col p-6', card.highlighted && 'border-brand-300 ring-1 ring-brand-300')}
-            >
-              {card.highlighted && (
-                <span className="mb-3 self-start rounded-md bg-brand-100 px-2 py-0.5 text-[10.5px] font-bold tracking-wide text-brand-800 uppercase">
-                  Most bought
-                </span>
-              )}
-              <h3 className="font-display text-lg font-bold text-n-900">{card.title}</h3>
-              <p className="mt-1.5 font-display text-2xl font-bold text-n-900 tnum">{card.from}</p>
-              <p className="mt-2 text-[14px] leading-6 text-n-600">{card.body}</p>
-              <ul className="mt-4 grid gap-2">
-                {card.points.map((p) => (
-                  <li key={p} className="flex gap-2.5 text-[13.5px] leading-6 text-n-700">
-                    <svg viewBox="0 0 16 16" className="mt-1.5 h-3 w-3 shrink-0 text-brand-600" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M3 8.5 6.2 11.6 13 4.6" />
-                    </svg>
-                    {p}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ))}
-        </div>
+        <PricingCards cards={cards} savingLabel={`${savingPercent}% off per-seat plans, billed yearly.`} />
 
         <div className="mt-8 flex flex-wrap items-center gap-4">
           <Button href="/pricing" size="lg">
@@ -502,7 +511,10 @@ export function SwitchingSection() {
           </Lead>
         </div>
 
-        <ol className="mt-10 grid gap-4 lg:grid-cols-3">
+        {/* `relative` so StepArrows can overlay the row without affecting it. */}
+        <div className="relative mt-10">
+          <StepArrows />
+          <ol className="grid gap-4 lg:grid-cols-3">
           {TIMELINE.map((step, i) => (
             <Card key={step.when} as="li" className="p-6">
               <div className="flex items-center gap-2">
@@ -517,7 +529,8 @@ export function SwitchingSection() {
               <p className="mt-2 text-[14px] leading-6 text-pretty text-n-600">{step.body}</p>
             </Card>
           ))}
-        </ol>
+          </ol>
+        </div>
       </Container>
     </Section>
   );
@@ -535,12 +548,12 @@ export const HOME_FAQS = [
     a: 'Monitoring runs on notice and consent, enforced at a single gate every capture path passes through. Notices are versioned and never edited in place, consent is recorded per capture type, and it can be withdrawn. Under the DPDP Act the liability for collecting without notice falls on the employer, so those controls ship with the product rather than being left to you.',
   },
   {
-    q: 'Which statutory returns can you actually produce?',
-    a: 'Thirteen today: PF ECR, Full ECR, ESI Challan, Form 24Q, PT Return, LWF Return, Bonus Forms C, D and E, Form 12BA, Form 16 and Form 16 Annual. Ten further declaration forms are registered but report as unavailable because their templates have not been written. Availability is resolved against the filesystem, so the product cannot advertise a return it is unable to write.',
+    q: 'Which statutory documents can you actually produce?',
+    a: 'Twenty-three, and nineteen of them are returns: PF ECR, Full ECR, ESI Challan, Form 24Q, PT Return, LWF Return, Bonus Forms C, D and E, Form 12BA, Form 16, Form 16 Annual, Form 19, Form 31, Form 2, Form 6 and Form 124. The other four — e-SHRAM, Shram card, S&E registration and Form 1 — are preparation sheets rather than returns, and say so on their face. Nothing auto-submits: every filing is a document a human uploads. Availability is resolved against the filesystem, so the product cannot advertise a return it is unable to write.',
   },
   {
     q: 'What is not built yet?',
-    a: 'No recruitment or applicant tracking, no offer letters or e-signature, no background verification, no SSO or SAML, no multi-entity legal structure, and no effective-dated compensation history. Leave is a flat annual quota with no accrual schedule or mid-year pro-rating. Chat polls rather than pushing in real time.',
+    a: 'No public careers page — a recruiter records candidates rather than them applying themselves. No background-check vendor integration, so findings are entered by a human. SCIM syncs people but not groups, so roles do not sync. The roster has no drag-and-drop calendar. Biometric ingestion is ADMS push only. Accounting export produces a file to import rather than posting into Tally or Zoho over an API. No travel expense module, no company announcements, no engagement surveys or helpdesk. Chat polls rather than pushing in real time, and there is no i18n layer — English only.',
   },
   {
     q: 'How does pricing work if I have fewer than 50 employees?',
@@ -565,8 +578,13 @@ export function FaqSection() {
              * Native <details>. Accessible by default, keyboard-operable by
              * default, and costs zero JavaScript — a hand-rolled accordion here
              * would be worse in every measurable way.
+             *
+             * `name` makes it an EXCLUSIVE accordion natively: opening one
+             * closes the others, which the brief asks for, with no state to
+             * hold. `faq-item` is the hook for the open/close animation defined
+             * in globals.css — also CSS, also zero JavaScript.
              */
-            <details key={faq.q} className="group py-4">
+            <details key={faq.q} name="home-faq" className="faq-item group py-4">
               <summary className="flex cursor-pointer list-none items-start justify-between gap-4 text-left font-display text-[16.5px] font-bold text-n-900 marker:hidden">
                 {faq.q}
                 <svg

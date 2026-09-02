@@ -54,12 +54,31 @@ export default function Footer() {
               Time tracking, employee monitoring, attendance, payroll, and HR operations — all in one platform.
             </p>
             <div className="mt-5 flex items-center gap-3 text-slate-500">
-              {[Twitter, Linkedin, Github].map((Icon) => (
+              {/*
+                THE LABEL IS WRITTEN OUT, not derived from `Icon.name`.
+
+                It used to be `aria-label={Icon.name}`, which works in
+                development and silently breaks in production: the bundler
+                minifies component function names, so the attribute ships empty
+                and Lighthouse reports "links do not have a discernible name" —
+                three tab stops that announce as nothing. A bug that only exists
+                in the build nobody runs locally is the kind worth pinning down
+                with a literal.
+
+                TODO(founder): these all point at `/`. They need the real
+                profile URLs, or they should be removed — a social icon that
+                reloads the homepage is worse than no icon.
+              */}
+              {[
+                { Icon: Twitter, label: 'CareVance on X' },
+                { Icon: Linkedin, label: 'CareVance on LinkedIn' },
+                { Icon: Github, label: 'CareVance on GitHub' },
+              ].map(({ Icon, label }) => (
                 <a
-                  key={Icon.displayName || Icon.name}
+                  key={label}
                   href="/"
                   className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 transition-all duration-200 hover:border-slate-300 hover:text-slate-700 hover:shadow-sm"
-                  aria-label={Icon.name}
+                  aria-label={label}
                 >
                   <Icon className="h-4 w-4" />
                 </a>
@@ -68,7 +87,7 @@ export default function Footer() {
           </motion.div>
 
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
-            {groups.map((group, gi) => (
+            {groups.map((group) => (
               <motion.div key={group.title} variants={fadeUp}>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{group.title}</p>
                 <div className="mt-3 space-y-2.5">

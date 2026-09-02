@@ -3007,80 +3007,9 @@ export type AskPlan = {
 export type AskRow = Record<string, string | number | null>;
 
 /** Where an answer came from. Switch on this, never on `rows.length`. */
-export type AskKind = 'table' | 'prose' | 'action';
+export type AskKind = 'table' | 'prose';
 
 export type AskSource = { label: string; route: string };
-
-/** One field the change would move. `from` is read from the live row. */
-export type AskActionChange = {
-  field: string;
-  label: string;
-  from: string | number | null;
-  to: string | number | null;
-  unit: string | null;
-};
-
-/** A field that already holds the value asked for, so it is not in the diff. */
-export type AskActionUnchanged = {
-  field: string;
-  label: string;
-  value: string | number | null;
-};
-
-/**
- * A change interpreted and shown back, before anything is written.
- *
- * Nothing here is computed on the client. `from` is the server's reading of
- * the live row and `impact` is its rendered sentence — recomputing either here
- * would put a second opinion on screen beside the one the token was signed
- * over, and the two would eventually disagree.
- */
-export type AskAction = {
-  key: string;
-  label: string;
-  target: { id: string | number; label: string };
-  changes: AskActionChange[];
-  unchanged: AskActionUnchanged[];
-  /** A count, rendered — "Affects 47 employees". Never a list of names. */
-  impact: string;
-  /**
-   * The signed handle Apply posts back. NULL when the row already holds every
-   * value asked for: there is nothing to apply, and offering the button anyway
-   * ends in "that preview expired" for a change that was never needed.
-   */
-  token: string | null;
-  /** Set only when there is no diff, saying what the row already holds. */
-  message: string | null;
-};
-
-/**
- * Which refusal `/search/act` returned, mirroring `ActionRefusedException`'s
- * constants so a client can switch on it rather than read the sentence.
- *
- * Two of them mean the preview on screen is now WRONG about the row —
- * `stale` (it moved between preview and Apply) and `no_preview` (the token is
- * expired, tampered or somebody else's). Retrying either cannot succeed, so
- * the only honest next step is a fresh question. Every other refusal leaves the
- * diff accurate and the cause potentially fixable.
- */
-export type ActRefusal =
-  | 'unknown_action'
-  | 'not_permitted'
-  | 'not_found'
-  | 'ambiguous'
-  | 'out_of_bounds'
-  | 'malformed_plan'
-  | 'stale'
-  | 'no_preview'
-  | 'rejected';
-
-/** What `/search/act` answers with once the write has landed. */
-export type ActResponse = {
-  applied: true;
-  message: string;
-  /** Where to go and see it. Null if the action declares no screen. */
-  route: string | null;
-};
 
 export type AskResponse = {
   /**
@@ -3104,11 +3033,6 @@ export type AskResponse = {
    * the reason hides the gap.
    */
   detail?: string;
-  /**
-   * Action only: the change, the diff and the token that applies it. Present
-   * only when `kind === 'action'`.
-   */
-  action?: AskAction;
   plan: AskPlan | null;
   columns: AskColumn[];
   rows: AskRow[];
@@ -3132,12 +3056,6 @@ export const searchAskApi = {
   // a sentence that is an enrichment, not the answer.
   summary: (data: { question: string; columns: AskColumn[]; rows: AskRow[] }) =>
     api.post<{ summary: string | null }>('/search/ask/summary', data),
-
-  // Apply a previewed change. The TOKEN is the whole payload: the plan, the
-  // before-values and who may apply it all ride inside the server's signature,
-  // so there is nothing here for a client to edit — and a client that composed
-  // its own plan would be one the preview never showed a human.
-  act: (token: string) => api.post<ActResponse>('/search/act', { token }),
 };
 
 export const notificationApi = {
@@ -3677,31 +3595,6 @@ export interface OverrideAuditEntry {
   created_at: string | null;
 }
 
-/**
- * One person's own month, for the two bulk-process endpoints.
- *
- * Both used to take a single working_days / lOP_days for the whole selection
- * and write it to every member identically. BulkPayrollMatrix sent the first
- * row's working days and the group MEAN loss of pay, so in a 20-person group
- * where one person took 5 unpaid days all 20 rows were written with 0.25 LOP
- * days: on a 6,00,000 CTC that is 416.67 wrongly deducted from each of the 19
- * who were present and 7,916.67 wrongly paid to the absentee. Every row
- * reported success, so only two people comparing payslips could find it.
- *
- * Every field is optional and an OMITTED field is not the same as zero: the
- * server falls back to that employee's own attendance summary for anything not
- * stated here. Never fill one in to satisfy the type — a number nobody chose is
- * read as a statement of attendance and derives LOP from it, which is the trap
- * that docked employees with perfect attendance 3-5 days on process-and-pay.
- */
-export interface BulkEmployeeAttendance {
-  user_id: number;
-  working_days?: number;
-  days_present?: number;
-  lOP_days?: number;
-  overtime_hours?: number;
-}
-
 // Payroll API - Comprehensive
 export const payrollApi = {
   // Dashboard & Stats
@@ -3797,10 +3690,7 @@ export const payrollApi = {
   deleteDepartmentTemplate: (templateId: number) =>
     api.delete(`/payroll/department-templates/${templateId}`),
 
-  // The flat attendance fields are a group-wide DEFAULT; `employees` states one
-  // person's own month and wins over them. working_days is optional on purpose —
-  // see BulkEmployeeAttendance for why inventing one is a pay defect.
-  processSelectedEmployees: (departmentId: number, data: { month_year: string; user_ids: number[]; working_days?: number; days_present?: number; default_annual_ctc?: number; lOP_days?: number; overtime_hours?: number; employees?: BulkEmployeeAttendance[] }) =>
+  processSelectedEmployees: (departmentId: number, data: { month_year: string; user_ids: number[]; working_days: number; default_annual_ctc?: number; lOP_days?: number; overtime_hours?: number }) =>
     api.post<{ success: boolean; message: string; succeeded: Array<{ user_id: number; payroll_item_id: number | null }>; failed: Array<{ user_id: number; reason: string }> }>(`/payroll/departments/${departmentId}/process-selected`, data),
 
   // Calculations
@@ -4659,22 +4549,21 @@ export const payrollApi = {
   // Bulk-process payroll for the selected members of a pay group.
   // Mirrors processSelectedEmployees but validates against
   // pay-group membership instead of department membership.
-  //
-  // The flat attendance fields are a group-wide DEFAULT; `employees` states one
-  // person's own month and wins over them. A user_id in `employees` that is not
-  // also in `user_ids` is a 422, not a silent drop. working_days is optional on
-  // purpose — see BulkEmployeeAttendance for why inventing one is a pay defect.
   processPayGroupSelectedEmployees: (
     payGroupId: number,
     data: {
       month_year: string;
       user_ids: number[];
+      /**
+       * Optional, and normally omitted — the server then reads each employee's
+       * own attendance. Send these only to STATE attendance the records do not
+       * have (a mid-month joiner, an agreed correction); a value here applies
+       * to everybody in the request.
+       */
       working_days?: number;
-      days_present?: number;
       default_annual_ctc?: number;
       lOP_days?: number;
       overtime_hours?: number;
-      employees?: BulkEmployeeAttendance[];
     },
   ) =>
     api.post<{
@@ -4799,9 +4688,42 @@ export const payrollApi = {
     api.get<any>('/payroll/reimbursements/summary', { params }),
   // Used by the Salary Structure wizard to show approved reimbursements
   // for the current employee.
+  /*
+   * `month_basis: 'expense'` because this feeds the payroll run.
+   *
+   * The default basis is the submitted month, which is what the approval
+   * workflow wants. Payroll pays on the expense date, so without this the
+   * wizard's review step showed ₹0 for claims the run would pay — most
+   * receipts are filed after the month they belong to.
+   */
+  /*
+   * What the acting employee can afford to repay each month.
+   *
+   * `my/loan-eligibility` takes no id — borrowing capacity is derived from
+   * salary, so an id in the URL would let one employee read another's pay.
+   */
+  getLoanEligibility: () =>
+    api.get<{
+      success: boolean;
+      eligibility: {
+        max_emi: number;
+        monthly_gross: number;
+        statutory_deductions: number;
+        existing_loan_emis: number;
+        ceiling: number;
+        has_salary: boolean;
+        reason: string | null;
+      };
+    }>('/payroll/my/loan-eligibility'),
+
   getEmployeeReimbursements: (employeeId: number, status?: 'pending' | 'approved' | 'rejected' | 'removed', monthYear?: string) =>
     api.get<any[]>('/payroll/reimbursements', {
-      params: { user_id: employeeId, status: status ?? 'approved', month_year: monthYear },
+      params: {
+        user_id: employeeId,
+        status: status ?? 'approved',
+        month_year: monthYear,
+        month_basis: 'expense',
+      },
     }),
 
   // ===== Revision Letters (Employee self-service) =====

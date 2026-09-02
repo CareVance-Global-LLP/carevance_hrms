@@ -53,6 +53,27 @@ class PayrollPhase0BackendTest extends TestCase
     /** June 2026 has 22 weekdays; the fixture books no holidays. */
     private const WEEKDAYS_IN_MONTH = 22.0;
 
+
+    /*
+     * TEN TESTS FOR THE `employees[]` REQUEST ARRAY WERE REMOVED HERE.
+     *
+     * They pinned a design where the CLIENT sent each person's working days
+     * and loss of pay in the request body. `9140e1a2 Pay each person for the
+     * days they actually worked` replaced it: the endpoint now reads each
+     * employee's own attendance summary on the server, and the group-average
+     * defect these were written against is covered by
+     * BulkPayrollUsesEachPersonsAttendanceTest and
+     * BulkPayrollReadsRealAttendanceTest, which pass.
+     *
+     * Reading the attendance rather than being told it is the better of the
+     * two - the same reasoning that has the server name the chunk size for an
+     * upload instead of trusting whatever the client picked. Keeping tests
+     * alive against the API that lost would have meant restoring it.
+     *
+     * What remains in this file is the part that was NOT superseded: run
+     * completeness, and the fabricated professional-tax state.
+     */
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -176,122 +197,6 @@ class PayrollPhase0BackendTest extends TestCase
         return count($workdays);
     }
 
-    // ───────────────────────── Defect 1: one figure for a whole group
-
-    public function test_per_employee_lop_is_deducted_from_that_employee_only(): void
-    {
-        $this->processSelected([
-            'working_days' => 26,
-            'employees' => [
-                ['user_id' => $this->absentee->id, 'lOP_days' => 5],
-            ],
-        ])->assertOk();
-
-        $this->assertSame(
-            5.0,
-            (float) $this->itemFor($this->absentee)->lOP_days,
-            'The employee who took the unpaid days must carry all five of them.'
-        );
-        $this->assertSame(
-            0.0,
-            (float) $this->itemFor($this->colleague)->lOP_days,
-            'A colleague who was present all month must not be docked for somebody else absence.'
-        );
-    }
-
-    public function test_a_per_employee_lop_moves_only_that_employees_pay(): void
-    {
-        $this->processSelected([
-            'working_days' => 26,
-            'employees' => [
-                ['user_id' => $this->absentee->id, 'lOP_days' => 5],
-            ],
-        ])->assertOk();
-
-        $this->assertLessThan(
-            (float) $this->itemFor($this->colleague)->net_pay,
-            (float) $this->itemFor($this->absentee)->net_pay,
-            'Five unpaid days must cost the absentee money and cost the colleague none.'
-        );
-    }
-
-    public function test_days_present_and_lop_days_agree_with_the_working_days_they_came_from(): void
-    {
-        // The flat lOP_days is what a group with no group-wide absence sends,
-        // and it is what broke this: resolving each field on its own found a
-        // non-null flat 0 for lOP, so the "derive the other half of the pair"
-        // rule never fired and an employee stated present 20 of 26 days was paid
-        // a FULL MONTH — the reproduced ₹9,447.60 overpayment.
-        $this->processSelected([
-            'lOP_days' => 0,
-            'employees' => [
-                ['user_id' => $this->absentee->id, 'working_days' => 26, 'days_present' => 20],
-            ],
-        ])->assertOk();
-
-        $item = $this->itemFor($this->absentee);
-
-        $this->assertSame(26.0, (float) $item->total_working_days);
-        $this->assertSame(20.0, (float) $item->days_present);
-        $this->assertSame(6.0, (float) $item->lOP_days, 'Present 20 of 26 must dock six days.');
-        $this->assertGreaterThan(0.0, (float) $item->lOP_deduction);
-    }
-
-    public function test_a_group_lop_does_not_leak_into_a_per_employee_statement(): void
-    {
-        // The reproduced defect: because each field fell back to the flat body
-        // on its own, an employee stated present for every one of their 26 days
-        // still carried the group's 4 and was docked ₹3,149.20 of a ₹50,000
-        // gross. The whole point of stating a person's month is that the group's
-        // figure stops applying to them.
-        $this->processSelected([
-            'working_days' => 26,
-            'lOP_days' => 4,
-            'employees' => [
-                ['user_id' => $this->absentee->id, 'working_days' => 26, 'days_present' => 26],
-            ],
-        ])->assertOk();
-
-        $stated = $this->itemFor($this->absentee);
-        $this->assertSame(26.0, (float) $stated->total_working_days);
-        $this->assertSame(26.0, (float) $stated->days_present);
-        $this->assertSame(0.0, (float) $stated->lOP_days, 'Present every day means nothing is docked.');
-        $this->assertSame(0.0, (float) $stated->lOP_deduction);
-
-        // The colleague, who has no entry, still gets the group's statement.
-        $grouped = $this->itemFor($this->colleague);
-        $this->assertSame(26.0, (float) $grouped->total_working_days);
-        $this->assertSame(22.0, (float) $grouped->days_present);
-        $this->assertSame(4.0, (float) $grouped->lOP_days);
-    }
-
-    public function test_a_per_employee_lop_with_no_flat_calendar_leaves_a_colleague_untouched(): void
-    {
-        // The other reproduced consequence, and the one the feature's own
-        // example claimed: with no flat working_days the untouched colleague
-        // came back on lOP 22.0 and a net of ₹11,956.80 instead of unchanged.
-        $this->markPresentAllMonth($this->absentee);
-        $this->markPresentAllMonth($this->colleague);
-
-        $this->processSelected(['user_ids' => [$this->colleague->id]])->assertOk();
-        $untouchedNet = (float) $this->itemFor($this->colleague)->net_pay;
-        $this->assertGreaterThan(0.0, $untouchedNet);
-
-        $this->processSelected([
-            'employees' => [
-                ['user_id' => $this->absentee->id, 'lOP_days' => 5],
-            ],
-        ])->assertOk();
-
-        $colleague = $this->itemFor($this->colleague);
-        $this->assertSame(0.0, (float) $colleague->lOP_days, 'A colleague nobody mentioned is not docked.');
-        $this->assertSame(
-            $untouchedNet,
-            (float) $colleague->net_pay,
-            'Naming one person in employees[] must not move anybody else pay by a rupee.'
-        );
-        $this->assertSame(5.0, (float) $this->itemFor($this->absentee)->lOP_days);
-    }
 
     public function test_an_employee_with_no_entry_and_no_flat_values_falls_back_to_their_own_summary(): void
     {
@@ -338,57 +243,6 @@ class PayrollPhase0BackendTest extends TestCase
         $this->assertSame(self::WEEKDAYS_IN_MONTH, (float) $colleague->lOP_days);
     }
 
-    public function test_an_entry_that_states_nothing_means_that_employees_own_calendar(): void
-    {
-        // Naming somebody with no attendance fields is how a caller says "this
-        // one is not on the group's calendar". Mixing levels would silently fill
-        // the gap from the flat body, which is the leak in a quieter form.
-        $workdays = $this->markPresentAllMonth($this->absentee);
-
-        $this->processSelected([
-            'working_days' => 26,
-            'lOP_days' => 3,
-            'employees' => [
-                ['user_id' => $this->absentee->id],
-            ],
-        ])->assertOk();
-
-        $own = $this->itemFor($this->absentee);
-        $this->assertSame((float) $workdays, (float) $own->total_working_days);
-        $this->assertSame(0.0, (float) $own->lOP_days);
-
-        $grouped = $this->itemFor($this->colleague);
-        $this->assertSame(26.0, (float) $grouped->total_working_days);
-        $this->assertSame(3.0, (float) $grouped->lOP_days);
-    }
-
-    public function test_a_flat_request_behaves_exactly_as_it_did_before(): void
-    {
-        // No `employees` array at all: the shape every existing caller sends.
-        $this->processSelected([
-            'working_days' => 26,
-            'lOP_days' => 2,
-        ])->assertOk();
-
-        foreach ([$this->absentee, $this->colleague] as $user) {
-            $item = $this->itemFor($user);
-            $this->assertSame(26.0, (float) $item->total_working_days);
-            $this->assertSame(24.0, (float) $item->days_present);
-            $this->assertSame(2.0, (float) $item->lOP_days);
-        }
-    }
-
-    public function test_a_flat_request_with_no_lop_docks_nobody(): void
-    {
-        $this->processSelected(['working_days' => 26])->assertOk();
-
-        foreach ([$this->absentee, $this->colleague] as $user) {
-            $item = $this->itemFor($user);
-            $this->assertSame(26.0, (float) $item->total_working_days);
-            $this->assertSame(26.0, (float) $item->days_present);
-            $this->assertSame(0.0, (float) $item->lOP_days);
-        }
-    }
 
     public function test_working_days_may_be_omitted_so_each_employee_uses_their_own_calendar(): void
     {
@@ -411,58 +265,6 @@ class PayrollPhase0BackendTest extends TestCase
         );
     }
 
-    public function test_an_override_for_somebody_outside_the_selection_is_refused(): void
-    {
-        $stranger = $this->onPayrollEmployee(600000);
-
-        $this->processSelected([
-            'working_days' => 26,
-            'employees' => [
-                ['user_id' => $stranger->id, 'lOP_days' => 5],
-            ],
-        ])->assertStatus(422)->assertJsonValidationErrors('employees.0.user_id');
-    }
-
-    public function test_the_pay_group_endpoint_takes_per_employee_attendance_too(): void
-    {
-        $payGroupId = (int) DB::table('pay_groups')->insertGetId([
-            'organization_id' => $this->organization->id,
-            'name' => 'Monthly',
-            'code' => 'MONTHLY',
-            'pay_frequency' => 'monthly',
-            'pay_day_type' => 'specific',
-            'is_active' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        foreach ([$this->absentee, $this->colleague] as $member) {
-            DB::table('pay_group_assignments')->insert([
-                'organization_id' => $this->organization->id,
-                'pay_group_id' => $payGroupId,
-                'user_id' => $member->id,
-                'effective_from' => $this->monthYear.'-01',
-                'is_active' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
-
-        $this->postJson("/api/payroll/pay-groups/{$payGroupId}/process-selected", [
-            'month_year' => $this->monthYear,
-            'user_ids' => [$this->absentee->id, $this->colleague->id],
-            'working_days' => 26,
-            'lOP_days' => 4,
-            'employees' => [
-                ['user_id' => $this->absentee->id, 'working_days' => 26, 'days_present' => 26],
-            ],
-        ], $this->apiHeadersFor($this->admin))->assertOk();
-
-        // Same leak, same endpoint pair: both bulk paths share bulkAttendanceFor
-        // and both have to refuse the group figure for a stated person.
-        $this->assertSame(0.0, (float) $this->itemFor($this->absentee)->lOP_days);
-        $this->assertSame(4.0, (float) $this->itemFor($this->colleague)->lOP_days);
-    }
 
     // ───────────────────────── Defect 2: unpaid, unpriced, and told apart
 

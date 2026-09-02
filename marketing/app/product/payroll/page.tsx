@@ -27,10 +27,10 @@ export const metadata: Metadata = {
 };
 
 const NOT_CLAIMED = [
-  'Effective-dated compensation history — retro across a revision is approximate',
-  'Multi-entity legal structure — one organisation is one PAN/TAN/PF code',
-  'Ten declaration forms whose statutory templates are not written yet',
-  'Payroll for jurisdictions outside India',
+  'Payroll for any jurisdiction outside India',
+  'Filing on your behalf — every return is a file you upload yourself',
+  'A live accounting API push; Tally and Zoho get a file to import',
+  'Four of the 23 statutory documents are preparation sheets, not returns',
 ];
 
 export default function PayrollPage() {
@@ -90,8 +90,22 @@ export default function PayrollPage() {
             />
 
             <FeatureBlock
-              claim="PAY-01"
+              claim="HR-10"
+              eyebrow="Effective dating"
+              title="A mid-month revision blends. A back-dated one diffs against a real prior rate."
+              body="Compensation is a timeline, not a column. CompensationTimeline resolves what somebody earned on any given day from their accepted revision letters, and the run asks it for a blended figure rather than assuming the current CTC applied all month. So arrears across a revision are computed, not approximated."
+              points={[
+                { text: 'Revision letters are accepted or rejected by the employee', claim: 'HR-07' },
+                { text: 'A back-dated revision diffs against the rate that was actually in force', claim: 'HR-10' },
+                { text: 'Multiple legal entities, each with its own PAN, TAN, PF and ESI codes', claim: 'ENT-01' },
+                { text: 'Filings generate per entity, resolved per employee', claim: 'FIL-07' },
+              ]}
+              screen={<DifferencesReport />}
               flip
+            />
+
+            <FeatureBlock
+              claim="PAY-01"
               eyebrow="Structure"
               title="CTC in, components out, and the total balances to the paisa."
               body="Salary structures are built from formula, slab and lookup components, with CTC range bands and pay groups on top. One component is designated the residual and absorbs whatever is left, so the sum returns to CTC exactly rather than approximately."

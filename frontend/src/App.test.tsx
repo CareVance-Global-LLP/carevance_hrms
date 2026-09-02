@@ -71,7 +71,6 @@ vi.mock('@/components/Layout', () => ({
   ),
 }));
 vi.mock('@/pages/Login', () => ({ default: () => <div>Login Page</div> }));
-vi.mock('@/pages/Register', () => ({ default: () => <div>Register Page</div> }));
 vi.mock('@/pages/LandingPage', () => ({ default: () => <div>Landing Page</div> }));
 vi.mock('@/pages/Dashboard', () => ({ default: () => <div>Dashboard Page</div> }));
 vi.mock('@/pages/AdminDashboard', () => ({ default: () => <div>Admin Dashboard Page</div> }));

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Activity;
+use App\Models\ActivitySession;
 use App\Models\Organization;
 use App\Models\TimeEntry;
 use App\Models\User;
@@ -10,21 +11,21 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * "Stale" has to mean NOTHING IS ARRIVING, not merely OLD.
+ * `timers:close-stale` is a backstop for an ABANDONED timer, not a shift cap.
  *
- * `timers:close-stale` tested one thing — `start_time < now - 120 minutes` —
- * and closed every match. It never looked at the activity ledger at all, so a
- * person who had been working steadily for two hours had their timer killed
- * underneath them, every fifteen minutes, forever.
+ * Its own description says "without any activity", and config/time_tracking.php
+ * documents stale_timer_max_minutes as "maximum minutes a running timer is
+ * allowed to exist WITHOUT ANY ACTIVITY". The query implements neither: it
+ * matches on start_time alone, so the sweep — scheduled every fifteen minutes —
+ * closes every timer that has been running longer than two hours, including one
+ * belonging to somebody who is typing at that exact moment.
  *
- * Production, 14 days to 1 Sep 2026: 30 closes, every one between 120 and 135
- * minutes, and the last activity row landed 0-3 SECONDS before the kill. They
- * were typing at the instant it fired. Vishwa, SAMARTH JAYSWAL, kajal patil,
- * Nisha Goswami and Vansh Mistry each lost a timer roughly twice a day.
- *
- * The age filter stays — this is still the backstop of last resort for a timer
- * far older than anything `timers:close-idle` should have left behind. It is
- * the second condition that was missing: age AND silence, never age alone.
+ * It is the silent variant of the bug IdleBackstopRespectsClientPolicyTest
+ * covers, and worse in two ways. It ignores the activity ledger entirely rather
+ * than merely reading it against the wrong threshold, so no amount of working
+ * defends against it. And it does not set `auto_stopped_for_idle`, which is the
+ * flag the desktop client reads to decide whether to tell the person anything —
+ * so the timer stops with no notice, no popup and no explanation.
  */
 class StaleSweepRespectsActivityTest extends TestCase
 {
@@ -37,112 +38,67 @@ class StaleSweepRespectsActivityTest extends TestCase
         parent::setUp();
 
         config(['time_tracking.stale_timer_max_minutes' => 120]);
-        config(['time_tracking.idle_auto_stop_threshold_seconds' => 300]);
 
-        $this->organization = Organization::factory()->create([
-            'settings' => ['idle_auto_stop_threshold_seconds' => 900],
-        ]);
+        $this->organization = Organization::factory()->create();
     }
 
-    /** THE PRODUCTION BUG. A long day is not an abandoned timer. */
-    public function test_a_timer_running_past_the_cap_is_left_alone_while_the_person_is_working(): void
+    public function test_it_leaves_a_long_but_actively_worked_timer_running(): void
     {
-        // Three hours in — well past the 120-minute cap — and active a moment
-        // ago. This is entry #1615 (Vishwa, 1 Sep, 127 min, gap 0s).
-        $entry = $this->runningTimer(startedSecondsAgo: 10800, lastActiveSecondsAgo: 5);
+        // Three hours in, and the tracker reported activity thirty seconds ago.
+        // This person is at their desk working.
+        $entry = $this->runningTimer(startedMinutesAgo: 180, lastActivitySecondsAgo: 30);
 
         $this->artisan('timers:close-stale')->assertExitCode(0);
 
         $this->assertNull(
             $entry->fresh()->end_time,
-            'a timer with activity arriving must never be closed for being old'
+            'a timer with activity thirty seconds ago is not stale — somebody is working'
         );
     }
 
-    public function test_a_timer_active_within_the_clients_threshold_is_left_alone(): void
+    public function test_it_leaves_a_long_timer_running_when_only_activity_sessions_report(): void
     {
-        // 400s silent: past the server's 300s config floor, inside the client's
-        // own 900s policy. The tracker is still deciding; the sweep must hold.
-        $entry = $this->runningTimer(startedSecondsAgo: 10800, lastActiveSecondsAgo: 400);
+        // The Electron foreground-window bridge writes activity_sessions and no
+        // `activities` row at all, so a sweep that consults only one ledger is
+        // blind to a whole class of live tracker.
+        $entry = $this->runningTimer(startedMinutesAgo: 240, lastActivitySecondsAgo: null);
 
-        $this->artisan('timers:close-stale')->assertExitCode(0);
-
-        $this->assertNull($entry->fresh()->end_time);
-    }
-
-    public function test_a_genuinely_abandoned_timer_is_still_closed(): void
-    {
-        // Old AND silent for longer than the client's policy plus its grace.
-        // This is what the command is actually for.
-        $entry = $this->runningTimer(startedSecondsAgo: 10800, lastActiveSecondsAgo: 4000);
-
-        $this->artisan('timers:close-stale')->assertExitCode(0);
-
-        $fresh = $entry->fresh();
-        $this->assertNotNull($fresh->end_time, 'an abandoned timer must not bill all night');
-        $this->assertSame(TimeEntry::STOP_STALE_CLOSE, $fresh->stop_reason);
-    }
-
-    public function test_a_young_timer_is_still_ignored(): void
-    {
-        // Inside the cap. Unchanged behaviour — close-idle owns this case.
-        $entry = $this->runningTimer(startedSecondsAgo: 600, lastActiveSecondsAgo: 4000);
-
-        $this->artisan('timers:close-stale')->assertExitCode(0);
-
-        $this->assertNull($entry->fresh()->end_time);
-    }
-
-    public function test_the_silent_tail_is_not_billed(): void
-    {
-        $entry = $this->runningTimer(startedSecondsAgo: 10800, lastActiveSecondsAgo: 4000);
-
-        $this->artisan('timers:close-stale')->assertExitCode(0);
-
-        $fresh = $entry->fresh();
-
-        // Consistent with close-idle, which already rewinds to the last real
-        // activity. Billing to `now` here meant the same abandoned timer cost
-        // a different amount depending on which sweep reached it first.
-        $this->assertGreaterThan(0, (int) $fresh->trailing_idle_seconds);
-        $this->assertLessThan(
-            (int) $entry->start_time->diffInSeconds(now()),
-            (int) $fresh->duration,
-            'the billed duration must exclude the silent tail'
-        );
-    }
-
-    public function test_a_timer_with_no_activity_at_all_anchors_on_its_start(): void
-    {
-        // Nothing was ever recorded against it. There is no last-activity
-        // instant to rewind to, so it is worth nothing, not three hours.
-        $user = User::factory()->create(['organization_id' => $this->organization->id, 'role' => 'employee']);
-
-        $entry = TimeEntry::create([
+        ActivitySession::create([
             'organization_id' => $this->organization->id,
-            'user_id' => $user->id,
-            'start_time' => now()->subSeconds(10800),
-            'end_time' => null,
-            'is_break' => false,
+            'user_id' => $entry->user_id,
+            'time_entry_id' => $entry->id,
+            'source' => 'desktop',
+            'activity_kind' => 'desktop_app',
+            'tool_type' => 'software',
+            'display_name' => 'Visual Studio Code',
+            'app_name' => 'Code.exe',
+            'started_at' => now()->subMinutes(2),
+            'ended_at' => now()->subSeconds(20),
         ]);
 
         $this->artisan('timers:close-stale')->assertExitCode(0);
 
-        $fresh = $entry->fresh();
-        $this->assertNotNull($fresh->end_time);
-        $this->assertSame(0, (int) $fresh->duration);
+        $this->assertNull(
+            $entry->fresh()->end_time,
+            'the foreground-window ledger counts as activity too'
+        );
     }
 
-    public function test_dry_run_still_changes_nothing(): void
+    public function test_it_still_closes_a_timer_the_tracker_abandoned(): void
     {
-        $entry = $this->runningTimer(startedSecondsAgo: 10800, lastActiveSecondsAgo: 4000);
+        // Three hours running, nothing reported for three hours: the app is
+        // closed, asleep or crashed. This is what the sweep exists for.
+        $entry = $this->runningTimer(startedMinutesAgo: 180, lastActivitySecondsAgo: 180 * 60);
 
-        $this->artisan('timers:close-stale', ['--dry-run' => true])->assertExitCode(0);
+        $this->artisan('timers:close-stale')->assertExitCode(0);
 
-        $this->assertNull($entry->fresh()->end_time);
+        $this->assertNotNull(
+            $entry->fresh()->end_time,
+            'an abandoned timer must still be closed, or it bills all night'
+        );
     }
 
-    private function runningTimer(int $startedSecondsAgo, int $lastActiveSecondsAgo): TimeEntry
+    private function runningTimer(int $startedMinutesAgo, ?int $lastActivitySecondsAgo): TimeEntry
     {
         $user = User::factory()->create([
             'organization_id' => $this->organization->id,
@@ -152,20 +108,22 @@ class StaleSweepRespectsActivityTest extends TestCase
         $entry = TimeEntry::create([
             'organization_id' => $this->organization->id,
             'user_id' => $user->id,
-            'start_time' => now()->subSeconds($startedSecondsAgo),
+            'start_time' => now()->subMinutes($startedMinutesAgo),
             'end_time' => null,
             'is_break' => false,
         ]);
 
-        Activity::create([
-            'organization_id' => $this->organization->id,
-            'user_id' => $user->id,
-            'time_entry_id' => $entry->id,
-            'type' => 'app',
-            'name' => 'Editor',
-            'duration' => 60,
-            'recorded_at' => now()->subSeconds($lastActiveSecondsAgo),
-        ]);
+        if ($lastActivitySecondsAgo !== null) {
+            Activity::create([
+                'organization_id' => $this->organization->id,
+                'user_id' => $user->id,
+                'time_entry_id' => $entry->id,
+                'type' => 'app',
+                'name' => 'Visual Studio Code',
+                'duration' => 60,
+                'recorded_at' => now()->subSeconds($lastActivitySecondsAgo),
+            ]);
+        }
 
         return $entry;
     }

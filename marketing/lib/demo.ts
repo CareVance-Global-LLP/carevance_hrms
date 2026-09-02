@@ -212,3 +212,43 @@ export function inr(amount: number, paise = false): string {
 export function num(amount: number, paise = false): string {
   return (paise ? INR_2 : INR_0).format(amount).replace('₹', '').trim();
 }
+
+/* ── The PF ECR line ──────────────────────────────────────────────────── */
+
+/**
+ * A demo UAN. Format-valid (12 digits) and deliberately not a real one.
+ *
+ * It is column 1 of the ECR and EPFO rejects the whole upload if any row is
+ * blank there — which is why the product validates it before reporting the
+ * filing ready, and why it appears first in the line below.
+ */
+export const DEMO_UAN = '101234567890';
+
+/** The eleven columns, in EPFO's order. Labels for the legend beside the line. */
+export const ECR_FIELDS = Object.freeze([
+  { label: 'UAN', value: DEMO_UAN, note: 'column 1 — mandatory, or EPFO rejects the file' },
+  { label: 'Member name', value: EMPLOYEE.name, note: 'as held on the member record' },
+  { label: 'Gross wages', value: '115891.20', note: 'the payslip’s gross, unchanged' },
+  { label: 'EPF wages', value: '15000.00', note: 'basic, capped at the ₹15,000 ceiling' },
+  { label: 'EPS wages', value: '15000.00', note: 'the same capped wage' },
+  { label: 'EDLI wages', value: '15000.00', note: 'the same capped wage' },
+  { label: 'EPF contribution (EE)', value: '1800.00', note: '12% of the capped wage' },
+  { label: 'EPS contribution (ER)', value: '1249.50', note: '8.33% — the pension half' },
+  { label: 'EPF contribution (ER)', value: '550.50', note: '3.67% — the balance of the employer’s 12%' },
+  { label: 'NCP days', value: '0.00', note: 'non-contributory period — LOP days, same basis as wages' },
+  { label: 'Refund of advances', value: '0.00', note: 'nil' },
+]);
+
+/**
+ * One row of a real PF ECR file, in the product's own output format.
+ *
+ * Eleven fields, `||` delimited, in EPFO's column order — assembled here from
+ * ECR_FIELDS rather than typed out, so the line and the legend beside it cannot
+ * disagree, and neither can drift from the payslip they were derived from.
+ *
+ * Format source: PayrollFilingService::generatePfEcr(), backend.
+ */
+export const ECR_LINE = ECR_FIELDS.map((f) => f.value).join('||');
+
+/** What the product names the file. */
+export const ECR_FILENAME = `pf_ecr_carevance_${PERIOD.key}.txt`;

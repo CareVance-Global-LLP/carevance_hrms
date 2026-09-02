@@ -87,6 +87,7 @@ if (!existsSync(TRUTH)) {
  * most likely to creep back in, because it is already in the product.
  */
 const BANNED: Array<{ pattern: RegExp; why: string }> = [
+  /* ── Fabricated social proof. None of this exists. ── */
   { pattern: /10,?000\+?\s*(active\s*)?users/i, why: 'fabricated user count (DONT-01)' },
   { pattern: /500\+?\s*workspaces/i, why: 'fabricated workspace count (DONT-01)' },
   { pattern: /4\.8\s*\/\s*5|4\.8 out of 5/i, why: 'fabricated review score (DONT-01)' },
@@ -96,11 +97,48 @@ const BANNED: Array<{ pattern: RegExp; why: string }> = [
   { pattern: /soc\s*2\s*(type\s*[i1]{1,2}\s*)?(certified|compliant)/i, why: 'uncertified SOC 2 claim (DONT-02)' },
   { pattern: /iso\s*27001\s*(certified|compliant)/i, why: 'uncertified ISO 27001 claim (DONT-02)' },
   { pattern: /99\.\d+%\s*uptime/i, why: 'uptime figure we cannot defend (DONT-10)' },
-  { pattern: /applicant tracking system|\bATS\b(?!\s*=)/i, why: 'ATS does not exist (DONT-12)' },
-  { pattern: /travel\s*(&|and)\s*expense/i, why: 'travel expense module does not exist (DONT-13)' },
-  { pattern: /white[\s-]?label/i, why: 'white labelling does not exist (DONT-15)' },
-  { pattern: /\b28\s*states\b/i, why: 'PT covers 37 states and UTs, and several levy none (DONT-05)' },
-  { pattern: /23\s*(statutory\s*)?(returns|filings)\s*(generated|produced)/i, why: '13 generate, not 23 (DONT-04)' },
+
+  /* ── Features the product's pricing config sells but does not implement. ── */
+  { pattern: /travel\s*(&|and)\s*expense/i, why: 'travel expense module does not exist (DONT-16)' },
+  { pattern: /white[\s-]?label/i, why: 'white labelling does not exist (DONT-18)' },
+  { pattern: /company news|press release/i, why: 'no announcement model — polls are real, announcements are not (DONT-17)' },
+
+  /*
+   * ── Overstated counts. ──
+   * The old "13 generate, 10 unavailable" split is gone: all 23 generate. What
+   * must not be overstated now is how many are RETURNS.
+   */
+  { pattern: /\b28\s*states\b/i, why: 'PT covers 37 states and UTs, and 17 levy none (DONT-05)' },
+  { pattern: /23\s*(statutory\s*)?returns/i, why: '23 documents, but only 19 are returns (DONT-04, DONT-15)' },
+  { pattern: /(files?|submits?|filed)\s+(your\s+)?returns?\s+(for you|automatically|on your behalf)/i,
+    why: 'nothing auto-submits — every filing is a document a human uploads (DONT-04)' },
+  { pattern: /\b(13|thirteen)\s*(statutory\s*)?(returns|filings|documents)/i,
+    why: 'stale count — 23 documents generate, 19 of them returns (NUM-08)' },
+
+  /*
+   * ── Regression guard: claims of ABSENCE for things that exist. ──
+   *
+   * These are here because the site once carried every one of them. An audit
+   * ran against a working tree that was mid-merge, concluded eight modules did
+   * not exist, and shipped that as prominent honesty copy. Asserting a gap that
+   * is not there understates the product to buyers and, via llms.txt, instructs
+   * answer engines to repeat it. See PRODUCT_TRUTH.md §0.
+   */
+  { pattern: /no recruitment( module| or applicant tracking)?\b/i, why: 'recruitment EXISTS — REC-*' },
+  { pattern: /no (offer letters|e-signature)/i, why: 'offer letters and signing EXIST — SGN-*' },
+  { pattern: /no background verification/i, why: 'BGV EXISTS — BGV-*' },
+  { pattern: /no (sso|saml)\b/i, why: 'SAML SSO EXISTS — SSO-*' },
+  { pattern: /(no|without) scim\b/i, why: 'SCIM EXISTS (groups do not) — SCM-*' },
+  { pattern: /no multi[\s-]?entity/i, why: 'legal entities EXIST — ENT-*' },
+  { pattern: /flat annual quota/i, why: 'leave accrues per type with pro-rating — LVA-*' },
+  { pattern: /no (leave )?accrual/i, why: 'accrual EXISTS — LVA-01' },
+  { pattern: /no rostering|no shift roster/i, why: 'rostering EXISTS — ROS-*' },
+  { pattern: /no biometric/i, why: 'ADMS biometric ingestion EXISTS — BIO-*' },
+  { pattern: /no accounting export/i, why: 'accounting export EXISTS — ACC-*' },
+  { pattern: /no effective[\s-]?dated compensation/i, why: 'effective dating EXISTS — HR-10' },
+  { pattern: /one organisation is one PAN/i, why: 'multiple legal entities are supported — ENT-01' },
+
+  /* ── Placeholder and locale hygiene. ── */
   { pattern: /lorem ipsum/i, why: 'placeholder text' },
   { pattern: /john doe|jane doe/i, why: 'placeholder name — use realistic Indian data (§8.1)' },
   { pattern: /\$\d/, why: 'dollar amount — this product sells in India only (§8.1)' },
@@ -121,6 +159,13 @@ const BANNED_ALLOWLIST = [
   'app/legal/dpa/page.tsx',
   'components/home/sections.tsx', // FAQ: "what is not built yet"
   'components/product/PageParts.tsx',
+  'lib/facts.ts',                  // provenance strings name the four preparation sheets
+  'app/product/recruitment/page.tsx', // states the careers-page and vendor gaps
+  'app/product/leave/page.tsx',    // states what leave does NOT assert
+  'app/product/compliance/page.tsx',
+  'app/product/time-attendance/page.tsx',
+  'app/product/payroll/page.tsx',
+  'scripts/verify-claims.ts',      // this file lists the patterns it bans
 ];
 
 let bannedHits = 0;

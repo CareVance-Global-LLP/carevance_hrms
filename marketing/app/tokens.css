@@ -4,7 +4,7 @@
  * Source of truth: frontend/src/styles/theme.css (the CareVance product).
  * Regenerate with:  node scripts/sync-tokens.mjs
  *
- * 202 tokens, each with a light and a dark value.
+ * 207 tokens, each with a light and a dark value.
  * 0 light-only token(s) were dropped for having no dark counterpart.
  *
  * Channels are space-separated RGB, not hex, so Tailwind's alpha modifiers can
@@ -215,6 +215,11 @@
   --canvas-4: 248 250 252;
   --wash-from: 224 242 254;
   --wash-to: 219 234 254;
+  --ai-glow-1: 59 130 246;
+  --ai-glow-2: 139 92 246;
+  --ai-glow-3: 236 72 153;
+  --ai-glow-4: 245 158 11;
+  --ai-glow-5: 16 185 129;
 }
 
 /*
@@ -426,6 +431,11 @@
     --canvas-4: 14 20 26;
     --wash-from: 22 48 58;
     --wash-to: 30 69 80;
+    --ai-glow-1: 96 165 250;
+    --ai-glow-2: 167 139 250;
+    --ai-glow-3: 244 114 182;
+    --ai-glow-4: 251 191 36;
+    --ai-glow-5: 52 211 153;
   }
 }
 
@@ -634,6 +644,11 @@
   --canvas-4: 14 20 26;
   --wash-from: 22 48 58;
   --wash-to: 30 69 80;
+  --ai-glow-1: 96 165 250;
+  --ai-glow-2: 167 139 250;
+  --ai-glow-3: 244 114 182;
+  --ai-glow-4: 251 191 36;
+  --ai-glow-5: 52 211 153;
 }
 
 :root[data-theme="light"] {
@@ -840,4 +855,9 @@
   --canvas-4: 248 250 252;
   --wash-from: 224 242 254;
   --wash-to: 219 234 254;
+  --ai-glow-1: 59 130 246;
+  --ai-glow-2: 139 92 246;
+  --ai-glow-3: 236 72 153;
+  --ai-glow-4: 245 158 11;
+  --ai-glow-5: 16 185 129;
 }

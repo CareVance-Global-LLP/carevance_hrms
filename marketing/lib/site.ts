@@ -37,7 +37,7 @@ export const PRODUCT_FEATURED: readonly NavItem[] = Object.freeze([
   {
     href: '/product',
     label: 'Platform overview',
-    blurb: 'The unbroken chain, from a tracked minute to a filed return.',
+    blurb: 'The unbroken chain, from a tracked minute to a posted journal.',
   },
   {
     href: '/product/payroll',
@@ -46,31 +46,30 @@ export const PRODUCT_FEATURED: readonly NavItem[] = Object.freeze([
   },
   {
     href: '/product/time-attendance',
-    label: 'Time & attendance',
-    blurb: 'Tracker, shifts and geofenced punch — and the handoff into payroll.',
+    label: 'Time, attendance & rostering',
+    blurb: 'Four capture paths, shift rotations — and the handoff into payroll.',
   },
   {
     href: '/product/compliance',
     label: 'Compliance & filings',
-    blurb: 'PF, ESI, PT across 37 states, TDS both regimes, and real ECR files.',
+    blurb: 'PF, ESI, PT across 37 states, 23 statutory documents, working-hour law.',
   },
   {
-    href: '/product/core-hr',
-    label: 'Core HR',
-    blurb: 'Records, documents, onboarding journeys and exit.',
-    placeholder: true,
+    href: '/product/recruitment',
+    label: 'Hiring',
+    blurb: 'Pipeline, panel feedback, offers, signing, background verification.',
   },
   {
-    href: '/product/reports',
-    label: 'Reports & controls',
-    blurb: 'Differences, duplicates, negative cost and reconciliation.',
-    placeholder: true,
+    href: '/product/leave',
+    label: 'Leave',
+    blurb: 'Per-type accrual, pro-rating, and a balance that is a dated ledger.',
   },
 ]);
 
 /** Secondary product pages — links only, no descriptions. */
 export const PRODUCT_MORE: readonly NavItem[] = Object.freeze([
-  { href: '/product/leave', label: 'Leave', placeholder: true },
+  { href: '/product/core-hr', label: 'Core HR', placeholder: true },
+  { href: '/product/reports', label: 'Reports & controls', placeholder: true },
   { href: '/product/performance', label: 'Performance', placeholder: true },
   { href: '/product/expenses-fbp', label: 'Expenses & FBP', placeholder: true },
   { href: '/product/mobile', label: 'Mobile & desktop apps', placeholder: true },

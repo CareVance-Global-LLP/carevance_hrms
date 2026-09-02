@@ -35,6 +35,10 @@ class BillingController extends Controller
 
     public function mockPay(Request $request)
     {
+        // Backstop for the route guard in routes/api/protected/billing.php —
+        // a route cache built in the wrong environment must not reopen this.
+        abort_unless(app()->environment('local', 'testing'), 404);
+
         $user = $request->user();
         $organization = $user?->organization;
 
@@ -614,15 +618,7 @@ class BillingController extends Controller
                     'has_key_secret' => !empty($razorpayKeySecret),
                 ]);
                 
-                // Return mock order data
-                return $this->successResponse([
-                    'success' => true,
-                    'order_id' => 'mock_order_' . time(),
-                    'amount' => $amount * 100, // Convert to paise
-                    'currency' => $currency,
-                    'key_id' => 'mock_key',
-                    'mock_mode' => true,
-                ]);
+                return $this->mockOrderOrRefusal($amount, $currency);
             }
             
             $razorpayService = new \App\Services\Billing\RazorpayPaymentService();
@@ -652,15 +648,7 @@ class BillingController extends Controller
                     'organization_id' => $organization->id,
                 ]);
                 
-                // Fall back to mock payment
-                return $this->successResponse([
-                    'success' => true,
-                    'order_id' => 'mock_order_' . time(),
-                    'amount' => $amount * 100,
-                    'currency' => $currency,
-                    'key_id' => 'mock_key',
-                    'mock_mode' => true,
-                ]);
+                return $this->mockOrderOrRefusal($amount, $currency);
             }
             
             \Illuminate\Support\Facades\Log::error('Razorpay order creation failed', [
@@ -668,16 +656,42 @@ class BillingController extends Controller
                 'organization_id' => $organization->id,
             ]);
             
-            // Fall back to mock payment on any error
-            return $this->successResponse([
-                'success' => true,
-                'order_id' => 'mock_order_' . time(),
-                'amount' => $amount * 100,
-                'currency' => $currency,
-                'key_id' => 'mock_key',
-                'mock_mode' => true,
-            ]);
+            return $this->mockOrderOrRefusal($amount, $currency);
         }
+    }
+
+    /**
+     * The development stand-in for a real Razorpay order — or an honest refusal.
+     *
+     * Three exits in createRazorpayOrder returned `success: true` with
+     * `'order_id' => 'mock_order_' . time()`: unconfigured keys, placeholder
+     * keys, and any exception at all. None checked the environment.
+     *
+     * verifyRazorpayPayment's matching `mock_order_` branch IS gated to
+     * local/testing, so in production the customer was handed a fabricated
+     * order, told it succeeded, and then refused when they tried to pay against
+     * it — the failure surfacing one step after the place it happened.
+     *
+     * Kept as one method so the three call sites cannot drift apart again.
+     */
+    private function mockOrderOrRefusal(float|int $amount, string $currency)
+    {
+        if (! app()->environment('local', 'testing')) {
+            return $this->errorResponse(
+                'Online payment is not available right now. No order has been created and you have not been charged. '
+                .'Please try again shortly or contact support.',
+                503
+            );
+        }
+
+        return $this->successResponse([
+            'success' => true,
+            'order_id' => 'mock_order_' . time(),
+            'amount' => $amount * 100,
+            'currency' => $currency,
+            'key_id' => 'mock_key',
+            'mock_mode' => true,
+        ]);
     }
 
     /**
@@ -744,14 +758,31 @@ class BillingController extends Controller
                 'organization_id' => $organization->id,
             ]);
             
-            // Fall back to mock payment success on error
-            $this->activateSubscription($organization);
-
-            return $this->successResponse([
-                'payment_id' => 'mock_payment_' . time(),
-                'subscription_status' => 'active',
-                'subscription_expires_at' => $organization->subscription_expires_at,
-            ], 'Payment verified successfully.');
+            /*
+             * A gateway that could not answer has not taken a payment.
+             *
+             * This block used to call activateSubscription() and return
+             * "Payment verified successfully.", under a comment reading "Fall
+             * back to mock payment success on error." RazorpayPaymentService's
+             * constructor throws when the credentials are absent, so on any
+             * deployment where the keys were never set this was the ONLY path
+             * that ever ran: posting this endpoint granted a paid plan for
+             * free and told the caller it had been paid for.
+             *
+             * The mock-order branch above is the legitimate way to activate
+             * without a real payment, and it is gated to local/testing. There
+             * is no second one.
+             *
+             * 422, not 500: nothing crashed. We cannot confirm this payment,
+             * and the caller's next step is to retry or to contact support
+             * with their reference — which the message has to tell them,
+             * because money may genuinely have left their account.
+             */
+            return $this->errorResponse(
+                'We could not verify this payment, so no plan change has been made. '
+                .'If money has left your account, contact support with your payment reference.',
+                422
+            );
         }
     }
 

@@ -63,7 +63,9 @@ class ServerStoppedTimerIsAnnouncedTest extends TestCase
 
     public function test_the_stale_sweep_tells_the_person_too(): void
     {
-        [$user, $entry] = $this->runningTimer(startedSecondsAgo: 10800, lastActiveSecondsAgo: 4000);
+        // Silent for longer than the 120-minute cap, which is what that sweep
+        // requires before it will treat a timer as abandoned rather than long.
+        [$user, $entry] = $this->runningTimer(startedSecondsAgo: 21600, lastActiveSecondsAgo: 10800);
 
         $this->artisan('timers:close-stale')->assertExitCode(0);
 

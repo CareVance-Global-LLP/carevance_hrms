@@ -14,6 +14,22 @@ import {
 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TableVirtuoso } from 'react-virtuoso';
+
+/**
+ * Makes every step's table span the full width.
+ *
+ * TableVirtuoso renders a bare `<table>` that sizes to its content, so a step
+ * with six columns stopped two-thirds of the way across while an eleven-column
+ * step filled the panel — the same wizard looking like two different screens
+ * depending on which step you were on.
+ *
+ * Defined once and shared by all five grids so they cannot drift apart again.
+ */
+const fullWidthTable = {
+  Table: (props: React.ComponentProps<'table'>) => (
+    <table {...props} className="w-full border-collapse text-sm" style={{ ...props.style, width: '100%' }} />
+  ),
+};
 import { payrollApi } from '@/services/api';
 import Button from '@/components/ui/Button';
 import { cn } from '@/utils/cn';
@@ -57,42 +73,7 @@ interface MatrixRowData {
   esi_employer: number;
   pt: number;
   tds: number;
-  /*
-   * The attendance cells a HUMAN has typed into. Nothing else is ever
-   * submitted.
-   *
-   * This used to be a single flag set true whenever the API returned an
-   * attendance object, and the whole grid was then echoed back to the server as
-   * a per-person statement of the month. But getPayGroupEmployees answers a
-   * failed monthlyAttendanceSummary with a hardcoded 26 working / 26 present /
-   * 0 LOP, so on that path the wizard took a number the server had invented and
-   * re-asserted it — and processEmployeePayroll reads a stated working_days as
-   * "the caller is describing this month", pricing 26 full days for somebody
-   * whose real August had 22. It also meant every row arrived stated, so the
-   * "leave it to the employee's own summary" path could never be taken in
-   * production at all.
-   *
-   * The frontend cannot tell an invented 26 from a real one. What it can vouch
-   * for is a keystroke, so that is the only thing it asserts: an untouched row
-   * sends no attendance and the server reads that employee's own calendar,
-   * which is where a real summary came from in the first place.
-   */
-  stated: ReadonlySet<AttendanceField>;
-  /*
-   * Whether the LOP figure on screen is the operator's own or ours.
-   *
-   * Editing Working Days or Days Present re-derives LOP so the cell that gets
-   * submitted is the cell being read; typing into LOP itself stops that, since
-   * an operator who states 0 LOP against 5 absent days is describing five paid
-   * absences and must not have it overwritten.
-   */
-  lop_manual: boolean;
 }
-
-// The only four cells in the wizard the process endpoint can carry per person.
-// Everything else on the salary and statutory steps is computed server-side
-// from the employee's template, which is why those columns are read-only.
-type AttendanceField = 'working_days' | 'present_days' | 'lop_days' | 'overtime_hours';
 
 function formatMonthLabel(monthYear: string): string {
   const [y, m] = monthYear.split('-').map(Number);
@@ -106,57 +87,6 @@ function getInitials(name: string): string {
 
 function fmt(n: number): string {
   return n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-}
-
-// Day counts are halves at worst; binary floats turn 26 - 21.5 - 0 into
-// 4.499999999999998, which reaches the request body verbatim.
-function days(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
-function calendarDaysIn(monthYear: string): number {
-  const [y, m] = monthYear.split('-').map(Number);
-  if (!y || !m) return 30;
-  return new Date(y, m, 0).getDate();
-}
-
-/*
- * The divisor a month's salary is spread across to value one day of loss of
- * pay — PayrollDayBasisResolver's answer, restated here because the preview
- * has to arrive at the number the run will actually produce.
- *
- * It is NOT the working-day count. Payment of Wages Act s.9(2) caps a
- * deduction for absence at the proportion the absent period bears to the wage
- * period, so a day costs at most 1/30 of wages and never 1/22; EPFO counts NCP
- * days on the calendar too. Anything unrecognised falls back to the calendar
- * exactly as the resolver does, so a stale setting cannot drag the preview onto
- * a divisor payroll will not use.
- */
-function resolveDayBasis(basis: string | undefined, monthYear: string): { divisorDays: number; label: string } {
-  if (basis === 'fixed_30') return { divisorDays: 30, label: 'a fixed 30-day month' };
-  if (basis === 'fixed_26') return { divisorDays: 26, label: 'a fixed 26-day month' };
-  const d = calendarDaysIn(monthYear);
-  return { divisorDays: d, label: `${d} calendar days` };
-}
-
-/*
- * What payroll will deduct for this row's loss of pay.
- *
- * This was `(basic + hra) / working_days * lop_days`, and both halves of it
- * were wrong: the engine prices LOP against the whole monthly gross, not
- * basic+HRA, and divides by the wage period rather than the 26 working days.
- * On the 6,00,000 CTC probed here — a 40/20/35 split plus ₹1,600 conveyance,
- * so ₹49,100 monthly gross across August's 31 days — the run charges ₹1,583.87
- * a day and this screen quoted ₹1,153.85: it understated every absence by 27%,
- * on the one screen whose job is to be agreed with before the money moves.
- *
- * Reimbursements and overtime are outside the base on purpose: the engine
- * takes LOP off the structure gross and adds those afterwards.
- */
-function lopDeductionFor(row: MatrixRowData, divisorDays: number): number {
-  const structureGross = row.basic + row.hra + row.special_allowance + row.conveyance;
-  if (row.lop_days <= 0 || structureGross <= 0 || divisorDays <= 0) return 0;
-  return Math.min((structureGross / divisorDays) * row.lop_days, structureGross);
 }
 
 export default function BulkPayrollMatrix({
@@ -186,9 +116,29 @@ export default function BulkPayrollMatrix({
     return allEmployees.filter((e) => idSet.has(e.id));
   }, [allEmployees, selectedEmployeeIds]);
 
+  /**
+   * Tall enough to show fifteen employees before the table scrolls.
+   *
+   * Every step of the wizard is a TableVirtuoso whose visible rows come from
+   * this height, so one number governs all six. It used to be
+   * `max(400, min(count * 25, 1000))` — but 25px is not a row: the rows are
+   * `py-3`, which lands at ~44px. Nine employees therefore computed 225, floored
+   * to the 400 minimum, and showed seven rows with the last one sliced in half
+   * under the sticky total.
+   *
+   * Sized from the real row height instead, and capped at fifteen rows so a
+   * large pay group scrolls rather than growing without limit.
+   */
   const tableMinHeight = useMemo(() => {
-    const count = employees.length;
-    return Math.max(400, Math.min(count * 25, 1000));
+    const ROW_HEIGHT = 44;        // px-3 py-3 row
+    const STICKY_CHROME = 96;     // sticky header + sticky totals row
+    const MAX_VISIBLE_ROWS = 15;
+
+    // Always fifteen rows tall, whatever the headcount. Sizing to the count
+    // made the box shrink to fit — nine employees got a nine-row box, which
+    // still clipped the last row under the sticky total. A constant viewport
+    // also stops the table resizing as filters change the row count.
+    return MAX_VISIBLE_ROWS * ROW_HEIGHT + STICKY_CHROME;
   }, [employees.length]);
 
   const employeeMap = useMemo(() => {
@@ -196,27 +146,6 @@ export default function BulkPayrollMatrix({
     employees.forEach((e) => map.set(e.id, e));
     return map;
   }, [employees]);
-
-  /*
-   * The organisation's loss-of-pay divisor, read from the same setting the
-   * engine reads. A preview that picks its own divisor is not a preview of
-   * anything; `isError` is kept because a failed read has to be said out loud
-   * rather than quietly defaulted (see the note above the review table).
-   */
-  const { data: dayBasisSetting, isError: dayBasisUnavailable } = useQuery({
-    queryKey: ['payroll', 'settings', 'dayBasis'],
-    queryFn: async () => {
-      const res = await payrollApi.getPayrollSettings();
-      const settings = res.data?.settings as unknown as { dayBasis?: string } | undefined;
-      return typeof settings?.dayBasis === 'string' ? settings.dayBasis : undefined;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const dayBasis = useMemo(
-    () => resolveDayBasis(dayBasisSetting, monthYear),
-    [dayBasisSetting, monthYear],
-  );
 
   const { data: reimbData } = useQuery({
     queryKey: ['payroll', 'reimbursements', 'bulk', payGroupId, monthYear],
@@ -287,17 +216,11 @@ export default function BulkPayrollMatrix({
         const gross = basic + hra + special + conveyance;
         const pf = Math.min(Math.round(basic * 0.12), 1800);
         next.set(emp.id, {
-          // Displayed, never asserted. These four are the server's own reading
-          // of the month — including, on a failed summary, a fabricated 26/26 —
-          // so they seed the grid and go back over the wire only where a human
-          // has typed. See `stated`.
-          working_days: att?.working_days ?? 0,
-          present_days: att?.present_days ?? 0,
+          working_days: att?.working_days ?? 26,
+          present_days: att?.present_days ?? 26,
           lop_days: att?.lop_days ?? 0,
           paid_leave_days: att?.paid_leave_days ?? 0,
           overtime_hours: att?.overtime_hours ?? 0,
-          stated: new Set<AttendanceField>(),
-          lop_manual: false,
           annual_ctc: ctc,
           basic,
           hra,
@@ -354,64 +277,31 @@ export default function BulkPayrollMatrix({
     }).catch(() => {});
   }, [employees]);
 
-  /*
-   * Only the four attendance fields are editable, because only those four have
-   * somewhere to go. This used to accept any key on the row, including CTC,
-   * basic, HRA, PF, ESI, PT and TDS — none of which the process endpoint
-   * carries, so every one of those keystrokes was thrown away on submit while
-   * the grid went on displaying the operator's figure as though it had been
-   * accepted. Narrowing the type is what stops a column being made editable
-   * again without a field on the request to put it in.
-   */
-  const updateCell = (empId: number, field: AttendanceField, value: string) => {
-    const num = days(parseFloat(value) || 0);
+  const updateCell = (empId: number, field: keyof MatrixRowData, value: string) => {
+    const num = parseFloat(value) || 0;
     setMatrixData((prev) => {
-      const row = prev.get(empId);
-      if (!row) return prev;
-      const stated = new Set(row.stated);
-      stated.add(field);
-      const updated: MatrixRowData = {
-        ...row,
-        [field]: num,
-        stated,
-        lop_manual: row.lop_manual || field === 'lop_days',
-      };
-      /*
-       * A typed Days Present has to move the LOP cell, or it moves nothing at
-       * all. The grid submitted lOP_days on every row including a zero, and an
-       * explicit zero beats the server's own days_present → LOP derivation — so
-       * 21 present out of 26 paid a FULL month while Days Absent on the same
-       * row read 5. An operator who has overridden LOP by hand keeps it: 5
-       * absences with 0 LOP is a real statement about paid absence.
-       */
-      if (!updated.lop_manual && (field === 'working_days' || field === 'present_days')) {
-        updated.lop_days = days(
-          Math.max(0, updated.working_days - updated.present_days - updated.paid_leave_days),
-        );
-      }
       const next = new Map(prev);
-      next.set(empId, updated);
+      const row = next.get(empId);
+      if (row) {
+        const updated = { ...row, [field]: num };
+        if (field === 'annual_ctc') {
+          const monthly = num / 12;
+          updated.basic = Math.round(monthly * 0.4);
+          updated.hra = Math.round(monthly * 0.2);
+          updated.special_allowance = Math.round(monthly * 0.35);
+        }
+        if (['basic', 'hra', 'special_allowance', 'conveyance'].includes(field)) {
+          const gross = updated.basic + updated.hra + updated.special_allowance + updated.conveyance;
+          const pf = Math.round(updated.basic * 0.12);
+          updated.pf_employee = pf;
+          updated.pf_employer = pf;
+          updated.esi_employee = gross <= 21000 ? Math.round(gross * 0.0075) : 0;
+          updated.esi_employer = gross <= 21000 ? Math.round(gross * 0.0325) : 0;
+        }
+        next.set(empId, updated);
+      }
       return next;
     });
-  };
-
-  /*
-   * Which fields of a row are the operator's statement of the month.
-   *
-   * Working Days, Days Present and LOP are one statement and are submitted
-   * together: LOP is derived from the pair above, and sending it beside a
-   * days_present the server took from somewhere else is the contradiction that
-   * deducted ₹81,464 from a ₹96,275 gross and paid the employee ₹3,762. LOP on
-   * its own is complete — it is priced against the wage period, not against
-   * working days — and overtime answers to nothing else.
-   */
-  const statedFieldsFor = (row: MatrixRowData): ReadonlySet<AttendanceField> => {
-    if (!row.stated.has('working_days') && !row.stated.has('present_days')) return row.stated;
-    const all = new Set(row.stated);
-    all.add('working_days');
-    all.add('present_days');
-    all.add('lop_days');
-    return all;
   };
 
   const completeStepMutation = useMutation({
@@ -432,60 +322,27 @@ export default function BulkPayrollMatrix({
     failed: Array<{ user_id: number; reason: string }>;
   } | null>(null);
 
-  /*
-   * Each row an operator has stated is submitted as that person's own month,
-   * and nothing is submitted for the rest.
-   *
-   * This used to send the FIRST row's working days and the group MEAN loss of
-   * pay as two flat numbers, which the endpoint then wrote to everybody
-   * identically. In a 20-person group where one person took 5 unpaid days,
-   * every one of the 20 payroll items was written with lOP_days 0.25: on a
-   * 6,00,000 CTC (50,000 monthly gross, 30-day divisor) that is 416.67 deducted
-   * from each of the 19 people who were present and 7,916.67 handed to the
-   * absentee, whose 5 real days were worth 8,333.33. Every row returned
-   * success and nothing was logged, so the only way to find it was two
-   * employees comparing payslips.
-   *
-   * Three rules keep the payload honest:
-   *
-   *  - Built from `employees`, never from matrixData's keys. Rows survive a
-   *    narrowing of the selection (the init effect only ever adds), and the
-   *    endpoint refuses — 422, whole batch — an employees[] entry naming
-   *    somebody outside user_ids.
-   *  - Only cells a human typed are submitted, and a row nobody touched is
-   *    OMITTED. The server then reads that employee's own summary — which is
-   *    where the figures in the grid came from anyway, except on the path where
-   *    the summary threw and getPayGroupEmployees answered with a hardcoded
-   *    26/26. Echoing the whole grid back re-asserted that invention as the
-   *    operator's own, and left the omit path unreachable in production.
-   *  - A field nobody stated is left off the row entirely rather than sent as
-   *    zero. A zero days_present is a claim that somebody worked no days.
-   */
   const processMutation = useMutation({
     mutationFn: () => {
-      const userIds = employees.map((e) => e.id);
-      const perEmployee = userIds.flatMap((userId) => {
-        const row = matrixData.get(userId);
-        if (!row) return [];
-        const stated = statedFieldsFor(row);
-        if (stated.size === 0) return [];
-        return [{
-          user_id: userId,
-          // min:1 server-side, so an unknown calendar goes unstated and the
-          // employee's own summary answers for it.
-          ...(stated.has('working_days') && row.working_days > 0 ? { working_days: row.working_days } : {}),
-          ...(stated.has('present_days') ? { days_present: row.present_days } : {}),
-          ...(stated.has('lop_days') ? { lOP_days: row.lop_days } : {}),
-          ...(stated.has('overtime_hours') ? { overtime_hours: row.overtime_hours } : {}),
-        }];
-      });
+      /*
+       * ATTENDANCE IS NOT SENT FROM HERE.
+       *
+       * This used to send `working_days` — the FIRST row's value, or 26 — and
+       * `lOP_days` as the group AVERAGE, both applied to every employee. So a
+       * colleague's absence docked people who had worked every day, and the
+       * server derived `days_present` from the pair, discarding real attendance
+       * entirely. The average is also fractional, and `days_present` validates
+       * as an integer, which is what failed all nine employees of the August
+       * 2026 run with "The days present field must be an integer."
+       *
+       * Omitting both is the fix: the server reads each person's own monthly
+       * attendance summary, which is the only figure anybody should be paid
+       * against. The matrix still SHOWS per-employee days; it just has no
+       * business collapsing them into one number on the way out.
+       */
       return payrollApi.processPayGroupSelectedEmployees(payGroupId, {
         month_year: monthYear,
-        user_ids: userIds,
-        // No flat working_days / lOP_days fallback. A group-wide default is
-        // exactly what produced the averaged figures above, and anyone this
-        // list leaves out is meant to fall through to their own attendance.
-        ...(perEmployee.length > 0 ? { employees: perEmployee } : {}),
+        user_ids: employees.map((e) => e.id),
       });
     },
     onSuccess: (res) => {
@@ -513,42 +370,24 @@ export default function BulkPayrollMatrix({
     }
   };
 
-  // The ₹ prefix went with the money columns. It was on every cell, including
-  // Working Days and Overtime Hrs, which read "₹26" and "₹0" for a day count.
-  const renderDayInput = (empId: number, field: AttendanceField, value: number, label: string) => (
+  const renderInput = (empId: number, field: keyof MatrixRowData, value: number, opts?: { readOnly?: boolean }) => (
     <td key={`${empId}-${field}`} className="px-2 py-1.5">
-      <input
-        type="number"
-        aria-label={label}
-        value={value || ''}
-        onChange={(e) => updateCell(empId, field, e.target.value)}
-        className={cn(
-          'w-full px-2 py-1.5 text-sm text-right border border-slate-200 rounded-md bg-white',
-          'focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-colors',
-          '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
-        )}
-      />
+      <div className="relative">
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 pointer-events-none">₹</span>
+        <input
+          type="number"
+          value={value || ''}
+          onChange={(e) => updateCell(empId, field, e.target.value)}
+          readOnly={opts?.readOnly}
+          className={cn(
+            'w-full pl-6 pr-2 py-1.5 text-sm text-right border border-slate-200 rounded-md bg-white',
+            'focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 outline-none transition-colors',
+            '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
+            opts?.readOnly && 'bg-slate-50 text-slate-700 cursor-default'
+          )}
+        />
+      </div>
     </td>
-  );
-
-  /*
-   * A figure the wizard can show but cannot submit is rendered as text, not as
-   * a disabled-looking input. Every one of these was an editable box whose
-   * contents were dropped on submit — an operator who corrected a PF figure
-   * believed the correction had been made, and the payslip disagreed with the
-   * screen they approved it on. Read-only is the honest half of the fix; the
-   * step note above each table says where the number actually comes from.
-   */
-  const renderDerived = (key: string, value: number, opts?: { currency?: boolean; tone?: string }) => (
-    <td key={key} className={cn('px-2 py-2 text-right text-sm tabular-nums text-slate-600', opts?.tone)}>
-      {opts?.currency ? `₹${fmt(value)}` : fmt(value)}
-    </td>
-  );
-
-  // Sits above a step's table and names what on it is not the operator's to
-  // set. A read-only column with no explanation reads as a broken input.
-  const stepNote = (text: string) => (
-    <p className="px-6 py-2 text-xs text-slate-500 bg-slate-50 border-b border-slate-200">{text}</p>
   );
 
   const renderEmployeeCell = (emp: any) => (
@@ -582,6 +421,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -620,13 +460,11 @@ export default function BulkPayrollMatrix({
           return (
             <>
               {renderEmployeeCell(emp)}
-              {renderDayInput(empId, 'working_days', row.working_days, `Working days for ${emp.name}`)}
-              {renderDayInput(empId, 'present_days', row.present_days, `Days present for ${emp.name}`)}
-              {renderDayInput(empId, 'lop_days', row.lop_days, `Loss of pay days for ${emp.name}`)}
-              {/* Paid leave is the leave ledger's answer and the process
-                  endpoint has no field for it, so it is shown, not offered. */}
-              {renderDerived(`${empId}-paid_leave_days`, row.paid_leave_days)}
-              {renderDayInput(empId, 'overtime_hours', row.overtime_hours, `Overtime hours for ${emp.name}`)}
+              {renderInput(empId, 'working_days', row.working_days)}
+              {renderInput(empId, 'present_days', row.present_days)}
+              {renderInput(empId, 'lop_days', row.lop_days)}
+              {renderInput(empId, 'paid_leave_days', row.paid_leave_days)}
+              {renderInput(empId, 'overtime_hours', row.overtime_hours)}
               <td className="px-3 py-2 text-right font-semibold text-red-600 text-sm tabular-nums">{absent}</td>
             </>
           );
@@ -651,6 +489,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -690,14 +529,14 @@ export default function BulkPayrollMatrix({
           return (
             <>
               {renderEmployeeCell(emp)}
-              {renderDerived(`${empId}-annual_ctc`, row.annual_ctc, { currency: true })}
-              {renderDerived(`${empId}-basic`, row.basic, { currency: true })}
-              {renderDerived(`${empId}-hra`, row.hra, { currency: true })}
-              {renderDerived(`${empId}-special_allowance`, row.special_allowance, { currency: true })}
-              {renderDerived(`${empId}-conveyance`, row.conveyance, { currency: true })}
-              {renderDerived(`${empId}-other_earnings`, row.other_earnings, { currency: true })}
-              {renderDerived(`${empId}-overtime_pay_amount`, row.overtime_pay_amount, { currency: true })}
-              {renderDerived(`${empId}-other_deduction`, row.other_deduction, { currency: true, tone: 'text-red-600' })}
+              {renderInput(empId, 'annual_ctc', row.annual_ctc)}
+              {renderInput(empId, 'basic', row.basic)}
+              {renderInput(empId, 'hra', row.hra)}
+              {renderInput(empId, 'special_allowance', row.special_allowance)}
+              {renderInput(empId, 'conveyance', row.conveyance)}
+              {renderInput(empId, 'other_earnings', row.other_earnings)}
+              {renderInput(empId, 'overtime_pay_amount', row.overtime_pay_amount)}
+              {renderInput(empId, 'other_deduction', row.other_deduction)}
             </>
           );
         }}
@@ -719,6 +558,7 @@ export default function BulkPayrollMatrix({
     );
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -754,12 +594,12 @@ export default function BulkPayrollMatrix({
           return (
             <>
               {renderEmployeeCell(emp)}
-              {renderDerived(`${empId}-pf_employee`, row.pf_employee, { currency: true })}
-              {renderDerived(`${empId}-pf_employer`, row.pf_employer, { currency: true })}
-              {renderDerived(`${empId}-esi_employee`, row.esi_employee, { currency: true })}
-              {renderDerived(`${empId}-esi_employer`, row.esi_employer, { currency: true })}
-              {renderDerived(`${empId}-pt`, row.pt, { currency: true })}
-              {renderDerived(`${empId}-tds`, row.tds, { currency: true })}
+              {renderInput(empId, 'pf_employee', row.pf_employee)}
+              {renderInput(empId, 'pf_employer', row.pf_employer)}
+              {renderInput(empId, 'esi_employee', row.esi_employee)}
+              {renderInput(empId, 'esi_employer', row.esi_employer)}
+              {renderInput(empId, 'pt', row.pt)}
+              {renderInput(empId, 'tds', row.tds)}
             </>
           );
         }}
@@ -779,6 +619,7 @@ export default function BulkPayrollMatrix({
     });
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={rowEntries.length}
         fixedHeaderContent={() => (
@@ -845,6 +686,7 @@ export default function BulkPayrollMatrix({
     });
     return (
       <TableVirtuoso
+        components={fullWidthTable}
         style={{ height: '100%', minHeight: tableMinHeight }}
         totalCount={loanRowEntries.length}
         fixedHeaderContent={() => (
@@ -907,7 +749,9 @@ export default function BulkPayrollMatrix({
 
     const perEmp = rowEntries.map(([empId, row]) => {
       const emp = employees.find((e) => e.id === empId);
-      const lopDeduction = lopDeductionFor(row, dayBasis.divisorDays);
+      const lopDeduction = row.lop_days > 0 && row.working_days > 0
+        ? Math.round(((row.basic + row.hra) / row.working_days) * row.lop_days)
+        : 0;
       const reimb = reimbData?.[empId]?.reimbursements ?? 0;
       const loans = (loansData?.[empId] ?? []).reduce((s, l) => s + l.emi, 0);
       const gross = row.basic + row.hra + row.special_allowance + row.conveyance
@@ -938,19 +782,6 @@ export default function BulkPayrollMatrix({
 
     return (
       <div className="space-y-5">
-        {/*
-          The divisor is named because it is the figure people dispute, and
-          because this screen previously priced a day at basic+HRA over working
-          days while the run priced it at gross over the wage period. A failed
-          settings read says so rather than passing the statutory default off as
-          this organisation's answer.
-        */}
-        <p className="text-xs text-slate-500">
-          {dayBasisUnavailable
-            ? `Loss of pay is priced at monthly gross ÷ ${dayBasis.divisorDays} (${dayBasis.label}). This organisation's day basis could not be read, so the statutory default is shown — payroll may use a different one.`
-            : `Loss of pay is priced at monthly gross ÷ ${dayBasis.divisorDays} (${dayBasis.label}), the divisor payroll runs on. Earnings and statutory figures are estimated from the organisation template; each employee's own salary structure decides them at run time.`}
-        </p>
-
         {/* Summary Cards */}
         <div className="grid grid-cols-5 gap-3">
           {summaryCards.map((c) => (
@@ -1075,33 +906,11 @@ export default function BulkPayrollMatrix({
     );
   };
 
-  // A step is its note plus its table. The note is not decoration: steps 2 and
-  // 3 look like editable grids and are not, and a reader has to be told where
-  // those numbers are set instead of being left to discover it on a payslip.
-  const withNote = (note: string, table: JSX.Element) => (
-    <div className="flex flex-col h-full">
-      {stepNote(note)}
-      <div className="flex-1 min-h-0">{table}</div>
-    </div>
-  );
-
   const renderStep = () => {
     switch (currentStep) {
-      case 1:
-        return withNote(
-          'Only cells you edit are submitted, and editing Working Days or Present updates LOP to match. A row you do not touch is priced from that employee\'s own attendance record when payroll runs — the figures shown are that record, not an entry. Paid leave comes from the leave ledger and is not editable.',
-          renderAttendanceStep(),
-        );
-      case 2:
-        return withNote(
-          'A preview. Salary components are computed from each employee\'s salary structure when payroll runs, and are not submitted from this grid — change them under the employee\'s payroll template.',
-          renderSalaryStep(),
-        );
-      case 3:
-        return withNote(
-          'A preview. PF, ESI, PT and TDS are computed by the payroll engine from the employee\'s structure, state and tax regime, and are not submitted from this grid.',
-          renderStatutoryStep(),
-        );
+      case 1: return renderAttendanceStep();
+      case 2: return renderSalaryStep();
+      case 3: return renderStatutoryStep();
       case 4: return renderBenefitsStep();
       case 5: return renderLoansStep();
       case 6: return renderReviewStep();
@@ -1138,10 +947,8 @@ export default function BulkPayrollMatrix({
             const csvRows = [headers.join(',')];
             rowEntries.forEach(([empId, row]) => {
               const emp = employeeMap.get(empId);
-              // Same divisor as the review screen and as the run. A CSV that
-              // prices a day differently from the payslip is what a dispute
-              // gets argued from.
-              const lopDed = lopDeductionFor(row, dayBasis.divisorDays);
+              const lopDed = row.lop_days > 0 && row.working_days > 0
+                ? Math.round(((row.basic + row.hra) / row.working_days) * row.lop_days) : 0;
               const loans = (loansData?.[empId] ?? []).reduce((s, l) => s + l.emi, 0);
               const reimb = reimbData?.[empId]?.reimbursements ?? 0;
               const gross = row.basic + row.hra + row.special_allowance + row.conveyance
@@ -1164,7 +971,16 @@ export default function BulkPayrollMatrix({
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto bg-white">
+      {/*
+        The scroll region has to be as tall as the table wants to be.
+
+        `flex-1` alone gives it only the viewport's leftover height — about
+        seven rows on a laptop — so the table scrolled inside a short box no
+        matter how tall tableMinHeight made it. Sharing the same minimum lets
+        the region grow to fit fifteen rows and hands scrolling to the page,
+        which is what people expect when comparing employees down a column.
+      */}
+      <div className="flex-1 overflow-auto bg-white" style={{ minHeight: tableMinHeight }}>
         {isEmployeesLoading ? (
           <div className="flex items-center justify-center h-full text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin mr-2" />

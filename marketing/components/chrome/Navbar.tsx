@@ -114,7 +114,25 @@ export function Navbar() {
       </a>
 
       <Container width="wide">
-        <nav aria-label="Primary" className="flex h-16 items-center gap-2">
+        {/*
+          The bar loses 8px on scroll. It is a small move deliberately: the
+          navbar is sticky, so the height it settles at is height the reader
+          loses from every screen below the fold for the rest of the visit, and
+          anything more aggressive turns into a bar that visibly jumps each time
+          the reader crosses the threshold.
+
+          Height is the one property animated anywhere on this site that is not
+          transform or opacity, and it is the exception that has to be made: a
+          sticky header must actually occupy less space, which a scaled one does
+          not. It is one element, one 200ms transition, at the top of the layer.
+        */}
+        <nav
+          aria-label="Primary"
+          className={cn(
+            'flex items-center gap-2 transition-[height] duration-200 ease-[cubic-bezier(0.22,0.61,0.36,1)] motion-reduce:transition-none',
+            scrolled ? 'h-14' : 'h-16'
+          )}
+        >
           <Link href="/" className="mr-2 flex items-center gap-2 rounded-lg" aria-label={`${SITE.name} home`}>
             <Wordmark />
           </Link>

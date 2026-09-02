@@ -14,7 +14,10 @@
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "bootstrap:auth": "ts-node tests/auth/bootstrap-auth.ts",
-    "seed:legacy": "ts-node tests/seed/run-seed.ts"
+    "seed:legacy": "ts-node tests/seed/run-seed.ts",
+    "verify:encoding": "node scripts/fix-encoding.mjs",
+    "verify:landing": "node scripts/verify-landing.mjs",
+    "perf:landing": "node scripts/perf-landing.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -22,12 +25,14 @@
     "@react-oauth/google": "^0.13.5",
     "@tanstack/react-query": "^5.17.0",
     "@types/qrcode": "^1.5.6",
+    "animejs": "^4.5.0",
     "axios": "^1.15.2",
     "driver.js": "^1.3.6",
     "framer-motion": "^12.35.2",
     "jwt-decode": "^4.0.0",
     "laravel-echo": "^2.4.0",
     "leaflet": "^1.9.4",
+    "lenis": "^1.3.26",
     "lucide-react": "^0.309.0",
     "pusher-js": "^8.6.0",
     "qrcode": "^1.5.4",

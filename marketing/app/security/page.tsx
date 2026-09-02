@@ -65,6 +65,26 @@ const IMPLEMENTED = [
     title: 'Input sanitisation on user-supplied content',
     body: 'Rich content submitted by users is sanitised before storage rather than escaped inconsistently at each render site.',
   },
+  {
+    claim: 'SSO-05',
+    title: 'SAML 2.0 single sign-on, off by default',
+    body: 'Signature verification is delegated to a maintained library rather than hand-rolled. What this codebase owns is connection resolution by Issuer across tenants without trusting it, replay refusal, and whether an authenticated stranger becomes a user at all. A new connection is created switched off — turning one on redirects every sign-in in the organisation, so it is a deliberate second act.',
+  },
+  {
+    claim: 'SCM-02',
+    title: 'Deprovisioning revokes access, not just a flag',
+    body: 'SAML lets somebody sign in; SCIM is the half that takes it away. Deactivating a user revokes their personal access tokens as well as setting the flag — because a flag alone leaves a leaver’s existing token reading payroll on Monday, which is the precise failure SCIM is bought to prevent.',
+  },
+  {
+    claim: 'SCM-03',
+    title: 'SCIM DELETE means deactivate, never erase',
+    body: 'The standard’s DELETE verb means "no longer in the directory", not "erase their employment history". Payslips, attendance and the leave ledger are records the organisation is obliged to keep, and an IdP administrator ticking a box in Entra must not be able to destroy them.',
+  },
+  {
+    claim: 'SCM-04',
+    title: 'People are matched by externalId, never by email',
+    body: 'An IdP identifies somebody by its own immutable id. People change their surname and their email address, and matching on email means a rename silently creates a second account and deprovisions neither. An email match adopts the existing account and stamps the externalId so later syncs use the reliable key.',
+  },
 ];
 
 const NOT_TRUE = [
@@ -77,8 +97,8 @@ const NOT_TRUE = [
     body: 'Not certified, and not currently in an audit process. There is no badge on this page because there is nothing to put on it.',
   },
   {
-    title: 'No SSO or SAML',
-    body: 'Google OAuth is the only federated sign-in. SAML, SCIM provisioning and directory sync are not built. For many enterprise buyers this is the deciding gap, and it is a fair one.',
+    title: 'SCIM syncs people, not groups',
+    body: 'Single sign-on and user provisioning both work. But /Groups is unimplemented, so somebody arrives from your directory without the role they should have — and role assignment stays a manual step. For an identity-led procurement this is the gap that matters, and it is a fair objection.',
   },
   {
     title: 'No published uptime or SLA',
@@ -98,6 +118,14 @@ const FAQS = [
   {
     q: 'Can you enforce two-factor authentication across my company?',
     a: 'Yes. Each organisation sets its own policy — off, grace with a deadline, or enforced — and privileged roles can be required to enrol before they can use the API. TOTP with recovery codes; SMS is deliberately not offered.',
+  },
+  {
+    q: 'Do you support SSO and automated provisioning?',
+    a: 'Yes to both, with one caveat. SAML 2.0 single sign-on is configured per organisation under Settings → Single sign-on, and a new connection is created switched off because turning it on redirects every sign-in in the workspace. SCIM provisioning creates, updates and deactivates users, and deactivation revokes their access tokens rather than only setting a flag. The caveat: /Groups is unimplemented, so people sync but the roles they should get do not.',
+  },
+  {
+    q: 'What happens when someone leaves and our IdP deactivates them?',
+    a: 'Their account is deactivated and their personal access tokens are revoked in the same operation. Their records are not erased — SCIM DELETE means "no longer in the directory", and payslips, attendance and the leave ledger are records you are obliged to keep. An IdP administrator cannot destroy them by ticking a box.',
   },
   {
     q: 'How is employee monitoring data handled?',

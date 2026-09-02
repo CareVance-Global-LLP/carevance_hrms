@@ -335,6 +335,84 @@
     opacity: 1;
     transform: none;
   }
+
+  /*
+   * The module marquee (components/home/ModuleMarquee.tsx).
+   *
+   * Translating by exactly -50% is what makes the loop seamless, and it only
+   * works because the track is rendered twice: at -50% the copy sits precisely
+   * where the original started, so the reset is invisible.
+   *
+   * Pausing on hover is not decoration — the chips are readable text, and text
+   * that slides out from under somebody reading it is hostile.
+   */
+  .marquee-track {
+    animation: marquee var(--marquee-duration, 38s) linear infinite;
+  }
+
+  .group:hover .marquee-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Fade both ends rather than cutting them: a marquee that stops on a hard
+     edge reads as clipped, one that fades reads as continuing. */
+  .marquee-mask {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 6rem,
+      black calc(100% - 6rem),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 6rem,
+      black calc(100% - 6rem),
+      transparent
+    );
+  }
+
+  /*
+   * The FAQ accordion's open and close, done natively.
+   *
+   * The markup stays <details>/<summary> — keyboard-operable, announced
+   * correctly, and findable by in-page search even while closed, none of which
+   * a div-and-onClick accordion gets without work. What it lacked was only the
+   * movement, and CSS can now supply it: `interpolate-size` makes `height: auto`
+   * animatable, and `::details-content` is the box to animate.
+   *
+   * PROGRESSIVE, NOT REQUIRED. Where these are unsupported the accordion still
+   * opens and closes exactly as it does today — it simply snaps. That is the
+   * right failure mode, and it is the reason this is worth doing in CSS instead
+   * of moving the panel into JavaScript to guarantee the animation everywhere.
+   */
+  details.faq-item::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 300ms var(--ease-out-soft),
+      content-visibility 300ms allow-discrete;
+  }
+
+  details.faq-item[open]::details-content {
+    block-size: auto;
+  }
+}
+
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
 }
 
 /*
@@ -349,6 +427,15 @@
   .menu-in,
   .panel-in {
     animation: none;
+  }
+
+  /* The strip stops entirely and becomes an ordinary scrollable list. */
+  .marquee-track {
+    animation: none;
+  }
+
+  details.faq-item::details-content {
+    transition: none;
   }
 
   [data-stagger] [data-stagger-item] {

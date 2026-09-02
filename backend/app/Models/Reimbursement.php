@@ -113,6 +113,46 @@ class Reimbursement extends Model
      * Filter by the month the claim was submitted (created_at),
      * using a "YYYY-MM" month_year value. Used for the per-month review UI.
      */
+    /**
+     * Claims belonging to a month by WHEN THE EXPENSE HAPPENED.
+     *
+     * Deliberately separate from scopeForMonth, which filters on the submitted
+     * date and is what the approval workflow wants — an approver reviewing
+     * "July submissions" means what landed in July, and ReimbursementFlowTest
+     * pins that down.
+     *
+     * Payroll needs the other question. A taxi taken on 28 August is an August
+     * cost whether the receipt is filed on the 29th or in September, and
+     * processEmployeePayroll has always paid on `expense_date`. Without this
+     * scope the payroll wizard's review step asked the workflow question and
+     * showed ₹0 for claims the run would go on to pay — the screen an admin
+     * checks disagreeing with what processing does.
+     *
+     * `expense_date` is nullable, so an undated claim falls back to its
+     * submitted date rather than belonging to no month at all.
+     */
+    public function scopeForExpenseMonth($query, ?string $monthYear)
+    {
+        if ($monthYear && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $monthYear, $m)) {
+            $year = (int) $m[1];
+            $month = (int) $m[2];
+
+            $query->where(function ($q) use ($year, $month) {
+                $q->where(function ($dated) use ($year, $month) {
+                    $dated->whereNotNull('expense_date')
+                        ->whereMonth('expense_date', $month)
+                        ->whereYear('expense_date', $year);
+                })->orWhere(function ($undated) use ($year, $month) {
+                    $undated->whereNull('expense_date')
+                        ->whereMonth('created_at', $month)
+                        ->whereYear('created_at', $year);
+                });
+            });
+        }
+
+        return $query;
+    }
+
     public function scopeForMonth($query, ?string $monthYear)
     {
         if ($monthYear && preg_match('/^(\d{4})-(0[1-9]|1[0-2])$/', $monthYear, $m)) {

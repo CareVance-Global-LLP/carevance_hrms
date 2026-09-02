@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, IndianRupee, Ban, ThumbsUp, Eye, Search } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -480,9 +480,82 @@ function LoanRequestModal({ isAdmin, onClose, onSuccess }: { isAdmin: boolean; o
   });
   const employees = Array.isArray(employeesData) ? employeesData : [];
 
-  const estimatedInstallments = emiAmount && amount && parseFloat(emiAmount) > 0
-    ? Math.ceil(parseFloat(amount) / parseFloat(emiAmount))
-    : 0;
+  /*
+   * Amount, EMI and instalments are three views of one schedule.
+   *
+   * They used to be three independent text boxes, so a ₹40,000 loan could be
+   * submitted as ₹6,000 over four instalments — ₹16,000 short — and nothing
+   * objected. Editing any one now recomputes the others, and `lastEdited` stops
+   * EMI and instalments overwriting each other in a loop: whichever the person
+   * touched most recently is the one held fixed when the amount changes.
+   *
+   * The maths mirrors backend LoanSchedule exactly, and the server derives the
+   * stored schedule itself rather than trusting these numbers.
+   */
+  const lastEdited = useRef<'emi' | 'installments'>('emi');
+
+  const parseAmount = (v: string) => {
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  const recomputeFromEmi = (amt: number, emi: number) => {
+    if (amt <= 0 || emi <= 0) return;
+    setTotalInstallments(String(Math.max(1, Math.ceil(amt / emi))));
+  };
+
+  const recomputeFromInstallments = (amt: number, count: number) => {
+    if (amt <= 0 || count <= 0) return;
+    // Round UP to the paisa, or a residue turns an n-month loan into n+1.
+    setEmiAmount(String(Math.ceil((amt / count) * 100) / 100));
+  };
+
+  const handleAmountChange = (value: string) => {
+    setAmount(value);
+    const amt = parseAmount(value);
+    if (lastEdited.current === 'installments') {
+      recomputeFromInstallments(amt, parseInt(totalInstallments, 10) || 0);
+    } else {
+      recomputeFromEmi(amt, parseAmount(emiAmount));
+    }
+  };
+
+  const handleEmiChange = (value: string) => {
+    lastEdited.current = 'emi';
+    setEmiAmount(value);
+    recomputeFromEmi(parseAmount(amount), parseAmount(value));
+  };
+
+  const handleInstallmentsChange = (value: string) => {
+    lastEdited.current = 'installments';
+    setTotalInstallments(value);
+    recomputeFromInstallments(parseAmount(amount), parseInt(value, 10) || 0);
+  };
+
+  const schedule = (() => {
+    const amt = parseAmount(amount);
+    const emi = parseAmount(emiAmount);
+    if (amt <= 0 || emi <= 0) return null;
+
+    const count = Math.max(1, Math.ceil(amt / emi));
+    const tail = Math.round((amt - emi * (count - 1)) * 100) / 100;
+    const finalPayment = tail > 0 ? Math.min(tail, emi) : Math.min(amt, emi);
+
+    return { count, emi, finalPayment, hasSmallerFinal: count > 1 && finalPayment < emi };
+  })();
+
+  // Borrowing headroom, so the limit is visible before the request is refused.
+  const { data: eligibility } = useQuery({
+    queryKey: ['payroll', 'loan-eligibility'],
+    queryFn: () => payrollApi.getLoanEligibility().then((r) => r.data.eligibility),
+    enabled: !isAdmin,
+  });
+
+  const overLimit = Boolean(
+    eligibility?.has_salary &&
+      parseAmount(emiAmount) > 0 &&
+      parseAmount(emiAmount) > eligibility.max_emi
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -536,11 +609,11 @@ function LoanRequestModal({ isAdmin, onClose, onSuccess }: { isAdmin: boolean; o
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <FieldLabel>Amount (₹)</FieldLabel>
-                <TextInput type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min="100" required />
+                <TextInput type="number" value={amount} onChange={(e) => handleAmountChange(e.target.value)} min="100" required />
               </div>
               <div>
                 <FieldLabel>EMI per Month (₹)</FieldLabel>
-                <TextInput type="number" value={emiAmount} onChange={(e) => setEmiAmount(e.target.value)} min="100" required />
+                <TextInput type="number" value={emiAmount} onChange={(e) => handleEmiChange(e.target.value)} min="100" required />
               </div>
             </div>
 
@@ -549,13 +622,24 @@ function LoanRequestModal({ isAdmin, onClose, onSuccess }: { isAdmin: boolean; o
               <TextInput
                 type="number"
                 value={totalInstallments}
-                onChange={(e) => setTotalInstallments(e.target.value)}
+                onChange={(e) => handleInstallmentsChange(e.target.value)}
                 min="1" max="60"
                 required
               />
-              {estimatedInstallments > 0 && (
+              {schedule && (
                 <p className="text-xs text-slate-500 mt-1">
-                  Estimated: {estimatedInstallments} {estimatedInstallments === 1 ? 'installment' : 'installments'} of {formatPayrollAmount(parseFloat(emiAmount))}
+                  {schedule.hasSmallerFinal ? (
+                    <>
+                      {schedule.count} installments — {schedule.count - 1} ×{' '}
+                      {formatPayrollAmount(schedule.emi)} then{' '}
+                      {formatPayrollAmount(schedule.finalPayment)}
+                    </>
+                  ) : (
+                    <>
+                      {schedule.count} {schedule.count === 1 ? 'installment' : 'installments'} of{' '}
+                      {formatPayrollAmount(schedule.emi)}
+                    </>
+                  )}
                 </p>
               )}
             </div>

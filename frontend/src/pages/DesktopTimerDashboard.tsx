@@ -505,7 +505,8 @@ export default function DesktopTimerDashboard() {
       // fool-proof idle signal: it is the exact column the backend idle fallback
       // sets, regardless of whether the stop happened via the client event, the
       // real-time idle check, or the `active`-endpoint fallback.
-      const stoppedForIdle = await wasStoppedForIdle(runningTimerId);
+      const stopReason = await fetchStopReason(runningTimerId);
+      const stoppedForIdle = Boolean(stopReason?.startsWith('idle_auto_stop'));
       if (cancelled) return;
 
       const finalWorkedSeconds = latestWorkedSecondsRef.current;
@@ -521,8 +522,9 @@ export default function DesktopTimerDashboard() {
       if (userId) {
         emitDesktopTimerStopped({ userId });
       }
-      if (stoppedForIdle) {
-        showIdleStopNotice(runningTimerId);
+      const notice = stopReasonMessage(stopReason);
+      if (notice) {
+        showServerStopNotice(runningTimerId, notice, stoppedForIdle);
       }
 
       // The backend stopped this timer without us; the countdown's server
@@ -625,26 +627,59 @@ export default function DesktopTimerDashboard() {
   // and always reads the authoritative `auto_stopped_for_idle` flag from the
   // specific stopped entry, so the popup fires exactly once whenever the stop
   // was caused by idle, regardless of which poll won.
-  const wasStoppedForIdle = async (stoppedTimerId: number): Promise<boolean> => {
+  /*
+   * WHY the backend stopped this timer, not merely whether it was idle.
+   *
+   * This read only `auto_stopped_for_idle`, so every other server-side stop —
+   * the stale sweep, the daily boundary, a revoked session — cleared the timer
+   * and said nothing at all. The person saw their timer vanish with no
+   * explanation and no way to find one. `stop_reason` is already on the model
+   * and already reaches the client; it just was not being read.
+   */
+  const fetchStopReason = async (stoppedTimerId: number): Promise<string | null> => {
     try {
       const response = await timeEntryApi.get(stoppedTimerId);
-      const entry = response.data;
-      return Boolean(entry && entry.end_time && (entry as any).auto_stopped_for_idle);
+      const entry = response.data as (TimeEntry & { stop_reason?: string; auto_stopped_for_idle?: boolean }) | null;
+      if (!entry || !entry.end_time) return null;
+      if (entry.stop_reason) return entry.stop_reason;
+      // Older rows predate stop_reason and only carry the flag.
+      return entry.auto_stopped_for_idle ? 'idle_auto_stop_server' : null;
     } catch {
-      return false;
+      return null;
     }
   };
 
-  const showIdleStopNotice = (stoppedTimerId: number) => {
+  /** What to tell the person, per reason. Null means say nothing. */
+  const stopReasonMessage = (reason: string | null): string | null => {
+    if (!reason) return null;
+    if (reason.startsWith('idle_auto_stop')) {
+      return 'Your timer was stopped automatically because you were idle.';
+    }
+    switch (reason) {
+      case 'stale_close':
+        return 'Your timer was closed automatically because no activity reached the server for a long time. '
+          + 'Check your recorded hours for today.';
+      case 'daily_boundary':
+        return 'Your timer was closed at the end of the day. Start a new one to keep tracking.';
+      case 'break':
+        return 'Your timer was stopped because a break was started.';
+      case 'manual':
+      case 'manual_offline_sync':
+        return null;
+      default:
+        return 'Your timer was stopped by the server. Check your recorded hours for today.';
+    }
+  };
+
+  const showServerStopNotice = (stoppedTimerId: number, message: string, wasIdle: boolean) => {
     if (idleNoticeShownForRef.current === stoppedTimerId) {
       return;
     }
     idleNoticeShownForRef.current = stoppedTimerId;
-    timerStateRef.current = 'stopped_by_idle';
-    setFeedback({
-      tone: 'error',
-      message: 'Your timer was stopped automatically because you were idle.',
-    });
+    if (wasIdle) {
+      timerStateRef.current = 'stopped_by_idle';
+    }
+    setFeedback({ tone: 'error', message });
   };
 
   const syncTimerEntryLocally = (entry: TimeEntry | null) => {
@@ -970,9 +1005,16 @@ export default function DesktopTimerDashboard() {
             setLiveDuration(0);
             justStoppedByIdleRef.current = false;
             if (transitionedToStopped && previouslyDisplayedId) {
-              void wasStoppedForIdle(previouslyDisplayedId).then((stoppedForIdle) => {
-                if (stoppedForIdle) {
-                  showIdleStopNotice(previouslyDisplayedId);
+              // Same rule as the reconcile path: whichever observer notices the
+              // stop first explains it, whatever the reason was.
+              void fetchStopReason(previouslyDisplayedId).then((stopReason) => {
+                const notice = stopReasonMessage(stopReason);
+                if (notice) {
+                  showServerStopNotice(
+                    previouslyDisplayedId,
+                    notice,
+                    Boolean(stopReason?.startsWith('idle_auto_stop')),
+                  );
                 }
               });
             }

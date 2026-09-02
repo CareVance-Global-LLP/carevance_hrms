@@ -2,9 +2,29 @@ import type { Metadata } from 'next';
 import { SITE, CTA } from '@/lib/site';
 import { faqSchema, JsonLd } from '@/lib/schema';
 import { Button, Container, Eyebrow, Section, SectionTitle } from '@/components/ui/primitives';
-import { ChainHero } from '@/components/home/ChainHero';
+import { ChainHero, type ChainNode } from '@/components/home/ChainHero';
+import {
+  EMPLOYEE,
+  PERIOD,
+  TRACKED,
+  ATTENDANCE,
+  GROSS,
+  NET_PAY,
+  num,
+  ECR_LINE,
+  ECR_FILENAME,
+  ECR_FIELDS,
+} from '@/lib/demo';
+import { PT_LEVYING_COUNT, PT_NIL_COUNT } from '@/lib/pt-states';
 import { CapabilityTabs, type Capability } from '@/components/home/CapabilityTabs';
-import { UnbrokenChain } from '@/components/home/UnbrokenChain';
+import { WordReveal, FadeUp, TiltGroup } from '@/components/home/HeroMotion';
+import { ProductTour, type TourStep } from '@/components/home/ProductTour';
+import { SplitFlow } from '@/components/home/SplitFlow';
+import { ComplianceTerminal } from '@/components/home/ComplianceTerminal';
+import { PrivacyDemo } from '@/components/home/PrivacyDemo';
+import { CostCalculator } from '@/components/home/CostCalculator';
+import { DayOne } from '@/components/home/DayOne';
+import { ModuleMarquee } from '@/components/home/ModuleMarquee';
 import {
   ProofStrip,
   ProblemSection,
@@ -26,6 +46,8 @@ import {
   DifferencesReport,
   EmployerCost,
   RunLifecycle,
+  AttendanceMonth,
+  Payslip,
 } from '@/components/product/screens';
 
 export const metadata: Metadata = {
@@ -33,6 +55,153 @@ export const metadata: Metadata = {
   description: SITE.description,
   alternates: { canonical: '/' },
 };
+
+/* ── 1 · The hero chain ───────────────────────────────────────────────── */
+
+/**
+ * Built here, on the server, and passed into the client component.
+ *
+ * The five fragments carry ONE employee and ONE number from a tracked minute to
+ * a payslip. Assembling the array server-side keeps lib/demo — which holds every
+ * figure the rest of the site renders — out of the browser bundle entirely.
+ */
+const CHAIN: readonly ChainNode[] = [
+  {
+    key: 'tracked',
+    stage: 'Tracked',
+    caption: TRACKED.dateShort,
+    value: TRACKED.hours,
+    detail: `${TRACKED.activeShare}% active · ${TRACKED.idleRecovered} idle rewound`,
+    tone: 'dark',
+  },
+  {
+    key: 'attendance',
+    stage: 'Attendance',
+    caption: PERIOD.monthShort,
+    value: `${ATTENDANCE.present}/${ATTENDANCE.workingDays}`,
+    detail: `${ATTENDANCE.totalHours} · ${ATTENDANCE.lop} LOP days`,
+    tone: 'light',
+  },
+  {
+    key: 'run',
+    stage: 'Payroll run',
+    caption: EMPLOYEE.name,
+    value: num(GROSS),
+    detail: 'gross, from the synced attendance',
+    tone: 'light',
+  },
+  {
+    key: 'statutory',
+    stage: 'Statutory',
+    caption: 'PF · PT · TDS',
+    value: '8,704',
+    detail: 'ESI nil — gross above ₹21,000',
+    tone: 'light',
+  },
+  {
+    key: 'payslip',
+    stage: 'Payslip',
+    caption: EMPLOYEE.name,
+    value: num(NET_PAY),
+    detail: 'net pay, paid by bank file',
+    tone: 'brand',
+  },
+];
+
+/* ── 4 · The scroll-linked tour ───────────────────────────────────────── */
+
+/**
+ * Four steps, four real screens, assembled on the server.
+ *
+ * The `screen` values are React elements built here rather than imported inside
+ * ProductTour, for the same reason CHAIN is: that component is a client
+ * component, and importing lib/demo or the screen mocks into it would ship the
+ * whole demo dataset to the browser.
+ *
+ * Callout coordinates are percentages over the sticky frame. They are
+ * deliberately loose — they point at a region, not a pixel, so a screen that
+ * re-flows at a different breakpoint does not leave a label indicating nothing.
+ */
+const TOUR: readonly TourStep[] = [
+  {
+    key: 'track',
+    label: 'Track',
+    claim: 'TIM-01',
+    title: 'The work is captured as it happens.',
+    body: 'A desktop tracker takes screenshots and reads OS-level idle; the browser extension adds URL context. When the network drops, captures queue to disk rather than evaporating.',
+    screen: <TrackerCapture />,
+    callouts: [
+      { x: 0, y: 24, text: '31 captures · consent-gated' },
+      { x: 0, y: 72, text: '18m idle, rewound off the clock' },
+    ],
+  },
+  {
+    key: 'attend',
+    label: 'Attend',
+    claim: 'TIM-09',
+    title: 'Activity resolves into attendance.',
+    body: 'Sessions are classified, then resolved against the employee’s shift, timezone and overtime rules into an attendance month with hours, LOP and regularisations — the record payroll will read.',
+    screen: <AttendanceMonth />,
+    callouts: [
+      { x: 0, y: 26, text: '22 of 22 days · 0 LOP' },
+      { x: 0, y: 68, text: 'One regularisation, forwarded to the right approver' },
+    ],
+  },
+  {
+    key: 'approve',
+    label: 'Approve',
+    claim: 'CTL-01',
+    title: 'The mistake is found before the money moves.',
+    body: 'A run walks draft → locked → approved → released → disbursed, each stage stamped. The differences report names the override that moved each component, so nothing changes anonymously.',
+    screen: (
+      <div className="grid gap-3">
+        <RunLifecycle />
+        <DifferencesReport />
+      </div>
+    ),
+    callouts: [
+      { x: 0, y: 30, text: 'Five stages, each stamped with who and when' },
+      { x: 0, y: 62, text: 'Override #418 — named, not just diffed' },
+    ],
+  },
+  {
+    key: 'pay',
+    label: 'Pay',
+    claim: 'BNK-03',
+    title: 'And the same record becomes the payslip.',
+    body: 'Statutory deductions compute from the run, a NEFT/RTGS file pays it, and every line is recorded. The bank’s returned UTR is the only reference a statement reconciles against — never one invented locally.',
+    screen: <Payslip />,
+    callouts: [
+      { x: 0, y: 22, text: 'The same ₹1,07,187 from the top of the page' },
+      { x: 0, y: 74, text: 'Unpayable people excluded by name, never dropped' },
+    ],
+  },
+];
+
+/* ── 8 · Privacy ──────────────────────────────────────────────────────── */
+
+const PRIVACY_POINTS = [
+  {
+    title: 'One gate, every capture path',
+    body: 'Screenshots, activity, URLs and location all pass the same consent check. There is no path that captures first and asks later.',
+    claim: 'CON-01',
+  },
+  {
+    title: 'Notices are versioned, never edited',
+    body: 'What somebody agreed to is the text they were shown. Editing a notice in place would rewrite consent already given.',
+    claim: 'CON-02',
+  },
+  {
+    title: 'Consent is per capture type, and withdrawable',
+    body: 'Agreeing to activity tracking is not agreeing to screenshots. Withdrawal takes effect on the next capture attempt, which is refused.',
+    claim: 'CON-03',
+  },
+  {
+    title: 'Screenshots are purged on a retention schedule',
+    body: 'Kept for as long as they are useful and no longer. Built this way because under the DPDP Act the liability sits with the employer, not the vendor.',
+    claim: 'CON-05',
+  },
+] as const;
 
 /* ── 5 · Capability tabs ──────────────────────────────────────────────── */
 
@@ -141,50 +310,111 @@ export default function HomePage() {
             <Eyebrow>HR &amp; payroll, built for India</Eyebrow>
 
             {/*
-              The LCP element, and it is real text that paints immediately.
-              Nothing here animates in: an entrance animation above the fold
-              delays LCP, and the budget is under 2 seconds on mobile 4G.
+              The LCP element, and it now animates — see the header of
+              HeroMotion.tsx for what that costs and why it is the instructed
+              trade. The text itself is server-rendered either way; a reader
+              with no JS gets the headline as one plain sentence.
             */}
-            <h1 className="mt-4 font-display text-hero text-balance text-n-900">
-              The hours are the payslip.
-            </h1>
+            <WordReveal
+              text="The hours are the payslip."
+              className="mt-4 font-display text-hero text-balance text-n-900"
+            />
 
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-pretty text-n-600">
-              CareVance tracks the work, computes the payroll, and files the compliance — in one
-              unbroken system. No exports. No reconciliation. No third tool.
-            </p>
+            <FadeUp delay={0.34}>
+              <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-pretty text-n-600">
+                CareVance tracks the work, computes the payroll, and files the compliance — in one
+                unbroken system. No exports. No reconciliation. No third tool.
+              </p>
+            </FadeUp>
 
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <Button href={CTA.demo.href} size="lg">
-                {CTA.demo.label}
-              </Button>
-              <Button href={CTA.tour.href} tone="secondary" size="lg">
-                {CTA.tour.label}
-              </Button>
-            </div>
+            <FadeUp delay={0.46}>
+              <div className="mt-8 flex flex-wrap justify-center gap-3">
+                <Button href={CTA.demo.href} size="lg">
+                  {CTA.demo.label}
+                </Button>
+                <Button href={CTA.tour.href} tone="secondary" size="lg">
+                  {CTA.tour.label}
+                </Button>
+              </div>
+            </FadeUp>
 
-            <p className="mt-5 text-[13px] text-n-600">
-              14-day free trial · no credit card · web, mobile, desktop tracker and browser
-              extension
-            </p>
+            <FadeUp delay={0.6}>
+              <p className="mt-5 text-[13px] text-n-600">
+                14-day free trial · no credit card · web, mobile, desktop tracker and browser
+                extension
+              </p>
+            </FadeUp>
           </div>
 
-          <div className="mt-14 lg:mt-16">
-            <ChainHero />
-          </div>
+          {/* The tilt lives on the wrapper; anime.js still owns the cards. */}
+          <TiltGroup className="mt-14 lg:mt-16">
+            <ChainHero nodes={CHAIN} />
+          </TiltGroup>
         </Container>
       </section>
 
       {/* ── 2 · Proof strip ───────────────────────────────────────────── */}
       <ProofStrip />
 
-      {/* ── 3 · The problem ───────────────────────────────────────────── */}
+      {/* ── 2b · What changes on day one ──────────────────────────────── */}
+      <DayOne />
+
+      {/* ── 2c · The modules, scrolling ───────────────────────────────── */}
+      <ModuleMarquee />
+
+      {/* ── 3 · The problem, and what it costs ────────────────────────── */}
       <ProblemSection />
 
-      {/* ── 4 · The unbroken chain ────────────────────────────────────── */}
-      <UnbrokenChain />
+      <Section className="pt-0">
+        <Container>
+          <div className="mx-auto max-w-2xl">
+            <CostCalculator />
+          </div>
+        </Container>
+      </Section>
 
-      {/* ── 5 · Capability tabs ───────────────────────────────────────── */}
+      {/* ── 4 · The scroll-linked tour ────────────────────────────────── */}
+      <Section tone="sunken">
+        <Container>
+          <div className="max-w-2xl">
+            <Eyebrow>One record, four steps</Eyebrow>
+            <SectionTitle className="mt-3">
+              Follow one tracked minute all the way to a paid payslip.
+            </SectionTitle>
+          </div>
+          <div className="mt-12">
+            <ProductTour steps={TOUR} />
+          </div>
+        </Container>
+      </Section>
+
+      {/* ── 5 · Tracking and payroll, from one record ─────────────────── */}
+      <SplitFlow />
+
+      {/* ── 6 · The statutory bytes ───────────────────────────────────── */}
+      <ComplianceTerminal
+        line={ECR_LINE}
+        filename={ECR_FILENAME}
+        fields={ECR_FIELDS}
+        ptLevying={PT_LEVYING_COUNT}
+        ptNil={PT_NIL_COUNT}
+        ptSample={[
+          'Maharashtra',
+          'Karnataka',
+          'West Bengal',
+          'Tamil Nadu',
+          'Gujarat',
+          'Telangana',
+          'Delhi — none',
+          'Haryana — none',
+          'Uttar Pradesh — none',
+        ]}
+      />
+
+      {/* ── 7 · Privacy, demonstrated ─────────────────────────────────── */}
+      <PrivacyDemo capture={<TrackerCapture />} points={PRIVACY_POINTS} />
+
+      {/* ── 8 · Capability tabs ───────────────────────────────────────── */}
       <Section tone="sunken" id="tour">
         <Container>
           <div className="max-w-2xl">

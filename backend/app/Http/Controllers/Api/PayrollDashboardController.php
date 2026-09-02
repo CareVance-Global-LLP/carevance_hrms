@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\MonthYear;
 use App\Http\Controllers\Controller;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
@@ -143,7 +144,7 @@ class PayrollDashboardController extends Controller
             ->where('month_year', $monthYear)
             ->first();
 
-        $previousMonth = Carbon::createFromFormat('Y-m', $monthYear)->subMonth()->format('Y-m');
+        $previousMonth = MonthYear::shift($monthYear, -1);
         $previousRun = PayrollMonthlyRun::where('organization_id', $organizationId)
             ->where('month_year', $previousMonth)
             ->first();
@@ -281,7 +282,7 @@ class PayrollDashboardController extends Controller
     private function getComplianceCalendar(int $organizationId, string $monthYear): array
     {
         $now = Carbon::now();
-        $currentMonth = Carbon::createFromFormat('Y-m', $monthYear);
+        $currentMonth = MonthYear::start($monthYear);
         
         $deadlines = [
             [
@@ -604,7 +605,7 @@ class PayrollDashboardController extends Controller
     {
         $alerts = [];
         $now = Carbon::now();
-        $currentMonth = Carbon::createFromFormat('Y-m', $monthYear);
+        $currentMonth = MonthYear::start($monthYear);
 
         $deadlines = [
             ['day' => 15, 'type' => 'critical', 'title' => 'PF Payment Due Soon'],

@@ -75,8 +75,20 @@ class ReimbursementController extends Controller
             }
         }
 
-        // Optional month_year filter — by the submitted date (created_at)
-        $query->forMonth($request->input('month_year'));
+        /*
+         * Which month a claim belongs to depends on who is asking.
+         *
+         * The approval workflow means the SUBMITTED month, and that is the
+         * default so every existing caller keeps its behaviour. Payroll means
+         * the month the expense was INCURRED, because that is what
+         * processEmployeePayroll pays on — it opts in with
+         * `month_basis=expense`.
+         */
+        if ($request->input('month_basis') === 'expense') {
+            $query->forExpenseMonth($request->input('month_year'));
+        } else {
+            $query->forMonth($request->input('month_year'));
+        }
 
         $reimbursements = $query->orderBy('created_at', 'desc')->get();
 

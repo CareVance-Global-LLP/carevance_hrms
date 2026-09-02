@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll;
 
+use App\Support\MonthYear;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\PayrollItem;
 use App\Models\PayrollMonthlyRun;
@@ -53,7 +54,7 @@ class OverrideGridService
             return now()->format('Y-m');
         }
 
-        return Carbon::createFromFormat('Y-m', $lastClosed)->addMonth()->format('Y-m');
+        return MonthYear::shift($lastClosed, 1);
     }
 
     /**

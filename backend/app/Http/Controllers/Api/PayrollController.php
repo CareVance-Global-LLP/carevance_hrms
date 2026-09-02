@@ -432,7 +432,7 @@ class PayrollController extends Controller
         // tenants. The response below carries name, email, PAN, UAN and a bank
         // account number, so this returned another company's employee data to
         // anyone who could guess an id.
-        $user = User::with(['employeeProfile', 'employeeBankAccounts', 'organization'])
+        $user = User::with(['employeeProfile', 'employeeBankAccounts', 'employeeGovernmentIds', 'organization'])
             ->where('organization_id', $request->user()->organization_id)
             ->findOrFail($request->user_id);
 
@@ -442,14 +442,39 @@ class PayrollController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'pan' => $user->employeeProfile?->pan_number,
-                'uan' => $user->employeeProfile?->uan_number,
+                /*
+                 * Through statutoryId, not off the profile column.
+                 *
+                 * A PAN or UAN lives in employeeProfile OR in
+                 * employee_government_ids, and reading only the column reports
+                 * null for everybody who recorded theirs in the Government IDs
+                 * panel — which is most people, since that is where the
+                 * onboarding checklist collects it. statutoryId reads both and
+                 * resolves a duplicate deterministically.
+                 */
+                'pan' => $user->statutoryId('pan'),
+                'uan' => $user->statutoryId('uan'),
                 'bank_account' => $user->employeeBankAccounts->first()?->account_number,
                 'bank_ifsc' => $user->employeeBankAccounts->first()?->ifsc_swift,
             ],
             'employer' => [
                 'name' => $user->organization?->name,
-                'tan' => null, // TODO: Add TAN to organization
+                /*
+                 * TAN belongs to the LEGAL ENTITY, not the organization.
+                 *
+                 * This returned null under a TODO to "add TAN to organization",
+                 * which is the wrong place for it: one organization can run
+                 * several companies, each with its own PAN and TAN, and that is
+                 * exactly what legal_entities exists to hold. LegalEntityResolver
+                 * already decides which entity an employee files under and
+                 * defaults to the organization's primary one.
+                 *
+                 * Null is still a legitimate answer — an organization that has
+                 * not set up an entity has no TAN to show — but it is now an
+                 * absent fact rather than an unimplemented one.
+                 */
+                'tan' => app(\App\Services\Payroll\LegalEntityResolver::class)
+                    ->forUser($user)?->tan,
             ],
             'month' => $request->month,
             'payroll' => $request->payroll_data,
@@ -459,7 +484,17 @@ class PayrollController extends Controller
         return response()->json([
             'success' => true,
             'payslip' => $payslipData,
-            'download_url' => null, // TODO: Generate PDF URL
+            /*
+             * The PDF route already exists — this endpoint just never pointed
+             * at it. downloadPayslipPdf enforces denyForeignPayslip, so the
+             * link is safe to hand out: following it as the wrong person is
+             * refused there rather than here.
+             */
+            'download_url' => url(sprintf(
+                '/api/payroll/payslip/%d/%s/download',
+                $user->id,
+                (string) $request->month
+            )),
         ]);
     }
 
@@ -520,10 +555,39 @@ class PayrollController extends Controller
         $pdfService = new \App\Services\PayrollPdfService();
         $pdf = $pdfService->generatePayslip($payrollItem);
 
+        $filename = $this->payslipFilename($payrollItem->user, $monthYear);
+
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => "attachment; filename=\"payslip_{$userId}_{$monthYear}.pdf\"",
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
+    }
+
+    /**
+     * What the file is called when it lands in somebody's Downloads folder.
+     *
+     * It was `payslip_361_2026-08.pdf` — an internal user id and a numeric
+     * month, which tells the person who downloaded it nothing. Somebody saving
+     * three months of payslips got three files they had to open to tell apart,
+     * and the id is meaningless outside the database.
+     *
+     * `payslip_Akash_Vijaykumar_August_2026.pdf` sorts, searches and reads.
+     * Non-filename characters are stripped rather than escaped, because a name
+     * with a slash or a colon in it breaks the download on Windows entirely.
+     */
+    private function payslipFilename(?User $employee, string $monthYear): string
+    {
+        $name = preg_replace('/[^A-Za-z0-9]+/', '_', (string) ($employee?->name ?? ''));
+        $name = trim((string) $name, '_');
+
+        try {
+            $period = \App\Support\MonthYear::start($monthYear)->format('F_Y');
+        } catch (\Throwable $e) {
+            // A malformed month must not stop somebody downloading their payslip.
+            $period = str_replace('-', '_', $monthYear);
+        }
+
+        return 'payslip_'.($name !== '' ? $name.'_' : '').$period.'.pdf';
     }
 
     /**
@@ -561,7 +625,7 @@ class PayrollController extends Controller
             // browsers do via the built-in PDF viewer). The filename is
             // still set so the browser uses it if the user chooses
             // "Save As" from the viewer.
-            'Content-Disposition' => "inline; filename=\"payslip_{$userId}_{$monthYear}.pdf\"",
+            'Content-Disposition' => 'inline; filename="'.$this->payslipFilename($payrollItem->user, $monthYear).'"',
         ]);
     }
 
@@ -592,6 +656,26 @@ class PayrollController extends Controller
                     'esi_employee' => $item->esi_employee,
                     'pt' => $item->pt,
                     'tds' => $item->tds,
+                    'lwf' => $item->lwf,
+                    /*
+                     * The three things a payslip needs to explain itself.
+                     *
+                     * `lOP_deduction` names the money the LOP days cost, which
+                     * the day counts alone do not. `deduction_lines` is the
+                     * per-commitment breakdown behind `custom_deductions` — a
+                     * loan and an advance are two deductions, and their combined
+                     * total cannot be decomposed after the fact. And the employer
+                     * contributions are what makes a CTC figure add up: an
+                     * employee comparing their payslip against their offer needs
+                     * to see the half that never reaches their account.
+                     */
+                    'lop_deduction' => $item->lOP_deduction,
+                    'custom_deductions' => $item->custom_deductions,
+                    'deduction_lines' => $item->deduction_lines ?? [],
+                    'employer_contributions' => [
+                        'pf_employer' => $item->pf_employer,
+                        'esi_employer' => $item->esi_employer,
+                    ],
                     'working_days' => $item->total_working_days,
                     'days_present' => $item->days_present,
                     'lOP_days' => $item->lOP_days,

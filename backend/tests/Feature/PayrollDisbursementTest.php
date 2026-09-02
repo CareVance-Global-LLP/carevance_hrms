@@ -59,7 +59,11 @@ class PayrollDisbursementTest extends TestCase
             'account_holder_name' => $user->name,
             'bank_name' => 'Test Bank',
             'account_number' => '1234567890'.$user->id,
-            'ifsc_swift' => 'TEST0001',
+            // Eleven characters in the RBI form AAAA0BBBBBB. It was 'TEST0001',
+            // which no bank would accept — cannotPay() now applies the same rule
+            // SalaryAccountResolver has always applied, so the fixture has to be
+            // an IFSC rather than merely a non-empty string.
+            'ifsc_swift' => 'TEST0001234',
             'is_default' => true,
         ]);
 

@@ -336,9 +336,28 @@ export const clearDesktopTimerSession = () => {
 
   storageKeys.forEach((key) => sessionStorage.removeItem(key));
 
-  const workedBaselineKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+  /*
+   * BOTH localStorage keys, not just the baseline.
+   *
+   * This swept only WORKED_BASELINE_KEY, so
+   * `desktop_timer_auto_start_suppressed_global:<userId>` — written whenever a
+   * timer is auto-stopped for idle — survived logout, login and every reboot.
+   * The only thing that ever cleared it was a successful MANUAL start, so one
+   * idle timeout disabled auto-start on that machine permanently while a
+   * colleague who had never gone idle kept working normally. That asymmetry is
+   * what made it look intermittent rather than broken.
+   *
+   * Session-scoped suppression still does its job for the rest of the day; it
+   * lives in sessionStorage and is swept above.
+   */
+  const localKeysToClear = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
     .filter((key): key is string => Boolean(key))
-    .filter((key) => key === WORKED_BASELINE_KEY || key.startsWith(`${WORKED_BASELINE_KEY}:`));
+    .filter((key) =>
+      key === WORKED_BASELINE_KEY
+      || key.startsWith(`${WORKED_BASELINE_KEY}:`)
+      || key === AUTO_START_SUPPRESSED_GLOBAL_KEY
+      || key.startsWith(`${AUTO_START_SUPPRESSED_GLOBAL_KEY}:`)
+    );
 
-  workedBaselineKeys.forEach((key) => localStorage.removeItem(key));
+  localKeysToClear.forEach((key) => localStorage.removeItem(key));
 };

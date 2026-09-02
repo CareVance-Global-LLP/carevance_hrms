@@ -7,6 +7,52 @@
     <link rel="icon" type="image/png" href="/carevance-logo-icon.png?v=carevance-1" />
     <link rel="apple-touch-icon" href="/carevance-logo-icon.png?v=carevance-1" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!--
+      Fonts, discovered in the initial HTML parse.
+
+      These were an `@import` at the top of src/index.css, which measured 903ms
+      of render-blocking time: an @import is invisible to the browser until the
+      importing stylesheet has been fetched and parsed, so bundle → font CSS →
+      font files ran strictly in series.
+
+      Both preconnects are needed and they are not interchangeable:
+      `fonts.googleapis.com` serves the CSS, `fonts.gstatic.com` serves the font
+      files, and the gstatic one MUST carry `crossorigin` because fonts are
+      fetched in CORS mode — without it the browser opens a second, unusable
+      connection and the hint is wasted.
+
+      `display=swap` is already in the URL, so text paints immediately in the
+      fallback face and swaps when the webfont lands.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Loaded ASYNCHRONOUSLY. A plain `rel="stylesheet"` is render-blocking by
+      definition — moving the import here made it discoverable early but it
+      still held first paint for 916ms, measured.
+
+      `rel="preload" as="style"` fetches at high priority without blocking, then
+      the onload handler promotes it to a real stylesheet. This is only safe
+      because the URL already carries `display=swap`: text paints immediately in
+      the fallback face and swaps when Manrope arrives. Without swap this trade
+      would be invisible text instead of blocked rendering, which is worse.
+
+      The <noscript> copy keeps the fonts for readers without JavaScript, who
+      would otherwise never get the promotion.
+    -->
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      />
+    </noscript>
     <meta
       name="description"
       content="CareVance HRMS helps teams manage attendance, reports, onboarding, monitoring, payroll workflows, and day-to-day workforce operations from one connected workspace."
@@ -29,7 +75,16 @@
       content="CareVance HRMS helps teams manage attendance, reports, onboarding, monitoring, payroll workflows, and day-to-day workforce operations from one connected workspace."
     />
     <meta name="twitter:image" content="/carevance-logo-full.png?v=carevance-1" />
-    <script src="/env-config.js"></script>
+    <!--
+      `defer`, because this blocked rendering for 308ms as a plain script.
+
+      Deferred classic scripts still execute in document order and still run
+      before the module below (module scripts are deferred by definition), so
+      `window` config is populated before the app boots — the ordering this file
+      actually depends on is preserved. What changes is that it no longer halts
+      the parser while it downloads.
+    -->
+    <script defer src="/env-config.js"></script>
     <script>
       /*
        * Resolve the theme before first paint. React mounts several providers

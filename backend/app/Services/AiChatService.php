@@ -201,7 +201,26 @@ class AiChatService
      */
     private function request(string $baseUrl, string $apiKey, int $timeout = 15)
     {
-        return Http::withoutVerifying()
+        /*
+         * TLS verification stays ON, except on a local Windows dev box.
+         *
+         * This was `Http::withoutVerifying()`, unconditionally — on the one
+         * request in the application that carries a provider API key as a
+         * bearer token. Any machine between here and the provider could present
+         * its own certificate, be trusted, and read the key.
+         *
+         * The narrow exception is the curl CA-bundle problem on Windows dev
+         * machines, and the gate is copied verbatim from the two places that
+         * already got this right: OAuthController::  and ExpoPushService. If
+         * that gate needs to change, change it in all three.
+         */
+        $options = [];
+
+        if (app()->environment('local') && strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $options['verify'] = false;
+        }
+
+        return Http::withOptions($options)
             ->withToken($apiKey)
             ->withHeaders([
                 'HTTP-Referer' => (string) config('services.ai.site_url', 'https://carevance.com'),

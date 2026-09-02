@@ -1,0 +1,31 @@
+# What EAS Build must NOT upload.
+#
+# EAS archives from the repository root, because a package.json lives here — so
+# without this it tars the entire monorepo. Two problems with that: the upload
+# carries four applications the mobile build has no use for, and
+# backend/public/storage is a symlink that Windows cannot recreate inside the
+# build's temp clone, which fails the upload outright:
+#
+#   EPERM: operation not permitted, symlink
+#   'D:\Caretime\backend\storage\app\public' -> '...\backend\public\storage'
+#
+# Only mobile-app/ is needed to build the app.
+
+backend/
+frontend/
+desktop/
+marketing/
+browser-extension/
+docs/
+scripts/
+.github/
+.playwright-mcp/
+
+# Build output and archives that are large and never needed.
+**/node_modules/
+**/vendor/
+**/.git/
+*.pdf
+*.png
+*.apk
+*.aab

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\MonthYear;
 use App\Http\Controllers\Controller;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\PayrollOverride;
@@ -1028,7 +1029,7 @@ class PayrollOverrideController extends Controller
             return Carbon::now()->subDay()->toDateString();
         }
 
-        return Carbon::createFromFormat('Y-m', $closed)->endOfMonth()->toDateString();
+        return MonthYear::end($closed)->toDateString();
     }
 
     /**

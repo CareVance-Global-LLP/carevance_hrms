@@ -2,6 +2,7 @@
 
 namespace App\Services\Attendance;
 
+use App\Support\MonthYear;
 use App\Models\AttendanceHoliday;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
@@ -502,7 +503,7 @@ class AttendanceService
         }
 
         $month = $request->get('month', now()->format('Y-m'));
-        $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $monthStart = MonthYear::start($month);
         $monthEnd = $monthStart->copy()->endOfMonth();
         $scope = (string) $request->get('scope', 'selected');
 

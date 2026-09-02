@@ -149,11 +149,16 @@ class RejoinFormerEmployeeTest extends TestCase
         // and every reader of `joining_date` must see the current period.
         $exit = $this->makeLeaver($this->employee, joinedOn: '2020-01-15');
 
-        $this->rejoinRequest($exit, joiningDate: '2026-08-26')->assertOk();
+        // Derived from the fixture's own last working date (now - 5 days), not
+        // written out. A literal here silently equalled it on 31 Aug 2026 and
+        // the "after the break" assertion compared a date with itself.
+        $rejoinsOn = now()->addDay()->toDateString();
+
+        $this->rejoinRequest($exit, joiningDate: $rejoinsOn)->assertOk();
 
         $workInfo = $this->employee->fresh()->employeeWorkInfo;
 
-        $this->assertSame('2026-08-26', $workInfo->joining_date->toDateString());
+        $this->assertSame($rejoinsOn, $workInfo->joining_date->toDateString());
         $this->assertTrue($workInfo->joining_date->greaterThan($exit->fresh()->last_working_date));
     }
 

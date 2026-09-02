@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\MonthYear;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Attendance\AttendanceCalendarRequest;
 use App\Http\Requests\Api\Attendance\AttendanceSummaryRequest;
@@ -129,7 +130,7 @@ class AttendanceController extends Controller
         try {
             // Limit date range to prevent memory issues (max 3 months)
             $month = $request->get('month', now()->format('Y-m'));
-            $requestedDate = \Carbon\Carbon::createFromFormat('Y-m', $month);
+            $requestedDate = MonthYear::start($month);
             $maxRange = now()->subMonths(3);
             
             if ($requestedDate->lt($maxRange)) {

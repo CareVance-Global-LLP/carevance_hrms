@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Resignation;
 use App\Models\User;
+use App\Services\AppNotificationService;
 use App\Services\Approvals\ApprovalRoutingService;
 use App\Services\Lifecycle\ExitService;
 use App\Services\Lifecycle\NoticePeriodService;
@@ -407,14 +408,28 @@ class ResignationController extends Controller
             })
             ->get();
 
-        // TODO: Implement actual notification logic
-        // For now, just log
-        \Log::info("Resignation {$action}", [
-            'resignation_id' => $resignation->id,
-            'user_id' => $user->id,
-            'user_name' => $user->name,
-            'managers_notified' => $managersAndAdmins->pluck('email')->toArray(),
-        ]);
+        /*
+         * Actually notify, rather than log that we would have.
+         *
+         * All four resignation routes called this, and it only ever wrote a
+         * Log::info line — so a resignation was submitted, withdrawn or
+         * escalated and nobody was told unless they happened to open the
+         * screen. AppNotificationService is the same path leave requests and
+         * attendance edit requests already use.
+         */
+        app(AppNotificationService::class)->sendToUsers(
+            organizationId: (int) $organization->id,
+            userIds: $managersAndAdmins->pluck('id'),
+            senderId: (int) $user->id,
+            type: 'resignation',
+            title: sprintf('Resignation %s', $action),
+            message: sprintf('%s has %s a resignation.', (string) $user->name, $action),
+            meta: [
+                'resignation_id' => $resignation->id,
+                'user_id' => $user->id,
+                'action' => $action,
+            ],
+        );
     }
 
     /**
@@ -424,7 +439,21 @@ class ResignationController extends Controller
     {
         $user = $resignation->user;
 
-        // TODO: Implement actual notification logic
+        // The employee is told what happened to their own resignation — see
+        // notifyManagersAndAdmins above for why this stopped being a log line.
+        app(AppNotificationService::class)->sendToUsers(
+            organizationId: (int) $user->organization_id,
+            userIds: collect([$user->id]),
+            senderId: null,
+            type: 'resignation',
+            title: sprintf('Your resignation was %s', $status),
+            message: sprintf('Your resignation has been %s.', $status),
+            meta: [
+                'resignation_id' => $resignation->id,
+                'status' => $status,
+            ],
+        );
+
         \Log::info("Resignation {$status}", [
             'resignation_id' => $resignation->id,
             'user_id' => $user->id,
