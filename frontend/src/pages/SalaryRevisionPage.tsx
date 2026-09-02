@@ -33,7 +33,19 @@ export default function SalaryRevisionPage() {
 
   const { data: lettersData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['revision-letters', statusFilter],
-    queryFn: () => payrollApi.getRevisionLetters(undefined, statusFilter || undefined).then(res => res.data?.data ?? res.data ?? []),
+    /*
+     * The endpoint PAGINATES, so res.data.data is the paginator object and
+     * the rows are one level further in. Stopping a level short handed an
+     * object to the Array.isArray guard below, which discarded it - a
+     * revision saved successfully, returned 201, and the list went on
+     * reporting TOTAL 0.
+     */
+    queryFn: () =>
+      payrollApi.getRevisionLetters(undefined, statusFilter || undefined).then((res) => {
+        const body = res.data?.data ?? res.data ?? [];
+        if (Array.isArray(body)) return body;
+        return Array.isArray(body?.data) ? body.data : [];
+      }),
   });
 
   const { data: usersData } = useQuery({
