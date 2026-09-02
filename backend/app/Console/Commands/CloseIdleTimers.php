@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\TimeEntry;
+use App\Services\Monitoring\TimerAutoStopNotifier;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +39,7 @@ class CloseIdleTimers extends Command
      */
     private const CLIENT_GRACE_SECONDS = 300;
 
-    public function handle(): int
+    public function handle(TimerAutoStopNotifier $notifier): int
     {
         /*
          * The FLOOR, not the threshold. The real threshold is per user, because
@@ -197,6 +198,13 @@ class CloseIdleTimers extends Command
             ]);
 
             $this->closeOpenAttendancePunches((int) $entry->user_id, $endTime);
+
+            // Say so. The client raises a toast when IT stops a timer;
+            // this path said nothing at all, and it is the one that runs
+            // precisely when nobody is watching the screen.
+            if ($closedUser = $usersById->get($entry->user_id)) {
+                $notifier->announce($closedUser, $entry, $idleSeconds, TimeEntry::STOP_IDLE_CRON, $endTime);
+            }
 
             $idleInfo = $latestIdleByUser->get($entry->user_id);
             Log::info('Running timer auto-stopped by idle check', [
