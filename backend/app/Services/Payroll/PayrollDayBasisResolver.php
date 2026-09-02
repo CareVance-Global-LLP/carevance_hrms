@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll;
 
+use App\Support\MonthYear;
 use App\Models\Organization;
 use Carbon\Carbon;
 
@@ -90,7 +91,7 @@ class PayrollDayBasisResolver
 
     public function calendarDays(string $monthYear): float
     {
-        return (float) Carbon::createFromFormat('Y-m', $monthYear)->startOfMonth()->daysInMonth;
+        return (float) MonthYear::days($monthYear);
     }
 
     /**
