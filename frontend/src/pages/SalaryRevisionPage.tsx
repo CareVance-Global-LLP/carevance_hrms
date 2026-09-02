@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Search, Plus, TrendingUp } from 'lucide-react';
 import { payrollApi, getApiErrorMessage } from '@/services/api';
@@ -23,6 +23,25 @@ export default function SalaryRevisionPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
+
+  /*
+   * Bring the form to the person who asked for it.
+   *
+   * The panel renders below the list, so on anything short of a very tall
+   * window "New Revision" appeared to do nothing — the button label flipped
+   * to Cancel and the form opened off-screen. Keka drops a drawer over the
+   * page for exactly this reason.
+   *
+   * Scrolling rather than converting to a modal keeps the existing list
+   * visible beside the form, which is useful while deciding who to revise,
+   * and avoids introducing a focus trap this page does not have today.
+   */
+  useEffect(() => {
+    if (!showForm) return;
+    document
+      .getElementById('new-revision-form')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [showForm]);
 
   const [formData, setFormData] = useState({
     user_id: '',
@@ -205,7 +224,7 @@ export default function SalaryRevisionPage() {
           </SurfaceCard>
 
           {showForm && (
-            <SurfaceCard className="p-6">
+            <SurfaceCard id="new-revision-form" className="p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-6">New Revision</h3>
               <div className="space-y-4">
                 <div>
