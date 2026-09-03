@@ -1,3 +1,4 @@
+import { productLabel } from '../src/constants/brand';
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,7 +44,7 @@ export default function LoginScreen() {
           <View style={s.logoCircle}>
             <Text style={s.logoText}>C</Text>
           </View>
-          <Text style={s.title}>CareVance HRMS</Text>
+          <Text style={s.title}>{productLabel}</Text>
           <Text style={s.subtitle}>Sign in to your account</Text>
         </View>
         <View style={s.form}>

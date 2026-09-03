@@ -59,8 +59,27 @@ export const PERIOD = Object.freeze({
 export const TRACKED = Object.freeze({
   dateShort: 'Mon 18 Aug',
   hours: '7h 42m',
-  activeShare: 94,
+  /*
+   * The product's own metric, not an invented one.
+   *
+   * `productivity_score` is productive over tracked seconds, computed in
+   * PayrollDepartmentController and rendered on the real dashboard as a
+   * "Productivity" tile. It was labelled "% active" here, which named nothing
+   * the product measures -- and `Screenshot::getActivityStateAttribute()`
+   * returns a hardcoded 'active' for every capture, so "active" is precisely
+   * the word that carries no measurement behind it.
+   *
+   * 29 productive slots, 1 neutral and 1 idle out of 31 is 93.5%, so the badge
+   * and the bar below agree.
+   */
+  productivityScore: 94,
   idleRecovered: '18m',
+  /*
+   * Captures are taken on a FIXED interval the organization sets (Settings ->
+   * Organization -> Screenshot interval; the system default is 10 minutes),
+   * never on an app switch. 31 captures across 7h42m is the 15-minute option.
+   */
+  captureIntervalMinutes: 15,
   screenshots: 31,
   captures: [
     { at: '09:12', app: 'VS Code', kind: 'productive' as const },
@@ -71,18 +90,35 @@ export const TRACKED = Object.freeze({
 });
 
 /** Stage 2 — the attendance month the payroll run reads. */
+/*
+ * The Attendance workspace's own Monthly Summary tiles, named as it names them:
+ * Present Days, Absent Days, Late Days, and Track Time.
+ *
+ * "Loss of pay" and "Regularisations" were shown here and neither is on that
+ * screen -- LOP Days belongs to the payslip, which is where PayslipViewer
+ * renders it.
+ */
 export const ATTENDANCE = Object.freeze({
-  present: 22,
+  presentDays: 22,
   workingDays: 22,
-  lop: 0,
-  totalHours: '169h 24m',
-  shift: 'General · 09:30–18:30 IST',
-  regularisations: 1,
+  absentDays: 0,
+  lateDays: 0,
+  trackTime: '169h 24m',
+  shiftTarget: 'General · 09:30–18:30 IST',
+  lopDays: 0,
 });
 
 /** Stage 3 — the run lifecycle, exactly as the product models it. */
+/*
+ * The six states of PayrollRunLifecycleStepper, in its order and with its
+ * labels. `processing` was missing here, which made the mock-up show a
+ * five-step lifecycle the product does not have -- and it is the one step a
+ * buyer asks about, because it is where a queued run sits while the worker
+ * walks the employee list.
+ */
 export const RUN_STAGES = Object.freeze([
   { key: 'draft', label: 'Draft', done: true },
+  { key: 'processing', label: 'Processing', done: true },
   { key: 'locked', label: 'Locked', done: true },
   { key: 'approved', label: 'Approved', done: true },
   { key: 'released', label: 'Released', done: true },
@@ -99,24 +135,49 @@ export const RUN_STAGES = Object.freeze([
  * falls from ₹42,291.20 to ₹22,275.20.
  */
 export const DIFFERENCES = Object.freeze([
-  { component: 'Basic', from: 48000, to: 48000, reason: null },
-  { component: 'House Rent Allowance', from: 24000, to: 24000, reason: null },
+  {
+    component: 'Basic',
+    from: 48000,
+    to: 60000,
+    reason: 'Override #418 — approved 28 Jul',
+  },
+  {
+    component: 'House Rent Allowance',
+    from: 24000,
+    to: 30000,
+    reason: '50% of Basic — recomputed',
+  },
   {
     component: 'Special Allowance',
     from: 42291.2,
-    to: 22275.2,
-    reason: 'Override #418 — Basic raised to ₹60,000',
+    to: 24291.2,
+    reason: 'Residual — absorbs the restructure',
   },
-  { component: 'Professional Tax', from: 200, to: 300, reason: 'February — Maharashtra' },
+  // Flat across the pair, so the report does not list them. Professional Tax
+  // is 200 on Maharashtra's top slab every month EXCEPT February, which is
+  // 300 (PTStateService STATE_CONFIGS). A February step is a real difference
+  // and a real demonstration -- but only in a Jan -> Feb comparison, which is
+  // why it is not shown against an August run.
+  { component: 'Professional Tax', from: 200, to: 200, reason: null },
   { component: 'TDS', from: 6704.03, to: 6704.03, reason: null },
 ]);
 
 /** Stage 4 — the payslip. */
+/*
+ * August, AFTER Override #418. The differences report above is what moved the
+ * money here, so the two panels have to agree: a payslip still showing the
+ * pre-override Basic while the report says it was raised is the exact
+ * contradiction the report exists to catch.
+ *
+ * The restructure is inside the same CTC, so gross stays 1,15,891.20 and net
+ * stays 1,07,187.17 -- both pinned by scripts/verify-landing.mjs.
+ * 60,000 + 30,000 + 1,600 + 24,291.20 = 1,15,891.20.
+ */
 export const EARNINGS = Object.freeze([
-  { label: 'Basic', amount: 48000, note: '40% of CTC' },
-  { label: 'House Rent Allowance', amount: 24000, note: '50% of basic — metro' },
+  { label: 'Basic', amount: 60000, note: 'Override #418' },
+  { label: 'House Rent Allowance', amount: 30000, note: '50% of basic — metro' },
   { label: 'Conveyance Allowance', amount: 1600, note: 'flat' },
-  { label: 'Special Allowance', amount: 42291.2, note: 'residual' },
+  { label: 'Special Allowance', amount: 24291.2, note: 'residual' },
 ]);
 
 export const DEDUCTIONS = Object.freeze([

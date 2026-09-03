@@ -14,6 +14,7 @@ import {
   inr,
   num,
 } from './demoData';
+import { brandPrefix } from '@/config/brand';
 
 /**
  * The product's screens, rebuilt in markup.
@@ -83,7 +84,19 @@ export function AppFrame({
  * about something that matters — whose data this is. One line removes the
  * ambiguity, and it is cheap enough that no screen has an excuse to skip it.
  */
-function ExampleTag({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
+function ExampleTag({
+  tone = 'light',
+  source = 'figures derived from the payroll engine',
+}: {
+  tone?: 'light' | 'dark';
+  /*
+   * Where these numbers come from, which is not the same on every screen. The
+   * payroll figures really are the engine's output; the tracker panel's are
+   * the tracker's own, and saying "payroll engine" there described the wrong
+   * system. The line exists to be exact about provenance, so it has to be.
+   */
+  source?: string;
+}) {
   return (
     <p
       className={`border-t px-4 py-1.5 text-[10px] ${
@@ -92,7 +105,7 @@ function ExampleTag({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
           : 'border-slate-100 bg-slate-50 text-slate-400'
       }`}
     >
-      Worked example · figures derived from the payroll engine, not a customer record
+      Worked example · {source}, not a customer record
     </p>
   );
 }
@@ -108,17 +121,20 @@ function ExampleTag({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
  */
 export function TrackerCapture() {
   return (
-    <AppFrame title="CareVance tracker" subtitle={TRACKED.dateShort} tone="dark">
+    <AppFrame title={`${brandPrefix}tracker`} subtitle={TRACKED.dateShort} tone="dark">
       <div className="p-4">
         <div className="flex items-baseline justify-between">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-              Tracked today
+              Track Time
             </p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-white">{TRACKED.hours}</p>
           </div>
+          {/* "Productivity", because that is what the dashboard tile is called
+              and what productivity_score measures. It used to read "% active",
+              which named nothing the product computes. */}
           <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold tabular-nums text-emerald-300">
-            {TRACKED.activeShare}% active
+            Productivity {TRACKED.productivityScore}%
           </span>
         </div>
 
@@ -135,7 +151,17 @@ export function TrackerCapture() {
           ))}
         </div>
 
-        <ul className="mt-3.5 grid gap-1.5">
+        {/* "Today's Time Entries" is the heading the tracker dashboard uses;
+            the capture cadence is stated because screenshots are taken on the
+            organization's fixed interval, never on an app switch. */}
+        <p className="mt-3.5 flex items-baseline justify-between text-[10px] uppercase tracking-[0.12em] text-slate-500">
+          <span>Today&rsquo;s Time Entries</span>
+          <span className="tracking-normal normal-case">
+            {TRACKED.screenshots} captures · every {TRACKED.captureIntervalMinutes} min
+          </span>
+        </p>
+
+        <ul className="mt-2 grid gap-1.5">
           {TRACKED.captures.map((c) => (
             <li key={c.at} className="flex items-center gap-2.5 text-[11.5px]">
               <span className="w-9 shrink-0 tabular-nums text-slate-400">{c.at}</span>
@@ -156,7 +182,7 @@ export function TrackerCapture() {
           to the last real activity — recorded, never billed.
         </p>
       </div>
-      <ExampleTag tone="dark" />
+      <ExampleTag tone="dark" source="a day shaped the way the tracker records one" />
     </AppFrame>
   );
 }
@@ -166,14 +192,14 @@ export function TrackerCapture() {
 /** Matches: "Activity resolves into attendance." */
 export function AttendanceMonth() {
   const rows = [
-    { label: 'Present', value: `${ATTENDANCE.present} / ${ATTENDANCE.workingDays}` },
-    { label: 'Loss of pay', value: `${ATTENDANCE.lop} days` },
-    { label: 'Total hours', value: ATTENDANCE.totalHours },
-    { label: 'Regularisations', value: `${ATTENDANCE.regularisations} approved` },
+    { label: 'Present Days', value: `${ATTENDANCE.presentDays} / ${ATTENDANCE.workingDays}` },
+    { label: 'Absent Days', value: `${ATTENDANCE.absentDays}` },
+    { label: 'Late Days', value: `${ATTENDANCE.lateDays}` },
+    { label: 'Track Time', value: ATTENDANCE.trackTime },
   ];
 
   return (
-    <AppFrame title="Attendance" subtitle={PERIOD.monthShort}>
+    <AppFrame title="Attendance Workspace" subtitle={PERIOD.monthShort}>
       <div className="p-4">
         <div className="flex items-center justify-between">
           <div>
@@ -182,13 +208,11 @@ export function AttendanceMonth() {
               {EMPLOYEE.code} · {EMPLOYEE.department}
             </p>
           </div>
-          <span className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
-            Synced to run
-          </span>
+
         </div>
 
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-          {ATTENDANCE.shift}
+          Shift Target · {ATTENDANCE.shiftTarget}
         </p>
 
         <dl className="mt-3 grid grid-cols-2 gap-2">
@@ -239,7 +263,7 @@ export function RunAndDifferences() {
 
       <div className="p-4">
         <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-          Differences · Aug → Sep
+          Differences · Jul → Aug
         </p>
         <ul className="mt-2 grid gap-2">
           {moved.map((d) => (
@@ -281,6 +305,18 @@ export function Payslip() {
           </div>
         </div>
 
+        {/* PayslipViewer prints the attendance the pay was computed from, and
+            LOP Days is the line that explains a short month. Omitting it made
+            the payslip look like a flat monthly figure. */}
+        <div className="mt-3 flex gap-4 rounded-lg bg-slate-50 px-3 py-2 text-[11px]">
+          <span className="text-slate-500">
+            Days Present <span className="font-semibold tabular-nums text-slate-800">{ATTENDANCE.presentDays}</span>
+          </span>
+          <span className="text-slate-500">
+            LOP Days <span className="font-semibold tabular-nums text-slate-800">{ATTENDANCE.lopDays}</span>
+          </span>
+        </div>
+
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
@@ -317,16 +353,16 @@ export function Payslip() {
 
         <div className="mt-3 grid gap-1 border-t border-slate-200 pt-3 text-[12px]">
           <div className="flex items-baseline justify-between">
-            <span className="text-slate-500">Gross</span>
+            <span className="text-slate-500">Total Earnings</span>
             <span className="tabular-nums text-slate-700">{inr(GROSS, true)}</span>
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-slate-500">Total deductions</span>
+            <span className="text-slate-500">Total Deductions</span>
             <span className="tabular-nums text-slate-700">−{inr(TOTAL_DEDUCTIONS, true)}</span>
           </div>
           <div className="mt-1 flex items-baseline justify-between rounded-lg bg-blue-50 px-3 py-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
-              Net pay
+              Net Payable
             </span>
             <span className="text-lg font-bold tabular-nums text-blue-900">
               {inr(NET_PAY, true)}

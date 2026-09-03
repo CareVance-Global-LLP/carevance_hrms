@@ -1,3 +1,4 @@
+import { brandLabel } from '@/config/brand';
 /**
  * The eight questions a buyer actually asks, and honest answers to them.
  *
@@ -50,7 +51,7 @@ export const landingFaqs: readonly LandingFaq[] = [
   {
     question: 'Can I audit the payroll engine before trusting it with real money?',
     answer:
-      'That is what a parallel run is for. Process a month in CareVance without paying from it, then compare against your current provider’s output using the differences report. Every component that disagrees is listed with the reason it moved, including the specific override that caused it and who approved that override.',
+      `That is what a parallel run is for. Process a month in ${brandLabel} without paying from it, then compare against your current provider’s output using the differences report. Every component that disagrees is listed with the reason it moved, including the specific override that caused it and who approved that override.`,
   },
   {
     question: 'What is not built yet?',

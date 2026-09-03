@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supportApi } from '@/services/api';
 import { analytics } from '@/lib/analytics';
 import { salesContactEmail, supportContactEmail } from '@/lib/runtimeConfig';
+import { brandLabel, mailSubjectBrand } from '@/config/brand';
 
 const issueCategories = [
   { value: 'bug', label: 'Bug' },
@@ -39,8 +40,8 @@ export default function SupportPage() {
   }, [user?.email, user?.name]);
 
   const currentPath = `${location.pathname}${location.search}`;
-  const supportMailto = `mailto:${supportContactEmail}?subject=CareVance%20Support`;
-  const salesMailto = `mailto:${salesContactEmail}?subject=CareVance%20Sales`;
+  const supportMailto = `mailto:${supportContactEmail}?subject=${encodeURIComponent(mailSubjectBrand)}Support`;
+  const salesMailto = `mailto:${salesContactEmail}?subject=${encodeURIComponent(mailSubjectBrand)}Sales`;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -87,7 +88,7 @@ export default function SupportPage() {
             <div className="max-w-3xl">
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-sky-700">Support</p>
               <h1 className="mt-5 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-[4.4rem] sm:leading-[0.94]">
-                Reach support or send a bug report without leaving the CareVance flow
+                Reach support or send a bug report without leaving the {brandLabel} flow
               </h1>
               <p className="mt-6 text-base leading-8 text-slate-600 sm:text-[1.08rem]">
                 Use the support email for general help, or submit a product issue with the route you were on so the team

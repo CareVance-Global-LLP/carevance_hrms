@@ -1214,6 +1214,53 @@ export const useDesktopTracker = () => {
       await closeActiveDesktopSession(resolveForegroundCapturedAt(payload));
     };
 
+    /**
+     * The start of the timer an idle reading is about, in ms, or null.
+     *
+     * A start that will not parse, or that lands in the future (a clock skew
+     * between this machine and the server), is reported as null so the bound
+     * below stands down rather than clamping idle to zero and disabling
+     * auto-stop altogether.
+     */
+    const entryStartedAtMs = (entry: { start_time?: string | null } | null | undefined, now: number) => {
+      const raw = entry?.start_time;
+      if (!raw) return null;
+      const parsed = Date.parse(raw);
+      if (!Number.isFinite(parsed) || parsed > now) return null;
+      return parsed;
+    };
+
+    /**
+     * Bound an idle reading to the timer it describes.
+     *
+     * `powerMonitor.getSystemIdleTime()` measures the MACHINE, and it keeps
+     * counting while no timer is running at all. So a timer started on a
+     * machine somebody walked away from ten minutes ago is born ten minutes
+     * idle, and every threshold below — track, auto-stop, and the sentence
+     * shown to the person on their return — is judged against an age the timer
+     * never had. Worse, `lastActivityAtMs` then points before the entry
+     * existed, and that timestamp is exactly what the stop rewinds `end_time`
+     * to, so the rewind deletes time the entry never contained.
+     *
+     * A timer cannot have been idle for longer than it has existed. Clamping
+     * here, once, rather than at each use keeps the warning, the idle activity
+     * rows, the stop payload and the message on a single number.
+     */
+    const boundIdleToEntry = <T extends { idleSeconds: number; lastActivityAtMs: number }>(
+      state: T,
+      now: number,
+      startedAtMs: number | null,
+    ): T => {
+      if (startedAtMs === null) return state;
+      if (state.lastActivityAtMs >= startedAtMs) return state;
+
+      return {
+        ...state,
+        idleSeconds: Math.max(0, Math.floor((now - startedAtMs) / 1000)),
+        lastActivityAtMs: startedAtMs,
+      };
+    };
+
     const getIdleState = async (now: number) => {
       // Resolve the bridge live each call. The reference captured when the
       // effect first ran can be undefined (preload not yet attached, or a
@@ -1708,7 +1755,8 @@ export const useDesktopTracker = () => {
           scheduleLockAutoStop();
         }
 
-        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName, source: idleSource } = await getIdleState(now);
+        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName, source: idleSource } =
+          boundIdleToEntry(await getIdleState(now), now, entryStartedAtMs(activeEntry, now));
         console.debug('[desktop-tracker] tick idle', {
           idleSeconds,
           source: idleSource,
@@ -2092,7 +2140,8 @@ export const useDesktopTracker = () => {
         }
 
         const now = Date.now();
-        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } = await getIdleState(now);
+        const { idleSeconds, lastActivityAtMs, contextName: idleStateContextName } =
+          boundIdleToEntry(await getIdleState(now), now, entryStartedAtMs(activeEntry, now));
 
         if (idleSeconds < IDLE_THRESHOLD_SECONDS) {
           idleStopBlockedUntilMsRef.current = 0;
@@ -2138,6 +2187,27 @@ export const useDesktopTracker = () => {
       if (Date.now() < idleStopBlockedUntilMsRef.current) {
         return false;
       }
+
+      /*
+       * Bound here rather than at each caller, because all three reach the stop
+       * through this function and one of them fabricates its numbers outright:
+       * triggerLockScreenAutoStop passes `max(autoStop, lockAutoStop)` as the
+       * idle and `lastInputRef.current` as the last activity. That ref only
+       * moves on DOM input inside the CareVance window, which -- as the comment
+       * on getIdleState says -- almost never happens while somebody works in
+       * another application. Stale, it rewinds `end_time` back to whenever the
+       * tracker last initialised and discards everything after it.
+       *
+       * A locked screen is evidence that somebody stepped away; it is not
+       * evidence about time before the timer existed.
+       */
+      const boundedLock = boundIdleToEntry(
+        { idleSeconds, lastActivityAtMs },
+        Date.now(),
+        entryStartedAtMs(activeEntry, Date.now()),
+      );
+      idleSeconds = boundedLock.idleSeconds;
+      lastActivityAtMs = boundedLock.lastActivityAtMs;
 
       idleStopInFlightRef.current = true;
       try {
@@ -2617,13 +2687,36 @@ export const useDesktopTracker = () => {
             api_id: activeEntry.id,
           });
         }
-        const lastActivityAtMs = Math.max(0, now - (Math.floor(idleSeconds) * 1000));
+        /*
+         * Bound to the entry, exactly as tick() and runIdleGuard() do.
+         *
+         * This path reads the raw OS idle clock and calls forceStopTimerForLock
+         * directly, so it inherits none of attemptIdleAutoStop's guards. Left
+         * unbounded it is the one that stops a timer started on a machine that
+         * was already idle — the threshold check above passes on idle the timer
+         * never accrued, and `lastActivityAtMs` lands before the entry existed.
+         *
+         * The raw check above stays as a cheap pre-filter: the bounded value is
+         * never larger than the raw one, so it cannot skip a case this would
+         * have stopped.
+         */
+        const bounded = boundIdleToEntry(
+          {
+            idleSeconds: Math.floor(idleSeconds),
+            lastActivityAtMs: Math.max(0, now - (Math.floor(idleSeconds) * 1000)),
+          },
+          now,
+          entryStartedAtMs(cachedEntry, now),
+        );
+        if (bounded.idleSeconds < IDLE_AUTO_STOP_THRESHOLD_SECONDS) {
+          return;
+        }
         const recordedAt = new Date(now).toISOString();
         console.info('[desktop-tracker] dedicated idle stop check: forcing stop', {
-          idle_seconds: Math.floor(idleSeconds),
+          idle_seconds: bounded.idleSeconds,
           session_id: cachedEntry.id,
         });
-        const stopped = await forceStopTimerForLock(cachedEntry, Math.floor(idleSeconds), lastActivityAtMs, recordedAt);
+        const stopped = await forceStopTimerForLock(cachedEntry, bounded.idleSeconds, bounded.lastActivityAtMs, recordedAt);
         if (stopped) {
           lockScreenAutoStopRevealPendingRef.current = true;
           if (typeof document === 'undefined' || document.visibilityState === 'visible') {

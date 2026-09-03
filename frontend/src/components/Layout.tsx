@@ -55,6 +55,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { BRAND } from '@/config/brand';
 
 export default function Layout() {
   const { user, organization, logout, token, desktopHandoffToken } = useAuth();
@@ -288,7 +289,7 @@ export default function Layout() {
       // The preview takes precedence over the app icon: showing what was sent
       // is the entire point, and the app icon is already implied by the toast.
       icon: thumbnail
-        ?? (notification.type === 'announcement' ? '/carevance-logo-icon.png' : undefined),
+        ?? (BRAND.enabled && notification.type === 'announcement' ? BRAND.logoMark : undefined),
     });
 
     systemNotification.onclick = () => {

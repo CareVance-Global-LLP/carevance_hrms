@@ -14,4 +14,4 @@ DESCRIPTION
 {!! $bugReport->description !!}
 
 ------------------------------------------------------------
-CareVance - internal support notification.
+{{ config('brand.label') }} - internal support notification.

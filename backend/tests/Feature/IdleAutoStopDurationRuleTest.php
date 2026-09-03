@@ -139,6 +139,98 @@ class IdleAutoStopDurationRuleTest extends TestCase
         $this->assertSame(3300, app(TimeEntryDurationService::class)->effectiveDuration($entry));
     }
 
+    /**
+     * A timer cannot have been idle for longer than it has existed.
+     *
+     * The client's idle clock is the operating system's: it measures the
+     * machine and keeps counting while no timer runs. Somebody who leaves their
+     * desk, comes back and starts a timer therefore starts one whose reported
+     * idle is already minutes old, and whose reported last activity predates
+     * the entry entirely.
+     *
+     * Taken at face value that timestamp is what the stop rewinds `end_time`
+     * to, which deletes time the entry never contained. Seen in production on
+     * 2 Sep 2026: an entry closed with `last_activity_at` equal to its own
+     * `start_time`, zero seconds billed and the whole span discarded as a
+     * trailing idle tail.
+     *
+     * Two minutes of real elapsed time is not five minutes of idle, whatever
+     * the machine's clock says, so the stop is refused and the timer keeps
+     * running.
+     */
+    public function test_idle_older_than_the_timer_is_refused_rather_than_backdating_the_stop(): void
+    {
+        $user = $this->makeUser('idle-predates-timer@example.com');
+        $headers = $this->apiHeadersFor($user);
+
+        $entryId = (int) $this->postJson('/api/time-entries/start', [
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated()->json('id');
+
+        // The timer is two minutes old. The machine has been idle for fifteen,
+        // thirteen of them before this entry existed.
+        $start = now()->subMinutes(2);
+        TimeEntry::query()->whereKey($entryId)->update(['start_time' => $start]);
+
+        $response = $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 900,
+            'last_activity_at' => now()->subMinutes(15)->toIso8601String(),
+        ], $headers);
+
+        $response->assertStatus(409);
+
+        $entry = TimeEntry::findOrFail($entryId);
+
+        $this->assertNull($entry->end_time, 'The timer is still running');
+        $this->assertFalse((bool) $entry->auto_stopped_for_idle);
+        $this->assertSame(0, (int) $entry->trailing_idle_seconds, 'Nothing was discarded');
+    }
+
+    /**
+     * The bound applies to the arithmetic too, not only to the refusal.
+     *
+     * Once the timer has genuinely been idle for its whole life the stop is
+     * allowed -- but it must end at the entry's own start, never before it. A
+     * negative span is what produced the zero-second entries in production.
+     */
+    public function test_a_stop_never_ends_an_entry_before_it_started(): void
+    {
+        $user = $this->makeUser('idle-never-negative@example.com');
+        $headers = $this->apiHeadersFor($user);
+
+        $entryId = (int) $this->postJson('/api/time-entries/start', [
+            'timer_slot' => 'primary',
+        ], $headers)->assertCreated()->json('id');
+
+        // Ten minutes old, and idle for every one of them -- plus twenty
+        // minutes of machine idle that accrued before it started.
+        $start = now()->subMinutes(10);
+        TimeEntry::query()->whereKey($entryId)->update(['start_time' => $start]);
+
+        $this->postJson('/api/time-entries/stop', [
+            'timer_slot' => 'primary',
+            'auto_stopped_for_idle' => true,
+            'idle_seconds' => 1800,
+            'last_activity_at' => now()->subMinutes(30)->toIso8601String(),
+        ], $headers)->assertOk();
+
+        $entry = TimeEntry::findOrFail($entryId);
+
+        $this->assertNotNull($entry->end_time);
+        $this->assertTrue(
+            $entry->end_time->greaterThanOrEqualTo($entry->start_time),
+            'The entry may not end before it started'
+        );
+        $this->assertGreaterThanOrEqual(0, (int) $entry->duration, 'Duration is never negative');
+        $this->assertLessThanOrEqual(
+            600,
+            (int) $entry->trailing_idle_seconds,
+            'The discarded tail cannot exceed the life of the timer'
+        );
+    }
+
     public function test_cron_idle_stop_produces_the_same_duration_as_the_client_path(): void
     {
         $user = $this->makeUser('idle-spec-cron@example.com');

@@ -1,3 +1,4 @@
+import { assistantLabel, brandLabel, supportEmailSuffix } from '@/config/brand';
 import { useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
 import { aiChatApi } from '@/services/api';
@@ -48,7 +49,7 @@ export default function LandingPageChatBubble() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: "Hi! Curious about CareVance? Ask me anything about pricing, features, or setup." },
+    { role: 'assistant', content: `Hi! Curious about ${brandLabel}? Ask me anything about pricing, features, or setup.` },
   ]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -75,7 +76,7 @@ export default function LandingPageChatBubble() {
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: "I'm having trouble connecting. Please try again or contact support at " + CHAT_SUPPORT.email },
+        { role: 'assistant', content: `I'm having trouble connecting. Please try again or contact support${supportEmailSuffix}.` },
       ]);
     } finally {
       setIsLoading(false);
@@ -88,7 +89,7 @@ export default function LandingPageChatBubble() {
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          aria-label="Open CareVance Assistant"
+          aria-label={`Open ${assistantLabel}`}
           className={CHAT_LAUNCHER_CLASS}
           // Pinned to the corner. The in-app launcher is draggable and supplies
           // its own left/top instead; that is the only difference between them.

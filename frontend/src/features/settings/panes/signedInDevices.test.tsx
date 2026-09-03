@@ -22,6 +22,7 @@ vi.mock('@/contexts/AuthContext', () => ({
 
 import SignedInDevicesSection from '../components/SignedInDevicesSection';
 
+import { brandLabel } from '@/config/brand';
 function Providers({ children }: { children: ReactNode }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -133,7 +134,7 @@ describe('where you are signed in', () => {
     // Not window.confirm: a destructive action gets a dialog that can be read,
     // themed and cancelled.
     const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/will be signed out the next time it contacts CareVance/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(new RegExp(`will be signed out the next time it contacts ${brandLabel}`, 'i'))).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole('button', { name: /^sign out$/i }));
 
     await waitFor(() => expect(revokeSession).toHaveBeenCalledWith(2));

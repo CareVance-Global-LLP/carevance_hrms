@@ -27,6 +27,7 @@ import RenewalBanner from '@/features/billing/RenewalBanner';
 import { formatMoney, resolveRenewalNotice } from '@/features/billing/renewalState';
 import SeatDialog from '@/features/billing/SeatDialog';
 import CancelPlanDialog from '@/features/billing/CancelPlanDialog';
+import { mailSubjectBrand } from '@/config/brand';
 
 const STATE_TONE: Record<string, 'success' | 'info' | 'warning' | 'danger' | 'neutral'> = {
   active: 'success',
@@ -319,7 +320,7 @@ export default function BillingSettingsPage() {
               </Link>
 
               <a
-                href={`mailto:${pricingUi.contactEmail}?subject=CareVance%20Billing%20Support`}
+                href={`mailto:${pricingUi.contactEmail}?subject=${encodeURIComponent(mailSubjectBrand)}Billing Support`}
                 className="flex items-center justify-between gap-3 border-t border-slate-200 py-3 text-sm font-medium text-slate-900 transition hover:text-blue-700"
               >
                 Contact sales <Mail className="h-4 w-4" />

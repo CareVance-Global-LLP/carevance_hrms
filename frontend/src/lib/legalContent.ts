@@ -1,3 +1,4 @@
+import { legalLabel, legalProductLabel } from '@/config/brand';
 export interface LegalSection {
   id: string;
   heading: string;
@@ -17,7 +18,7 @@ export const privacyPolicySections: LegalSection[] = [
     id: 'overview',
     heading: 'Company and product overview',
     paragraphs: [
-      'CareVance HRMS provides workforce management, attendance, reporting, payroll support, onboarding, and related operations tooling for organizations and invited team members.',
+      `${legalProductLabel} provides workforce management, attendance, reporting, payroll support, onboarding, and related operations tooling for organizations and invited team members.`,
       'This placeholder Privacy Policy explains the kinds of data the product may process and the baseline operational expectations that should be legally reviewed before launch.',
     ],
   },
@@ -47,7 +48,7 @@ export const privacyPolicySections: LegalSection[] = [
     id: 'cookies',
     heading: 'Cookies and tracking technologies',
     paragraphs: [
-      'CareVance may use essential browser storage and cookies required for authentication, preferences, security, and core product delivery.',
+      `${legalLabel} may use essential browser storage and cookies required for authentication, preferences, security, and core product delivery.`,
       'Non-essential analytics or marketing technologies should only be enabled after consent is collected and the organization has approved an appropriate privacy posture.',
     ],
   },
@@ -63,7 +64,7 @@ export const privacyPolicySections: LegalSection[] = [
     id: 'third-parties',
     heading: 'Third-party services',
     paragraphs: [
-      'CareVance may rely on third-party providers for hosting, email delivery, analytics, payment processing, customer support, and infrastructure monitoring.',
+      `${legalLabel} may rely on third-party providers for hosting, email delivery, analytics, payment processing, customer support, and infrastructure monitoring.`,
       'Those providers may process data on our behalf under their own contractual and legal terms, which should be reviewed during launch preparation.',
     ],
   },
@@ -71,7 +72,7 @@ export const privacyPolicySections: LegalSection[] = [
     id: 'contact',
     heading: 'Contact information',
     paragraphs: [
-      'Questions about privacy practices, data handling, or legal terms should be directed to the designated CareVance support or privacy contact configured for your production environment.',
+      `Questions about privacy practices, data handling, or legal terms should be directed to the designated ${legalLabel} support or privacy contact configured for your production environment.`,
       legalReviewNotice,
     ],
   },
@@ -82,7 +83,7 @@ export const termsAndConditionsSections: LegalSection[] = [
     id: 'overview',
     heading: 'Company and product overview',
     paragraphs: [
-      'These placeholder Terms & Conditions describe the baseline rules for accessing CareVance HRMS, including owner signup, invite-only onboarding, reporting, payroll support workflows, and connected workforce operations features.',
+      `These placeholder Terms & Conditions describe the baseline rules for accessing ${legalProductLabel}, including owner signup, invite-only onboarding, reporting, payroll support workflows, and connected workforce operations features.`,
       'They are provided to support pre-launch implementation only and must be reviewed by qualified legal counsel before production use.',
     ],
   },
@@ -98,7 +99,7 @@ export const termsAndConditionsSections: LegalSection[] = [
     id: 'acceptable-use',
     heading: 'Acceptable use',
     paragraphs: [
-      'Users may not misuse the service, interfere with platform stability, attempt unauthorized access, upload malicious content, or use CareVance in violation of law, employment rules, or third-party rights.',
+      `Users may not misuse the service, interfere with platform stability, attempt unauthorized access, upload malicious content, or use ${legalLabel} in violation of law, employment rules, or third-party rights.`,
     ],
     bullets: [
       'Do not share credentials or impersonate another user',
@@ -134,7 +135,7 @@ export const termsAndConditionsSections: LegalSection[] = [
     id: 'contact',
     heading: 'Contact information',
     paragraphs: [
-      'Questions about these terms, commercial arrangements, or compliance obligations should be directed to the designated CareVance support or legal contact configured for production.',
+      `Questions about these terms, commercial arrangements, or compliance obligations should be directed to the designated ${legalLabel} support or legal contact configured for production.`,
       legalReviewNotice,
     ],
   },

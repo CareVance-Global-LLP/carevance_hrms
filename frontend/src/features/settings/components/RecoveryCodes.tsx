@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, Copy, Download, KeyRound, ShieldAlert } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { brandLabel, downloadPrefix } from '@/config/brand';
 
 /**
  * Recovery codes, shown the only time they can be.
@@ -41,7 +42,7 @@ export default function RecoveryCodes({
     try {
       const blob = new Blob(
         [
-          'CareVance recovery codes\n',
+          `${brandLabel} recovery codes\n`,
           'Each code works once. Keep them somewhere you can reach without this device.\n\n',
           asText,
           '\n',
@@ -51,7 +52,7 @@ export default function RecoveryCodes({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'carevance-recovery-codes.txt';
+      link.download = `${downloadPrefix}recovery-codes.txt`;
       link.click();
       URL.revokeObjectURL(url);
       setSaved(true);

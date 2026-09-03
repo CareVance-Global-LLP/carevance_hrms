@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/chatChrome';
 import { useAnyDialogOpen } from '@/components/ui/dialog';
 import { ADMIN_QUICK_ACTIONS } from '@/lib/aiKnowledge';
+import { assistantLabel, supportEmailSuffix } from '@/config/brand';
 
 type ChatRole = 'user' | 'assistant';
 
@@ -218,7 +219,7 @@ export default function AdminChatBubble() {
     } catch {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: "I'm having trouble connecting. Please try again or contact support at " + CHAT_SUPPORT.email },
+        { role: 'assistant', content: `I'm having trouble connecting. Please try again or contact support${supportEmailSuffix}.` },
       ]);
     } finally {
       setIsLoading(false);
@@ -241,7 +242,7 @@ export default function AdminChatBubble() {
       {!isOpen && (
         <button
           type="button"
-          aria-label="Open CareVance Assistant"
+          aria-label={`Open ${assistantLabel}`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

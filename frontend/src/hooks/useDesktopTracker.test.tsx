@@ -203,6 +203,67 @@ describe('useDesktopTracker', () => {
     window.removeEventListener(DESKTOP_TIMER_IDLE_STOP_EVENT, idleStopListener as EventListener);
   });
 
+  /*
+   * A timer cannot have been idle for longer than it has existed.
+   *
+   * `powerMonitor.getSystemIdleTime()` measures the MACHINE, not the timer, and
+   * it keeps counting while no timer is running at all. Somebody who leaves
+   * their desk, comes back and starts a timer therefore starts one whose OS
+   * idle clock is already minutes old — and every threshold downstream is
+   * evaluated against that inherited age rather than against the timer's own.
+   *
+   * Observed in production on 2 Sep 2026: one entry stopped with
+   * `last_activity_at` equal to its own `start_time` — zero seconds tracked,
+   * 343 discarded — and people were told "You were idle for 15 minutes" five
+   * minutes into a timer.
+   *
+   * Every other idle test in this file mocks the idle clock as starting when
+   * the timer starts (`idleSince = Date.now()`), which is precisely why this
+   * class of bug was invisible to the suite.
+   */
+  it('does not auto-stop a young timer because the MACHINE was idle before it started', async () => {
+    const machineIdleSince = Date.now() - (10 * 60 * 1000);
+    mocks.getSystemIdleSecondsMock.mockImplementation(
+      async () => Math.floor((Date.now() - machineIdleSince) / 1000)
+    );
+
+    render(<TrackerHarness />);
+
+    // Two minutes into a timer that started `now`. The OS reports twelve
+    // minutes of idle; the timer's own idle can be at most two.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    });
+
+    expect(mocks.stopMock).not.toHaveBeenCalled();
+  });
+
+  it('never reports a last_activity_at earlier than the timer start', async () => {
+    const machineIdleSince = Date.now() - (10 * 60 * 1000);
+    mocks.getSystemIdleSecondsMock.mockImplementation(
+      async () => Math.floor((Date.now() - machineIdleSince) / 1000)
+    );
+
+    render(<TrackerHarness />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    });
+
+    /*
+     * Stopping here is correct — by now the timer has genuinely been idle for
+     * its whole life. What it must never do is claim activity ceased before the
+     * timer existed: that timestamp is what the rewind moves `end_time` back
+     * to, so a backdated one deletes time the entry never contained.
+     */
+    const startedAtMs = Date.parse('2026-03-18T09:00:00Z');
+    expect(mocks.stopMock).toHaveBeenCalled();
+    for (const [payload] of mocks.stopMock.mock.calls) {
+      if (!payload?.last_activity_at) continue;
+      expect(Date.parse(payload.last_activity_at)).toBeGreaterThanOrEqual(startedAtMs);
+    }
+  });
+
   it('does not stop the timer when recent real activity resets the continuous idle countdown', async () => {
     let lastSystemActivityAt = Date.now();
     mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - lastSystemActivityAt) / 1000));
@@ -274,6 +335,29 @@ describe('useDesktopTracker', () => {
   });
 
   it('uses the 1 second idle guard so auto-stop does not wait for the next 5 second activity tick', async () => {
+    /*
+     * The 2 second head start is what makes idle reach the threshold at 4:58
+     * elapsed — a moment the 5 second activity tick does not land on — which is
+     * the whole point of the test.
+     *
+     * The timer must therefore start 2 seconds early too. Previously only the
+     * idle clock did, so the case under test was a machine idle from BEFORE the
+     * timer existed, and the assertion below pinned a `last_activity_at` two
+     * seconds earlier than `start_time`. That is not a thing the tracker may
+     * report: it is the timestamp the stop rewinds `end_time` to, so a
+     * backdated one deletes time the entry never contained. Starting both
+     * clocks together keeps the 4:58 timing and drops the backdating.
+     */
+    const startedAt = '2026-03-18T08:59:58Z';
+    mocks.activeMock.mockResolvedValue({
+      data: {
+        id: 55,
+        user_id: 1,
+        start_time: startedAt,
+        duration: 0,
+        timer_slot: 'primary',
+      },
+    });
     const idleSince = Date.now() - 2000;
     mocks.getSystemIdleSecondsMock.mockImplementation(async () => Math.floor((Date.now() - idleSince) / 1000));
 

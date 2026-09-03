@@ -26,12 +26,13 @@ import BillingPane from '@/features/settings/panes/BillingPane';
 import HelpPane from '@/features/settings/panes/HelpPane';
 import DevelopmentPane from '@/features/settings/panes/DevelopmentPane';
 import type { SettingsTabId } from '@/features/settings/types';
+import { brandLabel } from '@/config/brand';
 
 const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }> = {
   profile: { title: 'Profile', description: 'Your details, how you appear to colleagues, and the hours you work to.' },
   assets: { title: 'Assets', description: 'Company equipment issued to you, and when you took it.' },
   notifications: { title: 'Notifications', description: 'Which updates reach you, and how.' },
-  appearance: { title: 'Appearance', description: 'How CareVance looks on this device.' },
+  appearance: { title: 'Appearance', description: `How ${brandLabel} looks on this device.` },
   security: { title: 'Security', description: 'Two-factor authentication, your password, and who can reach this account.' },
   privacy: { title: 'Privacy', description: 'What is collected about you at work, why, for how long, and what you have agreed to.' },
   'leave-types': { title: 'Leave', description: 'How each kind of leave is earned - all at once, twice a year, quarterly or monthly - and what happens to what is left at the end of the year.' },
@@ -42,7 +43,7 @@ const PANE_TITLES: Record<SettingsTabId, { title: string; description: string }>
   shifts: { title: 'Shifts', description: 'The shift patterns this workspace runs, and who works which. A shift decides what a full day is worth counting down to.' },
   'working-time': { title: 'Working time', description: 'Weekly off, penalisation, overtime and shift allowance. Four policies, each created once and assigned to whoever it applies to — a shift decides the timings, these decide what they are worth.' },
   productivity: { title: 'Productivity', description: 'How visited domains and apps are counted in reports.' },
-  integrations: { title: 'Integrations', description: 'What CareVance is connected to right now.' },
+  integrations: { title: 'Integrations', description: `What ${brandLabel} is connected to right now.` },
   'custom-fields': { title: 'Custom fields', description: 'Extra data you want on every employee record.' },
   billing: { title: 'Billing', description: 'Your plan, seats and renewal.' },
   help: { title: 'Help & support', description: 'Raise a ticket with the support team.' },

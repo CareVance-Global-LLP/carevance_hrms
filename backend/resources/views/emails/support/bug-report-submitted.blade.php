@@ -1,8 +1,8 @@
 <x-mail.layout
     :preheader="$bugReport->issue_category.' — '.$bugReport->summary"
-    eyebrow="CareVance support"
+    eyebrow="{{ config('brand.label') }} support"
     heading="New bug report received"
-    footerLead="<strong style='color:#16191C;'>CareVance</strong> — internal support notification."
+    footerLead="<strong style='color:#16191C;'>{{ config('brand.label') }}</strong> — internal support notification."
 >
 
     <x-mail.panel

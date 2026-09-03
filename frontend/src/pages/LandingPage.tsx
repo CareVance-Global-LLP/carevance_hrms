@@ -18,6 +18,7 @@ import ScrollProgress from '@/components/landing/ScrollProgress';
 import MagneticCursor from '@/components/landing/MagneticCursor';
 import { landingFaqs, faqPageSchema } from '@/components/landing/landingFaqs';
 
+import { productLabel, siteUrl } from '@/config/brand';
 /*
  * The three heaviest sections are below the fold and are code-split.
  *
@@ -61,11 +62,11 @@ const schemaData = {
   '@graph': [
     {
       '@type': 'SoftwareApplication',
-      name: 'Carevance',
+      name: productLabel,
       applicationCategory: 'BusinessApplication',
       operatingSystem: 'Windows, Web',
       description: 'All-in-one workforce management platform for time tracking, employee monitoring, attendance, payroll, and HR operations.',
-      url: 'https://carevance.com',
+      url: siteUrl,
       /*
        * The offer is the REAL entry price, in the only currency this product
        * sells in. It previously advertised "0 USD — free for up to 5 users",
@@ -98,14 +99,14 @@ const schemaData = {
     },
     {
       '@type': 'Organization',
-      name: 'Carevance',
+      name: productLabel,
       url: 'https://carevance.com',
-      logo: 'https://carevance.com/logo.png',
+      logo: siteUrl ? `${siteUrl}/logo.png` : undefined,
       sameAs: [],
     },
     {
       '@type': 'WebSite',
-      name: 'Carevance',
+      name: productLabel,
       url: 'https://carevance.com',
     },
   ],

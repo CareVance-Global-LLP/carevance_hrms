@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import type { ThemeColors } from '../constants/theme';
+import { productLabel } from '../constants/brand';
 
 const BANNER_HEIGHT = 80;
 
@@ -111,7 +112,7 @@ export default function NotificationBanner({ title, message, icon = 'megaphone',
           <Ionicons name={icon} size={18} color="#fff" />
         </View>
         <View style={s.content}>
-          <Text style={s.appLabel}>CareVance HRMS</Text>
+          <Text style={s.appLabel}>{productLabel}</Text>
           <Text style={s.title} numberOfLines={1}>{title}</Text>
           {message ? <Text style={s.message} numberOfLines={1}>{message}</Text> : null}
         </View>

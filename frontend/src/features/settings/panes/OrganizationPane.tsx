@@ -1,3 +1,4 @@
+import { appDomainPrefix, brandLabel } from '@/config/brand';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Trash2 } from 'lucide-react';
 import { COMMON_TIMEZONES } from '@/lib/timezones';
@@ -210,7 +211,7 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
     return (
       <SettingsCard title="No organization found">
         <p className="text-sm leading-6 text-slate-600">
-          Your account is not linked to an organization. Create a workspace to start using CareVance.
+          Your account is not linked to an organization. Create a workspace to start using {brandLabel}.
         </p>
         <Button className="mt-4" onClick={() => { window.location.href = '/signup-owner'; }}>
           Create workspace
@@ -270,7 +271,7 @@ export default function OrganizationPane({ controller }: { controller: SettingsC
                   <FieldLabel>Workspace URL</FieldLabel>
                   <TextInput value={orgSlug} onChange={(event) => setOrgSlug(event.target.value)} disabled={!isOrgEditable} />
                   <p className="mt-1.5 truncate text-xs text-slate-600">
-                    app.carevance.com/<span className="font-semibold text-slate-900">{orgSlug || 'your-workspace'}</span>
+                    {appDomainPrefix}<span className="font-semibold text-slate-900">{orgSlug || 'your-workspace'}</span>
                   </p>
                 </div>
               </div>
