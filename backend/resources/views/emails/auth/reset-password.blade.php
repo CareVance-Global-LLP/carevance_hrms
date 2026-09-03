@@ -1,6 +1,6 @@
 <x-mail.layout
-    preheader="Choose a new password for your CareVance account."
-    eyebrow="CareVance"
+    preheader="Choose a new password for your {{ config('brand.label') }} account."
+    eyebrow="{{ config('brand.label') }}"
     heading="Reset your password"
     :subheading="'Hi '.($name ?: 'there').', we received a password reset request for '.$email.'.'"
     :footerNote="'If you did not request this change, you can ignore this email or contact '.$supportEmail.'.'"

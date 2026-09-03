@@ -18,6 +18,7 @@ import AuthPageShell, {
   authLabelClass,
   authPrimaryButtonClass,
 } from '@/components/auth/AuthPageShell';
+import { brandLabel } from '@/config/brand';
 
 /** The three-step progress rail, in place of the usual feature grid. */
 const STEPS = [
@@ -82,7 +83,7 @@ export default function GoogleSignupCompletion() {
       heading="Complete your registration"
       intro="We've pre-filled your details from Google. Add your company information to finish setting up the workspace."
       showcaseHeading="Almost there."
-      showcaseIntro="One more step and your CareVance workspace is created."
+      showcaseIntro={`One more step and your ${brandLabel} workspace is created.`}
       showcaseBelow={
         <ol className="mt-8 space-y-3">
           {STEPS.map((step, index) => (

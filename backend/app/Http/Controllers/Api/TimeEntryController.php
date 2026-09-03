@@ -1121,7 +1121,25 @@ class TimeEntryController extends Controller
         // values because rewindTrackedIdleWindow uses idle-detection time
         // (~180s after actual idle) instead of the actual last user interaction.
         if ($reportedLastActivityAt && $reportedIdleSeconds >= $idleAutoStopThresholdSeconds) {
-            $lastActiveAt = $reportedLastActivityAt;
+            /*
+             * Still bounded by the session start.
+             *
+             * The client's idle clock is the operating system's, which measures
+             * the MACHINE and keeps counting while no timer runs. A timer
+             * started on a machine somebody walked away from ten minutes ago
+             * therefore reports a last activity from before the entry existed.
+             * That timestamp is what the stop rewinds `end_time` to, so taking
+             * it unbounded deletes time the entry never contained -- observed
+             * in production on 2 Sep 2026 as entries closing with zero seconds
+             * tracked and a full idle tail discarded.
+             *
+             * The elseif below already refuses a reported timestamp outside
+             * [start, stop]. This branch exists to prefer the client's clock
+             * over the activity table, not to be a way around that bound.
+             */
+            $lastActiveAt = $reportedLastActivityAt->greaterThan($sessionStartAt)
+                ? $reportedLastActivityAt
+                : $sessionStartAt->copy();
         } elseif ($reportedLastActivityAt && $reportedLastActivityAt->betweenIncluded($sessionStartAt, $stoppedAt)) {
             $lastActiveAt = $reportedLastActivityAt;
         } else {
@@ -1183,7 +1201,28 @@ class TimeEntryController extends Controller
         if ($reportedIdleFromSystem) {
             $contradictedByClient = $reportedLastActivityAt !== null
                 && $reportedLastActivityAt->greaterThan($stoppedAt->copy()->subSeconds($idleAutoStopThresholdSeconds));
-            if (! $contradictedByClient) {
+
+            /*
+             * ...but only for idle this timer could actually have accrued.
+             *
+             * `$reportedIdleSeconds` is the machine's clock and keeps counting
+             * while nothing is running, so on its own it licensed stopping a
+             * two-minute-old timer for fifteen minutes of idle. This is the
+             * check that was doing it: the bounded arithmetic above already
+             * said no, and the override said yes anyway.
+             *
+             * The bound is the timer's own age, NOT `$continuousIdleSeconds`.
+             * When the client sends no `last_activity_at` -- which is exactly
+             * the heartbeat-noise case this override exists for -- that figure
+             * is measured from the polluted activity table and gating on it
+             * would defeat the very stop being protected. An entry cannot have
+             * been idle for longer than it has existed, so the honest ceiling
+             * on the client's claim is how long the timer has been running.
+             */
+            $timerAgeSeconds = max(0, $sessionStartAt->diffInSeconds($stoppedAt));
+            $idleAvailableToTimer = min($reportedIdleSeconds, $timerAgeSeconds);
+
+            if (! $contradictedByClient && $idleAvailableToTimer >= $idleAutoStopThresholdSeconds) {
                 $eligible = true;
             }
         }

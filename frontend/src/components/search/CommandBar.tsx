@@ -21,6 +21,7 @@ import type { ActResponse, AskResponse } from '@/services/api';
 import { cn } from '@/utils/cn';
 import AiActionPreview from './AiActionPreview';
 import AiAnswerTable from './AiAnswerTable';
+import { brandLabel } from '@/config/brand';
 
 /** Scope prefixes. Typing one of these as the first character narrows the search. */
 const SCOPES = {
@@ -463,7 +464,7 @@ export default function CommandBar({
               aria-controls={listboxId}
               aria-autocomplete="list"
               aria-activedescendant={activeOptionId}
-              aria-label="Search CareVance"
+              aria-label={`Search ${brandLabel}`}
               autoComplete="off"
               spellCheck={false}
               value={query}

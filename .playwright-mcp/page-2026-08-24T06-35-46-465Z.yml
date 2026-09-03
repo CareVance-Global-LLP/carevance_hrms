@@ -1,0 +1,454 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - link "Skip to content" [ref=e3] [cursor=pointer]:
+      - /url: "#main"
+    - navigation "Primary" [ref=e5]:
+      - link "CareVance home" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]: CareVance
+      - generic [ref=e14]:
+        - button "Product" [ref=e16]
+        - button "Solutions" [ref=e20]
+        - link "Pricing" [ref=e23] [cursor=pointer]:
+          - /url: /pricing
+        - button "Free tools" [ref=e25]
+        - button "Resources" [ref=e29]
+      - generic [ref=e32]:
+        - button "Switch theme" [ref=e34]
+        - link "Sign in" [ref=e37] [cursor=pointer]:
+          - /url: https://app.carevance.com/login
+        - link "See it live — 2 min" [ref=e39] [cursor=pointer]:
+          - /url: /product#tour
+        - link "Book a demo" [ref=e41] [cursor=pointer]:
+          - /url: /contact?intent=demo
+  - main [ref=e42]:
+    - generic [ref=e44]:
+      - generic [ref=e45]:
+        - paragraph [ref=e46]: Hiring
+        - heading "A pipeline that can tell you how somebody got where they are." [level=1] [ref=e47]
+        - paragraph [ref=e48]: Most applicant tracking answers “which stage is this candidate in”. The harder and more useful question is how they arrived there, who said what along the way, and who approved the offer — because that is the record you need when a hire goes wrong or a rejection is challenged.
+        - generic [ref=e49]:
+          - link "Book a 20-minute demo" [ref=e50] [cursor=pointer]:
+            - /url: /contact?intent=demo
+          - link "See pricing" [ref=e51] [cursor=pointer]:
+            - /url: /pricing
+      - generic [ref=e53]:
+        - generic [ref=e54]:
+          - generic [ref=e55]:
+            - paragraph [ref=e56]: Senior Engineer · pipeline
+            - generic [ref=e57]: 2 openings
+          - list [ref=e58]:
+            - listitem [ref=e59]:
+              - generic [ref=e60]: Applied
+              - generic [ref=e63]: "48"
+            - listitem [ref=e64]:
+              - generic [ref=e65]: Screening
+              - generic [ref=e68]: "21"
+            - listitem [ref=e69]:
+              - generic [ref=e70]: Tech round
+              - generic [ref=e73]: "9"
+            - listitem [ref=e74]:
+              - generic [ref=e75]: Panel
+              - generic [ref=e78]: "4"
+            - listitem [ref=e79]:
+              - generic [ref=e80]: Offer
+              - generic [ref=e83]: "2"
+            - listitem [ref=e84]:
+              - generic [ref=e85]: Hired
+              - generic [ref=e88]: "1"
+          - paragraph [ref=e89]: Moving backwards is allowed and recorded as a stage event. A forward-only pipeline gets worked around by deleting the application, which destroys the history.
+        - generic [ref=e90]:
+          - paragraph [ref=e92]: Panel feedback · tech round
+          - list [ref=e93]:
+            - listitem [ref=e94]:
+              - generic [ref=e95]: A. Deshpande
+              - generic [ref=e96]: Strong hire
+            - listitem [ref=e97]:
+              - generic [ref=e98]: F. Sheikh
+              - generic [ref=e99]: Hire
+            - listitem [ref=e100]:
+              - generic [ref=e101]: A. Iyer
+              - generic [ref=e102]: No hire
+            - listitem [ref=e103]:
+              - generic [ref=e104]: R. Verma
+              - generic [ref=e105]: Not submitted
+          - generic [ref=e106]:
+            - paragraph [ref=e107]: Split panel · 3 of 4 responded
+            - paragraph [ref=e108]: No average is computed. Two-to-one is a conversation; a mean of 3.7 is a number that hides one.
+        - generic [ref=e109]:
+          - paragraph [ref=e111]: Offer · pending approval
+          - generic [ref=e112]:
+            - generic [ref=e113]:
+              - paragraph [ref=e114]: Annual CTC offered
+              - paragraph [ref=e115]: ₹14,40,000
+            - list [ref=e116]:
+              - listitem [ref=e117]:
+                - generic [ref=e118]: Hiring manager
+                - generic [ref=e119]: Approved
+              - listitem [ref=e120]:
+                - generic [ref=e121]: Finance
+                - generic [ref=e122]: Approved
+              - listitem [ref=e123]:
+                - generic [ref=e124]: Founder
+                - generic [ref=e125]: Awaiting
+            - paragraph [ref=e126]:
+              - text: Approval rows are written when the offer is submitted, so they record who was
+              - emphasis [ref=e127]: asked
+              - text: — not just who answered. One rejection sends the whole offer back to draft immediately, rather than collecting the rest of a chain for something already refused.
+    - generic [ref=e129]:
+      - generic [ref=e130]:
+        - paragraph [ref=e131]: The pipeline
+        - heading "A stage move is an event, not a column." [level=2] [ref=e132]
+        - paragraph [ref=e133]: 33 endpoints, and the shape of the data is the point.
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - generic [ref=e136]:
+            - paragraph [ref=e137]: History
+            - heading "Where somebody is, and how they got there, are two different facts." [level=3] [ref=e138]
+            - paragraph [ref=e139]: One column says which stage a candidacy is in. A separate event log says every transition it made, who made it and when — both written in one transaction through a single service, so a controller cannot quietly become a second pipeline. Moving backwards is allowed and recorded as such, because a forward-only pipeline gets worked around by deleting and recreating the application, which destroys exactly the history you wanted.
+            - list [ref=e140]:
+              - listitem [ref=e141]:
+                - generic [ref=e144]: A candidate is a person; an application is one candidacy
+              - listitem [ref=e145]:
+                - generic [ref=e148]: Candidate email is unique per organisation, not globally
+              - listitem [ref=e149]:
+                - generic [ref=e152]: Rejection keeps the stage it happened at — “rejected after the tech round” is a different fact from “rejected on the CV”
+              - listitem [ref=e153]:
+                - generic [ref=e156]: Funnel reporting per opening, derived from the events
+          - generic [ref=e158]:
+            - generic [ref=e159]:
+              - paragraph [ref=e160]: Senior Engineer · pipeline
+              - generic [ref=e161]: 2 openings
+            - list [ref=e162]:
+              - listitem [ref=e163]:
+                - generic [ref=e164]: Applied
+                - generic [ref=e167]: "48"
+              - listitem [ref=e168]:
+                - generic [ref=e169]: Screening
+                - generic [ref=e172]: "21"
+              - listitem [ref=e173]:
+                - generic [ref=e174]: Tech round
+                - generic [ref=e177]: "9"
+              - listitem [ref=e178]:
+                - generic [ref=e179]: Panel
+                - generic [ref=e182]: "4"
+              - listitem [ref=e183]:
+                - generic [ref=e184]: Offer
+                - generic [ref=e187]: "2"
+              - listitem [ref=e188]:
+                - generic [ref=e189]: Hired
+                - generic [ref=e192]: "1"
+            - paragraph [ref=e193]: Moving backwards is allowed and recorded as a stage event. A forward-only pipeline gets worked around by deleting the application, which destroys the history.
+        - generic [ref=e194]:
+          - generic [ref=e195]:
+            - paragraph [ref=e196]: Interviews
+            - heading "Panel feedback is never averaged into a number." [level=3] [ref=e197]
+            - paragraph [ref=e198]: Three interviewers going two-to-one and three all lukewarm produce the same mean, and they need completely different conversations. So the summary returns the split, and an explicit flag saying it is split, rather than a score somebody can skim past.
+            - list [ref=e199]:
+              - listitem [ref=e200]:
+                - generic [ref=e203]: Invited and submitted are different states — “two of three have responded”
+              - listitem [ref=e204]:
+                - generic [ref=e207]: "Somebody who has already given feedback cannot be dropped from a panel: their verdict informed a decision that may already be taken"
+              - listitem [ref=e208]:
+                - generic [ref=e211]: Interviews can be cancelled without deleting the feedback that existed
+          - generic [ref=e213]:
+            - paragraph [ref=e215]: Panel feedback · tech round
+            - list [ref=e216]:
+              - listitem [ref=e217]:
+                - generic [ref=e218]: A. Deshpande
+                - generic [ref=e219]: Strong hire
+              - listitem [ref=e220]:
+                - generic [ref=e221]: F. Sheikh
+                - generic [ref=e222]: Hire
+              - listitem [ref=e223]:
+                - generic [ref=e224]: A. Iyer
+                - generic [ref=e225]: No hire
+              - listitem [ref=e226]:
+                - generic [ref=e227]: R. Verma
+                - generic [ref=e228]: Not submitted
+            - generic [ref=e229]:
+              - paragraph [ref=e230]: Split panel · 3 of 4 responded
+              - paragraph [ref=e231]: No average is computed. Two-to-one is a conversation; a mean of 3.7 is a number that hides one.
+    - generic [ref=e233]:
+      - generic [ref=e234]:
+        - paragraph [ref=e235]: Offers
+        - heading "The state machine is strict in one direction, on purpose." [level=2] [ref=e236]
+        - paragraph [ref=e237]: An offer moves forward through approval and out to a candidate. Once the candidate has seen it, the money can no longer be edited in place.
+      - generic [ref=e238]:
+        - generic [ref=e239]:
+          - generic [ref=e240]:
+            - paragraph [ref=e241]: Approval
+            - heading "The chain records who was asked, not just who answered." [level=3] [ref=e242]
+            - paragraph [ref=e243]: Approval rows are written when the offer is submitted rather than derived at read time, because deriving them loses the question that matters. “Nobody ever asked finance” is exactly the finding an audit is looking for, and it is invisible in a model that only stores answers.
+            - list [ref=e244]:
+              - listitem [ref=e245]:
+                - generic [ref=e248]: An empty approver list is refused, never treated as “no approval needed”
+              - listitem [ref=e249]:
+                - generic [ref=e252]: One rejection returns the whole offer to draft immediately
+              - listitem [ref=e253]:
+                - generic [ref=e256]: Editing a sent offer is refused — withdraw and draft a revision, so the change is visible
+              - listitem [ref=e257]:
+                - generic [ref=e260]: Re-sending does not move sent_at; the candidate has been counting down
+              - listitem [ref=e261]:
+                - generic [ref=e264]: Accepting moves the candidacy to hired through the pipeline, so headcount and the offer cannot disagree
+          - generic [ref=e266]:
+            - paragraph [ref=e268]: Offer · pending approval
+            - generic [ref=e269]:
+              - generic [ref=e270]:
+                - paragraph [ref=e271]: Annual CTC offered
+                - paragraph [ref=e272]: ₹14,40,000
+              - list [ref=e273]:
+                - listitem [ref=e274]:
+                  - generic [ref=e275]: Hiring manager
+                  - generic [ref=e276]: Approved
+                - listitem [ref=e277]:
+                  - generic [ref=e278]: Finance
+                  - generic [ref=e279]: Approved
+                - listitem [ref=e280]:
+                  - generic [ref=e281]: Founder
+                  - generic [ref=e282]: Awaiting
+              - paragraph [ref=e283]:
+                - text: Approval rows are written when the offer is submitted, so they record who was
+                - emphasis [ref=e284]: asked
+                - text: — not just who answered. One rejection sends the whole offer back to draft immediately, rather than collecting the rest of a chain for something already refused.
+        - generic [ref=e285]:
+          - generic [ref=e286]:
+            - paragraph [ref=e287]: Signing
+            - heading "The token is the authentication, because a candidate is not a user." [level=3] [ref=e288]
+            - paragraph [ref=e289]: Making somebody create an account to accept a job loses offers. So the signing link carries 32 random bytes, stored only as a hash, compared in constant time, hidden on the model, and cleared in the same transaction the signature is written in — a link that still works after use can be accepted twice.
+            - list [ref=e290]:
+              - listitem [ref=e291]:
+                - generic [ref=e294]: Every failure returns the same 404 — wrong, expired, used or withdrawn. Distinguishing them tells an unauthenticated caller which tokens exist
+              - listitem [ref=e295]:
+                - generic [ref=e298]: The document hash is taken from the UNSIGNED render — it fingerprints the letter as the candidate actually read it
+              - listitem [ref=e299]:
+                - generic [ref=e302]: Typing a name is a signature. Requiring a drawn one excludes keyboard and assistive-technology users, and an untouched canvas is never stored
+              - listitem [ref=e303]:
+                - generic [ref=e306]: Declining is offered on the same page — “no reply” is a worse outcome for a recruiter than a reason
+          - generic [ref=e308]:
+            - paragraph [ref=e310]: Offer letter · candidate view
+            - generic [ref=e311]:
+              - paragraph [ref=e312]: carevance.com/offer/7f3c…a91b
+              - generic [ref=e313]:
+                - paragraph [ref=e314]: Senior Engineer
+                - paragraph [ref=e315]: Annual CTC ₹14,40,000 · joining 1 October 2026
+              - generic [ref=e316]:
+                - generic [ref=e317]: Accept and sign
+                - generic [ref=e318]: Decline, with a reason
+              - paragraph [ref=e319]: No account. No password. The link is the credential, and it stops working the moment it is used.
+    - generic [ref=e321]:
+      - generic [ref=e322]:
+        - paragraph [ref=e323]: Background verification
+        - heading "Three rules here are legal, not product." [level=2] [ref=e324]
+        - paragraph [ref=e325]: Verifying somebody without their recorded agreement is unlawful under the DPDP Act and most equivalents. A product that makes it easy hands its customer a liability.
+      - generic [ref=e326]:
+        - generic [ref=e327]:
+          - generic [ref=e328]:
+            - paragraph [ref=e329]: Consent
+            - heading "Consent gates everything, structurally." [level=3] [ref=e330]
+            - paragraph [ref=e331]: "Not as a validation rule somebody could relax — the check row holds a foreign key to the consent, so there is no state in which a check exists without one. And consent is to a SCOPE, not to “background checks”: somebody who agreed to employment verification has not agreed to a credit check, and items outside the recorded scope are refused by name."
+            - list [ref=e332]:
+              - listitem [ref=e333]:
+                - generic [ref=e336]: A package that gains a check next year cannot retroactively widen a consent given last year
+              - listitem [ref=e337]:
+                - generic [ref=e340]: IP and user agent are recorded as evidence — a consent that cannot be produced later did not happen, as far as a regulator is concerned
+              - listitem [ref=e341]:
+                - generic [ref=e344]: Withdrawal stops outstanding work but does not erase findings; unstarted items become skipped
+          - generic [ref=e346]:
+            - paragraph [ref=e348]: Background check · consent
+            - generic [ref=e349]:
+              - paragraph [ref=e350]: Consented scope
+              - list [ref=e351]:
+                - listitem [ref=e352]:
+                  - generic [ref=e356]: Employment verification
+                - listitem [ref=e357]:
+                  - generic [ref=e361]: Education verification
+                - listitem [ref=e362]:
+                  - generic [ref=e366]: Criminal record
+                - listitem [ref=e367]:
+                  - generic [ref=e369]: Credit check
+                  - generic [ref=e370]: refused
+              - paragraph [ref=e371]:
+                - text: A credit check was requested and refused
+                - emphasis [ref=e372]: by name
+                - text: ": it is outside the recorded scope. Somebody who agreed to employment verification has not agreed to this."
+        - generic [ref=e373]:
+          - generic [ref=e374]:
+            - paragraph [ref=e375]: Findings
+            - heading "A discrepancy is not a failure." [level=3] [ref=e376]
+            - paragraph [ref=e377]: A name spelled differently on a certificate and a fabricated employer are both discrepancies, and only a human should decide what either means. So the vocabulary is clear, discrepancy or insufficient — never pass/fail — and a discrepancy requires both a claimed value and a verified one, because an accusation with no comparison behind it is one nobody can answer.
+            - list [ref=e378]:
+              - listitem [ref=e379]:
+                - generic [ref=e382]: Nothing here touches a candidacy or moves a pipeline stage
+              - listitem [ref=e383]:
+                - generic [ref=e386]: "Adverse action has to reach the person: a notice on a clear check is refused, and a candidate response before a notice is refused"
+              - listitem [ref=e387]:
+                - generic [ref=e390]: Gated on the payroll role, not the manager role — a completed check can carry a criminal record and a previous salary
+          - generic [ref=e392]:
+            - paragraph [ref=e394]: Background check · findings
+            - list [ref=e395]:
+              - listitem [ref=e396]:
+                - generic [ref=e397]:
+                  - generic [ref=e398]: Employment · Acme Ltd
+                  - generic [ref=e399]: clear
+              - listitem [ref=e400]:
+                - generic [ref=e401]:
+                  - generic [ref=e402]: Employment · Beta Corp
+                  - generic [ref=e403]: discrepancy
+                - paragraph [ref=e404]: claimed Senior Engineer · verified Engineer
+              - listitem [ref=e405]:
+                - generic [ref=e406]:
+                  - generic [ref=e407]: Education · B.E.
+                  - generic [ref=e408]: insufficient
+                - paragraph [ref=e409]: claimed 2017 · verified —
+            - paragraph [ref=e410]: "The vocabulary is clear · discrepancy · insufficient — never pass/fail. A discrepancy requires both a claim and a verification: an accusation with no comparison behind it is one nobody can answer."
+      - generic [ref=e412]:
+        - paragraph [ref=e413]: What this page does not claim
+        - paragraph [ref=e414]: Hiring is the newest module here, and the gap at the front of it is the one that will matter most to you.
+        - list [ref=e415]:
+          - listitem [ref=e416]: A public careers page — a recruiter records candidates, they do not apply themselves
+          - listitem [ref=e419]: Background-check vendor integration (AuthBridge, IDfy) — a human enters the findings
+          - listitem [ref=e422]: Résumé parsing or CV scoring
+          - listitem [ref=e425]: Job-board syndication
+          - listitem [ref=e428]: Engagement surveys or an HR helpdesk
+    - generic [ref=e432]:
+      - heading "Bring the hire that went wrong." [level=2] [ref=e433]
+      - paragraph [ref=e434]: The useful test of an applicant tracking system is whether it can reconstruct a decision six months later. Ask it of ours.
+      - generic [ref=e435]:
+        - link "Book a 20-minute demo" [ref=e436] [cursor=pointer]:
+          - /url: /contact?intent=demo
+        - link "Try the free calculators" [ref=e437] [cursor=pointer]:
+          - /url: /tools
+  - contentinfo [ref=e438]:
+    - generic [ref=e439]:
+      - generic [ref=e440]:
+        - generic [ref=e441]:
+          - generic [ref=e442]: CareVance
+          - paragraph [ref=e449]: Indian HR and payroll where the evidence of work and the payslip are the same system.
+          - paragraph [ref=e450]:
+            - link "sales@carevance.com" [ref=e451] [cursor=pointer]:
+              - /url: mailto:sales@carevance.com
+        - generic [ref=e452]:
+          - generic [ref=e453]:
+            - paragraph [ref=e454]: Product
+            - list [ref=e455]:
+              - listitem [ref=e456]:
+                - link "Platform overview" [ref=e457] [cursor=pointer]:
+                  - /url: /product
+              - listitem [ref=e458]:
+                - link "Payroll" [ref=e459] [cursor=pointer]:
+                  - /url: /product/payroll
+              - listitem [ref=e460]:
+                - link "Time, attendance & rostering" [ref=e461] [cursor=pointer]:
+                  - /url: /product/time-attendance
+              - listitem [ref=e462]:
+                - link "Compliance & filings" [ref=e463] [cursor=pointer]:
+                  - /url: /product/compliance
+              - listitem [ref=e464]:
+                - link "Hiring" [ref=e465] [cursor=pointer]:
+                  - /url: /product/recruitment
+              - listitem [ref=e466]:
+                - link "Leave" [ref=e467] [cursor=pointer]:
+                  - /url: /product/leave
+              - listitem [ref=e468]:
+                - link "Core HR" [ref=e469] [cursor=pointer]:
+                  - /url: /product/core-hr
+              - listitem [ref=e470]:
+                - link "Reports & controls" [ref=e471] [cursor=pointer]:
+                  - /url: /product/reports
+              - listitem [ref=e472]:
+                - link "Performance" [ref=e473] [cursor=pointer]:
+                  - /url: /product/performance
+              - listitem [ref=e474]:
+                - link "Expenses & FBP" [ref=e475] [cursor=pointer]:
+                  - /url: /product/expenses-fbp
+              - listitem [ref=e476]:
+                - link "Mobile & desktop apps" [ref=e477] [cursor=pointer]:
+                  - /url: /product/mobile
+          - generic [ref=e478]:
+            - paragraph [ref=e479]: Solutions
+            - list [ref=e480]:
+              - listitem [ref=e481]:
+                - link "Staffing agencies" [ref=e482] [cursor=pointer]:
+                  - /url: /solutions/staffing-agencies
+              - listitem [ref=e483]:
+                - link "IT services" [ref=e484] [cursor=pointer]:
+                  - /url: /solutions/it-services
+              - listitem [ref=e485]:
+                - link "Small business" [ref=e486] [cursor=pointer]:
+                  - /url: /solutions/small-business
+              - listitem [ref=e487]:
+                - link "vs. spreadsheet payroll" [ref=e488] [cursor=pointer]:
+                  - /url: /compare/spreadsheet-payroll
+              - listitem [ref=e489]:
+                - link "Keka alternative" [ref=e490] [cursor=pointer]:
+                  - /url: /compare/keka-alternative
+              - listitem [ref=e491]:
+                - link "greytHR alternative" [ref=e492] [cursor=pointer]:
+                  - /url: /compare/greythr-alternative
+              - listitem [ref=e493]:
+                - link "Pricing" [ref=e494] [cursor=pointer]:
+                  - /url: /pricing
+          - generic [ref=e495]:
+            - paragraph [ref=e496]: Free tools
+            - list [ref=e497]:
+              - listitem [ref=e498]:
+                - link "Salary breakup calculator" [ref=e499] [cursor=pointer]:
+                  - /url: /tools/salary-breakup-calculator
+              - listitem [ref=e500]:
+                - link "Take-home salary calculator" [ref=e501] [cursor=pointer]:
+                  - /url: /tools/take-home-salary-calculator
+              - listitem [ref=e502]:
+                - link "Gratuity calculator" [ref=e503] [cursor=pointer]:
+                  - /url: /tools/gratuity-calculator
+              - listitem [ref=e504]:
+                - link "HRA exemption calculator" [ref=e505] [cursor=pointer]:
+                  - /url: /tools/hra-exemption-calculator
+              - listitem [ref=e506]:
+                - link "Professional tax by state" [ref=e507] [cursor=pointer]:
+                  - /url: /tools/professional-tax-by-state
+          - generic [ref=e508]:
+            - paragraph [ref=e509]: Company
+            - list [ref=e510]:
+              - listitem [ref=e511]:
+                - link "Why CareVance" [ref=e512] [cursor=pointer]:
+                  - /url: /why-carevance
+              - listitem [ref=e513]:
+                - link "Security" [ref=e514] [cursor=pointer]:
+                  - /url: /security
+              - listitem [ref=e515]:
+                - link "How we count" [ref=e516] [cursor=pointer]:
+                  - /url: /methodology
+              - listitem [ref=e517]:
+                - link "Guides" [ref=e518] [cursor=pointer]:
+                  - /url: /resources
+              - listitem [ref=e519]:
+                - link "Changelog" [ref=e520] [cursor=pointer]:
+                  - /url: /changelog
+              - listitem [ref=e521]:
+                - link "About" [ref=e522] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=e523]:
+                - link "Contact" [ref=e524] [cursor=pointer]:
+                  - /url: /contact
+              - listitem [ref=e525]:
+                - link "Careers" [ref=e526] [cursor=pointer]:
+                  - /url: /careers
+      - generic [ref=e527]:
+        - paragraph [ref=e528]:
+          - text: Every figure on this site is counted from the CareVance codebase, not estimated.
+          - link "See how we count" [ref=e529] [cursor=pointer]:
+            - /url: /methodology
+          - text: . We publish no customer counts, review scores or certification badges, because we have not earned them yet. Prices exclude 18% GST.
+        - generic [ref=e530]:
+          - paragraph [ref=e531]: © 2026 CareVance. All rights reserved.
+          - list [ref=e532]:
+            - listitem [ref=e533]:
+              - link "Privacy policy" [ref=e534] [cursor=pointer]:
+                - /url: /legal/privacy
+            - listitem [ref=e535]:
+              - link "Terms of service" [ref=e536] [cursor=pointer]:
+                - /url: /legal/terms
+            - listitem [ref=e537]:
+              - link "Data processing addendum" [ref=e538] [cursor=pointer]:
+                - /url: /legal/dpa

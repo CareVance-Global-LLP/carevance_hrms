@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/Toast';
 import { integrationsApi, type ApiClientSummary } from '@/services/api';
 import { reportSilentError } from '@/lib/reportSilentError';
 import SettingsCard from './SettingsCard';
+import { brandLabel } from '@/config/brand';
 
 const SCOPE_LABELS: Record<string, string> = {
   'employees.read': 'Read employees',
@@ -110,7 +111,7 @@ export default function ApiKeysSection() {
   return (
     <SettingsCard
       title="API keys"
-      description="For your own systems to read data out of CareVance. Give each system its own key with only the access it needs — then revoking one never breaks the others."
+      description={`For your own systems to read data out of ${brandLabel}. Give each system its own key with only the access it needs — then revoking one never breaks the others.`}
       aside={
         !creating && !issuedKey ? (
           <Button size="sm" onClick={() => setCreating(true)}>

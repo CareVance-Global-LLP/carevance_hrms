@@ -99,7 +99,10 @@ test('the tray can reopen the window after it has been closed', () => {
 
   assert.match(
     trayBody,
-    /label:\s*'Open CareVance Tracker',\s*click:\s*\(\)\s*=>\s*{\s*openOrRevealMainWindow\(\);?\s*}/,
+    // The label reads from brand.cjs now, so match whatever expression carries
+    // it. What this test is about is the WIRING underneath: pinning the literal
+    // made a rebrand look like a broken tray.
+    /label:\s*(?:'[^']*'|`[^`]*`),\s*click:\s*\(\)\s*=>\s*{\s*openOrRevealMainWindow\(\);?\s*}/,
     'The tray menu item must route through openOrRevealMainWindow, which builds a window when none is left.'
   );
   assert.match(

@@ -1,3 +1,4 @@
+import { legalLabel } from '@/config/brand';
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, Camera, MapPin, Monitor, ScrollText, ShieldCheck } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -110,7 +111,7 @@ export default function PrivacyPane() {
 
   if (loading) {
     return (
-      <SettingsCard title="What CareVance collects about you">
+      <SettingsCard title={`What ${legalLabel} collects about you`}>
         <p className="text-xs text-slate-500">Checking…</p>
       </SettingsCard>
     );
@@ -120,7 +121,7 @@ export default function PrivacyPane() {
   // by disclosing nothing at all.
   if (!disclosure) {
     return (
-      <SettingsCard title="What CareVance collects about you">
+      <SettingsCard title={`What ${legalLabel} collects about you`}>
         <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
           <div className="min-w-0">
@@ -149,7 +150,7 @@ export default function PrivacyPane() {
   if (!disclosure.monitoring_enabled) {
     return (
       <SettingsCard
-        title="What CareVance collects about you"
+        title={`What ${legalLabel} collects about you`}
         aside={<StatusBadge tone="success">Monitoring off</StatusBadge>}
       >
         <p className="text-xs leading-5 text-slate-600">
@@ -163,7 +164,7 @@ export default function PrivacyPane() {
   if (!disclosure.notice) {
     return (
       <div className="space-y-4">
-        <SettingsCard title="What CareVance collects about you">
+        <SettingsCard title={`What ${legalLabel} collects about you`}>
           <p className="text-xs leading-5 text-slate-600">
             Your organisation has not published a monitoring notice yet, so there is nothing to agree
             to.
@@ -187,7 +188,7 @@ export default function PrivacyPane() {
   return (
     <div className="space-y-4">
       <SettingsCard
-        title="What CareVance collects about you"
+        title={`What ${legalLabel} collects about you`}
         description={`Notice version ${notice.version}. Kept for ${notice.retention_days} days, then deleted.`}
         aside={
           hasActiveConsent

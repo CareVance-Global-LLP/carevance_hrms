@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>CareVance support access</title></head>
+<head><meta charset="utf-8"><title>{{ config('brand.label') }} support access</title></head>
 <body style="margin:0;padding:24px;background:#f1f5f9;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:28px;">
 
@@ -14,9 +14,9 @@
 
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#334155;">
       @if ($stage === 'granted')
-        {{ $engineerName }} can now act as <strong>{{ $targetName }}</strong> in your CareVance account.
+        {{ $engineerName }} can now act as <strong>{{ $targetName }}</strong> in your {{ config('brand.label') }} account.
       @else
-        {{ $engineerName }} has asked to act as <strong>{{ $targetName }}</strong> in your CareVance account.
+        {{ $engineerName }} has asked to act as <strong>{{ $targetName }}</strong> in your {{ config('brand.label') }} account.
         Nobody has access until an administrator in your organisation approves it.
       @endif
     </p>

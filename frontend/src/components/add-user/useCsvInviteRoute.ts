@@ -6,6 +6,7 @@ import {
   type CsvParseResult,
   type InviteOption,
 } from '@/services/addUser';
+import { downloadPrefix } from '@/config/brand';
 
 export interface CsvImportSummary {
   parsedCount: number;
@@ -137,7 +138,7 @@ export function useCsvInviteRoute({
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'carevance-import-issues.csv';
+    link.download = `${downloadPrefix}import-issues.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();

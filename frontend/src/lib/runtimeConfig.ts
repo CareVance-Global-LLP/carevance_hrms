@@ -1,3 +1,4 @@
+import { BRAND } from '@/config/brand';
 type AppRuntimeConfig = {
   VITE_API_URL?: string;
   VITE_WEB_APP_URL?: string;
@@ -153,11 +154,11 @@ export const desktopDownloadLabel =
 
 export const salesContactEmail =
   resolveConfigValue(runtimeConfig.VITE_SALES_EMAIL, import.meta.env.VITE_SALES_EMAIL) ||
-  'aayushborwal.carevanceglobal@gmail.com';
+  (BRAND.enabled ? 'aayushborwal.carevanceglobal@gmail.com' : '');
 
 export const supportContactEmail =
   resolveConfigValue(runtimeConfig.VITE_SUPPORT_EMAIL, import.meta.env.VITE_SUPPORT_EMAIL) ||
-  'mavliribaz.carevanceglobal@gmail.com';
+  (BRAND.enabled ? 'mavliribaz.carevanceglobal@gmail.com' : '');
 
 export const gaMeasurementId = resolveConfigValue(
   runtimeConfig.VITE_GA_MEASUREMENT_ID,

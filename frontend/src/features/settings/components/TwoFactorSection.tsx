@@ -11,6 +11,7 @@ import { reportSilentError } from '@/lib/reportSilentError';
 import SettingsCard from './SettingsCard';
 import SettingRow from './SettingRow';
 import RecoveryCodes from './RecoveryCodes';
+import { brandLabel } from '@/config/brand';
 
 type Stage = 'idle' | 'scanning' | 'showing-codes' | 'disabling' | 'regenerating';
 
@@ -181,7 +182,7 @@ export default function TwoFactorSection() {
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-xs leading-5 text-amber-900">
             {status.policy === 'enforced'
-              ? 'Your organisation requires two-factor authentication for your role. Set it up now to keep using CareVance.'
+              ? `Your organisation requires two-factor authentication for your role. Set it up now to keep using ${brandLabel}.`
               : deadline
                 ? `Your organisation will require this for your role from ${deadline}. After that you will not be able to sign in without it.`
                 : 'Your organisation will require this for your role shortly.'}

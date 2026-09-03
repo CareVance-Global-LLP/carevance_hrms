@@ -5,11 +5,12 @@ import SettingsCard from '../components/SettingsCard';
 import SettingRow from '../components/SettingRow';
 import type { NotificationKey } from '../types';
 import type { SettingsController } from '../useSettingsController';
+import { brandLabel } from '@/config/brand';
 
 const CHANNELS: Array<{ key: NotificationKey; icon: LucideIcon; title: string; description: string }> = [
   { key: 'email', icon: Mail, title: 'Email', description: 'Approvals, payslips and anything that needs a record.' },
   { key: 'in_app', icon: Bell, title: 'In-app', description: 'The bell in the top bar.' },
-  { key: 'desktop_push', icon: Monitor, title: 'Desktop popup', description: 'Needs the CareVance desktop tracker running.' },
+  { key: 'desktop_push', icon: Monitor, title: 'Desktop popup', description: `Needs the ${brandLabel} desktop tracker running.` },
 ];
 
 const TOPICS: Array<{ key: NotificationKey; icon: LucideIcon; title: string; description: string }> = [
@@ -55,7 +56,7 @@ export default function NotificationsPane({ controller }: { controller: Settings
     <div className="space-y-4">
       <p className="text-sm text-slate-600">
         You will get <span className="font-semibold text-slate-900">{enabledCount} of the {total}</span> kinds of update
-        CareVance sends. Changes here save straight away.
+        {brandLabel} sends. Changes here save straight away.
       </p>
 
       <SettingsCard

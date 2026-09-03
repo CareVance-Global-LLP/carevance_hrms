@@ -11,6 +11,7 @@ import SettingRow from '../components/SettingRow';
 import ApiKeysSection from '../components/ApiKeysSection';
 import WebhooksSection from '../components/WebhooksSection';
 import type { SettingsTabId } from '../types';
+import { brandLabel } from '@/config/brand';
 
 interface IntegrationsPaneProps {
   onOpenTab: (tab: SettingsTabId) => void;
@@ -66,9 +67,9 @@ export default function IntegrationsPane({ onOpenTab }: IntegrationsPaneProps) {
           description={
             isDesktopConnected
               ? desktopVersion
-                ? `Running in the CareVance desktop app, version ${desktopVersion}.`
-                : 'Running in the CareVance desktop app.'
-              : 'Attendance, screenshots and activity data come from the desktop app. Open CareVance there to connect it.'
+                ? `Running in the ${brandLabel} desktop app, version ${desktopVersion}.`
+                : `Running in the ${brandLabel} desktop app.`
+              : `Attendance, screenshots and activity data come from the desktop app. Open ${brandLabel} there to connect it.`
           }
           control={
             isDesktopConnected
@@ -79,7 +80,7 @@ export default function IntegrationsPane({ onOpenTab }: IntegrationsPaneProps) {
       </SettingsCard>
 
       <SettingsCard
-        title="Elsewhere in CareVance"
+        title={`Elsewhere in ${brandLabel}`}
         description="These are places to go rather than services to connect, so they are listed as navigation, not as integrations."
       >
         <SettingRow

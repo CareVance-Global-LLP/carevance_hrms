@@ -10,6 +10,7 @@ import { settingsApi } from '@/services/api';
 import { COMMON_TIMEZONES, DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
 import { ONBOARDING_GROUPS, profileCompleteness } from '@/lib/employeeProfileFields';
 import type { EmployeeProfileDetails } from '@/types';
+import { brandLabel } from '@/config/brand';
 
 type ProfileForm = {
   first_name: string;
@@ -405,7 +406,7 @@ export default function ProfileOnboardingPage() {
       <header className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">Welcome to CareVance Tracker</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">Welcome to {brandLabel} Tracker</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-900">Let&apos;s set up your profile details</h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-600">
               Fill your details now for a complete setup, or skip and continue to your dashboard.

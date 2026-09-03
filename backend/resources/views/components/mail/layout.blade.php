@@ -1,5 +1,5 @@
 {{--
-    The shared shell for every CareVance email.
+    The shared shell for every {{ config('brand.label') }} email.
 
     Palette is the product's own, from frontend/src/styles/theme.css:
       n-950  #0E1012   n-900 #16191C   n-600 #4E565D   n-500 #6B757D
@@ -21,10 +21,10 @@
 --}}
 @props([
     'preheader' => '',
-    'eyebrow' => 'CareVance',
+    'eyebrow' => config('brand.label'),
     'heading' => '',
     'subheading' => null,
-    'footerLead' => 'CareVance — HR and payroll, in one place.',
+    'footerLead' => config('brand.label').' — '.config('brand.tagline'),
     'footerNote' => null,
 ])
 <!DOCTYPE html>
@@ -37,7 +37,7 @@
          both schemes keeps the white card and dark banner as designed. --}}
     <meta name="color-scheme" content="light dark">
     <meta name="supported-color-schemes" content="light dark">
-    <title>{{ $heading !== '' ? $heading : 'CareVance' }}</title>
+    <title>{{ $heading !== '' ? $heading : config('brand.label') }}</title>
     <!--[if mso]>
     <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
     <![endif]-->
@@ -89,8 +89,8 @@
                                     <td valign="middle" style="padding-right:9px;">
                                         {{-- Absolute URL, not cid: — most clients block images by
                                              default, so the alt text is the real fallback brand. --}}
-                                        <img src="{{ rtrim((string) config('app.url'), '/') }}/carevance-logo-icon.png"
-                                             width="26" height="26" alt="CareVance"
+                                        <img src="{{ rtrim((string) config('app.url'), '/') }}/{{ config('brand.logo') }}"
+                                             width="26" height="26" alt="{{ config('brand.label') }}"
                                              style="display:block;width:26px;height:26px;border:0;">
                                     </td>
                                     <td valign="middle" style="font-size:13px;line-height:1.6;color:#4E565D;">

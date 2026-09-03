@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRef, useState } from 'react';
 import { AlertCircle, CheckCircle } from 'lucide-react';
+import { brandPrefix } from '@/config/brand';
 
 interface GoogleLoginButtonProps {
   type?: 'login' | 'signup';
@@ -89,7 +90,7 @@ export default function GoogleLoginButton({ type = 'login' }: GoogleLoginButtonP
           Successfully Signed In!
         </h3>
         <p className="text-sm text-green-700">
-          Opening CareVance Desktop...
+          Opening {brandPrefix}Desktop...
         </p>
       </div>
     );

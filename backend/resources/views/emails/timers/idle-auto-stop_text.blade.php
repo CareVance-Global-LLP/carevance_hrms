@@ -13,4 +13,4 @@ AUTO-STOP DETAILS
 Reopen the desktop app and start the timer again when you return.
 
 ------------------------------------------------------------
-CareVance - HR and payroll, in one place.
+{{ config('brand.label') }} - HR and payroll, in one place.

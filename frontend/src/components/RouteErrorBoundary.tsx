@@ -1,5 +1,6 @@
 import React, { type ErrorInfo, type ReactNode } from 'react';
 import { AlertTriangle, RotateCcw } from 'lucide-react';
+import { brandLabel } from '@/config/brand';
 
 type Props = {
   children: ReactNode;
@@ -61,7 +62,7 @@ export default class RouteErrorBoundary extends React.Component<Props, State> {
             <div className="min-w-0">
               <h1 className="text-base font-semibold text-amber-900">This page didn&rsquo;t load</h1>
               <p className="mt-1 text-sm leading-6 text-amber-800">
-                Something went wrong rendering this screen. The rest of CareVance is unaffected — you
+                Something went wrong rendering this screen. The rest of {brandLabel} is unaffected — you
                 can carry on working elsewhere, or try this page again.
               </p>
 
