@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, Plus, Save } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { payrollApi } from '@/services/api';
+import Button from '@/components/ui/Button';
+import { TextInput, TextareaInput, FieldLabel, SelectInput, ToggleInput } from '@/components/ui/FormField';
 import Modal from '@/components/ui/dialog/Modal';
 import type { SalaryStructure, CreateSalaryStructurePayload } from '@/types';
 
@@ -137,110 +139,97 @@ export default function SalaryStructureFormModal({ structure, onClose }: Props) 
     }));
   };
 
+  const busy = createMutation.isPending || updateMutation.isPending;
+
   return (
     <Modal
       open
-      onClose={onClose}
-      titleId="salary-structure-form-title"
+      onClose={() => !busy && onClose()}
+      title={isEdit ? 'Edit Template' : 'New Template'}
       size="2xl"
       panelClassName="max-h-[90vh]"
-    >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-          <h3 id="salary-structure-form-title" className="text-base font-semibold text-slate-900">
-            {isEdit ? 'Edit Template' : 'New Template'}
-          </h3>
-          <button onClick={onClose} className="p-1 text-slate-500 hover:text-slate-600 rounded">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="px-6 py-4 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Name</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-100 focus:border-teal-400 outline-none"
-              placeholder="e.g., Standard 50/20/30"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">Description</label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-teal-100 focus:border-teal-400 outline-none"
-              rows={2}
-              placeholder="Optional"
-            />
-          </div>
-
-          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-0">
-            <PctRow label="Basic %" value={form.basic_percentage} onChange={(v) => setForm({ ...form, basic_percentage: v })} />
-            <PctRow label="HRA %" value={form.hra_percentage} onChange={(v) => setForm({ ...form, hra_percentage: v })} />
-            <PctRow label="DA %" value={form.da_percentage} onChange={(v) => setForm({ ...form, da_percentage: v })} />
-            <PctRow label="NPS %" value={form.nps_percentage} onChange={(v) => setForm({ ...form, nps_percentage: v })} />
-            <PctRow label="VPF %" value={form.vpf_percentage} onChange={(v) => setForm({ ...form, vpf_percentage: v })} />
-
-            <div className="flex items-center gap-3 my-3">
-              <div className="flex-1 border-t border-slate-200" />
-              <span className="text-[10px] text-slate-500 uppercase tracking-wide">Fixed Amounts</span>
-              <div className="flex-1 border-t border-slate-200" />
-            </div>
-
-            <MoneyRow label="Conveyance" value={form.conveyance_amount} onChange={(v) => setForm({ ...form, conveyance_amount: v })} />
-            <MoneyRow label="CCA" value={form.cca_amount} onChange={(v) => setForm({ ...form, cca_amount: v })} />
-            <MoneyRow label="Education Allowance" value={form.education_allowance} onChange={(v) => setForm({ ...form, education_allowance: v })} />
-            <MoneyRow label="Internet Allowance" value={form.internet_allowance} onChange={(v) => setForm({ ...form, internet_allowance: v })} />
-            <MoneyRow label="Meal Allowance" value={form.meal_allowance} onChange={(v) => setForm({ ...form, meal_allowance: v })} />
-            <MoneyRow label="Transport Allowance" value={form.transport_allowance} onChange={(v) => setForm({ ...form, transport_allowance: v })} />
-            <MoneyRow label="Uniform Allowance" value={form.uniform_allowance} onChange={(v) => setForm({ ...form, uniform_allowance: v })} />
-            <MoneyRow label="Books & Periodicals" value={form.books_periodicals} onChange={(v) => setForm({ ...form, books_periodicals: v })} />
-            <MoneyRow label="Fuel & Maintenance" value={form.fuel_maintenance} onChange={(v) => setForm({ ...form, fuel_maintenance: v })} />
-
-            <OtherSection
-              label="Other Earnings"
-              items={form.other_earnings}
-              onAdd={() => addOtherItem('other_earnings')}
-              onChange={(i, k, v) => updateOtherItem('other_earnings', i, k, v)}
-              onRemove={(i) => removeOtherItem('other_earnings', i)}
-            />
-
-            <OtherSection
-              label="Other Deductions"
-              items={form.other_deductions}
-              onAdd={() => addOtherItem('other_deductions')}
-              onChange={(i, k, v) => updateOtherItem('other_deductions', i, k, v)}
-              onRemove={(i) => removeOtherItem('other_deductions', i)}
-            />
-          </div>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.is_default}
-              onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
-              className="h-4 w-4 text-teal-600 focus:ring-teal-500 border-slate-300 rounded"
-            />
-            <span className="text-sm text-slate-700">Set as default</span>
-          </label>
-        </div>
-
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">
+      busy={busy}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={handleSave}
             disabled={!form.name}
-            className="inline-flex items-center px-4 py-2 bg-teal-700 text-white text-sm font-medium rounded-md hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            loading={busy}
           >
-            <Save className="w-4 h-4 mr-1.5" />
             {isEdit ? 'Update' : 'Create'}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="px-6 py-4 space-y-4">
+        <div>
+          <FieldLabel>Name</FieldLabel>
+          <TextInput
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="e.g., Standard 50/20/30"
+          />
         </div>
+
+        <div>
+          <FieldLabel>Description</FieldLabel>
+          <TextareaInput
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            rows={2}
+            placeholder="Optional"
+          />
+        </div>
+
+        <div className="rounded-xl border border-slate-200 p-4 space-y-0">
+          <PctRow label="Basic %" value={form.basic_percentage} onChange={(v) => setForm({ ...form, basic_percentage: v })} />
+          <PctRow label="HRA %" value={form.hra_percentage} onChange={(v) => setForm({ ...form, hra_percentage: v })} />
+          <PctRow label="DA %" value={form.da_percentage} onChange={(v) => setForm({ ...form, da_percentage: v })} />
+          <PctRow label="NPS %" value={form.nps_percentage} onChange={(v) => setForm({ ...form, nps_percentage: v })} />
+          <PctRow label="VPF %" value={form.vpf_percentage} onChange={(v) => setForm({ ...form, vpf_percentage: v })} />
+
+          <div className="flex items-center gap-3 my-3">
+            <div className="flex-1 border-t border-slate-200" />
+            <span className="text-[10px] text-slate-500 uppercase tracking-wide">Fixed Amounts</span>
+            <div className="flex-1 border-t border-slate-200" />
+          </div>
+
+          <MoneyRow label="Conveyance" value={form.conveyance_amount} onChange={(v) => setForm({ ...form, conveyance_amount: v })} />
+          <MoneyRow label="CCA" value={form.cca_amount} onChange={(v) => setForm({ ...form, cca_amount: v })} />
+          <MoneyRow label="Education Allowance" value={form.education_allowance} onChange={(v) => setForm({ ...form, education_allowance: v })} />
+          <MoneyRow label="Internet Allowance" value={form.internet_allowance} onChange={(v) => setForm({ ...form, internet_allowance: v })} />
+          <MoneyRow label="Meal Allowance" value={form.meal_allowance} onChange={(v) => setForm({ ...form, meal_allowance: v })} />
+          <MoneyRow label="Transport Allowance" value={form.transport_allowance} onChange={(v) => setForm({ ...form, transport_allowance: v })} />
+          <MoneyRow label="Uniform Allowance" value={form.uniform_allowance} onChange={(v) => setForm({ ...form, uniform_allowance: v })} />
+          <MoneyRow label="Books & Periodicals" value={form.books_periodicals} onChange={(v) => setForm({ ...form, books_periodicals: v })} />
+          <MoneyRow label="Fuel & Maintenance" value={form.fuel_maintenance} onChange={(v) => setForm({ ...form, fuel_maintenance: v })} />
+
+          <OtherSection
+            label="Other Earnings"
+            items={form.other_earnings}
+            onAdd={() => addOtherItem('other_earnings')}
+            onChange={(i, k, v) => updateOtherItem('other_earnings', i, k, v)}
+            onRemove={(i) => removeOtherItem('other_earnings', i)}
+          />
+
+          <OtherSection
+            label="Other Deductions"
+            items={form.other_deductions}
+            onAdd={() => addOtherItem('other_deductions')}
+            onChange={(i, k, v) => updateOtherItem('other_deductions', i, k, v)}
+            onRemove={(i) => removeOtherItem('other_deductions', i)}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <ToggleInput checked={form.is_default} onChange={(v) => setForm({ ...form, is_default: v })} />
+          <span className="text-sm text-slate-700">Set as default</span>
+        </div>
+      </div>
     </Modal>
   );
 }
@@ -252,14 +241,14 @@ function PctRow({ label, value, onChange }: { label: string; value: number; onCh
     <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
       <span className="text-xs text-slate-600">{label}</span>
       <div className="flex items-center gap-1">
-        <input
+        <TextInput
           type="number"
           value={display}
           onChange={(e) => { setDisplay(e.target.value); onChange(e.target.value === '' ? 0 : Number(e.target.value)); }}
           onBlur={() => setDisplay(value === 0 ? '' : String(value))}
-          className="w-16 text-right px-1.5 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-teal-100 focus:border-teal-400 outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           min={0}
           max={100}
+          className="!w-16 !px-1.5 !py-1 !text-right !text-xs"
         />
         <span className="text-[11px] text-slate-500">%</span>
       </div>
@@ -274,14 +263,14 @@ function MoneyRow({ label, value, onChange }: { label: string; value: number; on
     <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
       <span className="text-xs text-slate-600">{label}</span>
       <div className="flex items-center gap-1">
-        <span className="text-[11px] text-slate-500">\u20B9</span>
-        <input
+        <span className="text-[11px] text-slate-500">₹</span>
+        <TextInput
           type="number"
           value={display}
           onChange={(e) => { setDisplay(e.target.value); onChange(e.target.value === '' ? 0 : Number(e.target.value)); }}
           onBlur={() => setDisplay(value === 0 ? '' : String(value))}
-          className="w-20 text-right px-1.5 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-teal-100 focus:border-teal-400 outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           min={0}
+          className="!w-20 !px-1.5 !py-1 !text-right !text-xs"
         />
       </div>
     </div>
@@ -310,40 +299,46 @@ function OtherSection({
       </div>
       {items.map((item, idx) => (
         <div key={idx} className="flex items-center gap-1.5 py-1.5">
-          <input
-            type="text"
+          <TextInput
             value={item.name}
             onChange={(e) => onChange(idx, 'name', e.target.value)}
             placeholder="Name"
-            className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-teal-100 focus:border-teal-400 outline-none"
+            className="!flex-1 !px-2 !py-1 !text-xs"
           />
-          <select
+          <SelectInput
             value={item.type}
             onChange={(e) => onChange(idx, 'type', e.target.value)}
-            className="px-1.5 py-1 border border-slate-200 rounded text-xs bg-white focus:ring-1 focus:ring-teal-100 focus:border-teal-400 outline-none"
+            className="!w-16 !px-1.5 !py-1 !text-xs"
           >
-            <option value="fixed">\u20B9</option>
+            <option value="fixed">₹</option>
             <option value="percentage">%</option>
-          </select>
-          <input
+          </SelectInput>
+          <TextInput
             type="number"
             value={item.value === 0 ? '' : item.value}
             onChange={(e) => onChange(idx, 'value', e.target.value === '' ? 0 : Number(e.target.value))}
-            className="w-16 text-right px-1.5 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-teal-100 focus:border-teal-400 outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             min={0}
+            className="!w-16 !px-1.5 !py-1 !text-right !text-xs"
           />
-          <button onClick={() => onRemove(idx)} className="p-0.5 text-slate-300 hover:text-red-500 transition-colors">
-            <X className="w-3 h-3" />
-          </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onRemove(idx)}
+            iconLeft={<X className="h-3 w-3" />}
+            className="!p-0.5 text-slate-300 hover:text-rose-500"
+            aria-label="Remove item"
+          />
         </div>
       ))}
-      <button
+      <Button
+        variant="secondary"
+        size="sm"
+        iconLeft={<Plus className="h-3 w-3" />}
         onClick={onAdd}
-        className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-teal-600 border border-teal-200 rounded-md hover:bg-teal-50 transition-colors"
+        className="mt-1.5"
       >
-        <Plus className="w-3 h-3" />
         Add
-      </button>
+      </Button>
     </div>
   );
 }

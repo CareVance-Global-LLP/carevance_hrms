@@ -180,30 +180,21 @@ export default function SalaryComponentsEditor() {
               {(earns.length === 0 && deds.length === 0) && <div className="flex-1" />}
 
               <div className="flex items-center gap-2 mt-auto pt-3 border-t border-slate-100">
-                <button
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setEditingStructure(structure)}
-                  className="px-2.5 py-1 text-[11px] font-medium text-slate-600 border border-slate-200 rounded hover:bg-slate-50 transition-colors"
                 >
                   Edit
-                </button>
-                <button
-                  onClick={() => setEditingStructure(structure)}
-                  className="px-2.5 py-1 text-[11px] font-medium text-teal-600 hover:text-teal-700 transition-colors"
-                >
-                  + Earning
-                </button>
-                <button
-                  onClick={() => setEditingStructure(structure)}
-                  className="px-2.5 py-1 text-[11px] font-medium text-teal-600 hover:text-teal-700 transition-colors"
-                >
-                  + Deduction
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                   onClick={() => setDeleting(structure)}
-                  className="px-2.5 py-1 text-[11px] font-medium text-rose-500 hover:text-rose-600 transition-colors ml-auto"
                 >
                   Delete
-                </button>
+                </Button>
               </div>
             </div>
           );
