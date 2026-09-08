@@ -68,6 +68,7 @@ export default function Layout() {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotificationItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
   const [unreadChatMessages, setUnreadChatMessages] = useState(0);
   const [reimbursementInboxCount, setReimbursementInboxCount] = useState(0);
   const [pendingApprovals, setPendingApprovals] = useState(0);
@@ -393,7 +394,9 @@ export default function Layout() {
               ? { ...item, unreadCount: unreadChatMessages }
               : item.to === '/reimbursements'
                 ? { ...item, unreadCount: reimbursementInboxCount }
-                : item
+                : item.to === '/notifications'
+                  ? { ...item, unreadCount: unreadAnnouncements }
+                  : item
           );
 
           if ((group.label === 'Attendance' || group.label === 'Monitoring') && filteredItems?.length === 1) {
@@ -631,8 +634,15 @@ export default function Layout() {
         // Calculate unread count only for non-chat notifications
         const unreadNonChatCount = nextNonChat.filter((item) => !item.is_read).length;
 
+        // Derive announcement-specific unread count from the same data
+        const ANNOUNCEMENT_TYPES = new Set(['announcement', 'news', 'poll']);
+        const unreadAnnouncementCount = nextNonChat.filter(
+          (item) => !item.is_read && ANNOUNCEMENT_TYPES.has(item.type)
+        ).length;
+
         setNotifications(nextNonChat);
         setUnreadNotifications(unreadNonChatCount);
+        setUnreadAnnouncements(unreadAnnouncementCount);
         setUnreadChatMessages(Number(chatUnreadResponse.data?.unread_messages || 0));
 
         // Reimbursement inbox badge — only pending *unread* claims for the

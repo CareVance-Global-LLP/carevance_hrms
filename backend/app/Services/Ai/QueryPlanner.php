@@ -44,7 +44,13 @@ class QueryPlanner
     {
     }
 
-    public function plan(string $question): array
+    /**
+     * Turn a question into a query plan.
+     *
+     * @param  string  $question  the user's question
+     * @param  string  $contextBlock  optional conversation context from ConversationMemory — used ONLY for resolving follow-ups, never as a data source
+     */
+    public function plan(string $question, string $contextBlock = ''): array
     {
         if (! $this->client->configured()) {
             // A configuration fault, checked first: it is true of every
@@ -56,9 +62,14 @@ class QueryPlanner
 
         $catalogue = $this->catalogueFor($question);
 
+        $promptQuestion = $question;
+        if ($contextBlock !== '') {
+            $promptQuestion = $contextBlock . "\n\nCurrent question: " . $question;
+        }
+
         $plan = $this->client->json(
             $this->systemPrompt($catalogue),
-            $question,
+            $promptQuestion,
             self::MAX_TOKENS,
             'planner',
         );
@@ -99,10 +110,27 @@ class QueryPlanner
         $retrieved = EntityRetriever::forQuestion($question, $entities);
 
         if ($retrieved === []) {
-            $considered = array_slice(array_keys(EntityRetriever::scoreAll($question, $entities)), 0, 5);
+            $allScores = EntityRetriever::scoreAll($question, $entities);
+            $considered = array_slice(array_keys($allScores), 0, 5);
 
-            throw new UnsupportedQuestionException(
-                "I couldn't match that to anything I can query. I looked at: ".implode(', ', $considered).'.'
+            // Build suggestions from the top-scoring entities that were close
+            // but did not meet the floor. These help the user rephrase.
+            $suggestions = [];
+            foreach (array_slice($allScores, 0, 3) as $entityKey => $score) {
+                if ($score > 0) {
+                    $entity = $entities[$entityKey] ?? [];
+                    $label = $entity['label'] ?? $entityKey;
+                    $suggestions[] = [
+                        'entity' => $entityKey,
+                        'label' => $label,
+                        'score' => $score,
+                    ];
+                }
+            }
+
+            throw UnsupportedQuestionException::notADataQuestion(
+                "I couldn't match that to anything I can query. I looked at: " . implode(', ', $considered) . '.',
+                $suggestions,
             );
         }
 
@@ -177,6 +205,12 @@ class QueryPlanner
         today, yesterday, this_week, last_week, this_month, last_month, this_quarter,
         last_quarter, this_year, last_year, last_7_days, last_30_days, last_90_days,
         last_12_months, or "2026-07" a month, "2026" a year, "2026-07-01..2026-07-31" a range.
+
+        CONVERSATION CONTEXT — if a "Recent conversation" block appears before the question, use it ONLY to resolve follow-ups:
+        - "and last month?" → the previous question's entity/metric applies, but the period changes
+        - "what about the engineering team?" → the previous question's metric applies, but filtered to that department
+        - "and the month before?" → shift the period backward from what was last asked
+        Do NOT copy the previous plan's entity or metrics — always re-derive from the CURRENT question. The context tells you what the user was asking about; the current question tells you what they want NOW.
 
         CATALOGUE
         {$catalogue}

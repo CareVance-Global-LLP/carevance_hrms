@@ -174,17 +174,26 @@ class PayrollFilingController extends Controller
                 return ['matched' => 0, 'unmatched' => [], 'invalid' => ['Failed to open zip file']];
             }
 
+            $realTempDir = realpath($tempDir);
+
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $entry = $zip->getNameIndex($i);
-                
+
                 // Skip directories and non-PDFs
                 if (substr($entry, -1) === '/' || !str_ends_with(strtolower($entry), '.pdf')) {
                     continue;
                 }
 
+                // Zip Slip guard: reject entries that escape the temp directory
                 $filename = basename($entry);
+                $destDir = @realpath(dirname($tempDir . DIRECTORY_SEPARATOR . $entry));
+                if ($destDir === false || !str_starts_with($destDir, $realTempDir)) {
+                    $invalid[] = $filename;
+                    continue;
+                }
+
                 $zip->extractTo($tempDir, $entry);
-                $pdfPath = $tempDir . '/' . $entry;
+                $pdfPath = $tempDir . '/' . $filename;
 
                 if (!file_exists($pdfPath)) {
                     continue;
@@ -1054,7 +1063,7 @@ class PayrollFilingController extends Controller
             ->where('status', 'submitted');
 
         // Restrict to filings routed to this reviewer (nearest), unless admin.
-        if (! in_array($user->role, ['admin', 'super_admin'])) {
+        if (! $user->isAdminLevel()) {
             $query->where('reviewer_user_id', $user->id);
         }
 

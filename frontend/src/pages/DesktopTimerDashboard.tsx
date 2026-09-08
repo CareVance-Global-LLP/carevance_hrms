@@ -394,12 +394,6 @@ export default function DesktopTimerDashboard() {
   const workedHighWaterRef = useRef<{ date: string | null; seconds: number }>({ date: null, seconds: 0 });
 
   useEffect(() => {
-    console.log('[Live Duration] Effect triggered', {
-      hasActiveTimer: Boolean(activeTimer),
-      activeTimerId: activeTimer?.id,
-      activeTimerStartTime: activeTimer?.start_time,
-      activeTimerDuration: activeTimer?.duration,
-    });
     if (!activeTimer) {
       setLiveDuration(0);
       return;
@@ -848,7 +842,6 @@ export default function DesktopTimerDashboard() {
   const fetchData = async () => {
     // Prevent concurrent fetch calls
     if (isFetchingRef.current) {
-      console.log('[fetchData] Already fetching, skipping duplicate request');
       return;
     }
     
@@ -931,7 +924,6 @@ export default function DesktopTimerDashboard() {
             const isRunning = !activeFromApi.end_time;
             
             if (isRunning && isToday) {
-              console.log('[Timer] Timer ID mismatch - API has newer running timer. Updating to API timer.');
               // Update localStorage with the new timer from API
               localStorage.setItem(
                 ACTIVE_TIMER_KEY,
@@ -946,11 +938,6 @@ export default function DesktopTimerDashboard() {
                 })
               );
             } else {
-              console.log('[Timer] Timer ID mismatch - API timer is stopped or from different day. Ignoring API timer.', {
-                isRunning,
-                isToday,
-                apiEndTime: activeFromApi.end_time,
-              });
               // Clear the API timer since it's not actually running (likely stale cache)
               activeFromApi = null;
             }
@@ -967,7 +954,6 @@ export default function DesktopTimerDashboard() {
         const isTimerExplicitlyStopped = !hasLocalTimerSnapshot && activeFromApi;
         
         if (isTimerExplicitlyStopped) {
-          console.log('[Timer] API returned active timer but local snapshot is cleared (timer was stopped). Ignoring API timer.');
           activeFromApi = null;
           // Clear the stale timer from API cache if possible. Use the
           // offline-aware wrapper so a network blip during this best-effort
@@ -982,11 +968,9 @@ export default function DesktopTimerDashboard() {
         
         // Preserve auto-started timer if API hasn't caught up yet
         if (wasAutoStartedRef.current && !activeFromApi) {
-          console.log('[Timer] Preserving auto-started timer while API catches up');
           wasAutoStartedRef.current = false;
         } else if (justStoppedByIdleRef.current && activeFromApi) {
           // API returned stale timer after idle stop - ignore it
-          console.log('[Timer] Ignoring stale timer from API after idle stop');
           justStoppedByIdleRef.current = false;
         } else {
           // Capture the id of the timer we were displaying BEFORE we commit the
@@ -1297,7 +1281,6 @@ export default function DesktopTimerDashboard() {
     // This ensures auto-start works after logout/login
     if (canUseDesktopAutoStart()) {
       armAutoStart(userId);
-      console.log('[Timer Auto-Start] Armed auto-start for user:', userId);
     }
     
     // Reset the attempted flag when user changes (new login)
@@ -1318,31 +1301,15 @@ export default function DesktopTimerDashboard() {
       return;
     }
 
-    // Debug logging for auto-start troubleshooting
-    console.log('[Timer Auto-Start] Checking conditions:', {
-      isLoading,
-      isTrackedTimerUser: isTrackedTimerUser(user),
-      canUseDesktopAutoStart: canUseDesktopAutoStart(),
-      activeTimer: !!activeTimer,
-      hasAttemptedAutoStart: hasAttemptedAutoStartRef.current,
-      isStarting,
-      isAutoStartSuppressed: isAutoStartSuppressed(userId),
-      isAutoStartArmed: isAutoStartArmed(userId),
-      officeStartTime: (organization?.settings as any)?.attendance?.office_start_time,
-    });
-
     if (isLoading) {
-      console.log('[Timer Auto-Start] BLOCKED: isLoading is true');
       return;
     }
     
     if (!isTrackedTimerUser(user)) {
-      console.log('[Timer Auto-Start] BLOCKED: User is not a tracked timer user');
       return;
     }
     
     if (!canUseDesktopAutoStart()) {
-      console.log('[Timer Auto-Start] BLOCKED: Not running in desktop app (window.desktopTracker not found)');
       return;
     }
 
@@ -1350,10 +1317,8 @@ export default function DesktopTimerDashboard() {
     // Don't clear auto-start arm for stale snapshots - let fetchData verify first
     if (activeTimer?.start_time) {
       if (hasRestoredSnapshotRef.current) {
-        console.log('[Timer Auto-Start] Stale snapshot present, letting fetchData verify before blocking auto-start');
         return;
       }
-      console.log('[Timer Auto-Start] BLOCKED: Timer already running (has start_time), clearing auto-start state');
       clearAutoStartArm(userId);
       hasAttemptedAutoStartRef.current = true;
       return;
@@ -1363,49 +1328,39 @@ export default function DesktopTimerDashboard() {
     // Safety: if activeTimer has no valid id, treat as null (e.g. error response object)
     if (activeTimer && !activeTimer.start_time) {
       if (activeTimer.id) {
-        console.log('[Timer Auto-Start] Stale timer data (no start_time), waiting for fetchData', { 
-          activeTimerId: activeTimer.id
-        });
         return;
       }
       // Re-arm auto-start in case it was cleared by fetchData finding stale data
       if (!isAutoStartArmed(userId)) {
         armAutoStart(userId);
-        console.log('[Timer Auto-Start] Re-armed auto-start after clearing invalid timer data');
       }
     }
 
     if (isStarting) {
-      console.log('[Timer Auto-Start] BLOCKED: Timer is currently starting');
       return;
     }
     
     if (isAutoStartSuppressed(userId)) {
-      console.log('[Timer Auto-Start] BLOCKED: Auto-start is suppressed');
       hasAttemptedAutoStartRef.current = true;
       return;
     }
     
     if (!isAutoStartArmed(userId)) {
-      console.log('[Timer Auto-Start] BLOCKED: Auto-start is not armed');
       hasAttemptedAutoStartRef.current = true;
       return;
     }
 
     const officeStartTime = (organization?.settings as any)?.attendance?.office_start_time;
     if (!isAtOrAfterOfficeStartTime(officeStartTime)) {
-      console.log('[Timer Auto-Start] Before office start time:', officeStartTime);
       return;
     }
 
-    console.log('[Timer Auto-Start] All conditions met, attempting auto-start');
     hasAttemptedAutoStartRef.current = true;
     void handleStartTimer(true);
   }, [activeTimer?.id, isLoading, isStarting, userId, organization?.settings?.attendance?.office_start_time]);
 
   const handleStartTimer = async (isAutoStart = false) => {
     if (isTimerOperationInProgressRef.current) {
-      console.log('[handleStartTimer] Timer operation already in progress, skipping');
       return;
     }
     isTimerOperationInProgressRef.current = true;
@@ -1525,7 +1480,6 @@ export default function DesktopTimerDashboard() {
 
   const handleStopTimer = async () => {
     if (isTimerOperationInProgressRef.current) {
-      console.log('[handleStopTimer] Timer operation already in progress, skipping');
       return;
     }
     isTimerOperationInProgressRef.current = true;

@@ -3,11 +3,17 @@
 namespace App\Services\Auth;
 
 use App\Events\SessionRevoked;
+use App\Models\EmployeePayrollTemplate;
+use App\Models\EmployeeProfile;
+use App\Models\EmployeeWorkInfo;
+use App\Models\OnboardingJourney;
 use App\Models\Organization;
 use App\Models\ScimToken;
 use App\Models\User;
 use App\Services\Billing\SeatGuard;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -164,6 +170,8 @@ class ScimProvisioningService
                 'scim_synced_at' => now(),
             ]);
 
+            $isNew = ! $user->exists;
+
             /*
              * `active: false` in a payload is a deprovision, and goes through
              * the same path a DELETE does. An IdP that patches somebody
@@ -181,6 +189,13 @@ class ScimProvisioningService
             // that cannot log in.
             $user->save();
             $this->reactivate($user);
+
+            // A newly provisioned user gets the same employee record set that
+            // UserController::store() creates — without it the profile is empty,
+            // work-info endpoints 404, and the onboarding journey never opens.
+            if ($isNew) {
+                $this->createEmployeeRecords($user, $payload, $organization);
+            }
 
             return $user->fresh();
         });
@@ -322,5 +337,104 @@ class ScimProvisioningService
     private function stringOrNull(mixed $value): ?string
     {
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * Build the employee record set a newly provisioned user needs.
+     *
+     * Mirrors what UserController::store() does for a manual create: an
+     * EmployeeProfile with the name the IdP supplied, an EmployeeWorkInfo
+     * with the title/designation, a default payroll template, and an
+     * onboarding journey when the organization has one configured.
+     *
+     * Failures are caught and logged — a missing title or phone must not
+     * prevent the user from being created.
+     */
+    private function createEmployeeRecords(User $user, array $payload, Organization $organization): void
+    {
+        try {
+            $givenName = $this->stringOrNull($payload['name']['givenName'] ?? null);
+            $familyName = $this->stringOrNull($payload['name']['familyName'] ?? null);
+
+            EmployeeProfile::create([
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'first_name' => $givenName,
+                'last_name' => $familyName,
+                'phone' => $this->scimPhone($payload),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('SCIM: could not create employee profile', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $title = $this->stringOrNull($payload['title'] ?? null)
+                ?? $this->stringOrNull($payload['urn:ietf:params:scim:schemas:core:2.0:User:title'] ?? null);
+
+            if ($title) {
+                EmployeeWorkInfo::create([
+                    'organization_id' => $organization->id,
+                    'user_id' => $user->id,
+                    'designation' => $title,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('SCIM: could not create employee work info', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            EmployeePayrollTemplate::getOrCreateForUser(
+                $user->id,
+                $organization->id,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('SCIM: could not create payroll template', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $onboardingService = app(\App\Services\Lifecycle\OnboardingService::class);
+            $joiningDate = $this->stringOrNull($payload['urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:startDate'] ?? null);
+
+            $onboardingService->ensureForUser(
+                user: $user,
+                creator: null,
+                attributes: [
+                    'job_title' => $this->stringOrNull($payload['title'] ?? null),
+                ],
+                joiningDate: Carbon::parse($joiningDate ?: now()),
+            );
+        } catch (\Throwable $e) {
+            Log::warning('SCIM: could not open onboarding journey', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** Extract the first phone number from a SCIM phoneNumbers array. */
+    private function scimPhone(array $payload): ?string
+    {
+        $phones = $payload['phoneNumbers'] ?? [];
+
+        if (! is_array($phones)) {
+            return null;
+        }
+
+        foreach ($phones as $entry) {
+            if (is_array($entry) && ! empty($entry['value'])) {
+                return (string) $entry['value'];
+            }
+        }
+
+        return isset($phones[0]['value']) ? (string) $phones[0]['value'] : null;
     }
 }

@@ -918,7 +918,7 @@ class PayrollDepartmentController extends Controller
 
         // Admin/super_admin can view any employee in the org; employees
         // are restricted to their own benefits.
-        $isAdmin = in_array($user->role, ['admin', 'super_admin'], true);
+        $isAdmin = $user->isAdminLevel();
         if (!$isAdmin && $user->id !== $userId) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
@@ -4896,10 +4896,12 @@ class PayrollDepartmentController extends Controller
 
         $notification = $this->notifyPayslips($run, auth()->id());
 
+        $sentCount = ($notification['in_app_sent'] ?? 0) + ($notification['email_sent'] ?? 0);
+
         return response()->json([
             'success' => true,
-            'message' => "Payslip notifications resent ({$notification['sent_count']} sent"
-                . ($notification['failed_count'] > 0 ? ", {$notification['failed_count']} failed" : '')
+            'message' => "Payslip notifications resent ({$sentCount} sent"
+                . (($notification['failed_count'] ?? 0) > 0 ? ", {$notification['failed_count']} failed" : '')
                 . ').',
             'run' => $run->fresh(),
             'payslip_notification' => $notification,
@@ -4916,7 +4918,7 @@ class PayrollDepartmentController extends Controller
     public function reversePaymentRun(Request $request, int $runId): JsonResponse
     {
         $user = $request->user();
-        if (! in_array($user->role, ['admin', 'super_admin'], true)) {
+        if (! $user->isAdminLevel()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only an admin can reverse a payroll run.',

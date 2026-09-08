@@ -109,7 +109,7 @@ class OrganizationController extends Controller
         }
 
         $user = request()->user();
-        if ($user->role !== 'admin' && $organization->owner_user_id !== $user->id) {
+        if (!$user->isAdminLevel() && $organization->owner_user_id !== $user->id) {
             return response()->json(['message' => 'Only the organization owner or admin can delete the organization.'], 403);
         }
 
@@ -165,12 +165,7 @@ class OrganizationController extends Controller
             return array_merge($user->toArray(), [
                 'department' => trim($departmentName),
                 'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
-                'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
-                    'admin' => 10,
-                    'manager' => 50,
-                    'employee' => 100,
-                    default => 100,
-                },
+                'hierarchy_level' => $user->getHierarchyLevel(),
             ]);
         });
 

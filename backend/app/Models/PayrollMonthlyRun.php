@@ -99,6 +99,9 @@ class PayrollMonthlyRun extends Model
         'disbursed_by',
         'notes',
         'is_full_and_final_run',
+        'payslips_notified_at',
+        'payslips_notified_status',
+        'payslips_notified_failed_count',
     ];
 
     protected $casts = [

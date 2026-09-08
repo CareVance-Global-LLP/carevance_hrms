@@ -1350,13 +1350,24 @@ class TimeEntryController extends Controller
         foreach ($openPunches as $punch) {
             DB::table('attendance_punches')
                 ->where('id', $punch->id)
-                ->update(['punch_out_at' => $cutoff]);
+                ->update([
+                    'punch_out_at' => $cutoff,
+                    'worked_seconds' => (int) max(0, Carbon::parse($punch->punch_in_at)->diffInSeconds($cutoff)),
+                ]);
         }
 
         if ($openPunches->isNotEmpty()) {
+            $closedWorked = (int) DB::table('attendance_punches')
+                ->where('attendance_record_id', $record->id)
+                ->whereNotNull('punch_out_at')
+                ->sum('worked_seconds');
+
             DB::table('attendance_records')
                 ->where('id', $record->id)
-                ->update(['check_out_at' => $cutoff]);
+                ->update([
+                    'check_out_at' => $cutoff,
+                    'worked_seconds' => $closedWorked,
+                ]);
         }
     }
 }

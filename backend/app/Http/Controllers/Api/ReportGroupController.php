@@ -311,12 +311,7 @@ class ReportGroupController extends Controller
             'role' => $user->role,
             'role_id' => $user->role_id,
             'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
-            'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
-                'admin' => 10,
-                'manager' => 50,
-                'employee' => 100,
-                default => 100,
-            },
+            'hierarchy_level' => $user->getHierarchyLevel(),
         ];
     }
 

@@ -835,11 +835,11 @@ class ReimbursementController extends Controller
 
         // Only stamp the timestamp that matches the current reviewer's role
         // and only while the claim is still awaiting that level.
-        if ($role === 'admin' && $isStrictAdmin && $reimbursement->approval_level === 'pending_admin') {
+        if ($isStrictAdmin && $reimbursement->approval_level === 'pending_admin') {
             if (is_null($reimbursement->admin_read_at)) {
                 $reimbursement->update(['admin_read_at' => now()]);
             }
-        } elseif ($role === 'manager' && $reimbursement->approval_level === 'pending_manager') {
+        } elseif ($isManager && $reimbursement->approval_level === 'pending_manager') {
             // Verify the reviewer is the direct manager (or an admin).
             $directReportIds = EmployeeWorkInfo::where('reporting_manager_id', $user->id)
                 ->pluck('user_id')

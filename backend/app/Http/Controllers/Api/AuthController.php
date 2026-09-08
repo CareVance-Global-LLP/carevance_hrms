@@ -66,9 +66,10 @@ class AuthController extends Controller
         // asked for; a paid signup keeps the seats it chose, floored at the plan
         // minimum. The submitted value used to be discarded in both cases, so a
         // checkout for 40 seats created a workspace with 10.
+        $planMinimum = (int) config('carevance.plans.' . $planCode . '.min_seats', 10);
         $seats = $signupMode === 'trial'
             ? self::TRIAL_SEATS
-            : max(10, (int) ($validated['seats'] ?? 10));
+            : max($planMinimum, (int) ($validated['seats'] ?? $planMinimum));
 
         $result = DB::transaction(function () use ($validated, $organizationName, $planCode, $signupMode, $billingCycle, $trialDays, $seats, $request) {
             $existingUser = User::whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->first();

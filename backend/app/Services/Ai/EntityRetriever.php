@@ -87,6 +87,19 @@ final class EntityRetriever
         'compensation' => ['payroll', 'payroll_items'],
         'earning' => ['payroll', 'payroll_items'],
         'deduction' => ['payroll', 'payroll_items'],
+        'gross' => ['payroll', 'payroll_items'],
+        'net' => ['payroll', 'payroll_items'],
+        'stipend' => ['payroll', 'payroll_items'],
+        'income' => ['payroll', 'payroll_items'],
+        'disbursement' => ['payroll', 'payroll_items'],
+        'bank_file' => ['payroll', 'payroll_items'],
+        'reimbursement' => ['payroll', 'payroll_items'],
+        'bonus' => ['payroll', 'payroll_items'],
+        'gratuity' => ['payroll', 'payroll_items'],
+        'provident' => ['payroll', 'payroll_items'],
+        'esi' => ['payroll', 'payroll_items'],
+        'tds' => ['payroll', 'payroll_items'],
+        'tax' => ['payroll', 'payroll_items'],
 
         // absent|present|late|attendance -> attendance
         'absent' => ['attendance', 'attendance_records'],
@@ -96,6 +109,14 @@ final class EntityRetriever
         'punch' => ['attendance', 'attendance_records'],
         'clock' => ['attendance', 'attendance_records'],
         'absence' => ['attendance', 'attendance_records'],
+        'check_in' => ['attendance', 'attendance_records'],
+        'check_out' => ['attendance', 'attendance_records'],
+        'clock_in' => ['attendance', 'attendance_records'],
+        'clock_out' => ['attendance', 'attendance_records'],
+        'tardiness' => ['attendance', 'attendance_records'],
+        'overtime' => ['attendance', 'attendance_records'],
+        'hours_worked' => ['attendance', 'attendance_records'],
+        'break' => ['attendance', 'attendance_records'],
 
         // leave|holiday|pto|vacation -> leave
         'leave' => ['leave', 'leave_requests'],
@@ -104,6 +125,12 @@ final class EntityRetriever
         'vacation' => ['leave', 'leave_requests'],
         'sick' => ['leave', 'leave_requests'],
         'casual' => ['leave', 'leave_requests'],
+        'time_off' => ['leave', 'leave_requests'],
+        'absence' => ['leave', 'leave_requests'],
+        'leave_balance' => ['leave', 'leave_requests'],
+        'leave_request' => ['leave', 'leave_requests'],
+        'leave_type' => ['leave', 'leave_requests'],
+        'encashment' => ['leave', 'leave_requests'],
 
         /*
          * who|people|staff|employee|headcount -> employees
@@ -120,6 +147,18 @@ final class EntityRetriever
         'joiner' => ['employees', 'users', 'employee_work_infos'],
         'workforce' => ['employees', 'users', 'employee_work_infos'],
         'team' => ['employees', 'users', 'employee_work_infos'],
+        'personnel' => ['employees', 'users', 'employee_work_infos'],
+        'crew' => ['employees', 'users', 'employee_work_infos'],
+        'talent' => ['employees', 'users', 'employee_work_infos'],
+        'member' => ['employees', 'users', 'employee_work_infos'],
+        'worker' => ['employees', 'users', 'employee_work_infos'],
+        'hire' => ['employees', 'users', 'employee_work_infos'],
+        'resignation' => ['employees', 'users', 'employee_work_infos'],
+        'exit' => ['employees', 'users', 'employee_work_infos'],
+        'joining' => ['employees', 'users', 'employee_work_infos'],
+        'department' => ['employees', 'users', 'employee_work_infos'],
+        'designation' => ['employees', 'users', 'employee_work_infos'],
+        'location' => ['employees', 'users', 'employee_work_infos'],
 
         // asset|laptop|device -> assets
         'asset' => ['assets'],
@@ -127,6 +166,7 @@ final class EntityRetriever
         'device' => ['assets'],
         'equipment' => ['assets'],
         'hardware' => ['assets'],
+        'inventory' => ['assets'],
 
         // task|project|work -> work
         'task' => ['work', 'tasks'],
@@ -134,6 +174,11 @@ final class EntityRetriever
         'work' => ['work', 'tasks'],
         'timesheet' => ['work', 'tasks'],
         'todo' => ['work', 'tasks'],
+        'deliverable' => ['work', 'tasks'],
+        'milestone' => ['work', 'tasks'],
+        'backlog' => ['work', 'tasks'],
+        'sprint' => ['work', 'tasks'],
+        'ticket' => ['work', 'tasks'],
 
         // candidate|hiring|applicant|job -> hiring
         'candidate' => ['hiring', 'candidates'],
@@ -145,6 +190,7 @@ final class EntityRetriever
         'offer' => ['hiring', 'candidates'],
         'opening' => ['hiring', 'candidates'],
         'vacancy' => ['hiring', 'candidates'],
+        'onboarding' => ['hiring', 'candidates'],
     ];
 
     /** Words that carry no signal about WHICH entity is meant. */

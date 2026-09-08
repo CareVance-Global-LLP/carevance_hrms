@@ -155,7 +155,7 @@ class SamlConnectionController extends Controller
              * ceiling on what that can mint has to be lower than the authority
              * to change this connection.
              */
-            'default_role' => ['sometimes', 'nullable', Rule::in(['employee', 'manager', 'hr'])],
+            'default_role' => ['sometimes', 'nullable', Rule::in(['employee', 'manager'])],
             'legal_entity_id' => 'sometimes|nullable|integer|exists:legal_entities,id',
             'is_active' => 'sometimes|boolean',
         ]);

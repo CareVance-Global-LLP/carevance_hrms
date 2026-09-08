@@ -35,6 +35,7 @@ import PageHeader from '@/components/dashboard/PageHeader';
 import SurfaceCard from '@/components/dashboard/SurfaceCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { PageLoadingState, PageErrorState } from '@/components/ui/PageState';
+import WidgetErrorBoundary from '@/components/WidgetErrorBoundary';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDateTime } from '@/lib/dateTime';
 import { DEFAULT_APP_TIMEZONE } from '@/lib/timezones';
@@ -375,6 +376,7 @@ export default function SuperAdminDashboard() {
           </SurfaceCard>
 
           {/* Main KPI Cards */}
+          <WidgetErrorBoundary widgetName="kpi-cards">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Organizations Card */}
             <SurfaceCard 
@@ -530,8 +532,10 @@ export default function SuperAdminDashboard() {
               </div>
             </SurfaceCard>
           </div>
+          </WidgetErrorBoundary>
 
           {/* Secondary Stats Row */}
+          <WidgetErrorBoundary widgetName="secondary-stats">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* User Distribution */}
             <SurfaceCard className="p-6">
@@ -675,8 +679,10 @@ export default function SuperAdminDashboard() {
               </div>
             </SurfaceCard>
           </div>
+          </WidgetErrorBoundary>
 
           {/* Quick Actions */}
+          <WidgetErrorBoundary widgetName="quick-actions">
           <SurfaceCard className="p-6">
             <h3 className="text-lg font-semibold text-slate-900 mb-6">Quick Actions</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -726,6 +732,7 @@ export default function SuperAdminDashboard() {
               ))}
             </div>
           </SurfaceCard>
+          </WidgetErrorBoundary>
 
           {/* Footer Info */}
           <div className="text-center text-sm text-slate-500 pt-4">

@@ -27,7 +27,7 @@ class TaxProofUploadController extends Controller
     {
         $user = $request->user();
         $orgId = $user->organization_id;
-        $isAdmin = in_array($user->role, ['admin', 'super_admin'], true);
+        $isAdmin = $user->isAdminLevel();
 
         $filters = $request->only(['status', 'user_id', 'financial_year', 'section']);
         $submissions = $this->svc->listSubmissions($orgId, $filters);
@@ -60,7 +60,7 @@ class TaxProofUploadController extends Controller
     {
         $user = $request->user();
         $orgId = $user->organization_id;
-        if (!in_array($user->role, ['admin', 'super_admin'], true)) {
+        if (!$user->isAdminLevel()) {
             return response()->json(['message' => 'Only admin can view compliance summary'], 403);
         }
 
@@ -133,7 +133,7 @@ class TaxProofUploadController extends Controller
           ->where('organization_id', $user->organization_id)
           ->firstOrFail();
 
-        if (!in_array($user->role, ['admin', 'super_admin'], true) && $submission->user_id !== $user->id) {
+        if (!$user->isAdminLevel() && $submission->user_id !== $user->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -152,7 +152,7 @@ class TaxProofUploadController extends Controller
             ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
-        if (!in_array($user->role, ['admin', 'super_admin'], true) && $submission->user_id !== $user->id) {
+        if (!$user->isAdminLevel() && $submission->user_id !== $user->id) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -178,7 +178,7 @@ class TaxProofUploadController extends Controller
     public function review(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (!in_array($user->role, ['admin', 'super_admin'], true)) {
+        if (!$user->isAdminLevel()) {
             return response()->json(['message' => 'Only admin can review'], 403);
         }
 
@@ -211,7 +211,7 @@ class TaxProofUploadController extends Controller
     public function bulkApprove(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!in_array($user->role, ['admin', 'super_admin'], true)) {
+        if (!$user->isAdminLevel()) {
             return response()->json(['message' => 'Only admin can bulk-approve'], 403);
         }
 
@@ -245,7 +245,7 @@ class TaxProofUploadController extends Controller
             ->where('organization_id', $user->organization_id)
             ->firstOrFail();
 
-        $isAdmin = in_array($user->role, ['admin', 'super_admin'], true);
+        $isAdmin = $user->isAdminLevel();
         if (!$isAdmin && ($submission->user_id !== $user->id || $submission->status !== 'submitted')) {
             return response()->json(['message' => 'Forbidden — cannot delete a reviewed proof'], 403);
         }

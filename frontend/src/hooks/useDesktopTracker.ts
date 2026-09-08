@@ -1663,20 +1663,14 @@ export const useDesktopTracker = () => {
         if (!cachedEntry?.id) {
           // No cached entry, use API entry (timer just started)
           activeEntryRef.current = activeEntry;
-          console.log('[desktop-tracker] Timer started from API', { entryId: activeEntry.id });
         } else if (cachedEntry.id === activeEntry.id) {
           // API matches cached entry, update with fresh data
           activeEntryRef.current = activeEntry;
         } else {
           // API entry ID doesn't match cached entry - timer was restarted or stale data
-          console.log('[desktop-tracker] Timer ID mismatch in tick', {
-            cached_id: cachedEntry.id,
-            api_id: activeEntry.id,
-          });
           // Trust the newer entry (higher ID usually means newer)
           if (activeEntry.id > cachedEntry.id) {
             activeEntryRef.current = activeEntry;
-            console.log('[desktop-tracker] Updated to newer timer from API');
           }
           // Otherwise keep cached entry - it might be a stale API response
         }
@@ -2667,7 +2661,6 @@ export const useDesktopTracker = () => {
         const cachedEntry = activeEntryRef.current;
         // If no cached entry, timer was likely stopped - don't check API to avoid stale data
         if (!cachedEntry?.id) {
-          console.log('[desktop-tracker] No cached active entry, skipping idle stop check');
           return;
         }
         if (cachedEntry?.id && lastAutoStoppedEntryIdRef.current === cachedEntry.id) return;
@@ -2682,10 +2675,7 @@ export const useDesktopTracker = () => {
         if (activeEntry.id === cachedEntry.id) {
           activeEntryRef.current = activeEntry;
         } else {
-          console.log('[desktop-tracker] API active entry ID mismatch, using cached entry', {
-            cached_id: cachedEntry.id,
-            api_id: activeEntry.id,
-          });
+          // API entry ID doesn't match cached — keep cached entry
         }
         /*
          * Bound to the entry, exactly as tick() and runIdleGuard() do.
@@ -2792,7 +2782,6 @@ export const useDesktopTracker = () => {
           if (!isCurrentRun() || !Array.isArray(stored) || stored.length === 0) return;
 
           pendingSessionQueueRef.current.restore(stored as PendingSession[]);
-          console.log(`[desktop-tracker] Restored ${stored.length} unsent session(s) from disk`);
         })
         .catch((error) => { reportSilentError('desktop-tracker', error); });
     }

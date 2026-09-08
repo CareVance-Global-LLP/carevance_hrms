@@ -18,7 +18,7 @@ class GoalCheckInController extends Controller
             return null;
         }
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $involved = $goal->employee_id === $user->id || $goal->manager_id === $user->id;
 
         // Team and company goals are visible to the whole organization
@@ -53,7 +53,7 @@ class GoalCheckInController extends Controller
             return response()->json(['message' => 'Not found.'], 404);
         }
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $canUpdate = $isAdmin || $goal->manager_id === $user->id || $goal->employee_id === $user->id;
         if (! $canUpdate) {
             return response()->json(['message' => 'Unauthorized.'], 403);

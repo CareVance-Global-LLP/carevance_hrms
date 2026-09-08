@@ -31,7 +31,7 @@ class PerformanceReviewController extends Controller
      */
     private function anonymize(PerformanceReview $review, $user): void
     {
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $anonymityOn = $review->cycle->anonymize_peer ?? true;
 
         if (
@@ -48,7 +48,7 @@ class PerformanceReviewController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
 
         $query = PerformanceReview::with(self::RELATIONS)
             ->where('organization_id', $user->organization_id);
@@ -104,7 +104,7 @@ class PerformanceReviewController extends Controller
         ]);
 
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
 
         if ($request->filled('review_cycle_id')) {
             $cycle = ReviewCycle::where('organization_id', $user->organization_id)->find($request->review_cycle_id);
@@ -178,7 +178,7 @@ class PerformanceReviewController extends Controller
             ->where('organization_id', $user->organization_id)
             ->findOrFail($id);
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $isEmployee = $review->employee_id === $user->id;
         $isReviewer = $review->reviewer_id === $user->id;
 
@@ -215,7 +215,7 @@ class PerformanceReviewController extends Controller
         $user = $request->user();
         $review = PerformanceReview::where('organization_id', $user->organization_id)->findOrFail($id);
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $isReviewer = $review->reviewer_id === $user->id;
 
         if (!$isAdmin && !$isReviewer) {
@@ -256,7 +256,7 @@ class PerformanceReviewController extends Controller
         $user = $request->user();
         $review = PerformanceReview::where('organization_id', $user->organization_id)->findOrFail($id);
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $isReviewer = $review->reviewer_id === $user->id;
 
         if (!$isAdmin && !$isReviewer) {
@@ -271,7 +271,7 @@ class PerformanceReviewController extends Controller
     public function getEmployeeReviews(int $employeeId, Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         
         $employee = \App\Models\User::findOrFail($employeeId);
         if ($employee->organization_id !== $user->organization_id) {
@@ -302,7 +302,7 @@ class PerformanceReviewController extends Controller
     public function getSummary(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         
         $query = PerformanceReview::where('organization_id', $user->organization_id);
 
@@ -350,7 +350,7 @@ class PerformanceReviewController extends Controller
         ]);
 
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $employee = \App\Models\User::findOrFail($request->employee_id);
 
         if ($employee->organization_id !== $user->organization_id) {

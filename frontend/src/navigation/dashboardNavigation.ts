@@ -171,7 +171,7 @@ export const topNavigation: NavGroup[] = [
     label: 'Communication',
     icon: MessageSquare,
     items: [
-      { label: 'Announcements', to: '/notifications', icon: Bell, adminOnly: true },
+      { label: 'Announcements', to: '/notifications', icon: Bell },
       { label: 'Chat', to: '/chat', icon: MessageSquare, planFeature: 'chat' },
     ],
   },

@@ -2,6 +2,9 @@
 
 namespace App\Services\Chat;
 
+use App\Events\NewMessage;
+use App\Events\ThreadUpdated;
+use App\Events\UserTyping;
 use App\Models\ChatConversation;
 use App\Models\ChatGroup;
 use App\Models\ChatGroupMember;
@@ -171,6 +174,17 @@ class ChatService
             'participant_one_id' => $one,
             'participant_two_id' => $two,
         ]);
+
+        try {
+            ThreadUpdated::dispatch(
+                [(int) $user->id, (int) $other->id],
+                'direct',
+                (int) $conversation->id,
+                'thread_created'
+            );
+        } catch (\Throwable) {
+            // Broadcast failure must never prevent a conversation from being created.
+        }
 
         return [
             'status' => 201,
@@ -470,6 +484,28 @@ class ChatService
                         : null,
                 ], fn ($value) => $value !== null)
             );
+
+            try {
+                ThreadUpdated::dispatch(
+                    [$otherParticipantId, (int) $user->id],
+                    'direct',
+                    (int) $conversation->id,
+                    'message_sent'
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent a message from being sent.
+            }
+
+            try {
+                NewMessage::dispatch(
+                    [$otherParticipantId, (int) $user->id],
+                    'direct',
+                    (int) $conversation->id,
+                    $message->load(['sender:id,name,email', 'reactionEntries'])->toArray()
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent a message from being sent.
+            }
         }
 
         return ['status' => 201, 'payload' => $message->load(['sender:id,name,email', 'reactionEntries'])];
@@ -534,6 +570,28 @@ class ChatService
                         : null,
                 ], fn ($value) => $value !== null)
             );
+
+            try {
+                ThreadUpdated::dispatch(
+                    $memberIds->push((int) $user->id)->toArray(),
+                    'group',
+                    (int) $group->id,
+                    'message_sent'
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent a message from being sent.
+            }
+
+            try {
+                NewMessage::dispatch(
+                    $memberIds->push((int) $user->id)->toArray(),
+                    'group',
+                    (int) $group->id,
+                    $message->load(['sender:id,name,email', 'reactionEntries'])->toArray()
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent a message from being sent.
+            }
         }
 
         return ['status' => 201, 'payload' => $message->load(['sender:id,name,email', 'reactionEntries'])];
@@ -767,6 +825,23 @@ class ChatService
             ->where('sender_id', '!=', $user->id)
             ->update(['read_at' => now()]);
 
+        $otherParticipantId = $conversation->participant_one_id === $user->id
+            ? $conversation->participant_two_id
+            : $conversation->participant_one_id;
+
+        if ($otherParticipantId) {
+            try {
+                ThreadUpdated::dispatch(
+                    [(int) $otherParticipantId],
+                    'direct',
+                    (int) $conversation->id,
+                    'read_status_changed'
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent read receipt from being recorded.
+            }
+        }
+
         return ['status' => 200, 'payload' => ['message' => 'Marked as read']];
     }
 
@@ -782,6 +857,24 @@ class ChatService
         }
 
         $membership->update(['last_read_at' => now()]);
+
+        $memberIds = ChatGroupMember::where('group_id', $groupId)
+            ->where('user_id', '!=', $user?->id)
+            ->pluck('user_id')
+            ->toArray();
+
+        if (!empty($memberIds)) {
+            try {
+                ThreadUpdated::dispatch(
+                    $memberIds,
+                    'group',
+                    (int) $groupId,
+                    'read_status_changed'
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent read receipt from being recorded.
+            }
+        }
 
         return ['status' => 200, 'payload' => ['message' => 'Marked as read']];
     }
@@ -804,6 +897,25 @@ class ChatService
                 ->delete();
         }
 
+        $otherParticipantId = $conversation->participant_one_id === $user->id
+            ? $conversation->participant_two_id
+            : $conversation->participant_one_id;
+
+        if ($otherParticipantId) {
+            try {
+                UserTyping::dispatch(
+                    [(int) $otherParticipantId],
+                    (int) $user->id,
+                    $user->name ?? 'Unknown',
+                    'direct',
+                    (int) $conversation->id,
+                    $isTyping
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent typing status from being stored.
+            }
+        }
+
         return ['status' => 200, 'payload' => ['message' => 'Typing status updated']];
     }
 
@@ -823,6 +935,26 @@ class ChatService
             ChatGroupTypingStatus::where('group_id', $group->id)
                 ->where('user_id', $user->id)
                 ->delete();
+        }
+
+        $memberIds = ChatGroupMember::where('group_id', $groupId)
+            ->where('user_id', '!=', $user?->id)
+            ->pluck('user_id')
+            ->toArray();
+
+        if (!empty($memberIds)) {
+            try {
+                UserTyping::dispatch(
+                    $memberIds,
+                    (int) $user->id,
+                    $user->name ?? 'Unknown',
+                    'group',
+                    (int) $groupId,
+                    $isTyping
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent typing status from being stored.
+            }
         }
 
         return ['status' => 200, 'payload' => ['message' => 'Typing status updated']];

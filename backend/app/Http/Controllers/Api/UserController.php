@@ -145,12 +145,7 @@ class UserController extends Controller
                     'role_id' => $user->role_id,
                     'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
                     'role_color' => $user->customRole?->color ?? 'slate',
-                    'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
-                        'admin' => 10,
-                        'manager' => 50,
-                        'employee' => 100,
-                        default => 100,
-                    },
+                    'hierarchy_level' => $user->getHierarchyLevel(),
                     'reporting_manager_id' => $user->employeeWorkInfo?->reporting_manager_id
                         ? (int) $user->employeeWorkInfo->reporting_manager_id
                         : null,
@@ -187,12 +182,7 @@ class UserController extends Controller
                 'timezone' => $timezone,
                 'role_name' => $user->customRole?->name ?? ucfirst($user->role ?? 'employee'),
                 'role_color' => $user->customRole?->color ?? 'slate',
-                'hierarchy_level' => $user->customRole?->hierarchy_level ?? match ($user->role) {
-                    'admin' => 10,
-                    'manager' => 50,
-                    'employee' => 100,
-                    default => 100,
-                },
+                'hierarchy_level' => $user->getHierarchyLevel(),
             ]);
         });
 
@@ -346,10 +336,28 @@ class UserController extends Controller
             'email_verified_at' => $suppliedPassword !== null ? now() : null,
         ]);
 
-        // Auto-create EmployeeProfile so work-info endpoint works
+        // Auto-create EmployeeProfile with name parts and phone so the
+        // profile page is not empty on first open.
+        $nameParts = explode(' ', $validated['name'], 2);
         $user->employeeProfile()->create([
             'organization_id' => $currentUser->organization_id,
+            'first_name' => $nameParts[0] ?? null,
+            'last_name' => $nameParts[1] ?? null,
+            'phone' => $validated['phone'] ?? null,
         ]);
+
+        // Populate EmployeeWorkInfo with the onboarding fields the admin
+        // supplied — joining_date, designation and reporting manager — so the
+        // employee record is usable from day one instead of requiring a
+        // separate edit pass.
+        if ($validated['joining_date'] ?? $validated['designation'] ?? $validated['manager_id'] ?? null) {
+            $user->employeeWorkInfo()->create([
+                'organization_id' => $currentUser->organization_id,
+                'joining_date' => $validated['joining_date'] ?? null,
+                'designation' => $validated['designation'] ?? null,
+                'reporting_manager_id' => $validated['manager_id'] ?? null,
+            ]);
+        }
 
         if (array_key_exists('group_ids', $validated)) {
             $groupIds = Group::where('organization_id', $currentUser->organization_id)
@@ -1205,7 +1213,7 @@ class UserController extends Controller
             'can_edit_time' => array_key_exists('can_edit_time', $settings)
                 ? filter_var($settings['can_edit_time'], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false
                 : true,
-            'payroll_visibility' => $role !== 'admin' && $role !== 'manager'
+            'payroll_visibility' => $this->roleToHierarchyLevel($role) >= 100
                 ? false
                 : (
                     array_key_exists('payroll_visibility', $settings)
@@ -1242,9 +1250,27 @@ class UserController extends Controller
         }
     }
 
+    /**
+     * Resolve a legacy role string to its hierarchy level.
+     *
+     * Used by settings normalization and group membership checks that still
+     * receive a role string rather than a User model. Custom roles are resolved
+     * through their Role model, but this covers the built-in fallback.
+     */
+    private function roleToHierarchyLevel(string $role): int
+    {
+        return match (strtolower(trim($role))) {
+            'super_admin' => 0,
+            'admin' => 10,
+            'manager' => 50,
+            'employee', 'client' => 100,
+            default => 999,
+        };
+    }
+
     private function assertSingleGroupMembershipLimit(string $role, array $groupIds): void
     {
-        if ($role !== 'admin' && count($groupIds) > 1) {
+        if ($this->roleToHierarchyLevel($role) > 10 && count($groupIds) > 1) {
             throw ValidationException::withMessages([
                 'group_ids' => ['Managers and employees can belong to only one department at a time.'],
             ]);

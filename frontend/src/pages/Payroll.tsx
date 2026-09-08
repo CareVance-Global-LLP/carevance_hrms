@@ -260,8 +260,8 @@ export default function PayrollPage() {
     updateParams({ view: null });
   };
 
-  const handleSaveSettings = (settings: PayrollOrganizationSettings) => {
-    console.log('Settings saved:', settings);
+  const handleSaveSettings = (_settings: PayrollOrganizationSettings) => {
+    // Settings saved — no action needed beyond the handler completing.
   };
 
   return (

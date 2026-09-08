@@ -106,7 +106,7 @@ class ActivityController extends Controller
 
     private function canViewAll(?\App\Models\User $user): bool
     {
-        return $user && in_array($user->role, ['admin', 'manager'], true);
+        return $user && $user->isManagerLevel();
     }
 
     public function index(Request $request)

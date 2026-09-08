@@ -8,12 +8,14 @@ import { isEmployeeUser } from '@/lib/permissions';
 import Button from '@/components/ui/Button';
 import { PageLoadingState } from '@/components/ui/PageState';
 import MyOnboardingCard from '@/components/onboarding/MyOnboardingCard';
-import { formatDate as formatDateForTimezone, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
+import WidgetErrorBoundary from '@/components/WidgetErrorBoundary';
+import { formatDate as formatDateForTimezone, formatDateTime, formatTime as formatTimeForTimezone, getStartTimeMs } from '@/lib/dateTime';
 import { formatDuration, formatTimerClock } from '@/lib/formatters';
 import { greetUser } from '@/lib/greeting';
 import { DEFAULT_SHIFT_TARGET_SECONDS, resolveShiftTargetSeconds } from '@/lib/shiftTarget';
 import {
   Activity,
+  Bell,
   Briefcase,
   CheckCircle2,
   ClipboardCheck,
@@ -355,181 +357,244 @@ export default function Dashboard() {
         today's idle minutes — and the card removes itself once they have no
         open journey, so it costs established staff nothing.
       */}
-      <MyOnboardingCard />
+      <WidgetErrorBoundary widgetName="onboarding-card">
+        <MyOnboardingCard />
+      </WidgetErrorBoundary>
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard label="Track Time" value={formatDuration(effectiveTrackSeconds)} hint="Tracked time today" icon={Clock} tint="bg-blue-50 text-blue-600" />
-        <KpiCard label="Work Time" value={formatDuration(effectiveWorkSeconds)} hint="Worked (tracked minus idle)" icon={Clock} tint="bg-emerald-50 text-emerald-600" />
-        <KpiCard label="Idle Time" value={formatDuration(effectiveIdleSeconds)} hint="Idle within tracked time" icon={Hourglass} tint="bg-amber-50 text-amber-600" />
-        <KpiCard label="Break Time" value={formatDuration(totalBreakSeconds)} hint="Total break today" icon={Hourglass} tint="bg-orange-50 text-orange-600" />
-      </section>
+      {(() => {
+        const ANNOUNCEMENT_TYPES = new Set(['announcement', 'news', 'poll']);
+        const recentAnnouncements = notifications
+          .filter((n) => ANNOUNCEMENT_TYPES.has(n.type))
+          .slice(0, 3);
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <KpiCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
-        <KpiCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
-        <KpiCard
-          label={hasHalfDayLeaveToday ? 'Leave Today' : 'Active Tasks'}
-          value={hasHalfDayLeaveToday ? 'Half Day' : activeTasksCount}
-          hint={hasHalfDayLeaveToday ? 'Attendance target reduced' : `${totalTasksCount} total tasks`}
-          icon={FolderKanban}
-          tint="bg-emerald-50 text-emerald-600"
-        />
-      </section>
+        if (recentAnnouncements.length === 0) return null;
+
+        return (
+          <WidgetErrorBoundary widgetName="announcements">
+            <Card className="p-4">
+              <SectionTitle
+                title="Announcements"
+                action={
+                  <Link to="/notifications" className="text-xs font-medium text-blue-600 hover:text-blue-800">
+                    View all
+                  </Link>
+                }
+              />
+              <div className="space-y-2">
+                {recentAnnouncements.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-start gap-3 rounded-lg border border-slate-100 p-3 ${!item.is_read ? 'bg-blue-50/40' : ''}`}
+                  >
+                    <Bell className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-slate-900 truncate">
+                        {item.title || 'Announcement'}
+                      </p>
+                      {item.message ? (
+                        <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{item.message}</p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 text-[11px] text-slate-400">
+                      {formatDateTime(item.created_at, displayTimezone)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </WidgetErrorBoundary>
+        );
+      })()}
+
+      <WidgetErrorBoundary widgetName="time-tracking-kpis">
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <KpiCard label="Track Time" value={formatDuration(effectiveTrackSeconds)} hint="Tracked time today" icon={Clock} tint="bg-blue-50 text-blue-600" />
+          <KpiCard label="Work Time" value={formatDuration(effectiveWorkSeconds)} hint="Worked (tracked minus idle)" icon={Clock} tint="bg-emerald-50 text-emerald-600" />
+          <KpiCard label="Idle Time" value={formatDuration(effectiveIdleSeconds)} hint="Idle within tracked time" icon={Hourglass} tint="bg-amber-50 text-amber-600" />
+          <KpiCard label="Break Time" value={formatDuration(totalBreakSeconds)} hint="Total break today" icon={Hourglass} tint="bg-orange-50 text-orange-600" />
+        </section>
+      </WidgetErrorBoundary>
+
+      <WidgetErrorBoundary widgetName="productivity-kpis">
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <KpiCard label="Time Left Today" value={formatDuration(remainingShiftSeconds)} hint={`Target ${formatDuration(shiftTargetSeconds)}`} icon={Hourglass} tint="bg-violet-50 text-violet-600" />
+          <KpiCard label="Productivity" value={`${productivityScore}%`} hint="Based on this week's working ratio" icon={TrendingUp} tint="bg-amber-50 text-amber-600" />
+          <KpiCard
+            label={hasHalfDayLeaveToday ? 'Leave Today' : 'Active Tasks'}
+            value={hasHalfDayLeaveToday ? 'Half Day' : activeTasksCount}
+            hint={hasHalfDayLeaveToday ? 'Attendance target reduced' : `${totalTasksCount} total tasks`}
+            icon={FolderKanban}
+            tint="bg-emerald-50 text-emerald-600"
+          />
+        </section>
+      </WidgetErrorBoundary>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.9fr)]">
-        <Card id="attendance-shift" className="scroll-mt-24 p-4">
-          <SectionTitle title="Attendance & Shift" action={<ClipboardCheck className="h-4 w-4 text-blue-600" />} />
-          <div className="space-y-3 text-xs">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <span className="flex items-center gap-2 text-slate-500"><LogIn className="h-4 w-4 text-emerald-600" />Last check in</span>
-              <span className="font-semibold text-slate-900">{formatClockTime(checkInAt)}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <span className="flex items-center gap-2 text-slate-500"><LogOut className="h-4 w-4 text-amber-600" />Last check out</span>
-              <span className="font-semibold text-slate-900">{isCheckedIn ? 'Still checked in' : formatClockTime(checkOutAt)}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-slate-100 p-3">
-                <p className="text-slate-500">Late</p>
-                <p className={`mt-2 font-semibold ${isLate ? 'text-rose-600' : 'text-emerald-600'}`}>
-                  {isLate
-                    ? (() => {
-                        const hrs = Math.floor(lateMinutes / 60);
-                        const mins = lateMinutes % 60;
-                        if (hrs > 0) {
-                          return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
-                        }
-                        return `${lateMinutes}m`;
-                      })()
-                    : 'On time'}
-                </p>
+        <WidgetErrorBoundary widgetName="attendance-shift">
+          <Card id="attendance-shift" className="scroll-mt-24 p-4">
+            <SectionTitle title="Attendance & Shift" action={<ClipboardCheck className="h-4 w-4 text-blue-600" />} />
+            <div className="space-y-3 text-xs">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <span className="flex items-center gap-2 text-slate-500"><LogIn className="h-4 w-4 text-emerald-600" />Last check in</span>
+                <span className="font-semibold text-slate-900">{formatClockTime(checkInAt)}</span>
               </div>
-              <div className="rounded-lg border border-slate-100 p-3">
-                <p className="text-slate-500">Overtime</p>
-                <p className="mt-2 font-semibold text-slate-900">{formatDuration(overtimeSeconds)}</p>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <span className="flex items-center gap-2 text-slate-500"><LogOut className="h-4 w-4 text-amber-600" />Last check out</span>
+                <span className="font-semibold text-slate-900">{isCheckedIn ? 'Still checked in' : formatClockTime(checkOutAt)}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-100 p-3">
+                  <p className="text-slate-500">Late</p>
+                  <p className={`mt-2 font-semibold ${isLate ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {isLate
+                      ? (() => {
+                          const hrs = Math.floor(lateMinutes / 60);
+                          const mins = lateMinutes % 60;
+                          if (hrs > 0) {
+                            return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+                          }
+                          return `${lateMinutes}m`;
+                        })()
+                      : 'On time'}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-100 p-3">
+                  <p className="text-slate-500">Overtime</p>
+                  <p className="mt-2 font-semibold text-slate-900">{formatDuration(overtimeSeconds)}</p>
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </WidgetErrorBoundary>
 
-        <Card id="my-focus" className="scroll-mt-24 p-4">
-          <SectionTitle title="My Focus" action={<Activity className="h-4 w-4 text-emerald-600" />} />
-          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-slate-500">Current work</p>
-            <p className="mt-2 truncate text-sm font-semibold text-slate-950">{activeWorkTitle}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{activeWorkSubtitle}</p>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">Tasks</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{activeTasksCount}</p>
+        <WidgetErrorBoundary widgetName="my-focus">
+          <Card id="my-focus" className="scroll-mt-24 p-4">
+            <SectionTitle title="My Focus" action={<Activity className="h-4 w-4 text-emerald-600" />} />
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">Current work</p>
+              <p className="mt-2 truncate text-sm font-semibold text-slate-950">{activeWorkTitle}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">{activeWorkSubtitle}</p>
             </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
               <div className="rounded-lg border border-slate-100 p-3">
-                <p className="text-xs text-slate-500">Track Time</p>
-                <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
+                <p className="text-xs text-slate-500">Tasks</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{activeTasksCount}</p>
               </div>
-          </div>
-        </Card>
+                <div className="rounded-lg border border-slate-100 p-3">
+                  <p className="text-xs text-slate-500">Track Time</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
+                </div>
+            </div>
+          </Card>
+        </WidgetErrorBoundary>
       </section>
 
       {isEmployeeUser(user) && (
-        <TeamHierarchyCard
-          id="my-team-card"
-          data={teamHierarchy}
-          isLoading={isTeamLoading}
-        />
+        <WidgetErrorBoundary widgetName="team-hierarchy">
+          <TeamHierarchyCard
+            id="my-team-card"
+            data={teamHierarchy}
+            isLoading={isTeamLoading}
+          />
+        </WidgetErrorBoundary>
       )}
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card id="work-log" className="scroll-mt-24 p-4">
-          <SectionTitle title="My Work Log" />
-          <div className="overflow-x-auto rounded-lg border border-slate-100">
-            {todayEntries.length === 0 ? (
-              <EmptyInline>No work entries yet today</EmptyInline>
-            ) : (
-              <table className="min-w-[620px] w-full text-left text-xs">
-                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Project / Task</th>
-                    <th className="px-4 py-3 font-medium">Started</th>
-                    <th className="px-4 py-3 font-medium">Duration</th>
-                    <th className="px-4 py-3 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {todayEntries.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-slate-900">{getTimeEntryTitle(entry)}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">{getTimeEntrySubtitle(entry)}</p>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{formatTimeForTimezone(entry.start_time, displayTimezone)}</td>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{formatDuration(entry.id === activeTimer?.id ? activeTimerSeconds : entry.duration)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${entry.end_time ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
-                          {entry.end_time ? 'Completed' : 'Running'}
-                        </span>
-                      </td>
+        <WidgetErrorBoundary widgetName="work-log">
+          <Card id="work-log" className="scroll-mt-24 p-4">
+            <SectionTitle title="My Work Log" />
+            <div className="overflow-x-auto rounded-lg border border-slate-100">
+              {todayEntries.length === 0 ? (
+                <EmptyInline>No work entries yet today</EmptyInline>
+              ) : (
+                <table className="min-w-[620px] w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Project / Task</th>
+                      <th className="px-4 py-3 font-medium">Started</th>
+                      <th className="px-4 py-3 font-medium">Duration</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </Card>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {todayEntries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-slate-900">{getTimeEntryTitle(entry)}</p>
+                          <p className="mt-1 text-[11px] text-slate-500">{getTimeEntrySubtitle(entry)}</p>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{formatTimeForTimezone(entry.start_time, displayTimezone)}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-900">{formatDuration(entry.id === activeTimer?.id ? activeTimerSeconds : entry.duration)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${entry.end_time ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'}`}>
+                            {entry.end_time ? 'Completed' : 'Running'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </Card>
+        </WidgetErrorBoundary>
 
-        <Card id="time-tracker-card" className="scroll-mt-24 p-4">
-          <SectionTitle title="Time Tracker" />
-          <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
-            <p className="text-xs text-slate-500">{activeTimer ? 'Active timer' : 'No active timer'}</p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight text-blue-600">{formatTimerClock(activeTimerSeconds)}</p>
-          </div>
-          <div className="mt-4 space-y-3 rounded-lg border border-slate-100 p-3 text-sm">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-slate-500"><Briefcase className="h-4 w-4" />Project</span>
-              <span className="truncate font-semibold text-slate-900">{timerProject}</span>
+        <WidgetErrorBoundary widgetName="time-tracker">
+          <Card id="time-tracker-card" className="scroll-mt-24 p-4">
+            <SectionTitle title="Time Tracker" />
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-5 text-center">
+              <p className="text-xs text-slate-500">{activeTimer ? 'Active timer' : 'No active timer'}</p>
+              <p className="mt-2 text-3xl font-semibold tracking-tight text-blue-600">{formatTimerClock(activeTimerSeconds)}</p>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-slate-500"><FileClock className="h-4 w-4" />Task</span>
-              <span className="truncate font-semibold text-slate-900">{timerTask}</span>
+            <div className="mt-4 space-y-3 rounded-lg border border-slate-100 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-slate-500"><Briefcase className="h-4 w-4" />Project</span>
+                <span className="truncate font-semibold text-slate-900">{timerProject}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-slate-500"><FileClock className="h-4 w-4" />Task</span>
+                <span className="truncate font-semibold text-slate-900">{timerTask}</span>
+              </div>
             </div>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">Today</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-slate-100 p-3">
+                <p className="text-xs text-slate-500">Today</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(trackedTodaySeconds)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-100 p-3">
+                <p className="text-xs text-slate-500">This Week</p>
+                <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(weeklyTotal)}</p>
+              </div>
             </div>
-            <div className="rounded-lg border border-slate-100 p-3">
-              <p className="text-xs text-slate-500">This Week</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">{formatDuration(weeklyTotal)}</p>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        </WidgetErrorBoundary>
 
-        <Card id="quick-actions" className="scroll-mt-24 p-4">
-          <SectionTitle title="Quick Actions" />
-          <div className="grid grid-cols-1 gap-3 text-xs">
-            <Link to="/tasks" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
-              <FolderKanban className="h-4 w-4 text-emerald-600" />
-              My Tasks
-            </Link>
-            <Link to="/attendance" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
-              <ClipboardCheck className="h-4 w-4 text-violet-600" />
-              Attendance
-            </Link>
-            <Link to="/projects" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
-              <Briefcase className="h-4 w-4 text-amber-600" />
-              Projects
-            </Link>
-          </div>
-          <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500">
-            <div className="flex items-center gap-2 font-semibold text-slate-700">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              Attendance worked {formatDuration(trackedTodaySeconds)}
+        <WidgetErrorBoundary widgetName="quick-actions">
+          <Card id="quick-actions" className="scroll-mt-24 p-4">
+            <SectionTitle title="Quick Actions" />
+            <div className="grid grid-cols-1 gap-3 text-xs">
+              <Link to="/tasks" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
+                <FolderKanban className="h-4 w-4 text-emerald-600" />
+                My Tasks
+              </Link>
+              <Link to="/attendance" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
+                <ClipboardCheck className="h-4 w-4 text-violet-600" />
+                Attendance
+              </Link>
+              <Link to="/projects" className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 hover:bg-slate-50">
+                <Briefcase className="h-4 w-4 text-amber-600" />
+                Projects
+              </Link>
             </div>
-            <p className="mt-2">Use these shortcuts for the items you can manage from your employee account.</p>
-          </div>
-        </Card>
+            <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs text-slate-500">
+              <div className="flex items-center gap-2 font-semibold text-slate-700">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                Attendance worked {formatDuration(trackedTodaySeconds)}
+              </div>
+              <p className="mt-2">Use these shortcuts for the items you can manage from your employee account.</p>
+            </div>
+          </Card>
+        </WidgetErrorBoundary>
       </section>
     </div>
   );

@@ -183,8 +183,11 @@ class PayrollController extends Controller
             'is_metro_city' => 'nullable|boolean',
         ]);
 
-        $user = User::findOrFail($request->user_id);
-        
+        // exists:users,id is global (User has no tenant scope). Scope the
+        // lookup to the caller's organisation to prevent cross-tenant access.
+        $user = User::where('organization_id', $request->user()->organization_id)
+            ->findOrFail($request->user_id);
+
         // Get employee profile data
         $profile = $user->employeeProfile;
         // Empty rather than a fallback state: professional tax is state-levied
@@ -365,8 +368,10 @@ class PayrollController extends Controller
             'payroll_data' => 'required|array',
         ]);
 
-        $user = User::findOrFail($request->user_id);
+        // Scope to caller's org — exists:users,id is global (User has no tenant scope).
         $organizationId = $request->user()->organization_id;
+        $user = User::where('organization_id', $organizationId)
+            ->findOrFail($request->user_id);
         
         // Find the payroll item for this user and month
         $payrollItem = PayrollItem::where('user_id', $request->user_id)
@@ -553,7 +558,19 @@ class PayrollController extends Controller
         }
 
         $pdfService = new \App\Services\PayrollPdfService();
-        $pdf = $pdfService->generatePayslip($payrollItem);
+        try {
+            $pdf = $pdfService->generatePayslip($payrollItem);
+        } catch (\Throwable $e) {
+            \Log::error('downloadPayslipPdf: generation failed', [
+                'user_id' => $userId,
+                'month_year' => $monthYear,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to generate payslip PDF. Please try again later.',
+            ], 500);
+        }
 
         $filename = $this->payslipFilename($payrollItem->user, $monthYear);
 
@@ -617,7 +634,19 @@ class PayrollController extends Controller
         }
 
         $pdfService = new \App\Services\PayrollPdfService();
-        $pdf = $pdfService->generatePayslip($payrollItem);
+        try {
+            $pdf = $pdfService->generatePayslip($payrollItem);
+        } catch (\Throwable $e) {
+            \Log::error('viewPayslipPdf: generation failed', [
+                'user_id' => $userId,
+                'month_year' => $monthYear,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Unable to generate payslip PDF. Please try again later.',
+            ], 500);
+        }
 
         return response($pdf->output(), 200, [
             'Content-Type' => 'application/pdf',
@@ -786,6 +815,13 @@ class PayrollController extends Controller
         $isMetro = $request->get('is_metro_city', false);
 
         foreach ($request->employees as $employee) {
+            // Verify user belongs to this org — exists:users,id is global.
+            if (!User::where('id', $employee['user_id'])
+                ->where('organization_id', $request->user()->organization_id)
+                ->exists()) {
+                continue;
+            }
+
             // Per-section map — see note in calculate().
             $taxExemptions = $this->calculator->getApprovedTaxDeductionMap($employee['user_id']);
 

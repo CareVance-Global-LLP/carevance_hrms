@@ -112,7 +112,15 @@ class PayrollPdfService
             'payrollProfile',
         ])->first();
 
+        if (! $user) {
+            throw new \RuntimeException("PayrollItem #{$item->id} references a missing user (user_id={$item->user_id})");
+        }
+
         $org = $user->organization;
+
+        if (! $org) {
+            throw new \RuntimeException("User #{$user->id} has no organization (organization_id={$user->organization_id})");
+        }
         $run = $item->payrollRun;
         $monthYear = $run?->month_year ?? $item->month_year ?? now()->format('Y-m');
 
@@ -462,8 +470,13 @@ class PayrollPdfService
 
     private function loadLogoBase64($org): ?string
     {
-        $logoUrl = $org->settings['branding']['logo_url'] ?? null;
-        if (!$logoUrl) {
+        $settings = $org->settings;
+        if (! is_array($settings)) {
+            return null;
+        }
+
+        $logoUrl = $settings['branding']['logo_url'] ?? null;
+        if (! $logoUrl || ! is_string($logoUrl)) {
             return null;
         }
 

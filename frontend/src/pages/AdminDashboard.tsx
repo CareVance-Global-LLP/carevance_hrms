@@ -46,6 +46,7 @@ import {
 import { SelectInput } from '@/components/ui/FormField';
 import PendingApprovalsCard from '@/components/dashboard/PendingApprovalsCard';
 import WorkspaceSetupCard from '@/components/onboarding/WorkspaceSetupCard';
+import WidgetErrorBoundary from '@/components/WidgetErrorBoundary';
 import { TOUR_ANCHORS } from '@/features/tour/tourSteps';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -2039,7 +2040,9 @@ export default function AdminDashboard() {
 
       {/* Before every analytics card, because on a new workspace all of those
           are empty and this is the only thing on the page with anything to say. */}
-      <WorkspaceSetupCard />
+      <WidgetErrorBoundary widgetName="workspace-setup">
+        <WorkspaceSetupCard />
+      </WidgetErrorBoundary>
 
       {/*
         Date range and scope, side by side.
@@ -2122,140 +2125,149 @@ export default function AdminDashboard() {
         defects blocking this month's run go above them. No new backend: both
         endpoints were already routed and already returned these fields.
       */}
-      <PayrollDashboardStrip />
+      <WidgetErrorBoundary widgetName="payroll-strip">
+        <PayrollDashboardStrip />
+      </WidgetErrorBoundary>
 
-      <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
-        <KpiCard loading={isDashboardInitialLoading} to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600"
-        />
-        <KpiCard loading={isDashboardInitialLoading}
-          label="Present"
-          value={totalPresentInRange}
-          hint={`${presentPercent}% of total`}
-          icon={UserPlus}
-          tint="bg-emerald-50 text-emerald-600"
-          onClick={() => {
-            setWorkStatusFilter('Present');
-            setSelectedKpiStatus('present');
-            scrollToDashboardSection('current-work-status');
-          }}
-        />
-        <KpiCard loading={isDashboardInitialLoading}
-          label="On Leave"
-          value={onLeave}
-          hint={`${leavePercent}% of total`}
-          icon={Umbrella}
-          tint="bg-amber-50 text-amber-600"
-          onClick={() => {
-            setWorkStatusFilter('On Leave');
-            setSelectedKpiStatus('on_leave');
-            scrollToDashboardSection('current-work-status');
-          }}
-        />
-        <KpiCard loading={isDashboardInitialLoading}
-          label="Absent"
-          value={absentCount}
-          hint={`${absentPercent}% of total`}
-          icon={Calendar}
-          tint="bg-red-50 text-red-600"
-          onClick={() => {
-            setWorkStatusFilter('Absent');
-            setSelectedKpiStatus('absent');
-            scrollToDashboardSection('current-work-status');
-          }}
-        />
-        <KpiCard loading={isDashboardInitialLoading}
-          label="Present Late"
-          value={finalPresentLateInRange}
-          hint={`${presentLatePercent}% of total`}
-          icon={Clock3}
-          tint="bg-rose-50 text-rose-600"
-          onClick={() => {
-            setWorkStatusFilter('Present Late');
-            setSelectedKpiStatus('present_late');
-            scrollToDashboardSection('current-work-status');
-          }}
-        />
-         <KpiCard loading={isDashboardInitialLoading}
-           to="/new-hires"
-           label="New Hires" 
-           value={newHires}
-           hint="Joined in range" 
-           icon={UserPlus} 
-           tint="bg-violet-50 text-violet-600"
-        />
-         <KpiCard loading={isDashboardInitialLoading}
-           to="/resignations"
-           label="Resignations" 
-           value={resignations}
-           hint="Exited in range" 
-           icon={UserMinus} 
-           tint="bg-slate-100 text-slate-600"
-        />
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">
-        <Card id="attendance-overview" className="scroll-mt-24 p-4">
-          <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
-          <AttendanceTrendChart
-            items={attendancePieItems}
-            dailyData={buildDailyAttendanceTrend(calendarDaysInRange)}
-            rangeLabel={selectedRangeLabel}
+      <WidgetErrorBoundary widgetName="dashboard-kpis">
+        <section id="dashboard-kpis" className="grid scroll-mt-24 grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-7">
+          <KpiCard loading={isDashboardInitialLoading} to="/employees" label="Total Employees" value={totalEmployees} hint={`${newHires} joined in range`} icon={Users} tint="bg-blue-50 text-blue-600"
           />
-          {/*
-            These four count DAYS in the range, not people — in organisation
-            scope the calendar collapses the whole company to one status per
-            day, so `is_leave` means "somebody was on leave that day". They used
-            to be labelled "On leave" and "Absent days", sitting directly under
-            KPI cards that use those same words for head counts: the screen
-            showed "On leave 1" an inch below "On Leave 3" and both were right.
-            Naming the subject is the whole fix; the numbers were never wrong.
-          */}
-          <p className="mt-3 text-[11px] text-slate-500">
-            {dashboardScope === 'employee'
-              ? 'Days in the selected range for this employee.'
-              : 'Days in the selected range — a day counts once, however many people it applies to.'}
-          </p>
-          <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {(dashboardScope === 'employee'
-              ? [
-                ['Days present on time', attendanceOnTimeDays],
-                ['Days present late', attendanceLatePresentDays],
-                ['Days on leave', attendanceLeaveDays],
-                ['Days absent', attendanceAbsentDays],
-              ]
-              : [
-                // Named for what the filters above actually test. "Days with
-                // absences" would be a lie: the absent-day filter requires
-                // nobody to have attended, so today reads 0 while 88 people
-                // are absent.
-                ['Days with no late arrivals', attendanceOnTimeDays],
-                ['Days with late arrivals', attendanceLatePresentDays],
-                ['Days with leave', attendanceLeaveDays],
-                ['Days nobody attended', attendanceAbsentDays],
-              ]
-            ).map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50 hover:shadow-sm">
-                <p className="text-[11px] text-slate-500">{label}</p>
-                <p className="mt-1 truncate text-xs font-semibold text-slate-900">{value}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <PendingApprovalsCard />
-      </section>
+          <KpiCard loading={isDashboardInitialLoading}
+            label="Present"
+            value={totalPresentInRange}
+            hint={`${presentPercent}% of total`}
+            icon={UserPlus}
+            tint="bg-emerald-50 text-emerald-600"
+            onClick={() => {
+              setWorkStatusFilter('Present');
+              setSelectedKpiStatus('present');
+              scrollToDashboardSection('current-work-status');
+            }}
+          />
+          <KpiCard loading={isDashboardInitialLoading}
+            label="On Leave"
+            value={onLeave}
+            hint={`${leavePercent}% of total`}
+            icon={Umbrella}
+            tint="bg-amber-50 text-amber-600"
+            onClick={() => {
+              setWorkStatusFilter('On Leave');
+              setSelectedKpiStatus('on_leave');
+              scrollToDashboardSection('current-work-status');
+            }}
+          />
+          <KpiCard loading={isDashboardInitialLoading}
+            label="Absent"
+            value={absentCount}
+            hint={`${absentPercent}% of total`}
+            icon={Calendar}
+            tint="bg-red-50 text-red-600"
+            onClick={() => {
+              setWorkStatusFilter('Absent');
+              setSelectedKpiStatus('absent');
+              scrollToDashboardSection('current-work-status');
+            }}
+          />
+          <KpiCard loading={isDashboardInitialLoading}
+            label="Present Late"
+            value={finalPresentLateInRange}
+            hint={`${presentLatePercent}% of total`}
+            icon={Clock3}
+            tint="bg-rose-50 text-rose-600"
+            onClick={() => {
+              setWorkStatusFilter('Present Late');
+              setSelectedKpiStatus('present_late');
+              scrollToDashboardSection('current-work-status');
+            }}
+          />
+           <KpiCard loading={isDashboardInitialLoading}
+             to="/new-hires"
+             label="New Hires" 
+             value={newHires}
+             hint="Joined in range" 
+             icon={UserPlus} 
+             tint="bg-violet-50 text-violet-600"
+          />
+           <KpiCard loading={isDashboardInitialLoading}
+             to="/resignations"
+             label="Resignations" 
+             value={resignations}
+             hint="Exited in range" 
+             icon={UserMinus} 
+             tint="bg-slate-100 text-slate-600"
+          />
+        </section>
+      </WidgetErrorBoundary>
 
-      <Card id="scope-summary" className="scroll-mt-24 p-4">
-        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">{dashboardScope === 'employee' ? 'Selected Employee Detail' : 'Scope Summary'}</h2>
-            <p className="mt-1 text-xs text-slate-500">
+      <WidgetErrorBoundary widgetName="attendance-overview">
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)]">
+          <Card id="attendance-overview" className="scroll-mt-24 p-4">
+            <SectionTitle title="Attendance Overview" action={<span className="text-xs text-slate-500">{selectedRangePresetLabel}</span>} />
+            <AttendanceTrendChart
+              items={attendancePieItems}
+              dailyData={buildDailyAttendanceTrend(calendarDaysInRange)}
+              rangeLabel={selectedRangeLabel}
+            />
+            {/*
+              These four count DAYS in the range, not people — in organisation
+              scope the calendar collapses the whole company to one status per
+              day, so `is_leave` means "somebody was on leave that day". They used
+              to be labelled "On leave" and "Absent days", sitting directly under
+              KPI cards that use those same words for head counts: the screen
+              showed "On leave 1" an inch below "On Leave 3" and both were right.
+              Naming the subject is the whole fix; the numbers were never wrong.
+            */}
+            <p className="mt-3 text-[11px] text-slate-500">
               {dashboardScope === 'employee'
-                ? 'The whole dashboard is focused on the selected employee and date range.'
-                : 'The whole dashboard is showing the selected overall scope, department, and date range.'}
+                ? 'Days in the selected range for this employee.'
+                : 'Days in the selected range — a day counts once, however many people it applies to.'}
             </p>
+            <div className="mt-2 grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {(dashboardScope === 'employee'
+                ? [
+                  ['Days present on time', attendanceOnTimeDays],
+                  ['Days present late', attendanceLatePresentDays],
+                  ['Days on leave', attendanceLeaveDays],
+                  ['Days absent', attendanceAbsentDays],
+                ]
+                : [
+                  // Named for what the filters above actually test. "Days with
+                  // absences" would be a lie: the absent-day filter requires
+                  // nobody to have attended, so today reads 0 while 88 people
+                  // are absent.
+                  ['Days with no late arrivals', attendanceOnTimeDays],
+                  ['Days with late arrivals', attendanceLatePresentDays],
+                  ['Days with leave', attendanceLeaveDays],
+                  ['Days nobody attended', attendanceAbsentDays],
+                ]
+              ).map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 transition hover:border-blue-200 hover:bg-blue-50 hover:shadow-sm">
+                  <p className="text-[11px] text-slate-500">{label}</p>
+                  <p className="mt-1 truncate text-xs font-semibold text-slate-900">{value}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+          <WidgetErrorBoundary widgetName="pending-approvals">
+            <PendingApprovalsCard />
+          </WidgetErrorBoundary>
+        </section>
+      </WidgetErrorBoundary>
+
+      <WidgetErrorBoundary widgetName="scope-summary">
+        <Card id="scope-summary" className="scroll-mt-24 p-4">
+          <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">{dashboardScope === 'employee' ? 'Selected Employee Detail' : 'Scope Summary'}</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {dashboardScope === 'employee'
+                  ? 'The whole dashboard is focused on the selected employee and date range.'
+                  : 'The whole dashboard is showing the selected overall scope, department, and date range.'}
+              </p>
+            </div>
+            <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">{dateLabel}</span>
           </div>
-          <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600">{dateLabel}</span>
-        </div>
 
         {dashboardScope === 'employee' && selectedEmployee ? (
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -3198,10 +3210,12 @@ export default function AdminDashboard() {
                 ? `No time tracked in this range by any of the ${productivityLeadersUntrackedCount} people in scope`
                 : 'No productivity rows in this scope'}
             </EmptyInline>
-          )}
+           )}
         </Card>
       </section>
+      </WidgetErrorBoundary>
 
+      <WidgetErrorBoundary widgetName="department-work-idle">
       <section>
         <Card id="department-work-idle-chart" className="scroll-mt-24 p-4">
           <SectionTitle title="Department Work vs Idle Time" />
@@ -3223,7 +3237,9 @@ export default function AdminDashboard() {
           ) : <EmptyInline>No department data available for the selected range</EmptyInline>}
         </Card>
       </section>
+      </WidgetErrorBoundary>
 
+      <WidgetErrorBoundary widgetName="department-performance">
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card id="department-performance" className="scroll-mt-24 p-4">
           <SectionTitle title="Department Performance" action={<Link to="/employees" className="text-xs font-medium text-blue-600">Open Directory</Link>} />
@@ -3277,6 +3293,7 @@ export default function AdminDashboard() {
            </div>
          </Card>
        </section>
+      </WidgetErrorBoundary>
  
        {dashboardQuery.isFetching ? (
          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">Refreshing dashboard data from the database...</div>

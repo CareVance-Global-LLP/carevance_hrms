@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiChatLog;
 use App\Models\User;
 use App\Services\Ai\AnswerSummariser;
+use App\Services\Ai\ConversationMemory;
 use App\Services\Ai\PlanValidator;
 use App\Services\Ai\QueryPlanExecutor;
 use App\Services\Ai\QueryPlanner;
@@ -26,19 +27,35 @@ class SearchAskController extends Controller
         private readonly PlanValidator $validator,
         private readonly QueryPlanExecutor $executor,
         private readonly AnswerSummariser $summariser,
+        private readonly ConversationMemory $memory,
     ) {
     }
 
     public function ask(Request $request)
     {
-        $data = $request->validate(['question' => 'required|string|max:2000']);
+        $data = $request->validate([
+            'question' => 'required|string|max:2000',
+            'history' => 'nullable|array',
+            'history.*.role' => 'required|in:user,assistant',
+            'history.*.content' => 'required|string|max:2000',
+        ]);
 
         if (! $this->mayAsk($request->user())) {
             return response()->json(['message' => 'AI mode is available to administrators only.'], 403);
         }
 
+        $user = $request->user();
+
+        // Server-side memory is the primary source. Frontend history is
+        // supplementary — used only when server memory is empty (e.g., first
+        // question after a cache flush).
+        $contextBlock = $this->memory->contextBlock($user->id);
+        if ($contextBlock === '' && ! empty($data['history'])) {
+            $contextBlock = $this->buildContextFromFrontendHistory($data['history']);
+        }
+
         try {
-            $plan = $this->validator->validate($this->planner->plan($data['question']));
+            $plan = $this->validator->validate($this->planner->plan($data['question'], $contextBlock));
             // Inside the same try as the validator: the executor refuses a plan
             // it cannot run in full rather than running a narrower one, and
             // that refusal is the same recoverable outcome with the same reason
@@ -74,12 +91,17 @@ class SearchAskController extends Controller
                 'error' => 'unsupported_question',
                 'message' => "I can't answer that from your HR data.",
                 'detail' => $e->getDetail(),
+                'suggestions' => $e->getSuggestions(),
             ], 422);
         }
 
+        // Store the Q&A pair for conversation memory.
+        $answerSummary = ConversationMemory::summarizeAnswer($plan, $result['rows']);
+        $this->memory->remember($user->id, $data['question'], $answerSummary);
+
         AiChatLog::create([
-            'user_id' => $request->user()->id,
-            'organization_id' => $request->user()->organization_id,
+            'user_id' => $user->id,
+            'organization_id' => $user->organization_id,
             'message' => $data['question'],
             'reply' => json_encode($plan),
             'tool_calls_used' => [$plan['entity'] . '.' . $plan['metric']],
@@ -126,9 +148,15 @@ class SearchAskController extends Controller
             ], 422);
         }
 
+        $user = $request->user();
+
+        // Store the Q&A pair for conversation memory.
+        $replyPreview = substr($answer['reply'], 0, 200);
+        $this->memory->remember($user->id, $question, "Prose answer: {$replyPreview}");
+
         AiChatLog::create([
-            'user_id' => $request->user()->id,
-            'organization_id' => $request->user()->organization_id,
+            'user_id' => $user->id,
+            'organization_id' => $user->organization_id,
             'message' => $question,
             'reply' => $answer['reply'],
             'tool_calls_used' => ['prose_fallback'],
@@ -171,5 +199,35 @@ class SearchAskController extends Controller
     private function mayAsk(?User $user): bool
     {
         return $user !== null && $user->getHierarchyLevel() <= self::MAX_HIERARCHY_LEVEL;
+    }
+
+    /**
+     * Build a context block from frontend-supplied history.
+     *
+     * Used only when server-side memory is empty (first question after cache
+     * flush). The frontend sends the raw conversation; we summarize it into
+     * the format the planner expects.
+     *
+     * @param  list<array{role: string, content: string}>  $history
+     */
+    private function buildContextFromFrontendHistory(array $history): string
+    {
+        $turns = [];
+        $currentQuestion = '';
+
+        foreach ($history as $entry) {
+            if ($entry['role'] === 'user') {
+                $currentQuestion = $entry['content'];
+            } elseif ($entry['role'] === 'assistant' && $currentQuestion !== '') {
+                $turns[] = "Q: {$currentQuestion}\nA: " . substr($entry['content'], 0, 200);
+                $currentQuestion = '';
+            }
+        }
+
+        if ($turns === []) {
+            return '';
+        }
+
+        return "Recent conversation (for resolving follow-ups only — always query fresh data):\n" . implode("\n", $turns);
     }
 }

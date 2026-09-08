@@ -5,6 +5,7 @@ namespace Tests\Concerns;
 use App\Models\EmployeePayrollTemplate;
 use App\Models\Group;
 use App\Models\Organization;
+use App\Models\Role;
 use App\Models\User;
 
 /**
@@ -68,9 +69,23 @@ trait BuildsPayrollFixture
             'email' => 'admin@company.com',
         ]);
 
+        // The 'hr' legacy role string is no longer in the permission or
+        // hierarchy maps (User.php). Tests that need a payroll-level user
+        // must assign a custom role at hierarchy_level 20, which is what the
+        // admin panel creates when somebody makes a "Payroll" custom role.
+        $hrRole = Role::create([
+            'organization_id' => $this->organization->id,
+            'name' => 'Payroll',
+            'slug' => 'payroll',
+            'hierarchy_level' => 20,
+            'is_system' => false,
+            'is_active' => true,
+        ]);
+
         $this->hr = User::factory()->create([
             'organization_id' => $this->organization->id,
-            'role' => 'hr',
+            'role' => 'employee',
+            'role_id' => $hrRole->id,
             'name' => 'HR Manager',
             'email' => 'hr@company.com',
         ]);

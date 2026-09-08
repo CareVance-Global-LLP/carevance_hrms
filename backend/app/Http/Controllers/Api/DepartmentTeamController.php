@@ -21,13 +21,7 @@ class DepartmentTeamController extends Controller
 
     private function levelOf(User $user): int
     {
-        return $user->customRole?->hierarchy_level ?? match ($user->role) {
-            'super_admin' => 0,
-            'admin' => 10,
-            'manager' => 50,
-            'employee' => 100,
-            default => 999,
-        };
+        return $user->getHierarchyLevel();
     }
 
     /**

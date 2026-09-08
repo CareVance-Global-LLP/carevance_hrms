@@ -103,6 +103,12 @@ class PlanningClient
                 ]);
 
             if (! $response->successful()) {
+                Log::warning('AI mode '.$label.' returned non-success', [
+                    'model' => $model,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
                 return null;
             }
 

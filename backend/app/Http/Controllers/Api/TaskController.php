@@ -603,7 +603,7 @@ class TaskController extends Controller
         if (!$task) return response()->json(['message' => 'Not found'], 404);
 
         $request->validate([
-            'file' => 'required|file|max:10240',
+            'file' => 'required|file|max:10240|mimes:jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,csv,txt,zip',
         ]);
 
         $file = $request->file('file');

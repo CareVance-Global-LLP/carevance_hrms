@@ -196,6 +196,16 @@ class AuthenticateApiToken
             DB::table('users')
                 ->where('id', $user->id)
                 ->update(['last_seen_at' => $now]);
+
+            try {
+                \App\Events\UserPresence::dispatch(
+                    (int) $user->id,
+                    true,
+                    $now->toIso8601String()
+                );
+            } catch (\Throwable) {
+                // Broadcast failure must never prevent activity tracking.
+            }
         }
     }
 

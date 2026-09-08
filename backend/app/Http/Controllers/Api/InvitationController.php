@@ -53,12 +53,7 @@ class InvitationController extends Controller
 
     public function store(StoreInvitationRequest $request)
     {
-        $user = $request->user();
-
-        if (!$user || !$user->organization_id) {
-            abort(422, 'Organization context is required.');
-        }
-
+        $user = $this->authorizeInvitationManagement($request);
         $organization = $user->organization()->firstOrFail();
 
         return $this->storeForOrganization($request, $organization);
@@ -66,12 +61,7 @@ class InvitationController extends Controller
 
     public function import(StoreInvitationImportRequest $request)
     {
-        $user = $request->user();
-
-        if (!$user || !$user->organization_id) {
-            abort(422, 'Organization context is required.');
-        }
-
+        $user = $this->authorizeInvitationManagement($request);
         $organization = $user->organization()->firstOrFail();
         $payload = $request->validated();
         $result = $this->invitationService->createBulk($user, $organization, $payload['rows'], [

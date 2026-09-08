@@ -567,17 +567,7 @@ class User extends Authenticatable
 
         return match ($this->role) {
             'super_admin' => true,
-            // HR and payroll managers were absent from this map and fell
-            // through to `default => false`, so an HR user with no custom role
-            // held NO permissions at all: /auth/me returned an empty list, the
-            // frontend hid every module, and the eight controllers that gate on
-            // hasPermission() refused them outright.
-            //
-            // This is the same omission that getHierarchyLevel() already had
-            // and already fixed — the two maps have to be corrected together or
-            // the role is privileged for routing and unprivileged for features.
-            // They sit with admin, which is where the hierarchy places them.
-            'admin', 'hr', 'payroll_manager' => in_array($key, self::PERMISSIONS_ADMIN, true),
+            'admin' => in_array($key, self::PERMISSIONS_ADMIN, true),
             'manager' => in_array($key, self::PERMISSIONS_MANAGER, true),
             'employee' => in_array($key, self::PERMISSIONS_EMPLOYEE, true),
             default => false,
@@ -591,23 +581,53 @@ class User extends Authenticatable
 
     public function getHierarchyLevel(): int
     {
-        return $this->customRole?->hierarchy_level ?? match ($this->role) {
+        $role = strtolower(trim((string) $this->role));
+
+        return $this->customRole?->hierarchy_level ?? match ($role) {
             'super_admin' => 0,
             'admin' => 10,
-            // HR and payroll managers run payroll — PayslipController's
-            // PAYROLL_ROLES has always listed them alongside admin — but they
-            // were absent from this map and fell through to 999, which ranks
-            // them BELOW a plain employee. Nothing exposed it while payroll
-            // authorisation was inline; the moment the routes got a real role
-            // gate, HR was locked out of their own module. Placed above line
-            // managers and below admins: they can operate payroll, they cannot
-            // administer the organisation.
-            'hr', 'payroll_manager' => 20,
             'manager' => 50,
             'employee' => 100,
-            // Unknown roles stay maximally unprivileged. Only the 'employee'
-            // gate, which admits everyone, will let them through.
             default => 999,
         };
+    }
+
+    /**
+     * Is this user at or above the admin tier (level <= 10)?
+     *
+     * Replaces inline string checks like `$user->role === 'admin' || $user->role === 'super_admin'`
+     * which break for custom roles and hr/payroll_manager.
+     */
+    public function isAdminLevel(): bool
+    {
+        return $this->getHierarchyLevel() <= 10;
+    }
+
+    /**
+     * Is this user at or above the manager tier (level < 100)?
+     *
+     * Replaces inline string checks like `in_array($user->role, ['admin', 'manager'])`.
+     */
+    public function isManagerLevel(): bool
+    {
+        return $this->getHierarchyLevel() < 100;
+    }
+
+    /**
+     * Is this user at or above the payroll tier (level <= 20)?
+     *
+     * Replaces inline string checks like `in_array($user->role, ['admin', 'hr', 'payroll_manager'])`.
+     */
+    public function isPayrollLevel(): bool
+    {
+        return $this->getHierarchyLevel() <= 20;
+    }
+
+    /**
+     * Is this user an employee (level >= 100)?
+     */
+    public function isEmployeeLevel(): bool
+    {
+        return $this->getHierarchyLevel() >= 100;
     }
 }

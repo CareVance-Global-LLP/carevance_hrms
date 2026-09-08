@@ -3050,7 +3050,8 @@ export type AskResponse = {
 export const searchAskApi = {
   // Returns the derived plan alongside the rows on purpose: a payroll figure
   // nobody can check is worse than no figure.
-  ask: (question: string) => api.post<AskResponse>('/search/ask', { question }),
+  ask: (question: string, history?: Array<{ role: string; content: string }>) =>
+    api.post<AskResponse>('/search/ask', { question, history }),
 
   // Split from ask() so the table renders at ~3.5s instead of waiting ~9s for
   // a sentence that is an enrichment, not the answer.

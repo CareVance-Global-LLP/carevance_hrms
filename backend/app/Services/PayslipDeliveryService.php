@@ -103,7 +103,7 @@ class PayslipDeliveryService
                         ['type' => 'body', 'parameters' => [
                             ['type' => 'text', 'text' => $employee->name],
                             ['type' => 'text', 'text' => $payslip->payroll_period_label],
-                            ['type' => 'text', 'text' => '₹' . number_format((float)$payslip->net_pay, 2)],
+                            ['type' => 'text', 'text' => '₹' . number_format((float)$payslip->net_salary, 2)],
                         ]],
                     ],
                 ],
@@ -129,7 +129,7 @@ class PayslipDeliveryService
     protected function sendSms(Payslip $payslip, $employee): array
     {
         $link = config('app.url') . "/payslips/{$payslip->id}/view?token=" . md5($payslip->id . config('app.key'));
-        $msg = "Hi {$employee->first_name}, your payslip for {$payslip->payroll_period_label} is ready. Net: INR " . number_format((float)$payslip->net_pay, 2) . ". View: {$link}";
+        $msg = "Hi {$employee->first_name}, your payslip for {$payslip->payroll_period_label} is ready. Net: INR " . number_format((float)$payslip->net_salary, 2) . ". View: {$link}";
         // Delegate to SmsService if it exists
         if (class_exists(\App\Services\SmsService::class)) {
             return app(\App\Services\SmsService::class)->send($employee->phone, $msg);

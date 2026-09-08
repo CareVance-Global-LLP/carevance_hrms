@@ -3888,7 +3888,7 @@ class ReportController extends Controller
 
         $teamEfficiency = $orgGroups->map(function (ReportGroup $group) use ($userScoreById, $activeTimeEntryUserIds, $onLeaveUserIds) {
             $memberIds = collect($group->users ?? [])
-                ->filter(fn ($u) => ($u->customRole?->hierarchy_level ?? ($u->role === 'admin' ? 10 : ($u->role === 'manager' ? 50 : 100))) >= 100)
+                ->filter(fn ($u) => $u->getHierarchyLevel() >= 100)
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)
                 ->values();

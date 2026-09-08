@@ -11,9 +11,7 @@ class CompetencyController extends Controller
 {
     private function isAdmin(Request $request): bool
     {
-        $role = $request->user()->role;
-
-        return $role === 'admin' || $role === 'super_admin';
+        return $request->user()->isAdminLevel();
     }
 
     public function index(Request $request): JsonResponse

@@ -40,7 +40,7 @@ class LoanController extends Controller
         $actor = $request->user();
         $borrower = $actor;
 
-        if ($request->filled('user_id') && in_array($actor->role, ['admin', 'super_admin'], true)) {
+        if ($request->filled('user_id') && $actor->isAdminLevel()) {
             /*
              * User is deliberately outside BelongsToOrganization (the scope
              * resolves the acting user through Auth), so the tenant check here

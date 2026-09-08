@@ -45,6 +45,7 @@ class UnsupportedQuestionException extends RuntimeException
     public function __construct(
         private readonly string $detail,
         private readonly string $reason = self::NOT_A_DATA_QUESTION,
+        private readonly array $suggestions = [],
     ) {
         parent::__construct($detail);
     }
@@ -57,6 +58,17 @@ class UnsupportedQuestionException extends RuntimeException
     public function getReason(): string
     {
         return $this->reason;
+    }
+
+    /**
+     * Suggested entities the user might have meant, for the frontend to show
+     * as clickable rephrasing hints.
+     *
+     * @return list<array{entity: string, label: string, score: float}>
+     */
+    public function getSuggestions(): array
+    {
+        return $this->suggestions;
     }
 
     /**
@@ -83,5 +95,11 @@ class UnsupportedQuestionException extends RuntimeException
     public static function malformed(string $detail): self
     {
         return new self($detail, self::MALFORMED);
+    }
+
+    /** Nothing in the layer fits; with optional suggestions for rephrasing. */
+    public static function notADataQuestion(string $detail, array $suggestions = []): self
+    {
+        return new self($detail, self::NOT_A_DATA_QUESTION, $suggestions);
     }
 }

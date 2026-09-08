@@ -254,7 +254,10 @@ class BackfillResignationExits extends Command
         return User::query()
             ->where('organization_id', $resignation->organization_id)
             ->whereNull('deactivated_at')
-            ->whereIn('role', ['super_admin', 'admin', 'hr'])
+            ->where(fn ($q) => $q
+                ->whereIn('role', ['super_admin', 'admin'])
+                ->orWhereHas('customRole', fn ($cr) => $cr->where('hierarchy_level', '<=', 10))
+            )
             ->orderByRaw("CASE role WHEN 'super_admin' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END")
             ->orderBy('id')
             ->first()

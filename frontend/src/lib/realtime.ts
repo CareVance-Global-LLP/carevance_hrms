@@ -121,6 +121,12 @@ export const connectRealtime = (userId: number, handlers: Handlers): (() => void
         enabledTransports: ['ws', 'wss'],
         authorizer,
       });
+
+      // Expose Echo instance for other modules (e.g., Chat) to subscribe
+      // to additional channels without creating a second connection.
+      if (typeof window !== 'undefined') {
+        (window as any).__echo = echo;
+      }
     }
 
     const connection = (echo.connector as unknown as { pusher: Pusher }).pusher.connection;
@@ -174,5 +180,8 @@ export const disconnectRealtime = () => {
   } finally {
     echo = null;
     subscribedUserId = null;
+    if (typeof window !== 'undefined') {
+      delete (window as any).__echo;
+    }
   }
 };

@@ -13,6 +13,7 @@ import {
 } from '@/lib/chunkedUpload';
 import { attachmentKey } from '@/components/chat/MessageComposer';
 import { reportSilentError } from '@/lib/reportSilentError';
+import { isRealtimeConfigured } from '@/lib/realtime';
 import type { ChatConversation, ChatGroup, ChatGroupMessage, ChatMessage, ChatTypingUser } from '@/types';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import MessageArea from '@/components/chat/MessageArea';
@@ -101,6 +102,12 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const lastTypingSentAtRef = useRef<number>(0);
+  const selectedThreadRef = useRef<ThreadSelection>(null);
+
+  // Keep ref in sync with state for use in socket event handlers
+  useEffect(() => {
+    selectedThreadRef.current = selectedThread;
+  }, [selectedThread]);
   const shouldStickToBottomRef = useRef(true);
   const pendingThreadRef = useRef<ThreadSelection>(null);
   const activeThreadKeyRef = useRef('');
@@ -276,6 +283,118 @@ export default function Chat() {
     return () => clearInterval(interval);
   }, []);
 
+  // Subscribe to real-time thread updates, typing indicators, and presence
+  // when socket is available. Falls back to polling when socket is disconnected.
+  useEffect(() => {
+    if (!user?.id || !isRealtimeConfigured()) return;
+
+    let echo: any = null;
+    let channelName = '';
+
+    try {
+      // Access the Echo instance from the global window (set by realtime.ts)
+      const echoInstance = (window as any).__echo;
+      if (!echoInstance) return;
+
+      echo = echoInstance;
+      channelName = `user.${user.id}`;
+
+      const channel = echo.private(channelName);
+
+      // Thread list updates
+      channel.listen('.thread.updated', () => {
+        loadThreads();
+      });
+
+      // Real-time message delivery — replaces the 2.5s poll for new messages
+      channel.listen('.message.new', (event: any) => {
+        const { thread_type, thread_id, message: incomingMessage } = event;
+        const currentThread = selectedThreadRef.current;
+        if (!currentThread) return;
+
+        const isCurrentThread = currentThread.type === thread_type && currentThread.id === thread_id;
+        if (!isCurrentThread) return;
+
+        const key = `${isGroupMessage(incomingMessage) ? 'g' : 'd'}:${incomingMessage.id}`;
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => `${isGroupMessage(m) ? 'g' : 'd'}:${m.id}`));
+          if (seen.has(key)) return prev;
+          return [...prev, incomingMessage];
+        });
+
+        latestMessageIdRef.current = Math.max(latestMessageIdRef.current, Number(incomingMessage.id) || 0);
+
+        // Mark as read since we're viewing the thread
+        if (thread_type === 'direct') {
+          chatApi.markRead(thread_id).catch(() => {});
+          setConversations((prev) => prev.map((c) => c.id === thread_id ? { ...c, unread_count: 0 } : c));
+        } else {
+          chatApi.markGroupRead(thread_id).catch(() => {});
+          setGroups((prev) => prev.map((g) => g.id === thread_id ? { ...g, unread_count: 0 } : g));
+        }
+      });
+
+      // Typing indicators
+      channel.listen('.user.typing', (event: any) => {
+        const { user_id, user_name, thread_type, thread_id, is_typing } = event;
+        const currentThread = selectedThreadRef.current;
+        if (!currentThread) return;
+
+        const isCurrentThread = currentThread.type === thread_type && currentThread.id === thread_id;
+        if (!isCurrentThread) return;
+
+        setTypingUsers((prev) => {
+          if (is_typing) {
+            // Add user if not already in list
+            if (prev.some((u) => u.id === user_id)) return prev;
+            return [...prev, { id: user_id, name: user_name, email: '' }];
+          } else {
+            // Remove user from list
+            return prev.filter((u) => u.id !== user_id);
+          }
+        });
+      });
+
+      // Presence updates
+      channel.listen('.user.presence', (event: any) => {
+        const { user_id, is_online } = event;
+        // Update conversation list with presence status
+        setConversations((prev) =>
+          prev.map((conv) => {
+            if (conv.other_user?.id === user_id) {
+              return {
+                ...conv,
+                other_user: conv.other_user ? { ...conv.other_user, is_online } : conv.other_user,
+              };
+            }
+            return conv;
+          })
+        );
+        // Update group members with presence status
+        setGroups((prev) =>
+          prev.map((group) => ({
+            ...group,
+            members: group.members?.map((member) =>
+              member.id === user_id ? { ...member, is_online } : member
+            ),
+          }))
+        );
+      });
+    } catch (error) {
+      reportSilentError('Chat: could not subscribe to real-time updates', error);
+    }
+
+    return () => {
+      try {
+        if (echo && channelName) {
+          echo.leave(channelName);
+        }
+      } catch {
+        // Teardown best-effort
+      }
+    };
+  }, [user?.id]);
+
   /*
    * Ask the server what it can take, once.
    *
@@ -419,26 +538,19 @@ export default function Chat() {
     loadMessages(selectedThread);
     loadTyping(selectedThread);
 
-    // The timer used to call loadMessages with no `since_id`, so every tick
-    // re-downloaded the thread's entire history — 24 times a minute, whether or
-    // not anything had changed. It passes the newest id it holds now.
-    //
-    // Every FULL_SYNC_EVERY ticks it still does a complete fetch, because edits
-    // and deletions to older messages cannot arrive through an incremental one.
+    // New messages arrive via the .message.new socket event in real-time.
+    // This poll exists only to catch edits and deletions to older messages,
+    // which cannot arrive through the socket. A full sync every 60s is
+    // enough for that — the sidebar still updates via .thread.updated.
     let tick = 0;
-    const FULL_SYNC_EVERY = 12; // ~30s
+    const FULL_SYNC_INTERVAL = 60000; // 60s
 
     const interval = setInterval(() => {
-      // Nothing to poll for a conversation nobody is looking at.
       if (typeof document !== 'undefined' && document.hidden) return;
-
       tick += 1;
-      const wantsFullSync = tick % FULL_SYNC_EVERY === 0;
-      const sinceId = wantsFullSync ? undefined : latestMessageIdRef.current || undefined;
-
-      loadMessages(selectedThread, sinceId);
-      loadTyping(selectedThread);
-    }, 2500);
+      // Full sync every tick — no incremental path needed anymore
+      loadMessages(selectedThread);
+    }, FULL_SYNC_INTERVAL);
 
     return () => clearInterval(interval);
   }, [selectedThread]);

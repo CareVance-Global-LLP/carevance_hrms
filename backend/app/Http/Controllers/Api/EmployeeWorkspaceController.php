@@ -164,7 +164,7 @@ class EmployeeWorkspaceController extends Controller
             'issue_date' => 'nullable|date',
             'expiry_date' => 'nullable|date',
             'notes' => 'nullable|string',
-            'proof_file' => 'nullable|file|max:10240',
+            'proof_file' => 'nullable|file|max:10240|mimes:jpeg,png,pdf,gif,webp',
         ]);
 
         // Validate ID format before saving
@@ -235,7 +235,7 @@ class EmployeeWorkspaceController extends Controller
             'is_default' => 'nullable|boolean',
             'verification_status' => 'nullable|in:verified,unverified,pending,rejected',
             'notes' => 'nullable|string',
-            'proof_file' => 'nullable|file|max:10240',
+            'proof_file' => 'nullable|file|max:10240|mimes:jpeg,png,pdf,gif,webp',
         ]);
 
         // Validate bank details
@@ -327,7 +327,7 @@ class EmployeeWorkspaceController extends Controller
             'year_of_passing' => 'nullable|integer|min:1950|max:'.(int) now()->addYear()->format('Y'),
             'grade' => 'nullable|string|max:40',
             'notes' => 'nullable|string',
-            'certificate_file' => 'nullable|file|max:10240',
+            'certificate_file' => 'nullable|file|max:10240|mimes:jpeg,png,pdf,gif,webp',
         ]);
 
         if ($request->hasFile('certificate_file')) {
@@ -404,7 +404,7 @@ class EmployeeWorkspaceController extends Controller
             // cannot tell a PAN card from an Aadhaar, and the checklist matcher
             // reads exactly this to decide which item the upload answers.
             'id_type' => 'nullable|string|max:80',
-            'file' => 'required|file|max:15360',
+            'file' => 'required|file|max:15360|mimes:jpeg,png,pdf,gif,webp',
         ]);
 
         // Carried on the document, mirroring how the government-ID controllers

@@ -99,7 +99,7 @@ class BillingController extends Controller
         // not charged for; the plan floor below is what stops the number going
         // implausibly low.
         $usedSeats = $this->seatGuard->usedSeats($organization);
-        $minSeats = $isTrial ? 5 : 10;
+        $minSeats = $isTrial ? 5 : (int) ($targetPlanConfig['min_seats'] ?? 10);
 
         if ($isFreeChange) {
             // A converting trial has a 5-seat cap, so falling back to max_seats
@@ -172,7 +172,7 @@ class BillingController extends Controller
             $expiresAt = $organization->subscription_expires_at;
             $monthsRemaining = $billingCycle === 'yearly' ? 12 : 1;
 
-            $currentMaxSeats = $organization->max_seats ?? 10;
+            $currentMaxSeats = $organization->max_seats ?? (int) ($currentPlanConfig['min_seats'] ?? 10);
             $existingSeats = min($seats, $currentMaxSeats);
             $newSeats = max(0, $seats - $currentMaxSeats);
 
@@ -628,7 +628,7 @@ class BillingController extends Controller
                 'currency' => $currency,
                 'plan_code' => $organization->pending_plan_code ?? $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking'),
                 'billing_cycle' => $organization->pending_billing_cycle ?? $organization->billing_cycle ?? 'monthly',
-                'seats' => $organization->pending_seats ?? $organization->max_seats ?? 10,
+                'seats' => $organization->pending_seats ?? $organization->max_seats ?? (int) config('carevance.plans.' . ($organization->pending_plan_code ?? $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking')) . '.min_seats', 10),
                 'payment_type' => $paymentType,
             ];
 
@@ -828,7 +828,7 @@ class BillingController extends Controller
     {
         $billingCycle = $organization->pending_billing_cycle ?? $organization->billing_cycle ?? 'monthly';
         $planCode = $organization->pending_plan_code ?? $organization->plan_code ?? config('carevance.default_plan', 'basic_tracking');
-        $seats = $organization->pending_seats ?? $organization->max_seats ?? 10;
+        $seats = $organization->pending_seats ?? $organization->max_seats ?? (int) config('carevance.plans.' . $planCode . '.min_seats', 10);
 
         $organization->update([
             'subscription_status' => 'active',

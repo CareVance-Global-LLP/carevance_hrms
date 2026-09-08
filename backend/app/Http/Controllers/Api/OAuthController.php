@@ -294,7 +294,8 @@ class OAuthController extends Controller
                     ? PlanService::resolveTrialPlan($request->input('trial_plan'))
                     : ((string) ($request->input('plan_code') ?? config('carevance.default_plan', 'basic_tracking')));
                 $billingCycle = (string) ($request->input('billing_cycle') ?? config('carevance.default_billing_cycle', 'monthly'));
-                $seats = $signupMode === 'trial' ? 5 : max(10, (int) ($request->input('seats') ?? 10));
+                $planMinimum = (int) config('carevance.plans.' . $planCode . '.min_seats', 10);
+                $seats = $signupMode === 'trial' ? 5 : max($planMinimum, (int) ($request->input('seats') ?? $planMinimum));
                 $trialDays = max(1, (int) config('carevance.trial_days', 14));
 
                 $orgTimezone = $request->input('timezone');

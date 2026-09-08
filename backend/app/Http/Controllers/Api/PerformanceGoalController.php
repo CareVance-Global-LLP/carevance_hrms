@@ -12,7 +12,7 @@ class PerformanceGoalController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         
         $query = PerformanceGoal::with(['employee:id,name', 'manager:id,name', 'group:id,name', 'parent:id,title,scope'])
             ->where('organization_id', $user->organization_id);
@@ -60,7 +60,7 @@ class PerformanceGoalController extends Controller
         ]);
 
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $scope = $request->input('scope', 'individual');
 
         if ($scope === 'individual') {
@@ -81,7 +81,7 @@ class PerformanceGoalController extends Controller
             }
         } else {
             // Company goals: admins. Team goals: admins and managers.
-            $isManager = $user->role === 'manager';
+            $isManager = $user->isManagerLevel();
             if ($scope === 'company' && !$isAdmin) {
                 return response()->json(['message' => 'Only admins can create company goals.'], 403);
             }
@@ -137,7 +137,7 @@ class PerformanceGoalController extends Controller
             ->where('organization_id', $user->organization_id)
             ->findOrFail($id);
         
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $isEmployee = $goal->employee_id === $user->id;
         $isManager = $goal->manager_id === $user->id;
 
@@ -167,7 +167,7 @@ class PerformanceGoalController extends Controller
         $user = $request->user();
         $goal = PerformanceGoal::where('organization_id', $user->organization_id)->findOrFail($id);
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $isManager = $goal->manager_id === $user->id;
         $isEmployee = $goal->employee_id === $user->id;
 
@@ -215,7 +215,7 @@ class PerformanceGoalController extends Controller
         $user = $request->user();
         $goal = PerformanceGoal::where('organization_id', $user->organization_id)->findOrFail($id);
 
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $isManager = $goal->manager_id === $user->id;
 
         if (!$isAdmin && !$isManager) {

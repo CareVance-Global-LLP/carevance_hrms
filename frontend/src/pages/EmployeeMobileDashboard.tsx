@@ -99,12 +99,7 @@ export default function EmployeeMobileDashboard() {
   useEffect(() => {
     if (selfieChecked) return;
     selfieApi.todayStatus().then((res) => {
-      if (!res.data.uploaded) {
-        setShowSelfieModal(true);
-        setSelfiePending(true);
-      } else {
-        setSelfiePending(false);
-      }
+      setSelfiePending(!res.data.uploaded);
     }).catch(() => {
       setSelfiePending(false);
     });
@@ -126,7 +121,7 @@ export default function EmployeeMobileDashboard() {
 
   const handleStart = async () => {
     if (selfiePending) {
-      setError('Please complete your daily selfie first.');
+      setShowSelfieModal(true);
       return;
     }
     if (!geo.latitude || !geo.longitude) {

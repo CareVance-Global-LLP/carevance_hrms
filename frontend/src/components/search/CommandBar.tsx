@@ -58,6 +58,8 @@ export interface CommandBarProps {
   aiLoading?: boolean;
   /** The reason a question was refused. Refusing is a normal outcome. */
   aiError?: string | null;
+  /** Suggested entities the user might have meant, shown as rephrasing hints. */
+  aiSuggestions?: Array<{ entity: string; label: string }>;
   onAskAi?: (question: string) => void;
   /**
    * Runs one of the example questions the empty AI panel offers. Separate from
@@ -94,6 +96,7 @@ export default function CommandBar({
   aiAnswer = null,
   aiLoading = false,
   aiError = null,
+  aiSuggestions = [],
   onAskAi,
   onAiExample,
 }: CommandBarProps) {
@@ -485,6 +488,27 @@ export default function CommandBar({
               <div className="px-4 py-8 text-center">
                 <p className="text-sm text-slate-900">I can't answer that from your HR data.</p>
                 <p className="mt-1 text-xs text-slate-600">{aiError}</p>
+                {aiSuggestions.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-slate-500 mb-1.5">Try asking about:</p>
+                    <div className="flex flex-wrap justify-center gap-1.5">
+                      {aiSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.entity}
+                          type="button"
+                          onClick={() => {
+                            setQuery(suggestion.label);
+                            setActiveIndex(0);
+                            if (onAskAi) onAskAi(`Tell me about ${suggestion.label}`);
+                          }}
+                          className="rounded-md border border-slate-200 px-2 py-1 text-xs text-blue-700 transition hover:bg-blue-50"
+                        >
+                          {suggestion.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <AiAnswerTable

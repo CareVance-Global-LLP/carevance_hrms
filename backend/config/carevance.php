@@ -22,7 +22,7 @@ return [
     // and the working local .env both spell it "mavliirbaz". One of the two is
     // a transposition and nobody can tell which from the repo alone — left
     // matching the value that is actually in use until someone confirms.
-    'support_email' => (string) env('SUPPORT_CONTACT_EMAIL', 'mavliirbaz.carevanceglobal@gmail.com'),
+    'support_email' => (string) env('SUPPORT_CONTACT_EMAIL', 'akash.v@carevanceglobal.com'),
 
     'auth' => [
         'email_verification_expire_minutes' => (int) env('AUTH_EMAIL_VERIFICATION_EXPIRE_MINUTES', 1440),

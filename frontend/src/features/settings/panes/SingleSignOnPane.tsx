@@ -315,7 +315,6 @@ export default function SingleSignOnPane() {
                 >
                   <option value="employee">Employee</option>
                   <option value="manager">Manager</option>
-                  <option value="hr">HR</option>
                 </SelectInput>
                 <p className="mt-1 text-[11px] text-slate-500">
                   {/* Administrator is deliberately not offered, and the server

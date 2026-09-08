@@ -24,15 +24,7 @@ class ApprovalRoutingService
      */
     private function userHierarchyLevel(User $user): int
     {
-        $role = strtolower(trim((string) $user->role));
-
-        return $user->customRole?->hierarchy_level ?? match ($role) {
-            'super_admin' => 0,
-            'admin' => 10,
-            'manager' => 50,
-            'employee' => 100,
-            default => 999,
-        };
+        return $user->getHierarchyLevel();
     }
 
     /**

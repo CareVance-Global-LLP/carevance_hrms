@@ -146,7 +146,7 @@ class BreakTrackingController extends Controller
         ]);
 
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
         $targetUserId = $isAdmin && $request->user_id ? $request->user_id : $user->id;
         $date = $request->get('date', now()->toDateString());
 
@@ -309,7 +309,7 @@ class BreakTrackingController extends Controller
     public function destroy(int $id, Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'admin' || $user->role === 'super_admin';
+        $isAdmin = $user->isAdminLevel();
 
         // Org scope: findOrFail() plus a bare role check let an admin of one
         // organization delete another organization's break.

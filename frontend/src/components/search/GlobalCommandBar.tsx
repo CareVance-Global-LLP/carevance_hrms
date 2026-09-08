@@ -114,6 +114,8 @@ export default function GlobalCommandBar({
   const [aiAnswer, setAiAnswer] = useState<AskResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<Array<{ entity: string; label: string }>>([]);
+  const [aiHistory, setAiHistory] = useState<Array<{ role: string; content: string }>>([]);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<number | null>(null);
 
@@ -277,16 +279,28 @@ export default function GlobalCommandBar({
     let answer: AskResponse;
 
     try {
-      const response = await searchAskApi.ask(question);
+      const response = await searchAskApi.ask(question, aiHistory);
       answer = response.data;
       setAiAnswer(answer);
+
+      // Store this Q&A in conversation history for follow-ups.
+      const answerPreview = answer.kind === 'prose'
+        ? (answer.reply ?? '').slice(0, 200)
+        : `${answer.columns.length} columns, ${answer.rows.length} rows`;
+      setAiHistory((prev) => [
+        ...prev,
+        { role: 'user', content: question },
+        { role: 'assistant', content: answerPreview },
+      ]);
     } catch (error) {
-      const detail = (error as { response?: { status?: number; data?: { detail?: string } } }).response;
-      setAiError(
-        detail?.status === 422
-          ? (detail.data?.detail ?? 'That question cannot be answered from your HR data.')
-          : 'Something went wrong reaching the AI service.',
-      );
+      const detail = (error as { response?: { status?: number; data?: { detail?: string; suggestions?: Array<{ entity: string; label: string }> } } }).response;
+      if (detail?.status === 422) {
+        setAiError(detail.data?.detail ?? 'That question cannot be answered from your HR data.');
+        setAiSuggestions(detail.data?.suggestions ?? []);
+      } else {
+        setAiError('Something went wrong reaching the AI service.');
+        setAiSuggestions([]);
+      }
       return;
     } finally {
       setAiLoading(false);
@@ -305,7 +319,7 @@ export default function GlobalCommandBar({
     } catch (error) {
       reportSilentError('ai-mode-summary', error);
     }
-  }, []);
+  }, [aiHistory]);
 
   // A closed palette must not reopen holding the last answer: the next question
   // is a new one, and a stale table under a fresh prompt reads as a reply to it.
@@ -314,6 +328,8 @@ export default function GlobalCommandBar({
       setAiMode(false);
       setAiAnswer(null);
       setAiError(null);
+      setAiSuggestions([]);
+      setAiHistory([]);
     }
   }, [open]);
 
@@ -375,6 +391,7 @@ export default function GlobalCommandBar({
       aiAnswer={aiAnswer}
       aiLoading={aiLoading}
       aiError={aiError}
+      aiSuggestions={aiSuggestions}
       onAskAi={handleAskAi}
       onAiExample={handleAskAi}
     />

@@ -409,6 +409,6 @@ $query = AppNotification::with(['sender:id,name,email', 'poll' => function ($que
 
     private function canManage(User $user): bool
     {
-        return in_array($user->role, ['admin', 'manager'], true);
+        return $user->isManagerLevel();
     }
 }

@@ -28,9 +28,6 @@ use Throwable;
  */
 class PayslipController extends Controller
 {
-    /** Roles permitted to see payslips belonging to other employees. */
-    private const PAYROLL_ROLES = ['super_admin', 'admin', 'hr', 'payroll_manager'];
-
     public function __construct(
         private readonly SalaryCalculationService $calculationService,
     ) {
@@ -362,7 +359,7 @@ class PayslipController extends Controller
             return false;
         }
 
-        return in_array(strtolower((string) $user->role), self::PAYROLL_ROLES, true);
+        return $user->isPayrollLevel();
     }
 
     /**
