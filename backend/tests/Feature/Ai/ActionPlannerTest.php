@@ -260,6 +260,29 @@ class ActionPlannerTest extends TestCase
             ['update our timezone to Asia/Kolkata'],
             ['can you change the office start time to 09:30?'],
             ['increase the casual leave quota to 15 days'],
+
+            /*
+             * AN INSTRUCTION THAT OPENS BY ASKING TO LOOK SOMETHING UP.
+             *
+             * "show", "list" and "find" open a request to display something,
+             * and they used to cancel the whole sentence — so every one of
+             * these reached the PROSE assistant, which helpfully explained
+             * where to click. A person who asked for a rename and was handed a
+             * paragraph has every reason to believe one happened. §6.
+             */
+            ['find the paid leave type and rename it to Annual Leave'],
+            ['list the leave types and change sick leave quota to 14'],
+            ['show me the leave types and set casual to 10'],
+            ['show me the departments, then rename HR to Human Resources'],
+
+            /*
+             * Instructions this system will never carry out. Routed here so
+             * they are refused BY NAME rather than answered in prose.
+             */
+            ['delete all employees'],
+            ['approve the July payroll run'],
+            ['please cancel the leave request for Priya'],
+            ['can you release the June payroll'],
         ];
     }
 
@@ -281,6 +304,33 @@ class ActionPlannerTest extends TestCase
             ['headcount by department'],
             ['show me the leave types'],
             ['why did the HR department change its name'],
+
+            // An interrogative opening the sentence frames every clause after
+            // it. This is one question with two subjects, not a question
+            // followed by an order.
+            ['how do I change the carry-forward cap and set the start time'],
+
+            // The retrieval opener cancels its own clause, which is what keeps
+            // an explanation an explanation.
+            ['show me how to rename a department'],
+            ['tell me how to change the casual leave quota'],
+            ['show me the leave types and how do I change the cap'],
+
+            /*
+             * ORDINARY ENGLISH THAT HAPPENS TO CONTAIN A REFUSABLE VERB.
+             *
+             * Every one of these is a question the read path declined and the
+             * prose assistant should answer. Matched anywhere in the sentence,
+             * the refusable verbs turned them into "there is no action for
+             * promoting employees" — a false statement about what was asked,
+             * and a regression on questions that worked before write actions
+             * existed. "add-ons" is the tokenisation half of the same bug: split
+             * on every non-alphanumeric, it yields the gate verb "add".
+             */
+            ['employees to promote to manager next quarter'],
+            ['leave balance for everyone who did not close their timesheet'],
+            ['total leave taken by the add-ons team'],
+            ['candidates still to approve for the Delhi opening'],
         ];
     }
 }

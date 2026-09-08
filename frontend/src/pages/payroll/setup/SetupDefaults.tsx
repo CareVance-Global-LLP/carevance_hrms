@@ -9,6 +9,39 @@ import InfoTooltip from '@/components/ui/InfoTooltip';
 import { payrollApi } from '@/services/api';
 import { usePayrollOnboarding } from '@/hooks/usePayrollOnboarding';
 
+/*
+ * Professional tax has no safe default, so this field starts unanswered.
+ *
+ * It used to start on 'maharashtra'. An admin in Delhi — which levies no
+ * professional tax at all — who clicked through this wizard without ever
+ * opening the dropdown agreed to Maharashtra's slabs on the organisation's
+ * behalf: ₹200 a month, ₹300 in February, ₹2,500 a year deducted from every
+ * employee who owed nothing. Nothing on the screen said so, because the field
+ * looked answered.
+ *
+ * Three UI values, and they are three different statements:
+ *   UNANSWERED — nobody has chosen; Save is refused.
+ *   NO_PT      — "my state levies none"; saved as null, which
+ *                PTStateService prices at ₹0.
+ *   a code     — that state's slabs.
+ *
+ * NO_PT has to exist as a real option. A required field whose only answers are
+ * levying states has no correct answer for a third of the country, and a
+ * required field with no correct answer is one that gets answered wrongly.
+ */
+const PT_STATE_UNANSWERED = '';
+const PT_STATE_NONE = '__none__';
+
+// Shown only until GET /payroll/pt-states answers, which supplies every state
+// and UT. Deliberately not a "top 5" shortlist to pick from and forget about.
+const PT_STATE_FALLBACK: Array<{ code: string; name: string }> = [
+  { code: 'maharashtra', name: 'Maharashtra' },
+  { code: 'karnataka', name: 'Karnataka' },
+  { code: 'tamil_nadu', name: 'Tamil Nadu' },
+  { code: 'delhi', name: 'Delhi' },
+  { code: 'gujarat', name: 'Gujarat' },
+];
+
 export default function SetupDefaults() {
   const queryClient = useQueryClient();
   const { status, markSetupStep } = usePayrollOnboarding();
@@ -18,7 +51,7 @@ export default function SetupDefaults() {
   const [hraPct, setHraPct] = useState('50');
   const [conveyance, setConveyance] = useState('1600');
   const [workingDays, setWorkingDays] = useState('26');
-  const [ptState, setPtState] = useState('maharashtra');
+  const [ptState, setPtState] = useState(PT_STATE_UNANSWERED);
   const [taxRegime, setTaxRegime] = useState<'new' | 'old'>('new');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -37,7 +70,14 @@ export default function SetupDefaults() {
     if (s.defaultHraPercentage !== undefined) setHraPct(String(s.defaultHraPercentage));
     if (s.defaultConveyance !== undefined) setConveyance(String(s.defaultConveyance));
     if (s.workingDaysPerMonth !== undefined) setWorkingDays(String(s.workingDaysPerMonth));
+    // Three-way, and the difference matters: a code selects that state, an
+    // explicit null is this organisation's recorded "no professional tax
+    // here", and an absent key means the question has never been answered.
+    // The API omits the key rather than defaulting it, precisely so this
+    // screen can tell the last two apart instead of showing a green tick
+    // above an empty field.
     if (s.defaultState) setPtState(s.defaultState);
+    else if (s.defaultState === null) setPtState(PT_STATE_NONE);
     if (s.defaultTaxRegime) setTaxRegime(s.defaultTaxRegime);
   }, [settingsData]);
 
@@ -64,19 +104,45 @@ export default function SetupDefaults() {
     queryClient.invalidateQueries({ queryKey: ['payroll', 'onboarding-status'] });
   };
 
+  const ptStateUnanswered = ptState === PT_STATE_UNANSWERED;
+
+  const buildSettingsPayload = () => ({
+    defaultBasicPercentage: parseFloat(basicPct) || 40,
+    defaultHraPercentage: parseFloat(hraPct) || 50,
+    defaultConveyance: parseFloat(conveyance) || 1600,
+    workingDaysPerMonth: parseInt(workingDays) || 26,
+    /*
+     * The saved value, not the UI token. PT_STATE_NONE never leaves this
+     * file: what reaches the organisation is null, which every backend
+     * reader already treats as "no state" and PTStateService prices at ₹0.
+     * Sending the token would put a string that is not a state code onto
+     * employee templates, which the PT-return generators group by.
+     */
+    defaultState: ptState === PT_STATE_NONE ? null : ptState,
+    defaultTaxRegime: taxRegime,
+  });
+
+  /*
+   * The save is refused and says why, rather than the button being disabled.
+   * A dead Save button on a wizard step is a dead end — the reader cannot see
+   * which of six fields is holding it, and the one they are least likely to
+   * guess is the one they never opened. Naming the field, and naming the
+   * answer for a state that levies nothing, is what makes "required" a
+   * question somebody can actually answer.
+   */
+  const refuseUnansweredPtState = (): boolean => {
+    if (!ptStateUnanswered) return false;
+    setError('Choose a Professional Tax state before saving. If your state levies none, pick "No professional tax in my state".');
+    return true;
+  };
+
   const handleSave = async () => {
     setError(null);
     setSuccess(null);
+    if (refuseUnansweredPtState()) return;
     setSubmitting(true);
     try {
-      await payrollApi.updatePayrollSettings({
-        defaultBasicPercentage: parseFloat(basicPct) || 40,
-        defaultHraPercentage: parseFloat(hraPct) || 50,
-        defaultConveyance: parseFloat(conveyance) || 1600,
-        workingDaysPerMonth: parseInt(workingDays) || 26,
-        defaultState: ptState,
-        defaultTaxRegime: taxRegime,
-      } as any);
+      await payrollApi.updatePayrollSettings(buildSettingsPayload() as any);
       await markSetupStep('defaults');
       invalidateAllPayrollCaches();
       setSuccess('Defaults saved. Future employees will use these values.');
@@ -89,22 +155,19 @@ export default function SetupDefaults() {
   };
 
   const handleApplyToAll = async () => {
+    setError(null);
+    setSuccess(null);
+    // Before the confirm, not after: this path writes the defaults to every
+    // existing employee template, so it is the more expensive place to leave
+    // the professional-tax state unanswered, not the more forgiving one.
+    if (refuseUnansweredPtState()) return;
     if (!confirm('Apply these defaults to ALL existing employees? This will update their salary structure. Custom employee overrides will be preserved.')) {
       return;
     }
-    setError(null);
-    setSuccess(null);
     setApplyingToAll(true);
     try {
       // Save first, then apply
-      await payrollApi.updatePayrollSettings({
-        defaultBasicPercentage: parseFloat(basicPct) || 40,
-        defaultHraPercentage: parseFloat(hraPct) || 50,
-        defaultConveyance: parseFloat(conveyance) || 1600,
-        workingDaysPerMonth: parseInt(workingDays) || 26,
-        defaultState: ptState,
-        defaultTaxRegime: taxRegime,
-      } as any);
+      await payrollApi.updatePayrollSettings(buildSettingsPayload() as any);
       const res = await payrollApi.applySettingsToAllEmployees(false);
       invalidateAllPayrollCaches();
       await markSetupStep('defaults');
@@ -188,19 +251,29 @@ export default function SetupDefaults() {
               <InfoTooltip content="Each state has its own Professional Tax slab. Pick the state where your office is registered (not where the employee lives). Some states (Delhi, Haryana) have no PT." title="PT State" />
             </div>
             <SelectInput value={ptState} onChange={(e) => setPtState(e.target.value)}>
-              {ptStates.length > 0 ? (
-                ptStates.map(s => <option key={s.code} value={s.code}>{s.name}</option>)
-              ) : (
-                <>
-                  <option value="maharashtra">Maharashtra</option>
-                  <option value="karnataka">Karnataka</option>
-                  <option value="tamil_nadu">Tamil Nadu</option>
-                  <option value="delhi">Delhi</option>
-                  <option value="gujarat">Gujarat</option>
-                </>
-              )}
+              <option value={PT_STATE_UNANSWERED} disabled>Select a state…</option>
+              <option value={PT_STATE_NONE}>No professional tax in my state</option>
+              {/*
+                * Flattened rather than wrapped in a fragment: SelectInput reads
+                * its options with Children.toArray, which keeps a fragment as
+                * one child, so the whole fallback list collapsed into a single
+                * unselectable row while the states query was still in flight.
+                */}
+              {(ptStates.length > 0 ? ptStates : PT_STATE_FALLBACK).map(s => (
+                <option key={s.code} value={s.code}>{s.name}</option>
+              ))}
             </SelectInput>
-            <p className="text-xs text-slate-500 mt-1">Where your office is located</p>
+            {ptStateUnanswered ? (
+              <p className="text-xs text-amber-700 mt-1">
+                Required. Pick the state your office is registered in, or “No professional tax in my state”.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500 mt-1">
+                {ptState === PT_STATE_NONE
+                  ? 'No professional tax will be deducted for anyone.'
+                  : 'Where your office is located'}
+              </p>
+            )}
           </div>
           <div>
             <div className="flex items-center gap-1.5 mb-1">

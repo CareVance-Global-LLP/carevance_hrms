@@ -79,7 +79,11 @@ class QueryPlanExecutor
         ],
     ];
 
-    /** The comparisons a metric's own `where` may use. Anything else is a layer bug. */
+    /**
+     * The comparisons a metric's own `where` may use. Anything else is a layer
+     * bug. `is null` and `not null` are handled separately in
+     * `metricCondition()` because they bind no value.
+     */
     private const METRIC_COMPARISONS = ['=', '!=', '<>', '>', '>=', '<', '<='];
 
     /** §2's scalar comparisons, mapped to SQL. */
@@ -159,9 +163,52 @@ class QueryPlanExecutor
             $this->dimensionNotes($dimensions),
             $this->periodNotes($filters),
             $this->inputCensusNotes($population, $metrics, $entity),
+            $this->emptyResultNotes($result['rows'], $entityKey, $entity),
         )));
 
         return $result;
+    }
+
+    /**
+     * §6.4 said an empty result must be `rows: []` rather than a row of
+     * zeroes. It said nothing about what the reader is then told, and the
+     * answer was nothing at all: the aggregate branch returns `notes: []`, the
+     * zero/null census is silent when the population is 0 because there is
+     * nothing to count, and `AnswerSummariser` returns null on empty rows. So
+     * the whole product had one sentence — "No records match that question." —
+     * for an empty source, a filter that excluded everything, and a question it
+     * could not answer. A dead end that reads as a refusal is what teaches
+     * somebody the feature cannot do it and to stop asking.
+     *
+     * Two of those three are visible from here, and they are told apart by the
+     * only fact that separates them: whether the entity holds anything at all.
+     * One COUNT, and only when the answer came back empty.
+     *
+     * @param  list<array<string, mixed>>  $rows
+     * @param  array<string, mixed>  $entity
+     * @return list<string>
+     */
+    private function emptyResultNotes(array $rows, string $entityKey, array $entity): array
+    {
+        if ($rows !== []) {
+            return [];
+        }
+
+        $label = strtolower((string) ($entity['label'] ?? $entityKey));
+        $available = $this->baseQuery($entityKey, $entity)->count();
+
+        if ($available === 0) {
+            return [sprintf(
+                'There is no %s data recorded in this organization at all, so nothing could match. The question is answerable — the source is empty.',
+                $label
+            )];
+        }
+
+        return [sprintf(
+            '%d %s records exist, but none of them match this question. The source is not empty; every row was excluded by the filters or thresholds on it.',
+            $available,
+            $label
+        )];
     }
 
     // ------------------------------------------------------------- the plan
@@ -530,12 +577,39 @@ class QueryPlanExecutor
     ): array {
         $expressions = [];
 
+        /*
+         * A join's own ON clause counts as a reference.
+         *
+         * A dimension carries one join, which is enough for a one-hop
+         * department off `employee_work_infos` or `payroll_items`. `activities`
+         * is two hops — an activity knows its user, and only that user's work
+         * info knows their reporting group — so the first hop is an ENTITY
+         * join and the dimension's join hangs off it. Reading only `select`
+         * left the entity join unreferenced, which emitted
+         * `left join groups on groups.id = employee_work_infos.report_group_id`
+         * with `employee_work_infos` never joined: a SQL error, not an empty
+         * result. Entity joins are applied before dimension joins, so naming
+         * the on-clause here is all it takes for the chain to be built in
+         * order.
+         */
+        $fromJoin = function (?array $join) use (&$expressions): void {
+            if ($join === null) {
+                return;
+            }
+
+            // [table, first, operator, second] — 1 and 3 are the columns.
+            $expressions[] = (string) $join[1];
+            $expressions[] = (string) $join[3];
+        };
+
         foreach ($dimensions + $columns as $definition) {
             $expressions[] = (string) $definition['select'];
+            $fromJoin($definition['join'] ?? null);
         }
 
         foreach ($filters as $filter) {
             $expressions[] = (string) $filter['definition']['select'];
+            $fromJoin($filter['definition']['join'] ?? null);
         }
 
         foreach ($metrics as $metric) {
@@ -1138,6 +1212,10 @@ class QueryPlanExecutor
         [$condition, $bindings] = $this->metricCondition($metric, $entity);
         $function = (string) $metric['aggregate'];
 
+        if ($function === 'rate') {
+            return $this->rate($metric, $entity, $query, $condition, $bindings);
+        }
+
         if ($function === 'count') {
             return [
                 'sql' => $condition === null ? 'count(*)' : "count(case when {$condition} then 1 end)",
@@ -1148,11 +1226,91 @@ class QueryPlanExecutor
         $value = $this->metricValue($metric, $entity, $query);
 
         return [
-            'sql' => $condition === null
+            'sql' => $this->rounded($condition === null
                 ? "{$function}({$value})"
-                : "{$function}(case when {$condition} then {$value} end)",
+                : "{$function}(case when {$condition} then {$value} end)", $metric),
             'bindings' => $bindings,
         ];
+    }
+
+    /**
+     * `aggregate => 'rate'`: one population as a percentage of another, both
+     * measured over the same column and the same rows.
+     *
+     * The metric's `where` IS the denominator and `numerator` narrows it, which
+     * is the whole reason this is one metric rather than two. Computed as two
+     * independent metrics the halves can be drawn from different populations —
+     * that is how a percentage comes back over 100 — and a reader has no way to
+     * tell from the answer that it happened.
+     *
+     * NULLIF, not a guard clause: a group with nothing tracked yields NULL and
+     * renders blank. "Nothing was measured here" and "they were 0% productive"
+     * are different facts and only one of them is ever true (§6.4).
+     *
+     * @param  array<string, mixed>  $metric
+     * @param  array<string, mixed>  $entity
+     * @param  list<mixed>  $bindings  the denominator's, in order
+     * @return array{sql: string, bindings: list<mixed>}
+     */
+    private function rate(array $metric, array $entity, Builder $query, ?string $denominator, array $bindings): array
+    {
+        [$narrowing, $narrowingBindings] = $this->metricCondition(
+            ['label' => $metric['label'] ?? 'rate', 'where' => $metric['numerator'] ?? []],
+            $entity
+        );
+
+        if ($narrowing === null) {
+            throw new LogicException(sprintf(
+                "The rate metric '%s' names no numerator, so it would report 100%% of itself.",
+                (string) ($metric['label'] ?? 'unnamed')
+            ));
+        }
+
+        $value = $this->metricValue($metric, $entity, $query);
+        $whole = $denominator ?? '1 = 1';
+        $part = $denominator === null ? $narrowing : "{$denominator} and {$narrowing}";
+
+        return [
+            'sql' => $this->rounded(sprintf(
+                '100.0 * sum(case when %s then %s end) / nullif(sum(case when %s then %s end), 0)',
+                $part,
+                $value,
+                $whole,
+                $value
+            ), $metric),
+            // Bound in the order they appear in the SQL above: the numerator's
+            // CASE carries the denominator's clauses first, then its own.
+            'bindings' => array_merge($bindings, $narrowingBindings, $bindings),
+        ];
+    }
+
+    /**
+     * §12: the answer is stated to the precision the definition claims, in SQL,
+     * so the stored value and the rendered one cannot disagree.
+     *
+     * Rounding here rather than in PHP is what keeps a `having` threshold
+     * applied to the same number the reader sees — `applyHaving()` reuses this
+     * exact expression.
+     *
+     * @param  array<string, mixed>  $metric
+     */
+    private function rounded(string $sql, array $metric): string
+    {
+        $places = $metric['round'] ?? null;
+
+        if ($places === null) {
+            return $sql;
+        }
+
+        if (! is_int($places) || $places < 0 || $places > 6) {
+            throw new LogicException(sprintf(
+                "The metric '%s' asks to be rounded to '%s' places, which is not a precision this executor will build.",
+                (string) ($metric['label'] ?? 'unnamed'),
+                var_export($places, true)
+            ));
+        }
+
+        return "round({$sql}, {$places})";
     }
 
     /**
@@ -1194,7 +1352,63 @@ class QueryPlanExecutor
             ));
         }
 
-        return $this->identifier($this->qualify((string) $metric['column'], $entity));
+        $expression = $this->identifier($this->qualify((string) $metric['column'], $entity));
+
+        /*
+         * `cap` clips each row BEFORE the aggregate, which is not the same as
+         * filtering the row out and is why it cannot be a `where` clause.
+         * UsageProcessingService clips every activity row to
+         * `max_log_duration_seconds` at read time, and a non-idle row is not
+         * bounded when it is written — so a raw SUM reports 8.3 hours for a row
+         * every Monitoring screen reports as 4. Dropping the row instead would
+         * lose the first four hours too.
+         */
+        $cap = $metric['cap'] ?? null;
+
+        if ($cap !== null) {
+            if (! is_int($cap) || $cap <= 0) {
+                throw new LogicException(sprintf(
+                    "The metric '%s' declares a cap of '%s', which is not a positive integer.",
+                    (string) $metric['label'],
+                    var_export($cap, true)
+                ));
+            }
+
+            $driver = $query->getConnection()->getDriverName();
+
+            $expression = match ($driver) {
+                'sqlite' => "min({$expression}, {$cap})",
+                'pgsql' => "least({$expression}, {$cap})",
+                default => throw new LogicException(sprintf(
+                    "A per-row cap is not implemented for the '%s' driver; '%s' cannot be computed here.",
+                    $driver,
+                    (string) $metric['label']
+                )),
+            };
+        }
+
+        /*
+         * `scale` is a unit conversion, nothing more: durations are stored in
+         * seconds and nobody asks for 119,340 seconds of productive time. It
+         * divides the ROW, so it commutes with sum and cancels out of a rate.
+         */
+        $scale = $metric['scale'] ?? null;
+
+        if ($scale !== null) {
+            if (! is_int($scale) || $scale <= 0) {
+                throw new LogicException(sprintf(
+                    "The metric '%s' declares a scale of '%s', which is not a positive integer.",
+                    (string) $metric['label'],
+                    var_export($scale, true)
+                ));
+            }
+
+            // The `.0` is load-bearing on PostgreSQL: integer / integer is
+            // integer division there, so a 45-minute row would scale to 0 hours.
+            $expression = "({$expression} / {$scale}.0)";
+        }
+
+        return $expression;
     }
 
     /**
@@ -1209,6 +1423,21 @@ class QueryPlanExecutor
 
         foreach ($metric['where'] ?? [] as $clause) {
             [$column, $operator, $value] = $clause;
+
+            /*
+             * Emptiness is a comparison no placeholder can carry: `col = ?`
+             * with a null binding is NULL, never true, so a metric written that
+             * way silently measures nothing. Two curated definitions need it —
+             * "activity the tracker has not classified" and "the person has not
+             * been deactivated" — and both are exclusions, which is exactly the
+             * kind of clause that must never fail quietly.
+             */
+            if ($operator === 'is null' || $operator === 'not null') {
+                $parts[] = $this->identifier($this->qualify((string) $column, $entity))
+                    .($operator === 'is null' ? ' is null' : ' is not null');
+
+                continue;
+            }
 
             if (! in_array($operator, self::METRIC_COMPARISONS, true)) {
                 throw new LogicException(sprintf(

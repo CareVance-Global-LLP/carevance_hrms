@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Validation\ValidationException;
 use Closure;
 use App\Http\Controllers\Controller;
 use App\Models\Screenshot;
@@ -232,6 +233,12 @@ class ScreenshotController extends Controller
                 'message' => count($deletedIds) === 1 ? 'Screenshot deleted successfully.' : 'Screenshots deleted successfully.',
                 'deleted_count' => count($deletedIds),
             ]);
+        } catch (ValidationException $e) {
+            // Same pattern noted in the payroll controllers: ValidationException
+            // extends Exception, so the broad catch below answered 500 and threw
+            // away the per-field errors. Re-thrown so Laravel renders its own 422
+            // and the caller is told which field was wrong.
+            throw $e;
         } catch (Throwable $e) {
             Log::error('Screenshot bulk delete error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to delete screenshots', 'error' => 'Server error'], 500);
@@ -444,6 +451,12 @@ class ScreenshotController extends Controller
             ]);
 
             return response()->json($screenshot, 201);
+        } catch (ValidationException $e) {
+            // Same pattern noted in the payroll controllers: ValidationException
+            // extends Exception, so the broad catch below answered 500 and threw
+            // away the per-field errors. Re-thrown so Laravel renders its own 422
+            // and the caller is told which field was wrong.
+            throw $e;
         } catch (Throwable $e) {
             Log::error('Screenshot store error', ['error' => $e->getMessage(), 'user_id' => $request->user()?->id]);
             return response()->json(['message' => 'Failed to save screenshot', 'error' => 'Server error'], 500);
@@ -596,6 +609,12 @@ class ScreenshotController extends Controller
             $screenshot->loadMissing('timeEntry.user');
 
             return response()->json($screenshot);
+        } catch (ValidationException $e) {
+            // Same pattern noted in the payroll controllers: ValidationException
+            // extends Exception, so the broad catch below answered 500 and threw
+            // away the per-field errors. Re-thrown so Laravel renders its own 422
+            // and the caller is told which field was wrong.
+            throw $e;
         } catch (Throwable $e) {
             Log::error('Screenshot update error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to update screenshot', 'error' => 'Server error'], 500);

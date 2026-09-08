@@ -129,7 +129,27 @@ class DepartmentPayrollTemplate extends Model
             'esi_employee_percentage' => (float) ($this->esi_employee_percentage ?? 0.75),
             'esi_employer_percentage' => (float) ($this->esi_employer_percentage ?? 3.25),
             'esi_threshold' => (float) ($this->esi_threshold ?? 21000),
-            'pt_state' => $this->pt_state ?? 'maharashtra',
+            /*
+             * Passed straight through, never substituted — and it can finally
+             * BE null. The create migration declared this column
+             * `string('pt_state', 64)->default('maharashtra')`, NOT NULL, so
+             * until 2026_08_27_000000 dropped that default this line could not
+             * yield null however carefully it was written: the wizard's
+             * Departments step sends no pt_state, the default landed on insert,
+             * and 'maharashtra' came back out.
+             *
+             * That matters because this map seeds brand-new employee templates
+             * and PayrollAutoProcessService prices pt_state directly — a state
+             * nobody chose is Rs 200 a month, Rs 300 in February, on the
+             * payslip of somebody in Delhi or Haryana who owes nothing.
+             *
+             * getOrCreateForUser does overwrite this key afterwards, but from
+             * the ORGANISATION's answer, and only when the organisation has
+             * given one; with no org-level answer the department's value is
+             * what reaches the employee template. So this line is load-bearing
+             * on its own. Do not reintroduce a fallback here.
+             */
+            'pt_state' => $this->pt_state,
             'tax_regime' => $this->tax_regime ?? 'new',
             'is_metro_city' => (bool) $this->is_metro_city,
             'component_settings' => $this->component_settings ?? [],

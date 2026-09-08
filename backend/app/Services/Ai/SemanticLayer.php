@@ -57,6 +57,17 @@ final class SemanticLayer
         'work' => 'tasks',
         'hiring' => 'candidates',
         'activity' => 'activity_sessions',
+
+        /*
+         * The one entry whose concept and table are the same word, and it is
+         * here for the merge rather than for the rename: `activities` carries
+         * curated productivity metrics and a two-hop department, and `curate()`
+         * is the only place `MetricOverrides` is merged in. Keeping the key
+         * equal to the table name is deliberate — the retriever already reaches
+         * this entity by that name, and renaming it to `activity` would collide
+         * with the concept above.
+         */
+        'activities' => 'activities',
     ];
 
     /**
@@ -377,6 +388,20 @@ final class SemanticLayer
             foreach ($overrides[$bucket] as $name => $definition) {
                 $entity[$bucket][$name] = $definition + ['origin' => 'curated'];
             }
+        }
+
+        /*
+         * Curated joins are APPENDED, never merged over the derived ones.
+         * Derivation builds a join per real foreign key and every one of them
+         * is still true; a curated join exists because a dimension needs a hop
+         * no foreign key on this table describes (`activities` reaches a
+         * department through the person's work info). `QueryPlanExecutor`
+         * applies only the joins a plan reaches for, and refuses by name if two
+         * of them claim the same alias with different `on` clauses — so a
+         * collision is loud rather than silently resolved by arrival order.
+         */
+        foreach (MetricOverrides::joinsFor($concept) as $join) {
+            $entity['joins'][] = $join;
         }
 
         return $entity;

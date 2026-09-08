@@ -60,9 +60,7 @@ class EmployeePayrollCardController extends Controller
 
             return [
                 'id' => $emp->id,
-                'name' => trim(($emp->employeeProfile->first_name ?? '') . ' ' . ($emp->employeeProfile->last_name ?? ''))
-                    ?: ($emp->employeeProfile->first_name ?? null)
-                    ?: $emp->email,
+                'name' => $emp->displayName(),
                 'email' => $emp->email,
                 'department' => $dept?->name ?? null,
                 'department_id' => $dept?->id ?? null,
@@ -122,9 +120,7 @@ class EmployeePayrollCardController extends Controller
             'success' => true,
             'employee' => [
                 'id' => $employee->id,
-                'name' => trim(($employee->employeeProfile->first_name ?? '') . ' ' . ($employee->employeeProfile->last_name ?? ''))
-                    ?: ($employee->employeeProfile->first_name ?? null)
-                    ?: $employee->email,
+                'name' => $employee->displayName(),
                 'email' => $employee->email,
                 'department' => $employee->groups->first()?->name ?? null,
                 'department_id' => $employee->groups->first()?->id ?? null,
@@ -146,7 +142,14 @@ class EmployeePayrollCardController extends Controller
                 ] : null,
                 'pay_group_id' => $payGroupAssignment?->pay_group_id ?? null,
                 'pay_group' => $payGroup,
-                'pt_state' => $template?->pt_state ?? 'maharashtra',
+                // Reported as null when nobody has set one — not as a state.
+                // This card is an editable form: whatever it reports comes
+                // straight back on the next save and is written to the
+                // template by updateConfig() below, so a cosmetic
+                // 'maharashtra' fallback here was a slow way of committing
+                // Maharashtra's professional tax to an employee no one had
+                // ever assigned a state to.
+                'pt_state' => $template?->pt_state,
                 'tax_regime' => $template?->tax_regime ?? 'new',
                 'is_metro_city' => $template?->is_metro_city ?? true,
                 'pf_enabled' => $template?->pf_enabled ?? true,
@@ -319,9 +322,7 @@ class EmployeePayrollCardController extends Controller
             'success' => true,
             'employee' => [
                 'id' => $employee->id,
-                'name' => trim(($employee->employeeProfile->first_name ?? '') . ' ' . ($employee->employeeProfile->last_name ?? ''))
-                    ?: ($employee->employeeProfile->first_name ?? null)
-                    ?: $employee->email,
+                'name' => $employee->displayName(),
                 'email' => $employee->email,
                 'designation' => $employee->employeeProfile?->designation ?? null,
                 'department' => $employee->groups->first()?->name ?? null,
@@ -418,7 +419,23 @@ class EmployeePayrollCardController extends Controller
                     'pt_enabled' => true,
                     'tds_enabled' => true,
                     'lwf_enabled' => false,
-                    'pt_state' => 'maharashtra',
+                    /*
+                     * pt_state is left NULL on create, never seeded with a
+                     * state.
+                     *
+                     * This wrote 'maharashtra'. Saving anything at all on an
+                     * employee's payroll card — a bank account, a CTC — is
+                     * what first creates their template, so an admin who had
+                     * never seen the professional-tax field committed
+                     * Maharashtra's slab to that employee, and
+                     * PayrollAutoProcessService then deducted ₹200 a month
+                     * (₹300 in February) from someone who may work in Delhi
+                     * or Haryana and owe nothing. The `pt_state` key below is
+                     * still writable, so an admin who *does* name a state
+                     * gets it; NULL means nobody has, and PTStateService
+                     * prices that at ₹0.
+                     */
+                    'pt_state' => null,
                     'tax_regime' => 'new',
                     'is_metro_city' => true,
                 ]

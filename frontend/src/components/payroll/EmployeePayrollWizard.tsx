@@ -627,7 +627,10 @@ export default function EmployeePayrollWizard({
       const res = await payrollApi.calculate({
         user_id: employeeId,
         annual_ctc: parseFloat(annualCtc),
-        state: template.pt_state ?? 'maharashtra',
+        // Empty, never a substitute state: the API reads a blank as "the
+        // caller named none" and falls back to this employee's own recorded
+        // state, where 'maharashtra' would have overridden it.
+        state: template.pt_state ?? '',
         tax_regime: template.tax_regime ?? 'new',
         is_metro_city: template.is_metro_city ?? true,
         lOP_days: parseFloat(lOPDays) || 0,
@@ -1035,9 +1038,16 @@ onClick={() => {
               <InfoTooltip content="PT is a state subject — rates vary by state (₹0–₹200/mo). Pick the state where your office is registered." title="PT State" />
             </div>
             <SelectInput
-              value={template.pt_state}
-              onChange={(e) => handleUpdateTemplate('pt_state', e.target.value)}
+              value={template.pt_state ?? ''}
+              onChange={(e) => handleUpdateTemplate('pt_state', e.target.value || null)}
             >
+              {/*
+                * An unset state needs an option of its own. SelectInput falls
+                * back to options[0] when the value matches nothing, so without
+                * this the field claimed a state nobody had chosen — and this
+                * control saves on change.
+                */}
+              <option value="">— No professional tax / not set —</option>
               {INDIAN_STATES.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
@@ -1427,7 +1437,12 @@ onClick={() => {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-900">Professional Tax (PT)</span>
-                <InfoTooltip content={`State-specific slab. ${template?.pt_state ?? 'Maharashtra'} slab applied automatically.`} title="PT" />
+                <InfoTooltip
+                  content={template?.pt_state
+                    ? `State-specific slab. ${template.pt_state} slab applied automatically.`
+                    : 'Professional tax is state-levied and several states levy none. No state is set for this employee, so nothing is deducted.'}
+                  title="PT"
+                />
               </div>
               <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
                 {template?.pt_enabled ? 'Applicable' : 'Disabled'}

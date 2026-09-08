@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\User;
+use App\Services\Monitoring\TimerAutoStopNotifier;
 use App\Support\ExternalTimestamp;
 use App\Services\Authorization\GroupAccessService;
 use App\Services\Billing\PlanService;
@@ -894,9 +895,10 @@ class TimeEntryController extends Controller
      */
     private function closeIdleRunningEntry(int $userId): void
     {
+        $idleUser = User::find($userId);
         // Same resolved policy the client is given, so the in-request
         // fallback holds a user to exactly the threshold their tracker uses.
-        $idleThreshold = $this->idleAutoStopThresholdSeconds(User::find($userId));
+        $idleThreshold = $this->idleAutoStopThresholdSeconds($idleUser);
         $now = now();
         $cutoff = $now->copy()->subSeconds($idleThreshold);
 
@@ -980,6 +982,18 @@ class TimeEntryController extends Controller
         ]);
 
         $this->closeOpenAttendancePunches($userId, $endTime);
+
+        // Say so. This is the third path that closed a timer and told
+        // nobody; the two sweeps were the other two.
+        if ($idleUser) {
+            app(TimerAutoStopNotifier::class)->announce(
+                $idleUser,
+                $entry,
+                (int) $lastActivityAt->diffInSeconds($now),
+                TimeEntry::STOP_IDLE_SERVER,
+                $endTime
+            );
+        }
 
         Log::info('Running timer auto-stopped by real-time idle check', [
             'time_entry_id' => $entry->id,

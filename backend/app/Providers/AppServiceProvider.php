@@ -307,6 +307,13 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(20)->by($request->user()?->id ?: $request->ip()),
         ]);
 
+        // Applying an AI-previewed change. Tighter than `search.ask` because it
+        // writes, and separate from it because an Apply must not be starved by
+        // the questions that produced the preview it is applying.
+        RateLimiter::for('search.act', fn (Request $request) => [
+            Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()),
+        ]);
+
         RateLimiter::for('desktop.download', fn (Request $request) => [
             Limit::perMinute((int) env('RATE_LIMIT_DESKTOP_DOWNLOAD_PER_MINUTE', 10))->by($request->ip()),
         ]);

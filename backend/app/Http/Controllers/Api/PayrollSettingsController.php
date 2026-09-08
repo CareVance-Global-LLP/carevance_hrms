@@ -15,7 +15,33 @@ class PayrollSettingsController extends Controller
         'defaultBasicPercentage' => 40,
         'defaultHraPercentage' => 50,
         'defaultConveyance' => 1600,
-        'defaultState' => 'maharashtra',
+        /*
+         * `defaultState` is deliberately ABSENT from this list.
+         *
+         * It used to read 'maharashtra'. getSettings() merges these defaults
+         * over the org row, so an organisation that had never chosen a state
+         * was told its default *was* Maharashtra — the setup wizard pre-filled
+         * that answer, an admin who never opened the dropdown saved it, and
+         * resetSettings() wrote it into the org row outright. From there
+         * EmployeePayrollTemplate::getOrCreateForUser stamps it on every new
+         * template and PayrollAutoProcessService deducts Maharashtra's slab:
+         * ₹200 a month, ₹300 in February, ₹2,500 a year per head — taken from
+         * people in Delhi, Haryana, Punjab or UP, which levy no professional
+         * tax at all.
+         *
+         * The three cases are now distinguishable, and they are three
+         * different statements:
+         *   key absent  — nobody has answered yet
+         *   key => null — answered: this organisation's state levies none
+         *   key => code — that state's slabs
+         * Both of the first two price at ₹0 through PTStateService, so an
+         * unanswered setup under-deducts, which is correctable. Taking a tax
+         * that was never owed is not.
+         *
+         * Do not put a state back here. If a default is ever wanted, it has
+         * to come from the organisation's own registered address, not from a
+         * literal in a controller.
+         */
         'defaultTaxRegime' => 'new',
         'pfWageCap' => 15000,
         'esiThreshold' => 21000,
@@ -252,7 +278,12 @@ class PayrollSettingsController extends Controller
                 'basic_percentage' => $payroll['defaultBasicPercentage'] ?? $defaults['basic_percentage'],
                 'hra_percentage' => $payroll['defaultHraPercentage'] ?? $defaults['hra_percentage'],
                 'conveyance_allowance' => $payroll['defaultConveyance'] ?? $defaults['conveyance_allowance'],
-                'pt_state' => $payroll['defaultState'] ?? $defaults['pt_state'],
+                // EmployeePayrollTemplate::getDefaultSettings() carries no
+                // pt_state on purpose, so there is nothing to fall back to.
+                // null here means "this org has not named a state", which the
+                // array_filter below turns into "leave every template's
+                // pt_state alone" rather than "stamp one on everybody".
+                'pt_state' => $payroll['defaultState'] ?? null,
                 'tax_regime' => $payroll['defaultTaxRegime'] ?? $defaults['tax_regime'],
                 'is_metro_city' => $payroll['isMetroCity'] ?? $defaults['is_metro_city'],
                 'pf_enabled' => $payroll['pfEnabled'] ?? $defaults['pf_enabled'],
@@ -278,7 +309,7 @@ class PayrollSettingsController extends Controller
             'basic_percentage' => $payroll['defaultBasicPercentage'] ?? $defaults['basic_percentage'],
             'hra_percentage' => $payroll['defaultHraPercentage'] ?? $defaults['hra_percentage'],
             'conveyance_allowance' => $payroll['defaultConveyance'] ?? $defaults['conveyance_allowance'],
-            'pt_state' => $payroll['defaultState'] ?? $defaults['pt_state'],
+            'pt_state' => $payroll['defaultState'] ?? null,
             'tax_regime' => $payroll['defaultTaxRegime'] ?? $defaults['tax_regime'],
             'is_metro_city' => $payroll['isMetroCity'] ?? $defaults['is_metro_city'],
             'pf_enabled' => $payroll['pfEnabled'] ?? $defaults['pf_enabled'],

@@ -311,6 +311,45 @@ class ActionExecutorTest extends TestCase
     }
 
     /**
+     * WHAT EXECUTES IS WHAT THE DIFF SAYS — normalised here, not merely
+     * normalised upstream.
+     *
+     * "9:30" is an ordinary way to write half past nine. `requestedValue()`
+     * turns it into **09:30** before it is bounds-checked or displayed, and the
+     * endpoint's own rule is `regex:/^([01]\d|2[0-3]):[0-5]\d/` — so the raw
+     * string is a 422 and the normalised one is a write.
+     *
+     * A token minted by a real preview carries the normalised value already
+     * (`build()` tokenises `array_column($changes, 'to', 'field')`), which is
+     * why this could not be reached from the ask endpoint. That is exactly the
+     * kind of guarantee worth pinning down rather than inheriting: the executor
+     * re-derives the diff at Apply for its own reasons, and sending anything
+     * other than THAT diff makes the write and the confirmation two different
+     * claims. The token is minted by hand here for the same reason the tampered
+     * and out-of-range ones are — a signature proves this server issued a plan,
+     * never that the plan was already in the shape the endpoint needs.
+     */
+    public function test_the_endpoint_is_sent_the_normalised_value_the_diff_computed(): void
+    {
+        $token = ActionToken::issue([
+            'action' => 'organization.update',
+            'target' => ['id' => $this->org->id, 'label' => 'Acme India'],
+            'changes' => ['office_start_time' => '9:30'],
+            'question' => self::QUESTION,
+        ], ['office_start_time' => '09:00'], $this->admin->id);
+
+        $result = $this->apply($token);
+
+        $this->assertTrue($result['applied']);
+
+        $this->assertSame(
+            '09:30:00',
+            Organization::find($this->org->id)->settings['attendance']['office_start_time'],
+            'the raw plan value reached the endpoint instead of the normalised one the diff computed',
+        );
+    }
+
+    /**
      * The internal request is authenticated by `api.token`, not by whoever this
      * process happens to think is signed in.
      *

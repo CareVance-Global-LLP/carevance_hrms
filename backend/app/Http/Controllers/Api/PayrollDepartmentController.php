@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessPayrollRunEmployees;
 use App\Models\EmployeeLoan;
@@ -278,7 +279,19 @@ class PayrollDepartmentController extends Controller
                         // salary-structure form to hydrate the right
                         // dropdown value (otherwise it always defaults
                         // to Maharashtra on page load).
-                        'pt_state' => $template->pt_state ?? 'maharashtra',
+                        /*
+                         * NEVER a fallback state.
+                         *
+                         * The operator reads this card and saves it back, so a
+                         * fabricated Maharashtra here is written to the template
+                         * on the next save and then priced: Rs 200 a month taken
+                         * from somebody in Delhi, Haryana, Punjab or UP, none of
+                         * which levy professional tax. Null and empty both price
+                         * at zero through PTStateService, so an unset state
+                         * under-deducts, which is correctable. Taking a tax that
+                         * was never owed is not.
+                         */
+                        'pt_state' => $template->pt_state,
                         'tax_regime' => $template->tax_regime ?? 'new',
                         'is_metro_city' => (bool) ($template->is_metro_city ?? true),
                     ];
@@ -548,6 +561,18 @@ class PayrollDepartmentController extends Controller
 
                 return $group;
             });
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('Failed to create pay group + assignments', [
                 'organization_id' => $organizationId,
@@ -2551,15 +2576,50 @@ class PayrollDepartmentController extends Controller
                 ->count();
         }
 
-        // Missing PAN/UAN — on-payroll users whose profile lacks PAN or UAN.
+        /*
+         * Missing PAN / UAN, resolved the way the rest of the system resolves
+         * a statutory identifier.
+         *
+         * This counted rows in `employee_profiles` whose pan_number or
+         * uan_number was blank. Two things were wrong with that. A PAN entered
+         * through the Government IDs section lives in
+         * `employee_government_ids` and never touches that column, so six PANs
+         * were entered on production and the count stayed at six — the admin
+         * reasonably concluded the saves had failed. And starting the query
+         * FROM employee_profiles meant somebody with no profile row at all was
+         * counted as missing nothing, which is the opposite of the truth.
+         *
+         * User::statutoryId() already reads both places and resolves a person
+         * carrying two rows of the same kind deterministically. Use it.
+         *
+         * PAN and UAN are also counted SEPARATELY. They are different jobs — a
+         * PAN is collected from the employee, a UAN is issued by EPFO — and
+         * collapsing them meant filling in every PAN moved nothing on screen.
+         * The combined figure is still published so an older client keeps its
+         * tile.
+         */
+        $missingPan = 0;
+        $missingUan = 0;
         $missingPanUan = 0;
         if (! empty($onPayrollUserIds)) {
-            $missingPanUan = \App\Models\EmployeeProfile::whereIn('user_id', $onPayrollUserIds)
-                ->where(function ($q) {
-                    $q->whereNull('pan_number')->orWhere('pan_number', '')
-                      ->orWhereNull('uan_number')->orWhere('uan_number', '');
-                })
-                ->count();
+            $statutoryUsers = User::whereIn('id', $onPayrollUserIds)
+                ->with(['employeeProfile', 'employeeGovernmentIds'])
+                ->get();
+
+            foreach ($statutoryUsers as $statutoryUser) {
+                $hasPan = filled($statutoryUser->statutoryId('pan'));
+                $hasUan = filled($statutoryUser->statutoryId('uan'));
+
+                if (! $hasPan) {
+                    $missingPan++;
+                }
+                if (! $hasUan) {
+                    $missingUan++;
+                }
+                if (! $hasPan || ! $hasUan) {
+                    $missingPanUan++;
+                }
+            }
         }
 
         // Unassigned employees — users on payroll roles with no template.
@@ -2584,6 +2644,8 @@ class PayrollDepartmentController extends Controller
             'attention' => [
                 'missing_bank_details' => $missingBankDetails,
                 'missing_pan_uan' => $missingPanUan,
+                'missing_pan' => $missingPan,
+                'missing_uan' => $missingUan,
                 'unassigned_employees' => $unassignedEmployees,
                 'pending_fbp_declarations' => $pendingFbpDeclarations,
             ],
@@ -2997,6 +3059,24 @@ class PayrollDepartmentController extends Controller
             $lockReason = "Partial run: {$completeness['processed_count']} of {$completeness['expected_count']} employees processed.";
         }
 
+        /*
+         * Being partial and having unpriced people are SEPARATE facts.
+         *
+         * A partial run is fixed by processing the rest; an unpriced employee
+         * is fixed by somebody going and setting their salary, and until they
+         * do that person cannot be paid at all. Collapsing the two into one
+         * sentence leaves whoever reads the lock unable to tell which job is
+         * in front of them — and the unpriced case is the one that silently
+         * costs somebody their month.
+         */
+        $unpricedNote = $completeness['unpriced_count'] > 0
+            ? "{$completeness['unpriced_count']} employee(s) have no salary configured."
+            : '';
+
+        if ($unpricedNote !== '') {
+            $lockReason = trim($lockReason . ' ' . $unpricedNote);
+        }
+
         DB::transaction(function () use ($run, $lockReason, $request, $completeness) {
             $run->update([
                 'status' => 'locked',
@@ -3011,6 +3091,7 @@ class PayrollDepartmentController extends Controller
                 'expected_count' => $completeness['expected_count'],
                 'processed_count' => $completeness['processed_count'],
                 'missing_count' => $completeness['missing_count'],
+                'unpriced_count' => $completeness['unpriced_count'],
                 'is_complete' => $completeness['is_complete'],
                 'reason' => $lockReason,
                 'locked_by' => auth()->id(),
@@ -3019,9 +3100,11 @@ class PayrollDepartmentController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $completeness['is_complete']
-                ? 'Payroll run locked.'
-                : "Payroll run locked (partial). {$completeness['missing_count']} employee(s) not included.",
+            'message' => trim((
+                $completeness['is_complete']
+                    ? 'Payroll run locked.'
+                    : "Payroll run locked (partial). {$completeness['missing_count']} employee(s) not included."
+            ) . ($unpricedNote !== '' ? ' ' . $unpricedNote : '')),
             'run' => $run->fresh(),
             'completeness' => $completeness,
         ]);
@@ -3066,6 +3149,12 @@ class PayrollDepartmentController extends Controller
             ->where('t.is_active', true)
             ->whereNotNull('t.annual_ctc')
             ->where('t.annual_ctc', '>', 0)
+            // NB: this filter decides PARTIALNESS, not visibility. Somebody
+            // nobody has priced is reported below as unpriced rather than as
+            // missing — "go and price this person" and "re-run the batch" are
+            // different jobs. Counting them here instead would make every org
+            // permanently partial, because getOrCreateForUser writes a 0-CTC
+            // template for every user on creation, admins included.
             ->pluck('u.id')
             ->unique()
             ->values()
@@ -3095,12 +3184,82 @@ class PayrollDepartmentController extends Controller
         // user ids — no need for array_values() (which would reindex them to 0,1,2...).
         $missingUserIds = array_keys(array_diff_key($expectedSet, $processedSet));
 
+        /*
+         * On payroll, but nobody has said what they earn.
+         *
+         * Previously invisible in both directions: excluded from expected, so
+         * never missing, so a run locked and approved clean without them and
+         * the person simply was not paid. Naming them is the whole point.
+         */
+        $unpricedUserIds = DB::table('employee_payroll_templates as t')
+            ->join('users as u', 'u.id', '=', 't.user_id')
+            ->where('t.organization_id', $organizationId)
+            ->whereIn('u.role', ['employee', 'manager', 'admin'])
+            ->where('t.is_active', true)
+            ->where(function ($q) {
+                $q->whereNull('t.annual_ctc')->orWhere('t.annual_ctc', '<=', 0);
+            })
+            ->pluck('u.id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $unpricedEmployees = empty($unpricedUserIds)
+            ? []
+            : User::whereIn('id', $unpricedUserIds)
+                ->select(['id', 'name', 'email'])
+                ->get()
+                ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email])
+                ->all();
+
+        // Having a template and having a price are different things, and the
+        // fresh-org fallback sweeps in people with neither. A row that cannot
+        // say which is which sends somebody to the wrong screen.
+        // Priced means an active template carrying a real CTC. needs_ctc is
+        // the INVERSE of this rather than a lookup in the unpriced-template
+        // list, because the fresh-org fallback also sweeps in people with no
+        // template at all - and they need a salary just as much as somebody
+        // holding an empty one.
+        $pricedUserIds = empty($missingUserIds)
+            ? []
+            : DB::table('employee_payroll_templates')
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->whereIn('user_id', $missingUserIds)
+                ->whereNotNull('annual_ctc')
+                ->where('annual_ctc', '>', 0)
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+        $templatedUserIds = empty($missingUserIds)
+            ? []
+            : DB::table('employee_payroll_templates')
+                ->where('organization_id', $organizationId)
+                ->where('is_active', true)
+                ->whereIn('user_id', $missingUserIds)
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
         $missingEmployees = empty($missingUserIds)
             ? []
             : User::whereIn('id', $missingUserIds)
                 ->select(['id', 'name', 'email'])
                 ->get()
-                ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'email' => $u->email])
+                // Why they are missing, not merely that they are. On a fresh
+                // org the fallback expects EVERYONE, so an unpriced person
+                // lands here rather than in unpriced_employees - and "re-run
+                // the batch" and "go and price this person" stay tellable
+                // apart either way.
+                ->map(fn ($u) => [
+                    'id' => $u->id,
+                    'name' => $u->name,
+                    'email' => $u->email,
+                    'needs_ctc' => ! in_array((int) $u->id, $pricedUserIds, true),
+                    'has_template' => in_array((int) $u->id, $templatedUserIds, true),
+                ])
                 ->all();
 
         return [
@@ -3109,6 +3268,8 @@ class PayrollDepartmentController extends Controller
             'missing_count' => count($missingUserIds),
             'is_complete' => count($missingUserIds) === 0,
             'missing_employees' => $missingEmployees,
+            'unpriced_count' => count($unpricedUserIds),
+            'unpriced_employees' => $unpricedEmployees,
         ];
     }
 

@@ -64,20 +64,87 @@ class ActionPlanner
     ];
 
     /**
-     * Words that open a QUESTION rather than an instruction.
+     * Instructions that mean somebody wants something DONE that this system
+     * deliberately will not do from here.
+     *
+     * None of these is in the catalogue and none ever will be — §4 rules out
+     * deletes, money and payroll state transitions — so every one of them ends
+     * in a refusal. They are listed anyway, and that is the whole point: routed
+     * here, "delete all employees" comes back as *"There is no action for
+     * deleting an employee"*, named and final. Left out, the read path declines
+     * it and the PROSE assistant answers, and a person who asked for a deletion
+     * and received a helpful paragraph has every reason to believe one
+     * happened. §6: "a refusal is never a fallback to prose."
+     *
+     * So the gate asks "was this an instruction?", not "is this an instruction
+     * we can carry out?". The catalogue answers the second question, and it
+     * answers it by name.
+     */
+    private const REFUSABLE_VERBS = [
+        'delete', 'remove', 'archive', 'deactivate', 'disable', 'enable',
+        'activate', 'suspend', 'revoke', 'terminate', 'cancel', 'close',
+        'approve', 'reject', 'lock', 'unlock', 'release', 'disburse',
+        'add', 'create', 'assign', 'grant', 'promote', 'transfer',
+    ];
+
+    /**
+     * Interrogatives — words that make what follows a QUESTION.
      *
      * "how do I change the cap?" contains a change verb and is not a request to
      * change anything — it is the exact question the prose assistant exists to
      * answer, and turning it into "I can't change that" is a worse product than
      * the one that existed before write actions.
      *
+     * An interrogative FRAMES everything after it, so one opening the sentence
+     * settles the whole sentence however many clauses follow.
+     *
      * `can` and `could` are deliberately absent: "can you change the start time
-     * to 09:30?" is a polite imperative, not an enquiry.
+     * to 09:30?" is a polite imperative, not an enquiry. They are stripped as
+     * prefixes below instead.
      */
-    private const ASKING_OPENERS = [
+    private const ENQUIRY_OPENERS = [
         'how', 'what', 'why', 'when', 'where', 'which', 'who', 'whose', 'whom',
         'is', 'are', 'was', 'were', 'do', 'does', 'did', 'should',
+    ];
+
+    /**
+     * Words that open a request to DISPLAY something.
+     *
+     * These are imperatives too — "show me the leave types" is an instruction —
+     * but the thing they instruct is a read, so they cancel their OWN clause and
+     * nothing else. That distinction is the whole of the fix: these used to sit
+     * beside the interrogatives and cancel the entire sentence, so *"find the
+     * paid leave type and rename it to Annual Leave"* never reached the write
+     * path at all and was answered by the prose assistant with instructions for
+     * doing it by hand — §6's forbidden outcome, reached by the routing gate
+     * rather than by a refusal.
+     *
+     * Cancelling the clause is still right, and is what keeps "show me how to
+     * rename a department" a question: there is no second clause, so there is
+     * nothing left to read as an instruction.
+     */
+    private const RETRIEVAL_OPENERS = [
         'show', 'list', 'give', 'tell', 'count', 'compare', 'find', 'display',
+    ];
+
+    /**
+     * Words that end one clause and begin the next.
+     *
+     * Sentence punctuation does the same job and is folded in by `clauses()`.
+     */
+    private const CLAUSE_BREAKS = ['and', 'then', 'also', 'plus'];
+
+    /**
+     * Words that stand in FRONT of an instruction without being part of it.
+     *
+     * "can you delete all employees" and "delete all employees" are the same
+     * request, so the head of a clause is read past them. They are stripped
+     * only from the front — a word from this list in the middle of a sentence
+     * is ordinary English.
+     */
+    private const POLITE_PREFIXES = [
+        'please', 'kindly', 'just', 'now', 'can', 'could', 'would', 'will',
+        'you', 'i', 'we', 'us', 'me', 'want', 'need', 'to', 'let',
     ];
 
     public function __construct(private readonly PlanningClient $client)
@@ -94,17 +161,110 @@ class ActionPlanner
      */
     public static function isChangeRequest(string $question): bool
     {
-        $words = preg_split('/[^a-z0-9]+/', strtolower($question), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $clauses = self::clauses($question);
 
-        if ($words === []) {
+        if ($clauses === []) {
             return false;
         }
 
-        if (in_array($words[0], self::ASKING_OPENERS, true)) {
+        // An interrogative at the very front settles the sentence. "how do I
+        // change the cap and set the start time?" is one question with two
+        // subjects, not a question followed by an order.
+        if (in_array(self::head($clauses[0]), self::ENQUIRY_OPENERS, true)) {
             return false;
         }
 
-        return array_intersect(self::CHANGE_VERBS, $words) !== [];
+        foreach ($clauses as $clause) {
+            $head = self::head($clause);
+
+            if (in_array($head, self::ENQUIRY_OPENERS, true)
+                || in_array($head, self::RETRIEVAL_OPENERS, true)) {
+                continue;
+            }
+
+            // A CHANGE verb counts wherever it sits in its clause. "can you
+            // change the office start time to 09:30" puts it third, and the
+            // catalogue can act on it, so a wrong yes costs only a preview.
+            if (array_intersect(self::CHANGE_VERBS, $clause) !== []) {
+                return true;
+            }
+
+            /*
+             * A REFUSABLE verb counts only as the HEAD of its clause, and that
+             * asymmetry is deliberate. None of them can ever produce a plan —
+             * they exist so an instruction is refused BY NAME instead of being
+             * answered in prose — and they are far commoner as ordinary English
+             * inside a question than the change verbs are: "employees to
+             * promote to manager next quarter", "everyone who did not close
+             * their timesheet", "leave still to approve". Matched anywhere,
+             * each of those came back as "there is no action for promoting
+             * employees", which is a false statement about what was asked.
+             * Matched at the head, "delete all employees" and "approve the July
+             * payroll run" still land here and are still refused by name.
+             */
+            if (in_array($head, self::REFUSABLE_VERBS, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The question, split into clauses of bare words.
+     *
+     * Tokenised on WHITESPACE and then trimmed at the edges, never split on
+     * every non-alphanumeric: "the add-ons team" split that way yields the word
+     * "add", and "add" is a gate verb — which is how a question about a team's
+     * leave balance was read as an instruction to add something.
+     *
+     * @return list<list<string>>
+     */
+    private static function clauses(string $question): array
+    {
+        $marked = preg_replace('/[;,.!?]+/', ' | ', strtolower($question)) ?? strtolower($question);
+
+        $clauses = [];
+        $current = [];
+
+        foreach (preg_split('/\s+/', $marked, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $token) {
+            $word = preg_replace('/^[^a-z0-9]+|[^a-z0-9]+$/', '', $token) ?? '';
+
+            // Either the punctuation marker above or a token that was nothing
+            // but punctuation. Both end the clause.
+            if ($word === '' || in_array($word, self::CLAUSE_BREAKS, true)) {
+                if ($current !== []) {
+                    $clauses[] = $current;
+                    $current = [];
+                }
+
+                continue;
+            }
+
+            $current[] = $word;
+        }
+
+        if ($current !== []) {
+            $clauses[] = $current;
+        }
+
+        return $clauses;
+    }
+
+    /**
+     * The first word of a clause that carries any meaning.
+     *
+     * @param  list<string>  $clause
+     */
+    private static function head(array $clause): string
+    {
+        foreach ($clause as $word) {
+            if (! in_array($word, self::POLITE_PREFIXES, true)) {
+                return $word;
+            }
+        }
+
+        return '';
     }
 
     /**

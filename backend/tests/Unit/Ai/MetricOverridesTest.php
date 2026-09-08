@@ -200,9 +200,19 @@ class MetricOverridesTest extends TestCase
                 foreach (['label', 'type', 'aggregate', 'column', 'where', 'note'] as $field) {
                     $this->assertArrayHasKey($field, $override, "metric {$key} is missing {$field}");
                 }
-                $this->assertContains($override['aggregate'], ['avg', 'sum', 'count'], $key);
+                $this->assertContains($override['aggregate'], ['avg', 'sum', 'count', 'rate'], $key);
                 $this->assertContains($override['type'], ['money', 'number'], $key);
                 $this->assertIsArray($override['where'], $key);
+
+                if ($override['aggregate'] === 'rate') {
+                    // A rate's `where` is its DENOMINATOR and `numerator`
+                    // narrows it. Without the numerator the executor would be
+                    // dividing a population by itself and reporting 100%.
+                    $this->assertNotEmpty(
+                        $override['numerator'] ?? [],
+                        "rate metric {$key} must name the clauses that narrow its denominator"
+                    );
+                }
             } else {
                 foreach (['label', 'join', 'select', 'type', 'null_label'] as $field) {
                     $this->assertArrayHasKey($field, $override, "dimension {$key} is missing {$field}");
@@ -222,7 +232,7 @@ class MetricOverridesTest extends TestCase
                 continue;
             }
 
-            foreach ($override['where'] as $clause) {
+            foreach (array_merge($override['where'], $override['numerator'] ?? []) as $clause) {
                 $this->assertStringContainsString(
                     '.',
                     $clause[0],
@@ -239,11 +249,24 @@ class MetricOverridesTest extends TestCase
                 continue;
             }
 
-            foreach ($override['where'] as $clause) {
+            foreach (array_merge($override['where'], $override['numerator'] ?? []) as $clause) {
                 $this->assertIsArray($clause, $key);
                 $this->assertCount(3, $clause, "{$key} has a where clause that is not [column, op, value]");
                 $this->assertIsString($clause[0], $key);
-                $this->assertContains($clause[1], ['=', '!=', '>', '>=', '<', '<=', 'in', 'not in'], $key);
+
+                // `is null`/`not null` are triples too, carrying a null value.
+                // Emptiness cannot be expressed with a placeholder: `col = ?`
+                // bound to null is NULL and never true, so a metric written
+                // that way measures nothing and says nothing about it.
+                $this->assertContains(
+                    $clause[1],
+                    ['=', '!=', '>', '>=', '<', '<=', 'in', 'not in', 'is null', 'not null'],
+                    $key
+                );
+
+                if ($clause[1] === 'is null' || $clause[1] === 'not null') {
+                    $this->assertNull($clause[2], "{$key} binds a value to a null comparison");
+                }
             }
         }
     }
@@ -295,7 +318,7 @@ class MetricOverridesTest extends TestCase
     {
         $references = [];
 
-        foreach ($override['where'] ?? [] as $clause) {
+        foreach (array_merge($override['where'] ?? [], $override['numerator'] ?? []) as $clause) {
             $references[] = $clause[0];
         }
 

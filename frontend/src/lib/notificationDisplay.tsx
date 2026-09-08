@@ -12,6 +12,7 @@ import {
   Megaphone,
   MessageSquare,
   Newspaper,
+  TimerOff,
 } from 'lucide-react';
 
 type NotificationDisplay = {
@@ -87,6 +88,13 @@ export const getNotificationDisplay = (type: string): NotificationDisplay => {
         tone: 'info',
         icon: createIcon(<BarChart3 className="h-4 w-4" />),
       };
+    case 'timer_auto_stopped':
+      return {
+        label: 'Timer',
+        tone: 'warning',
+        icon: createIcon(<TimerOff className="h-4 w-4" />),
+      };
+
     default:
       return {
         label: 'Notification',

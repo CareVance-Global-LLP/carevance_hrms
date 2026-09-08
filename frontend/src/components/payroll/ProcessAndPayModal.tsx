@@ -78,9 +78,22 @@ export function ProcessAndPayPanel({
   const [result, setResult] = useState<any>(null);
 
   const processAndPayMutation = useMutation({
+    /*
+     * `working_days` is deliberately absent from this body, and a constant must
+     * never be put back. This call used to send a flat 26 for the whole
+     * organization. The backend reads an explicit working_days as "the caller is
+     * stating attendance" and derives LOP = working_days - days_present, while
+     * each employee's own calendar produces 21-23 days present — so the 26 docked
+     * 3-5 days of pay from every employee with perfect attendance, on every run.
+     * Omitting the key is what lets each employee fall back to their own
+     * attendance summary, the only thing that knows their calendar. If a month
+     * ever genuinely needs an override, it has to be a visible field the operator
+     * fills in on the review stage above, so the number is one a human stated for
+     * that month — the advanced section here is read-only history, not a place to
+     * hide one.
+     */
     mutationFn: () => payrollApi.processAndPay({
       month_year: monthYear,
-      working_days: 26,
     }).then((r) => r.data),
     onSuccess: (data: any) => {
       setResult(data);

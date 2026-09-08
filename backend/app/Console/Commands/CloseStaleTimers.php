@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use App\Models\AttendancePunch;
 use App\Models\AttendanceRecord;
 use App\Models\TimeEntry;
+use App\Models\User;
+use App\Services\Monitoring\TimerAutoStopNotifier;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,7 @@ class CloseStaleTimers extends Command
 
     protected $description = 'Auto-close time entries that are still running past the max allowed duration';
 
-    public function handle(): int
+    public function handle(TimerAutoStopNotifier $notifier): int
     {
         $maxMinutes = (int) ($this->option('max-minutes')
             ?: config('time_tracking.stale_timer_max_minutes', 120));
@@ -154,6 +156,27 @@ class CloseStaleTimers extends Command
             ]);
 
             $this->closeOpenAttendancePunches((int) $entry->user_id, $endTime);
+
+            /*
+             * Say so.
+             *
+             * Closing the timer correctly is only half of it. Of 214 stops
+             * on production in 30 days, 59 came from the server and not one
+             * left a row in app_notifications - the people it happened to
+             * could only describe it as "the tracker just stops". A toast is
+             * no use either, because this sweep runs precisely when nobody
+             * is watching the screen.
+             */
+            $closedUser = User::withoutGlobalScopes()->find($entry->user_id);
+            if ($closedUser) {
+                $notifier->announce(
+                    $closedUser,
+                    $entry,
+                    (int) $lastActiveAt->diffInSeconds($now),
+                    TimeEntry::STOP_STALE_CLOSE,
+                    $endTime
+                );
+            }
 
             Log::info('Stale timer auto-closed by scheduled command', [
                 'time_entry_id' => $entry->id,

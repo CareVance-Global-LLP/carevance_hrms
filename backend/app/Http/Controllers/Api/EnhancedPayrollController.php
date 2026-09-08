@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\Controller;
 use App\Models\ArrearPayment;
 use App\Models\EmployeeLoan;
@@ -40,7 +41,22 @@ class EnhancedPayrollController extends Controller
             'defaultBasicPercentage' => 40,
             'defaultHraPercentage' => 50,
             'defaultConveyance' => 1600,
-            'defaultState' => 'maharashtra',
+            /*
+             * No default professional-tax state. The key is kept, with null,
+             * only because every reader here goes through `?? ''`;
+             * PayrollSettingsController drops the key entirely because its
+             * response has to distinguish "unanswered" from "answered: none".
+             *
+             * This one reached money. createArrear() below resolves
+             * `$user->employeeProfile?->pt_state ?? $config['defaultState']`
+             * and writes the result's slab into ArrearPayment.pt_on_arrear,
+             * which is a stored, payable deduction — so an organisation that
+             * had never named a state had Maharashtra's ₹200 slab differenced
+             * onto every arrear it raised, for employees who may owe no
+             * professional tax at all. null falls through to '' there, and
+             * PTStateService prices '' at ₹0.
+             */
+            'defaultState' => null,
             'defaultTaxRegime' => 'new',
             'pfWageCap' => 15000,
             'esiThreshold' => 21000,
@@ -89,7 +105,10 @@ class EnhancedPayrollController extends Controller
         try {
             $result = $this->calculator->calculatePayroll(
                 annualCtc: $request->annual_ctc,
-                stateCode: $request->state_code ?? 'maharashtra',
+                // A caller that names no state gets no professional tax, not
+                // somebody else's. This preview persists nothing, but it is
+                // the number an admin quotes in an offer.
+                stateCode: $request->state_code ?: '',
                 isMetroCity: $request->is_metro_city ?? true,
                 taxRegime: $request->tax_regime ?? 'new'
             );
@@ -98,6 +117,18 @@ class EnhancedPayrollController extends Controller
                 'success' => true,
                 'data' => $result,
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -258,6 +289,18 @@ class EnhancedPayrollController extends Controller
                 'message' => 'Leave encashment request created',
                 'data' => $encashment,
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -436,6 +479,18 @@ class EnhancedPayrollController extends Controller
                 'message' => 'Arrear payment created',
                 'data' => $arrear,
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -758,6 +813,18 @@ class EnhancedPayrollController extends Controller
                 'message' => 'F&F settlement created',
                 'data' => $settlement->fresh(),
             ]);
+        } catch (ValidationException $e) {
+            /*
+             * Let a validation failure be a validation failure.
+             *
+             * ValidationException extends Exception, so the broad catch below
+             * swallowed it, answered 500 and discarded the per-field errors —
+             * the client was told "Server error. Please try again later." for
+             * a form it could have fixed itself. Re-thrown here so Laravel
+             * renders its own 422, which is what the other half of these
+             * endpoints already return and what every client here reads.
+             */
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,

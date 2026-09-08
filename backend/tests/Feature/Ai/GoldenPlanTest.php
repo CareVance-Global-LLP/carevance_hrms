@@ -2,12 +2,20 @@
 
 namespace Tests\Feature\Ai;
 
+use App\Models\EmployeeWorkInfo;
+use App\Models\Group;
+use App\Models\Organization;
+use App\Models\User;
 use App\Services\Ai\MetricOverrides;
 use App\Services\Ai\PlanValidator;
+use App\Services\Ai\QueryPlanner;
 use App\Services\Ai\SchemaIntrospector;
 use App\Services\Ai\SemanticLayer;
 use App\Services\Ai\UnsupportedQuestionException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -453,7 +461,112 @@ class GoldenPlanTest extends TestCase
         $this->assertStringContainsStringIgnoringCase('around', $detail);
     }
 
+    // ------------------------------------------------- the plans WE emit
+
+    /**
+     * THE TWO PERSON CASES PIN AN EMITTED PLAN, NOT A HAND-WRITTEN COPY OF ONE.
+     *
+     * Every other case in this fixture records a plan a MODEL would write, so
+     * the only thing assertable with no vendor in the loop is how the validator
+     * normalises it. The person cases are different in kind: nothing but
+     * `QueryPlanner::personLookupPlan()` ever writes them, and until this test
+     * existed the fixture held a TRANSCRIPTION of that plan which no code path
+     * was ever compared against. Narrowing `PERSON_COLUMNS` to a single column,
+     * or widening it past the published profile, left every assertion in this
+     * file green — the exact opposite of what a fixture carrying that column
+     * list is for, because that list is the boundary between "the profile this
+     * layer publishes" and "the row in the database".
+     *
+     * So the raw plan is asserted verbatim, and only then normalised. Both
+     * halves are needed: the fixture's `expect` proves the validator honours
+     * the plan, and this proves the plan is the one that actually gets planned.
+     */
+    public function test_the_person_cases_pin_the_plan_the_planner_actually_emits(): void
+    {
+        $this->rosterOf('Kajal Sharma', 'Kajal Mehta', 'Ravi Kumar');
+
+        // A person lookup is decided and built here, with no model in it, so a
+        // request reaching the vendor would mean this test proved nothing about
+        // the deterministic path. The fake is an assertion, not a convenience.
+        Http::fake();
+
+        foreach ([
+            'give me all detail of kajal' => 'give me all detail of kajal',
+            'kajel details' => 'kajel details (the name typed one character wrong)',
+        ] as $question => $recorded) {
+            $case = $this->case('accepted', $recorded);
+            $emitted = app(QueryPlanner::class)->plan($question);
+
+            $this->assertSame(
+                $case['plan'],
+                $emitted,
+                "The fixture's plan for '{$recorded}' is no longer the plan QueryPlanner emits, "
+                .'so the column list it records is a copy of nothing.'
+            );
+
+            $this->assertNormalisedPlanMatches($case['expect'], $this->validator->validate($emitted), $recorded);
+        }
+
+        Http::assertNothingSent();
+    }
+
     // ----------------------------------------------------------------- helpers
+
+    /**
+     * A roster for the person cases, and the acting user their organization
+     * scope resolves through.
+     *
+     * `PersonLookup` reads `EmployeeWorkInfo`, which carries
+     * `BelongsToOrganization` — with nobody authenticated the scope is a no-op
+     * and the lookup would read every tenant, which is the one thing it must
+     * never do.
+     */
+    private function rosterOf(string ...$names): void
+    {
+        // QueryPlanner refuses every question on an unconfigured client before
+        // it reaches the person path at all.
+        config()->set('services.ai.secondary_base_url', 'https://openrouter.test/api/v1');
+        config()->set('services.ai.secondary_api_key', 'test-key');
+        config()->set('services.ai.secondary_models', 'stealth/ox-alpha');
+
+        $organization = Organization::create(['name' => 'Golden Org', 'slug' => 'golden-plan-org']);
+
+        Auth::setUser(User::create([
+            'name' => 'Golden Admin',
+            'email' => 'golden-admin@org.test',
+            'password' => Hash::make('password123'),
+            'role' => 'admin',
+            'organization_id' => $organization->id,
+        ]));
+
+        $group = Group::create([
+            'organization_id' => $organization->id,
+            'name' => 'Engineering',
+            'slug' => 'golden-engineering',
+        ]);
+
+        foreach ($names as $index => $name) {
+            $user = User::create([
+                'name' => $name,
+                'email' => 'golden-person-'.$index.'@org.test',
+                'password' => Hash::make('password123'),
+                'role' => 'employee',
+                'organization_id' => $organization->id,
+            ]);
+
+            EmployeeWorkInfo::create([
+                'organization_id' => $organization->id,
+                'user_id' => $user->id,
+                'employee_code' => 'GOLD-'.$index,
+                'report_group_id' => $group->id,
+                'designation' => 'Software Engineer',
+                'work_location' => 'Pune',
+                'employment_type' => 'full_time',
+                'employment_status' => 'active',
+                'joining_date' => '2025-04-01',
+            ]);
+        }
+    }
 
     /**
      * @param  array<string, mixed>  $expect

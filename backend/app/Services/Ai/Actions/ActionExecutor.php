@@ -127,7 +127,7 @@ class ActionExecutor
         // the trail says which authority actually wrote the row.
         [$method, $path] = $this->endpointFor($entry, $row);
 
-        $response = $this->dispatch($entry, $row, $changes, $origin, $method, $path);
+        $response = $this->dispatch($entry, $row, $this->payload($moved, $held), $origin, $method, $path);
 
         $status = $response->getStatusCode();
 
@@ -302,6 +302,38 @@ class ActionExecutor
             $this->render($live),
             $this->render($shown),
         ));
+    }
+
+    /**
+     * The values that will actually be SENT: the diff's, never the plan's.
+     *
+     * WHAT EXECUTES IS WHAT THE DIFF SAYS, down to the character. `$moved` and
+     * `$held` carry the values after `ActionPreviewBuilder::requestedValue()`
+     * has normalised them, and normalisation is not cosmetic: `"9:30"` becomes
+     * **09:30**, which is what the preview displayed AND the only form
+     * `UpdateOrganizationRequest`'s time rule accepts; `"  Acme  "` is trimmed,
+     * which is what `presentLive()` reads back.
+     *
+     * `$changes` normally holds the same values, because `build()` tokenises
+     * the diff rather than the model's raw plan. Taking them from the diff
+     * anyway keeps that a property of THIS method rather than of a token minted
+     * somewhere else — a token proves this server issued the plan, never that
+     * the plan is in the shape the endpoint needs. Sending anything but the
+     * re-derived diff makes the write and the confirmation two different
+     * claims, and the confirmation is the one the human reads.
+     *
+     * @param  list<array<string, mixed>>  $moved
+     * @param  list<array<string, mixed>>  $held
+     * @return array<string, mixed>
+     */
+    private function payload(array $moved, array $held): array
+    {
+        return array_merge(
+            // A field that already holds its requested value is still sent —
+            // the endpoint decides what a no-op field means, not this class.
+            array_column($held, 'value', 'field'),
+            array_column($moved, 'to', 'field'),
+        );
     }
 
     /**

@@ -81,7 +81,12 @@ export default function SetupEmployees() {
             pt_enabled: orgSettings.ptEnabled ?? true,
             tds_enabled: orgSettings.tdsEnabled ?? true,
             lwf_enabled: orgSettings.lwfEnabled ?? false,
-            pt_state: orgSettings.defaultState ?? 'maharashtra',
+            // Whatever the organisation actually chose, and null when it has
+            // chosen nothing. This read `?? 'maharashtra'`, so finishing the
+            // setup wizard wrote Maharashtra's professional tax onto every
+            // employee template in the company — including a Delhi office,
+            // which owes none. PTStateService prices null at ₹0.
+            pt_state: orgSettings.defaultState ?? null,
             is_metro_city: orgSettings.isMetroCity ?? true,
             basic_percentage: orgSettings.defaultBasicPercentage ?? 40,
             hra_percentage: orgSettings.defaultHraPercentage ?? 50,
