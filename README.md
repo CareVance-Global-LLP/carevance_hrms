@@ -1,6 +1,6 @@
-# CareVance HRMS
+# The HRMS
 
-**CareVance HRMS** is a comprehensive workforce operations platform built for modern organizations. It combines time tracking, attendance monitoring, payroll management, team communication, and productivity analytics into a single unified system.
+** HRMS** is a comprehensive workforce operations platform built for modern organizations. It combines time tracking, attendance monitoring, payroll management, team communication, and productivity analytics into a single unified system.
 
 The platform consists of four integrated components:
 - **Laravel API** - Backend system of record
@@ -30,10 +30,10 @@ The platform consists of four integrated components:
 
 ## Architecture
 
-CareVance is structured as a modular monorepo with four interconnected components:
+The is structured as a modular monorepo with four interconnected components:
 
 ```
-CareVance/
+The/
 ── backend/              # Laravel 12 API (system of record)
 ├── frontend/             # React 18 + TypeScript web application
 ├── desktop/              # Electron desktop tracker + browser bridge
@@ -203,7 +203,7 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
 DB_PORT=5432
-DB_DATABASE=carevance
+DB_DATABASE=The
 DB_USERNAME=postgres
 DB_PASSWORD=your_password
 QUEUE_CONNECTION=database
@@ -225,8 +225,8 @@ npm run dev
 VITE_API_URL=http://localhost:8000/api
 VITE_WEB_APP_URL=http://localhost:5173
 VITE_DESKTOP_DOWNLOAD_LABEL=Download for Windows
-VITE_SALES_EMAIL=sales@carevance.com
-VITE_SUPPORT_EMAIL=support@carevance.com
+VITE_SALES_EMAIL=sales@The.com
+VITE_SUPPORT_EMAIL=support@The.com
 ```
 
 ### 3. Desktop Tracker
@@ -251,7 +251,7 @@ npm start
 
 ## Desktop Tracker
 
-The CareVance Desktop Tracker runs in the system tray and provides:
+The The Desktop Tracker runs in the system tray and provides:
 
 ### Auto-Start Behavior
 - **OS Boot Launch** - Automatically starts when Windows boots (Registry + Task Scheduler + Startup folder)
